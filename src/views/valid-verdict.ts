@@ -33,7 +33,7 @@ export interface Claim {
   generatorInfo: Record<string, string | number | boolean> | null;
   instanceId: unknown;
   manifestLabel: string;
-  actions: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown }>;
+  actions: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; parameters?: unknown }>;
 }
 export interface VerifyReport {
   found: boolean;
@@ -51,7 +51,7 @@ export interface VerifyReport {
   author?: { name: string; email?: string };
   signer?: Signer;
   aiGenerated?: { kind: 'generated' | 'composite'; sourceType: string };
-  history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; generator?: unknown }>;
+  history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; parameters?: unknown; generator?: unknown }>;
 }
 
 // The pixel-watermark detection result (engine detectWatermark), surfaced only

@@ -71,7 +71,12 @@ import {
   type Box, type MediaDurFn, type TimeCfg,
 } from './timeline-math.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
-import type { AssetRef, AudioLevel, RecorderAPI, RecordSession } from '@lolly-tools/core/host-v1';
+// Engine-owned cue grouping (the analysePcm precedent): captions grouped here
+// break at the same words a headless render would break at.
+import { groupWordsToCues } from '../../../../engine/src/captions.ts';
+import { captionGroup, cueSpansOnTimeline, isCaptionGroup, ttsWordsOf } from './timeline-captions.ts';
+import { fmtBytes } from '../lib/format.ts';
+import type { AssetRef, AudioLevel, RecorderAPI, RecordSession, SpeechAPI, SpeechWordTiming } from '@lolly-tools/core/host-v1';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import '../styles/parts/timeline.css';
 
@@ -98,9 +103,18 @@ export interface TimelineRuntime {
 export interface TimelineHost {
   log?(level: string, msg: string): void;
   recorder?: RecorderAPI;
+  /** The optional speech bridge (v1.96 synthesis, v1.99 transcription) — behind the
+   *  "Script a voiceover" button and the transcription arm of Generate subtitles.
+   *  Feature-detected like `recorder`, never capability-gated. */
+  speech?: SpeechAPI;
   /** The user-asset store, for retiring a take that a RE-take has superseded — and only
-   *  once the replacement has been committed to the model (see finishTake). */
-  assets?: { _deleteUserAsset?(id: string): Promise<void> };
+   *  once the replacement has been committed to the model (see finishTake) — plus `get`,
+   *  which resolves a box's persisted ref back to a LIVE one (fresh object URL and full
+   *  meta) for the subtitle path. */
+  assets?: {
+    _deleteUserAsset?(id: string): Promise<void>;
+    get?(id: string): Promise<AssetRef | null>;
+  };
 }
 
 /** The canvas selection seam, threaded from free-canvas (selection is keyed by box id). */
@@ -164,6 +178,12 @@ export interface TimelinePanelOpts {
    * then to the conventional `image`. Passing it explicitly is always better.
    */
   assetField?: string;
+  /**
+   * The box sub-field carrying rendered text (free-canvas's `cv.textField`).
+   * Only Generate subtitles writes it — each cue becomes a text box — so a tool
+   * that declares no text field simply never offers the action.
+   */
+  textField?: string;
 }
 
 export interface TimelinePanel {
@@ -365,8 +385,10 @@ export function zoomAbout(pxPerSec: number, factor: number, cursorPx: number, sc
 }
 
 /**
- * The identity of the panel's ROW STRUCTURE: box ids, their lane, and whether they are
- * timed at all. Geometry (start/dur) is deliberately absent — moving or trimming a clip
+ * The identity of the panel's ROW STRUCTURE: box ids, their lane, whether they are
+ * timed at all, and — for a tool with a group field — their group, because grouped
+ * overlays SHARE a lane row (see rebuild's collapse), so regrouping is a structure
+ * change. Geometry (start/dur) is deliberately absent — moving or trimming a clip
  * must restyle, never rebuild. The chromeKey precedent, applied to tracks.
  */
 export function tracksKey(boxes: Box[], cfg: TimeCfg): string {
@@ -377,7 +399,8 @@ export function tracksKey(boxes: Box[], cfg: TimeCfg): string {
     if (!b) continue;
     const id = b[cfg.idField];
     const timing = boxTiming(b, cfg);
-    parts.push(`${id == null ? '' : String(id)}:${timing.lane}:${isTimed(b, cfg) ? 1 : 0}`);
+    const group = cfg.groupField ? b[cfg.groupField] : undefined;
+    parts.push(`${id == null ? '' : String(id)}:${timing.lane}:${isTimed(b, cfg) ? 1 : 0}:${group == null ? '' : String(group)}`);
   }
   return parts.join('|');
 }
@@ -877,6 +900,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // declared it needs a microphone; see canRecordVoiceover for why both.
   const micBtn = btn('tl-mic', t('Record a voiceover'), icon('mic'));
   micBtn.hidden = true;   // decided below, once the capability check has run
+  // Scripted voiceover — the mic's typed twin: opens the Script-audio dialog
+  // (views/script-audio.ts, on-device TTS) and commits the saved clip at the
+  // playhead exactly like a finished take. Feature-detected on `host.speech`,
+  // the same progressive-capability terms as the mic (see canRecordVoiceover).
+  const scriptBtn = btn('tl-script', t('Script a voiceover'), icon('speech'));
+  scriptBtn.hidden = true;   // decided below, beside the mic's check
 
   /** The take HUD: a live level meter and the elapsed clock, shown only during a take. */
   const rec = document.createElement('div');
@@ -908,7 +937,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   transport.append(playBtn, timeEl);
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
-  tools.append(addBtn, micBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn);
+  tools.append(addBtn, micBtn, scriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
   bar.append(transport, tools, rec, recNote, inspector);
@@ -1189,23 +1218,46 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const seq = seqBoxes(boxes, cfg);
     const seqIds = new Set(seq.map((b) => String(b[cfg.idField] ?? '')));
 
-    // Overlay lanes first (one row each), then the magnetic seq row.
+    // Overlay lanes first (one row each — except that overlays SHARING a group share
+    // one row), then the magnetic seq row. The collapse is presentation only: the
+    // boxes stay independent in the model, individually selectable and fully editable
+    // on canvas — but 200 generated caption cues must not become 200 lane rows, and
+    // grouped bars never overlap in time (cues are sequential), so side by side on one
+    // row is both honest and readable. The lane-explosion decision, §5 of the plan.
+    const groupLanes = new Map<string, HTMLElement>();
     for (const b of boxes) {
       if (!b) continue;
       const id = b[cfg.idField];
       if (id == null || id === '') continue;
       const timing = boxTiming(b, cfg);
       if (timing.lane === 'seq' || timing.start === null) continue;
-      const lane = document.createElement('div');
-      lane.className = 'tl-lane';
-      // Presentational: a listbox may only own options, and these rows are pure
-      // layout. Flattening them keeps every `role="option"` bar owned by the listbox.
-      lane.setAttribute('role', 'presentation');
-      lane.dataset.lane = 'overlay';
+      const group = cfg.groupField ? String(b[cfg.groupField] ?? '') : '';
+      let lane = group ? groupLanes.get(group) : undefined;
+      if (!lane) {
+        lane = document.createElement('div');
+        lane.className = 'tl-lane';
+        // Presentational: a listbox may only own options, and these rows are pure
+        // layout. Flattening them keeps every `role="option"` bar owned by the listbox.
+        lane.setAttribute('role', 'presentation');
+        lane.dataset.lane = 'overlay';
+        if (group) {
+          groupLanes.set(group, lane);
+          // A generated caption row says what it is. Other groups keep an unlabelled
+          // shared row — their bars already carry their own labels.
+          if (isCaptionGroup(group)) {
+            lane.classList.add('tl-lane-captions');
+            const lab = document.createElement('span');
+            lab.className = 'tl-lane-label';
+            lab.setAttribute('aria-hidden', 'true');   // every bar in it is announced itself
+            lab.textContent = t('Captions');
+            lane.appendChild(lab);
+          }
+        }
+        laneWrap.appendChild(lane);
+      }
       const el = makeBar(String(id), '');
       bars.set(String(id), el);
       lane.appendChild(el);
-      laneWrap.appendChild(lane);
     }
 
     const seqLane = document.createElement('div');
@@ -1794,6 +1846,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       } else if (canDetach(ctxId)) {
         el.appendChild(menuItem(t('Detach audio'), 'volumeOff', act(() => detachAudioAt(ctxId)),
           { sub: t('Puts the sound on its own lane so you can move and trim it separately.') }));
+      }
+      // Subtitles, for a clip with sound — absent (never greyed) when no timing
+      // source is reachable, the same offered-only-where-real rule as Join.
+      if (canGenerateSubtitles(ctxId)) {
+        el.appendChild(menuItem(t('Generate subtitles'), 'speech', act(() => { void generateSubtitles(ctxId); }),
+          { sub: t('Adds timed caption boxes you can edit like any clip.') }));
       }
       el.appendChild(menuItem(t('Make always on'), 'layers', act(() => demote(ctxId))));
     } else {
@@ -3675,6 +3733,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     try { return r.isAvailable('audio'); } catch { return false; }
   }
 
+  /** Same two questions for the typed twin: can this shell synthesize speech at all,
+   *  and does the tool have an audio vocabulary for the clip to land in. */
+  function canScriptVoiceover(): boolean {
+    const sp = host.speech;
+    if (!sp || typeof sp.isAvailable !== 'function' || !audioKind()) return false;
+    try { return sp.isAvailable(); } catch { return false; }
+  }
+
   /**
    * The field on a box that carries an asset ref. See TimelinePanelOpts.assetField.
    * Memoised once found: a tool's field vocabulary cannot change under a mount, and
@@ -4061,17 +4127,255 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       announce(t('Take replaced'));
       return;
     }
+    insertAudioBoxAt(ref, durSec, takeStartSec);
+  }
+
+  /**
+   * One audio clip lands at one time — the SINGLE inserter behind both a finished
+   * mic take and a saved scripted voiceover, so the two can never drift: born from
+   * the manifest's audio seed, placed by `moveOverlay`, sized by `setDuration`,
+   * one commit, one undo step.
+   */
+  function insertAudioBoxAt(ref: AssetRef, durSec: number, atSec: number): void {
+    const rows = getBoxes();
     const id = mintId();
     const box: Box = {
       ...(audioKind()?.seed as Box | undefined),
       [cfg.idField]: id,
-      [field]: ref as unknown as Box[string],
+      [assetFieldName()]: ref as unknown as Box[string],
     };
-    const placed = moveOverlay([...rows, box], cfg, id, takeStartSec);
+    const placed = moveOverlay([...rows, box], cfg, id, atSec);
     write(setDuration(placed, cfg, id, durSec, durSec, mediaDur));
     focusedId = id;
     selectAndReveal([id]);
     announce(t('Voiceover added to the timeline'));
+  }
+
+  // ── scripted voiceover (typed, not performed) ───────────────────────────────
+  //
+  // The Script-audio dialog owns everything speech: consent + model download,
+  // voice/speed, generation progress, preview, save. The panel only remembers
+  // WHERE the playhead was when the user pressed the button — the dialog can
+  // stay open for minutes, and the clip must land where they were looking, not
+  // wherever the clock has since drifted to.
+
+  let scriptBusy = false;
+
+  async function openScriptVoiceover(): Promise<void> {
+    if (scriptBusy || !canScriptVoiceover()) return;
+    scriptBusy = true;
+    scriptBtn.disabled = true;
+    const atSec = clock.t() / 1000;
+    try {
+      // Lazy for the picker's reason: the dialog is its own CSS chunk, and this
+      // button is the only thing in the panel that ever needs it.
+      const { openScriptAudioDialog } = await import('./script-audio.ts');
+      const ref = await openScriptAudioDialog(host as unknown as Parameters<typeof openScriptAudioDialog>[0]);
+      if (disposed || !ref) return;
+      // The measured clip length rides the record (script-audio's buildTtsRecord
+      // stamps `meta.durationMs`) — the same field a mic take stores, and for the
+      // same reason: it is what a trim can clamp against.
+      const ms = Number((ref.meta as Record<string, unknown> | undefined)?.durationMs);
+      insertAudioBoxAt(ref, Number.isFinite(ms) && ms > 0 ? ms / 1000 : DEFAULT_CLIP_S, atSec);
+    } catch (err) {
+      host.log?.('warn', `timeline scripted voiceover failed — ${String(err)}`);
+    } finally {
+      scriptBusy = false;
+      scriptBtn.disabled = false;
+    }
+  }
+
+  // ── generated subtitles (plans/tts-stt-programme.md §5) ─────────────────────
+  //
+  // Timing-source ladder, best first: the asset's own `meta.tts.words` (a TTS
+  // clip aligns itself — exact by construction, no download, no wait), else
+  // on-device Whisper via `host.speech.transcribe` (v1.99, its own one-time
+  // model download behind its own consent sheet). Neither → the menu item is
+  // simply absent. Words become cues through the ENGINE's grouper and cues
+  // become ordinary overlay text boxes — editable, trimmable, deletable like
+  // anything else on the timeline, never a burned-in afterthought. The whole
+  // set carries `group = captions:<source id>`, which is what lets a re-run
+  // REPLACE the previous set (idempotent, never duplicating) and what the
+  // panel's lane collapse reads to keep 200 cues off 200 lane rows.
+
+  /** The manifest's text add-kind — the seed a caption cue is born from. */
+  const textKind = (): TimelineAddKind | undefined => addKinds.find((k) => k.id === 'text');
+
+  /** A subtitles run is one job; a second request while one is in flight is noise. */
+  let subtitleBusyId = '';
+
+  /**
+   * Whether Generate subtitles can be OFFERED for this box: the tool must have a
+   * text vocabulary, a group field to own the set with, audio to read — and at
+   * least one rung of the timing ladder must be reachable. Sync, because the
+   * context menu renders synchronously: the stored ref's meta answers the TTS
+   * rung without a round-trip, and the transcription rung is a sync probe.
+   */
+  function canGenerateSubtitles(id: string): boolean {
+    if (!cfg.groupField || !opts.textField || !textKind()) return false;
+    const kind = mediaOf(id).kind;
+    if (kind !== 'audio' && kind !== 'video') return false;
+    const ref = refOf(id);
+    if (ttsWordsOf((ref as { meta?: unknown } | null)?.meta)) return true;
+    try { return host.speech?.transcribeAvailable?.() === true; } catch { return false; }
+  }
+
+  /**
+   * The consent + progress sheet for the transcription rung. Resolves the
+   * transcript's word timings, or null on cancel; a failure surfaces in the
+   * sheet itself (the caller has nothing to add) and resolves null too.
+   * Escape/backdrop abort the run — every exit path aborts and resolves once.
+   */
+  function transcribeSheet(src: AssetRef | string): Promise<SpeechWordTiming[] | null> {
+    const sp = host.speech;
+    if (!sp) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let abort: AbortController | null = null;
+      let words: SpeechWordTiming[] | null = null;
+      let bytes = 0;
+      try { bytes = sp.transcribeModelBytes(); } catch { /* consent line just omits the size */ }
+      const html = `<form method="dialog" class="tl-junction tl-stt">
+        <h2 class="tl-junction-title">${t('Generate subtitles')}</h2>
+        <p class="tl-stt-note" data-stt-note>${t('Listens to this clip on this device and writes timed captions. Nothing is uploaded.')}</p>
+        <p class="tl-stt-note tl-stt-note-dl" data-stt-dl hidden></p>
+        <div class="tl-stt-progress" data-stt-progress hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="tl-stt-fill" data-stt-fill></span></div>
+        <div class="tl-junction-actions">
+          <button type="button" class="btn" data-act="cancel">${t('Cancel')}</button>
+          <button type="button" class="btn btn--primary" data-act="go">${t('Generate')}</button>
+        </div>
+      </form>`;
+      const modal = mountModal<void>(html, {
+        className: 'modal tl-junction-modal',
+        ariaLabel: t('Generate subtitles'),
+        initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="go"]'),
+        // However it closed — Escape, backdrop, cancel, or done — settle exactly once.
+        onClose: () => { abort?.abort(); resolve(words); },
+      });
+      const note = modal.el.querySelector<HTMLElement>('[data-stt-note]');
+      const dlNote = modal.el.querySelector<HTMLElement>('[data-stt-dl]');
+      const progress = modal.el.querySelector<HTMLElement>('[data-stt-progress]');
+      const fill = modal.el.querySelector<HTMLElement>('[data-stt-fill]');
+      const goBtn = modal.el.querySelector<HTMLButtonElement>('[data-act="go"]');
+      // The one-time download is the consent-worthy part, so say so up front —
+      // but only when it is actually owed (the probe is async, the line arrives).
+      void sp.transcribeCached?.().then((cached) => {
+        if (!cached && dlNote) {
+          dlNote.textContent = bytes > 0
+            ? t('The first run downloads the speech model once ({size}). It stays on this device.', { size: fmtBytes(bytes) })
+            : t('The first run downloads the speech model once. It stays on this device.');
+          dlNote.hidden = false;
+        }
+      }).catch(() => { /* the probe failing just means no size line */ });
+      goBtn?.addEventListener('click', async () => {
+        if (abort) return;
+        abort = new AbortController();
+        goBtn.disabled = true;
+        if (note) note.textContent = t('Listening to the clip…');
+        if (progress) progress.hidden = false;
+        try {
+          const transcript = await sp.transcribe(src, {
+            signal: abort.signal,
+            onProgress: (p) => {
+              if (note && p.phase === 'download') note.textContent = t('Downloading the speech model…');
+              const fraction = p.fraction ?? (p.total ? (p.loaded ?? 0) / p.total : undefined);
+              if (progress) progress.classList.toggle('tl-stt-progress-indeterminate', fraction == null);
+              const pct = fraction == null ? 0 : Math.round(clamp(fraction, 0, 1) * 100);
+              if (fill) fill.style.width = fraction == null ? '100%' : `${pct}%`;
+              progress?.setAttribute('aria-valuenow', String(pct));
+            },
+          });
+          words = transcript.words.length ? transcript.words : null;
+          modal.close();
+        } catch (err) {
+          if (abort.signal.aborted) return;   // the cancel path already owns the close
+          host.log?.('warn', `timeline subtitles: transcription failed — ${String(err)}`);
+          abort = null;
+          goBtn.disabled = false;
+          if (progress) progress.hidden = true;
+          if (note) note.textContent = t('That didn’t work. Check the clip has audio and try again.');
+        }
+      });
+      modal.el.querySelector<HTMLElement>('[data-act="cancel"]')?.addEventListener('click', () => modal.close());
+    });
+  }
+
+  /** Walk the timing ladder for one box's asset: stored meta, live meta, Whisper. */
+  async function wordsForBox(id: string): Promise<SpeechWordTiming[] | null> {
+    const ref = refOf(id);
+    const stored = ttsWordsOf((ref as { meta?: unknown } | null)?.meta);
+    if (stored) return stored;
+    // The model may persist a slim ref; the store still holds the full record.
+    const refId = typeof ref?.id === 'string' ? ref.id : '';
+    let live: AssetRef | null = null;
+    if (refId && host.assets?.get) {
+      try { live = await host.assets.get(refId); } catch { /* fall through to Whisper */ }
+      const fromStore = ttsWordsOf(live?.meta);
+      if (fromStore) return fromStore;
+    }
+    let sttOk = false;
+    try { sttOk = host.speech?.transcribeAvailable?.() === true; } catch { /* stays false */ }
+    if (!sttOk) return null;
+    // Freshest source wins: a live ref (fresh object URL), else the stored ref,
+    // else the URL the canvas is already playing. All three are AudioSources.
+    const src: AssetRef | string | null = live ?? (ref as AssetRef | null) ?? (mediaOf(id).url || null);
+    return src ? transcribeSheet(src) : null;
+  }
+
+  /**
+   * Generate (or REgenerate) the caption set for one audio/video box. One commit:
+   * the previous `captions:<id>` group goes and the new cues land in its place —
+   * run it twice and you have one set, not two.
+   */
+  async function generateSubtitles(id: string): Promise<void> {
+    const groupField = cfg.groupField;
+    const textField = opts.textField;
+    const seedKind = textKind();
+    if (!groupField || !textField || !seedKind || subtitleBusyId) return;
+    subtitleBusyId = id;
+    try {
+      const words = await wordsForBox(id);
+      if (disposed || !words) return;
+      // Everything above awaited; re-read the model and make sure the source survived.
+      const rows = getBoxes();
+      const i = indexOfId(rows, cfg, id);
+      if (i < 0) return;
+      const timing = boxTiming(rows[i]!, cfg);
+      const spans = cueSpansOnTimeline(groupWordsToCues(words), {
+        start: timing.start ?? 0,
+        dur: span(rows[i]!, durationSec()).dur,
+        clipIn: timing.clipIn,
+        speed: timing.speed,
+      });
+      if (!spans.length) { announce(t('No speech was found to caption.'), { assertive: true }); return; }
+      const gid = captionGroup(id);
+      const kept = rows.filter((b) => !b || String(b[groupField] ?? '') !== gid);
+      // Mint against the SURVIVORS plus what this loop has already minted — mintId
+      // reads the live model, which does not include either until the commit lands.
+      const used = new Set(kept.map((b) => String(b?.[cfg.idField] ?? '')));
+      let n = used.size + 1;
+      const mint = (): string => {
+        let next = `b${n}`;
+        while (used.has(next)) { n++; next = `b${n}`; }
+        used.add(next);
+        return next;
+      };
+      const made: Box[] = spans.map((c) => ({
+        ...(seedKind.seed as Box | undefined),
+        [cfg.idField]: mint(),
+        [textField]: c.text,
+        [cfg.laneField]: '',            // overlay — a caption rides ABOVE the sequence
+        [cfg.startField]: c.start,
+        [cfg.durField]: Math.round((c.end - c.start) * 1000) / 1000,
+        [cfg.enterField]: 'fade',
+        [cfg.exitField]: 'fade',
+        [groupField]: gid,
+      }));
+      write([...kept, ...made]);
+      selectAndReveal([id]);
+      announce(t('{count} caption boxes added. Each one is editable like any clip.', { count: String(made.length) }));
+    } finally {
+      subtitleBusyId = '';
+    }
   }
 
   /** The button: press to start, press again to stop. */
@@ -4362,6 +4666,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   micBtn.addEventListener('click', toggleTake);
   micBtn.hidden = !canRecordVoiceover();
   syncMicBtn();
+  scriptBtn.addEventListener('click', () => { void openScriptVoiceover(); });
+  scriptBtn.hidden = !canScriptVoiceover();
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
   // Shift-click the blade is the pointer twin of Shift+S: cut everything the playhead
   // is inside. Same one write, same one undo step.

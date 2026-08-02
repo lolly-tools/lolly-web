@@ -39,6 +39,7 @@ import { setPreflightGoverned } from '../lib/preflight-policy.ts';
 import { registerApprovalOpener } from '../lib/approval-request.ts';
 import { registerSessionSource } from '../lib/session-source.ts';
 import { setInjectedTools } from '../lib/injected-tools.ts';
+import { parseToolUrl } from '@lolly/engine';
 import { createInstanceSessionSource } from './session-source.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
@@ -426,11 +427,23 @@ export function applyInjectables(config: OrgConfig | null): void {
   // abort the whole member branch after policies are half-applied). Coerce to [].
   const list = Array.isArray(config?.injectables) ? config!.injectables : [];
   const seen = new Set<string>();
-  const tools: Array<{ id: string; name: string; toolUrl?: string }> = [];
+  const tools: Array<{ id: string; name: string; openQuery?: string }> = [];
   for (const d of list) {
-    if (d?.kind !== 'tool' || !d.toolId || !d.title || seen.has(d.toolId)) continue; // dedupe by served id
-    seen.add(d.toolId);
-    tools.push({ id: d.toolId, name: d.title, ...(d.source === 'url' && d.ref ? { toolUrl: d.ref } : {}) });
+    if (d?.kind !== 'tool' || !d.title) continue;
+    let id = d.toolId;
+    let openQuery: string | undefined;
+    if (d.source === 'url') {
+      // A url-source tool is "this tool, preconfigured": resolve the link to its
+      // served tool id + URL-mode query through the engine's own vetted parser. An
+      // unresolvable URL injects nothing (fail closed) rather than a dead card.
+      const parsed = d.ref ? parseToolUrl(d.ref) : null;
+      if (!parsed) continue;
+      id = parsed.toolId;
+      openQuery = parsed.query || undefined;
+    }
+    if (!id || seen.has(id)) continue; // dedupe by the resolved served id
+    seen.add(id);
+    tools.push({ id, name: d.title, ...(openQuery ? { openQuery } : {}) });
   }
   setInjectedTools(tools);
 }

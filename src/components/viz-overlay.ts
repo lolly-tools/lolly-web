@@ -120,6 +120,11 @@ const CSS = `
 /* Fullscreen strips the framing — the panel becomes the whole screen. */
 .viz-panel:fullscreen { border-radius: 0; border: none; width: 100vw !important;
   height: 100vh !important; inset: 0 !important; }
+/* The viewport-fallback twin (no element fullscreen on iOS Safari): same look,
+   pinned to the tab. dvh tracks the mobile toolbars; vh covers older engines. */
+.viz-panel.is-fullpage { border-radius: 0; border: none; width: 100vw !important;
+  height: 100vh !important; height: 100dvh !important; inset: 0 !important;
+  transform: none !important; z-index: 2147483000; }
 /* Dragging by the toolbar; the buttons keep their own cursor. */
 .viz-panel .viz-bar { cursor: grab; }
 .viz-panel.is-dragging .viz-bar { cursor: grabbing; }
@@ -136,7 +141,8 @@ const CSS = `
   padding: 10px 12px; opacity: 1; transition: opacity .3s ease; }
 /* Idle-hiding only in fullscreen: on the floating panel the toolbar is also the drag
    handle and the only way out, so it must not disappear. */
-.viz-surface.is-idle:fullscreen .viz-bar { opacity: 0; pointer-events: none; }
+.viz-surface.is-idle:fullscreen .viz-bar,
+.viz-surface.is-idle.is-fullpage .viz-bar { opacity: 0; pointer-events: none; }
 .viz-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: #fff; font-size: .82rem; font-weight: 600; letter-spacing: .01em; text-shadow: 0 1px 3px rgb(0 0 0 / .6); }
 .viz-btn { flex: 0 0 auto; width: 30px; height: 30px; border: none; border-radius: 50%; cursor: pointer;
@@ -249,7 +255,8 @@ const CSS = `
    in that window — Andy's "substitute for the dock" — and an earlier version faded it to
    opacity 0 with pointer-events:none after 2.6s, which made choosing a track impossible
    and left the now-playing label apparently blank. It dims slightly and stays live. */
-.viz-surface.is-idle:fullscreen .viz-player { opacity: .72; }
+.viz-surface.is-idle:fullscreen .viz-player,
+.viz-surface.is-idle.is-fullpage .viz-player { opacity: .72; }
 .viz-player:hover, .viz-player:focus-within { opacity: 1 !important; }
 /* This card is dark whatever the app theme, but the embedded music-player body colours
    its text with theme tokens — in a light theme --foreground is near-black, so the
@@ -944,7 +951,7 @@ function setCycle(seconds: number): void {
 // ── options menu ─────────────────────────────────────────────────────────────
 
 function menuHtml(s: Surface): string {
-  const full = document.fullscreenElement !== null;
+  const full = document.fullscreenElement !== null || isFullpage(s);
   const choices = CYCLE_CHOICES.map((sec) =>
     `<button type="button" class="viz-pill${sec === cycleSeconds ? ' is-on' : ''}" role="menuitemradio"`
     + ` aria-checked="${sec === cycleSeconds}" data-viz-cycle="${sec}"`
@@ -1099,13 +1106,30 @@ function openMenu(s: Surface, x: number, y: number): void {
   else s.menu.querySelector<HTMLButtonElement>('.viz-menu-item, .viz-pill')?.focus();
 }
 
+/** The non-native full-VIEWPORT state — iOS Safari has no element fullscreen, so
+ *  "fullscreen" there means filling the tab. Same look, different mechanism; the
+ *  ResizeObserver picks the size change up like any other. */
+function isFullpage(s: Surface): boolean {
+  return s.root.classList.contains('is-fullpage');
+}
+function setFullpage(s: Surface, on: boolean): void {
+  s.root.classList.toggle('is-fullpage', on);
+}
+
 function toggleFullscreen(s: Surface): void {
+  if (isFullpage(s)) { setFullpage(s, false); return; }
   if (document.fullscreenElement) { void document.exitFullscreen().catch(() => { /* denied */ }); return; }
   // Fullscreening the inline panel would fullscreen a 300px element inside the dock, so
   // escalate: open the floating panel and fullscreen THAT. Leaving fullscreen then lands
   // on the player rather than on some intermediate mode.
   if (s.kind === 'inline') { void openVizPanel(vizHost, { fullscreen: true }); return; }
-  void s.root.requestFullscreen?.().catch(() => { /* denied — stays windowed */ });
+  // Native where it exists; the viewport fallback where the API is missing or
+  // refuses (iOS Safari on any element). Never silently nothing.
+  if (s.root.requestFullscreen) {
+    s.root.requestFullscreen().catch(() => setFullpage(s, true));
+    return;
+  }
+  setFullpage(s, true);
 }
 
 /**
@@ -1122,7 +1146,7 @@ function wireDrag(s: Surface): void {
   bar.addEventListener('pointerdown', (e) => {
     // Let the controls in the bar work; only bare bar area starts a drag.
     if ((e.target as HTMLElement).closest('button, input, .viz-vol')) return;
-    if (document.fullscreenElement) return;
+    if (document.fullscreenElement || isFullpage(s)) return;
     from = { px: e.clientX, py: e.clientY, x: s.root.offsetLeft, y: s.root.offsetTop };
     bar.setPointerCapture(e.pointerId);
     s.root.classList.add('is-dragging');
@@ -1327,6 +1351,9 @@ function wireSurface(s: Surface): void {
     if (!s.menu.hidden) { e.stopPropagation(); closeMenu(s); return; }
     if (s.kind === 'inline') return;
     if (s.doc.fullscreenElement) return;
+    // The viewport-fallback full page peels off one layer per press, like the
+    // native exit does: first Escape back to the windowed panel, second closes.
+    if (isFullpage(s)) { e.stopPropagation(); setFullpage(s, false); return; }
     e.stopPropagation();
     closeVizOverlay();
   };

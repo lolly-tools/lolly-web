@@ -66,7 +66,10 @@ let fetches: string[] = [];
   };
 };
 
-const { downloadList, docsFileList } = await import('./offline-manager.ts');
+const {
+  downloadList, docsFileList, speechFileLists, downloadSpeechFiles,
+  clearSpeechCaches, speechCacheBytes, TRANSFORMERS_CACHE, SPEECH_CACHE,
+} = await import('./offline-manager.ts');
 
 beforeEach(() => {
   cacheStore.clear();
@@ -201,5 +204,90 @@ describe('offline-manager: docsFileList', () => {
       assert.ok(!docsFileList(manifest, lang).some(f => f.url.includes('/audio/')),
         `${lang} docs part must not include narration`);
     }
+  });
+});
+
+describe('offline-manager: speech part', () => {
+  // A precache.json speech group as vite.config.js's groupPrecacheFiles emits
+  // it: the Kokoro model set. The IDB-free downloadSpeechFiles is what these
+  // tests drive; downloadSpeech is that plus the part record.
+  const manifest = {
+    version: 'v1',
+    groups: {
+      app: [], ort: [], models: [],
+      speech: [
+        { url: '/models/kokoro/onnx/model_quantized.onnx', size: 1000 },
+        { url: '/models/kokoro/config.json', size: 10 },
+        { url: '/models/kokoro/tokenizer.json', size: 20 },
+        { url: '/models/kokoro/tokenizer_config.json', size: 5 },
+        { url: '/models/kokoro/voices/af_heart.bin', size: 100 },
+        { url: '/models/kokoro/voices/bm_fable.bin', size: 100 },
+      ],
+    },
+  };
+  const serveAll = () => { for (const f of manifest.groups.speech) server.set(f.url, f.size); };
+
+  test('the file list splits voice matrices from the model files', () => {
+    const { model, voices } = speechFileLists(manifest);
+    assert.deepEqual(model.map(f => f.url), [
+      '/models/kokoro/onnx/model_quantized.onnx',
+      '/models/kokoro/config.json',
+      '/models/kokoro/tokenizer.json',
+      '/models/kokoro/tokenizer_config.json',
+    ]);
+    assert.deepEqual(voices.map(f => f.url),
+      ['/models/kokoro/voices/af_heart.bin', '/models/kokoro/voices/bm_fable.bin']);
+  });
+
+  test('a manifest built before the speech group existed yields no files', () => {
+    assert.deepEqual(speechFileLists({ version: 'v0', groups: { app: [], ort: [], models: [] } }),
+      { model: [], voices: [] });
+  });
+
+  test('downloads land in the exact buckets the speech runtime reads', async () => {
+    serveAll();
+    const seen: Array<{ loaded: number; total: number | null }> = [];
+    const res = await downloadSpeechFiles(manifest, { onProgress: p => seen.push({ loaded: p.loaded, total: p.total }) });
+    assert.deepEqual(res, { bytes: 1235, files: 6 });
+    const tf = cacheStore.get(TRANSFORMERS_CACHE)!;
+    // The model file must sit under the SAME key bridge/speech.ts's cached()
+    // probes and transformers.js's hub reads — a mismatch here downloads
+    // ~92 MB the worker then re-downloads.
+    assert.ok(tf.entries.has('/models/kokoro/onnx/model_quantized.onnx'));
+    assert.equal(tf.entries.size, 4, 'model/config/tokenizer files only');
+    const sp = cacheStore.get(SPEECH_CACHE)!;
+    assert.deepEqual([...sp.entries.keys()].sort(),
+      ['/models/kokoro/voices/af_heart.bin', '/models/kokoro/voices/bm_fable.bin'],
+      'voice matrices ride the worker\'s own bucket, keyed by path');
+    assert.equal(seen.at(-1)!.loaded, 1235, 'one progress bar spans both buckets');
+    assert.ok(seen.every(p => p.total === 1235));
+  });
+
+  test('prune evicts stale kokoro entries but never a model outside the listing', async () => {
+    serveAll();
+    const tf = cacheStore.get(TRANSFORMERS_CACHE) ?? new FakeCache();
+    cacheStore.set(TRANSFORMERS_CACHE, tf);
+    // A retired model file (stale deploy) and a Whisper model cached through
+    // its own consent flow before joining the manifest.
+    tf.entries.set('/models/kokoro/onnx/model_old.onnx', { body: 'x', headers: new Map() });
+    tf.entries.set('/models/whisper/model.onnx', { body: 'x', headers: new Map() });
+    await downloadSpeechFiles(manifest);
+    assert.ok(!tf.entries.has('/models/kokoro/onnx/model_old.onnx'), 'stale listing-scope entries are pruned');
+    assert.ok(tf.entries.has('/models/whisper/model.onnx'), 'unlisted model dirs are out of prune scope');
+  });
+
+  test('remove clears both buckets', async () => {
+    serveAll();
+    await downloadSpeechFiles(manifest);
+    assert.ok(cacheStore.has(TRANSFORMERS_CACHE) && cacheStore.has(SPEECH_CACHE));
+    await clearSpeechCaches();
+    assert.ok(!cacheStore.has(TRANSFORMERS_CACHE), 'the transformers.js bucket is gone');
+    assert.ok(!cacheStore.has(SPEECH_CACHE), 'the voice bucket is gone');
+  });
+
+  test('speechCacheBytes measures both buckets for the storage meter', async () => {
+    serveAll();
+    await downloadSpeechFiles(manifest);
+    assert.deepEqual(await speechCacheBytes(), { bytes: 1235, files: 6 });
   });
 });

@@ -62,6 +62,15 @@ export interface TimeCfg {
    */
   enterEaseField?: string;
   exitEaseField?: string;
+  /**
+   * OPTIONAL, same terms again: the sub-field carrying the canvas's own box
+   * GROUP (free-canvas's `groupField`, e.g. sequence-studio's `group`). Nothing
+   * in this module reads it — grouping is canvas semantics — but the panel's
+   * lane collapse (overlay boxes sharing a group share one lane row, e.g. a
+   * generated caption set) keys rows by it, and every reader of a box's fields
+   * names them through a TimeCfg. Absent means every overlay keeps its own row.
+   */
+  groupField?: string;
 }
 
 /** A box's timing, resolved. `start`/`dur` stay null when unauthored (scenery / open-ended). */

@@ -35,6 +35,7 @@ import { createRecorderAPI } from './recorder.ts';
 import { hasCaptureExtension } from './capture-extension.ts';
 import { vizSupported } from '../lib/viz-support.ts';
 import { KOKORO_MODEL_BYTES } from '../lib/speech-kokoro.ts';
+import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
 import { openDB } from './db.ts';
 
@@ -250,13 +251,15 @@ export async function createBridge(): Promise<WebHost> {
     analyse: async (src, opts) => (await loadAudio()).analyse(src, opts),
   };
 
-  // Lazy speech facade (v1.96) — on-device Kokoro TTS. Lazy for the same reason
-  // as audio: bridge/speech.ts owns a worker whose chunk drags transformers.js
-  // and the phonemizer, none of which belongs in the boot chunk. The two
-  // SYNCHRONOUS contract methods are answered here without the import:
-  // isAvailable from the same feature detection speech.ts itself uses (wasm +
-  // Worker — the latter is what answers false under jsdom), modelBytes from the
-  // pure constants module (lib/speech-kokoro.ts, a few hundred bytes).
+  // Lazy speech facade (v1.96; transcription v1.99) — on-device Kokoro TTS and
+  // Whisper STT. Lazy for the same reason as audio: bridge/speech.ts owns
+  // workers whose chunks drag transformers.js and the phonemizer, none of which
+  // belongs in the boot chunk. The SYNCHRONOUS contract methods are answered
+  // here without the import: the availability checks from the same feature
+  // detection speech.ts itself uses (wasm + Worker — the latter is what answers
+  // false under jsdom; transcription also needs the OfflineAudioContext its
+  // main-thread decode rides), the byte totals from the pure constants modules
+  // (lib/speech-kokoro.ts / lib/speech-whisper.ts, a few hundred bytes).
   const loadSpeech = memo(async () => (await import('./speech.ts')).createSpeechAPI());
   host.speech = {
     isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
@@ -264,6 +267,12 @@ export async function createBridge(): Promise<WebHost> {
     cached: async () => (await loadSpeech()).cached(),
     voices: async () => (await loadSpeech()).voices(),
     synthesize: async (text, opts) => (await loadSpeech()).synthesize(text, opts),
+    transcribeAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function'
+      && (typeof window.OfflineAudioContext === 'function'
+        || typeof (window as { webkitOfflineAudioContext?: unknown }).webkitOfflineAudioContext === 'function'),
+    transcribeModelBytes: () => WHISPER_MODEL_BYTES,
+    transcribeCached: async () => (await loadSpeech()).transcribeCached(),
+    transcribe: async (src, opts) => (await loadSpeech()).transcribe(src, opts),
   };
 
   // Fresh-manifest Content Credentials for redacted derivatives (v1.85) — no

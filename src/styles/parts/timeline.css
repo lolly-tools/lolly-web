@@ -417,6 +417,22 @@
 /* The magnetic sequence row reads as the spine: taller, a touch more present. */
 .tl-lane-seq { height: 46px; background-color: hsl(var(--muted) / 0.6); }
 
+/* A generated-caption row (overlay boxes sharing a `captions:` group collapse onto
+   one lane — see rebuild's group collapse). The label is a watermark under the cue
+   bars, pinned to the viewport's leading edge so it stays readable mid-scroll. */
+.tl-lane-label {
+  position: sticky;
+  inset-inline-start: 6px;
+  float: inline-start;           /* sticky needs in-flow; the bars are absolute over it */
+  margin-block-start: 2px;
+  padding: 0 4px;
+  font-size: calc(10px * var(--a11y-fs));
+  line-height: 1.4;
+  color: hsl(var(--muted-foreground) / 0.8);
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Empty-sequence affordance. */
 .tl-dropslot {
   position: absolute;
@@ -842,6 +858,32 @@
 .tl-junction-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .tl-junction-join { margin-inline-end: auto; }
 
+/* ─── Generate-subtitles sheet ───────────────────────────────────────────────
+   Rides the junction modal's chrome (same mountModal class); only the consent
+   copy and the progress track are its own. The track mirrors script-audio's
+   thin bar so speech progress reads the same everywhere. */
+.tl-stt { max-width: 340px; }
+.tl-stt-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.tl-stt-note-dl { color: hsl(var(--foreground)); }
+.tl-stt-progress {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: hsl(var(--muted));
+}
+.tl-stt-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--brand-primary, hsl(var(--primary)));
+  transition: width 0.2s ease;
+}
+.tl-stt-progress-indeterminate .tl-stt-fill { animation: tl-stt-pulse 1.2s ease-in-out infinite; }
+@keyframes tl-stt-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+/* The app-level reduced-motion twin of the OS block's .tl-stt-fill exemption. */
+html[data-a11y-motion="reduce"] .tl-stt-fill { animation: none !important; transition: none; opacity: 0.7; }
+
 /* ─── Keyboard shortcuts sheet ───────────────────────────────────────────────
    Same modal chrome as the junction; only the two-column table is ours. The rows
    are built as nodes in timeline-panel.ts (no innerHTML), so nothing here has to
@@ -944,6 +986,9 @@
   /* The recording dot's pulse is an ANIMATION, which the rule above does not reach.
      It carries no information the red fill doesn't — drop it, don't slow it. */
   .tl-rec-dot { animation: none !important; }
+  /* Same for the subtitle sheet's indeterminate pulse — the attribute twin below
+     mirrors it for the app-level preference. */
+  .tl-stt-fill { animation: none !important; }
   /* The inspector's arrival KEEPS its cue and loses only the movement: the fade still
      marks the row as new (which is the whole point of the class), the 4px rise is what
      someone asking for less motion asked not to have. */

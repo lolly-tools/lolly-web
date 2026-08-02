@@ -580,6 +580,35 @@ export function createAssetsAPI(db: AssetsDb) {
     },
 
     /**
+     * Internal: replace one user asset's stored bytes with a provenance-stamped
+     * copy of THEMSELVES — the lazy heal for TTS clips saved before Lolly
+     * embedded Content Credentials into audio files (lib/tts-provenance.ts).
+     * A read-modify-write like _renameUserAsset, but the blob changes, so:
+     * quota is checked on the byte DELTA only (the stamp adds a few KB to
+     * bytes already stored — re-running assertQuotaRoom on the full size could
+     * spuriously trip STORAGE_FULL near quota), and `version` is bumped so
+     * toAssetRef mints a fresh object URL instead of serving the pre-heal
+     * bytes out of OBJECT_URL_CACHE. No-op if the asset is gone.
+     */
+    async _restampUserAsset(id: string, patch: { blob: Blob; credential: Uint8Array; credentialFormat: string }): Promise<void> {
+      const rec = await db.get('user-assets', id);
+      if (!rec) return;
+      await assertQuotaRoom(Math.max(0, patch.blob.size - (rec.blob?.size ?? 0)));
+      rec.blob = patch.blob;
+      rec.credential = patch.credential;
+      rec.credentialFormat = patch.credentialFormat;
+      rec.meta = { ...rec.meta, bytes: patch.blob.size };
+      rec.version = String(Date.now());   // cache-buster — object URLs key on id:format:version
+      await db.put('user-assets', rec);
+      // The re-stamp rewrote an existing id — drop any derived proxy so a
+      // stale row can't keep fingerprinting the previous bytes (see
+      // _importUserAsset for the rationale).
+      await import('../lib/clip-proxy.ts')
+        .then(m => m.deleteProxy(id))
+        .catch(() => { /* derived data — a failed evict is not an error */ });
+    },
+
+    /**
      * Internal: called by catalog/sync.js at boot to populate asset metadata.
      * Not part of the public HostV1 bridge contract.
      */

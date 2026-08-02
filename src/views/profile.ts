@@ -55,8 +55,8 @@ import type { PinRecord } from '../lib/offline-pins.ts';
 import { prefetchAssetsById, catalogDownloadSummary, catalogScopeSize, downloadCatalogScope } from '../catalog/sync.ts';
 import {
   fetchPrecacheManifest, fetchInfoManifest, docsFileList,
-  downloadApp, downloadDocs, downloadVerify, recordCatalogDownload,
-  partRecords, removePart, storageHeadroom, persistenceState,
+  downloadApp, downloadDocs, downloadVerify, downloadSpeech, recordCatalogDownload,
+  partRecords, removePart, storageHeadroom, persistenceState, speechCacheBytes,
 } from '../lib/offline-manager.ts';
 import type { OfflinePartId, PrecacheManifest, InfoManifest, DownloadProgress, PartState } from '../lib/offline-manager.ts';
 import { toolSupport } from '../capabilities.ts';
@@ -151,6 +151,10 @@ interface StorageModel {
   /** Tools pinned "available offline" — their cached FILE bytes (lib/offline-pins.ts).
    *  Their prefetched catalog asset blobs are counted by the `cache` slice. */
   pins: { bytes: number; count: number };
+  /** The on-device voice models (Kokoro, later Whisper) in the speech Cache
+   *  Storage buckets — filled by the 'speech' offline part OR the Script-audio
+   *  dialog's consent download, so this measures the caches, not a record. */
+  speech: { bytes: number; files: number };
   measured: number;
   hasEstimate: boolean;
   usage: number | null;
@@ -225,6 +229,29 @@ const VERIFY_SHIELD = icon('shieldCheck', { size: 18 });
 const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-link" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span>${t('Verify a file')}</span></a>`;
 // Compass/gauge glyph — the same one the gallery's Dashboard button uses, for the bottom toolbar.
 const DASHBOARD_ICON = icon('dashboard', { size: 18 });
+
+// The settings-view section index — one entry per card, in page order. Drives the
+// left nav rail, the scroll-spy active state, and the search filter. `id` MUST match
+// the `id` on the corresponding `.profile-card`/`<details>` in the render below;
+// `keywords` are extra (untranslated) search terms so a query hits a section even
+// when its label doesn't literally contain the word (e.g. "dark" → Appearance).
+// The label is passed through t() at render time; keywords stay as an English aid.
+const NAV_SECTIONS: ReadonlyArray<{
+  id: string;
+  icon: Parameters<typeof icon>[0];
+  label: string;
+  keywords: string;
+}> = [
+  { id: 'details-section', icon: 'user', label: 'Your details', keywords: 'name email headshot photo avatar personal' },
+  { id: 'appearance-section', icon: 'palette', label: 'Appearance', keywords: 'theme dark light colour color sound look' },
+  { id: 'a11y-section', icon: 'eye', label: 'Accessibility', keywords: 'motion contrast large text previews comfort a11y reduce' },
+  { id: 'instance-section', icon: 'globe', label: 'Lolly instance', keywords: 'instance server source tools catalogue connect disconnect' },
+  { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
+  { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
+  { id: 'offline-section', icon: 'download', label: 'Available offline', keywords: 'offline download pwa install cache' },
+  { id: 'feature-flags-section', icon: 'flask', label: 'Feature flags', keywords: 'features experimental beta jelly neurospicy flags toggles' },
+  { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
+];
 
 // A small "i" badge with a hover/focus tooltip — used beside storage headings.
 // Was a bespoke .info-dot/.info-tip pair; now the shared help-tip button
@@ -458,7 +485,20 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     <div class="profile-layout">
       <h1 class="visually-hidden">${t('Your profile')}</h1>
 
-      <section class="profile-card">
+      <aside class="profile-nav" aria-label="${escape(t('Settings sections'))}">
+        <div class="profile-nav-search">
+          <span class="profile-nav-search-ic" aria-hidden="true">${icon('search', { size: 15 })}</span>
+          <input type="search" id="profile-nav-search" class="profile-nav-search-input" placeholder="${escape(t('Search settings'))}" aria-label="${escape(t('Search settings'))}" autocomplete="off" spellcheck="false">
+        </div>
+        <ul class="profile-nav-list" role="list">
+          ${NAV_SECTIONS.map(s => `<li><button type="button" class="profile-nav-item" data-nav="${s.id}">${icon(s.icon, { size: 16, className: 'profile-nav-ic' })}<span class="profile-nav-text">${escape(t(s.label))}</span></button></li>`).join('')}
+        </ul>
+        <p class="profile-nav-empty" id="profile-nav-empty" hidden>${t('No settings match')}</p>
+      </aside>
+
+      <div class="profile-panes">
+
+      <section class="profile-card" id="details-section">
         <div class="profile-card-header">
           <h2>${t('Your details')}</h2>
         </div>
@@ -522,7 +562,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </form>
       </section>
 
-      <section class="profile-card profile-card--appearance">
+      <section class="profile-card profile-card--appearance" id="appearance-section">
         <h2>${t('Appearance')}</h2>
         <p class="profile-appearance-sub">${t('How the app dresses for you — your preference, separate from your brand. Applied instantly and remembered on this device.')}</p>
         <div class="profile-theme-grid" data-theme-pick>
@@ -541,14 +581,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
       </section>
 
-      <section class="profile-card profile-card--a11y">
+      <section class="profile-card profile-card--a11y" id="a11y-section">
         <h2>${t('Accessibility')}</h2>
         <p class="profile-appearance-sub">${t('Comfort settings for the app around your work. Each one is off until you turn it on, and none of them touch your designs or your exports.')}</p>
         <ul class="feature-flags profile-a11y-prefs" id="a11y-prefs">${a11yListHtml()}
         </ul>
       </section>
 
-      <section class="profile-card">
+      <section class="profile-card" id="instance-section">
         <h2>${t('Lolly instance')}</h2>
         <p class="profile-appearance-sub">${t('Where this install gets its tools and catalogue from.')}</p>
         <div class="store-manage--row">
@@ -590,6 +630,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="profile-collapse-body section-card-body" id="identity-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
+      </div>
     </div>
 
     <footer class="profile-footer" aria-label="${escape(t('More'))}">
@@ -597,6 +638,104 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       <a href="#/verify" class="profile-nav-link profile-nav-link--verify btn" data-sfx="verify" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span class="profile-nav-label">${t('Verify')}</span></a>
     </footer>
   `;
+
+  // ─── Settings nav rail: jump, scroll-spy, and search ─────────────────────
+  // A macOS/GNOME-style left rail. Clicking a section scrolls to it (opening a
+  // collapsed <details> first); scrolling highlights the section in view; the
+  // search box filters the rail (and, while typing, the visible cards) so a
+  // buried setting is one query away. All progressive: if there's no matching
+  // markup the wiring simply no-ops.
+  (() => {
+    const nav = viewEl.querySelector<HTMLElement>('.profile-nav');
+    if (!nav) return;
+    const items = Array.from(nav.querySelectorAll<HTMLButtonElement>('.profile-nav-item'));
+    const search = nav.querySelector<HTMLInputElement>('#profile-nav-search');
+    const empty = nav.querySelector<HTMLElement>('#profile-nav-empty');
+    const sectionOf = (id: string) => viewEl.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+
+    const jump = (id: string) => {
+      const el = sectionOf(id);
+      if (!el) return;
+      // A collapsed <details> must open before it can be scrolled into meaningful view.
+      if (el instanceof HTMLDetailsElement && !el.open) el.open = true;
+      el.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    };
+
+    for (const btn of items) {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.nav!;
+        jump(id);
+        // Move focus to the section heading for screen-reader/keyboard continuity,
+        // without stealing the smooth scroll (focus without scroll).
+        sectionOf(id)?.querySelector<HTMLElement>('h2')?.focus?.();
+      });
+    }
+
+    // Scroll-spy — highlight the section whose top is nearest the rail. rootMargin
+    // biases the "active" band to the upper third so a section lights up as its
+    // heading reaches the top, not only when it fills the viewport.
+    const setActive = (id: string | null) => {
+      for (const btn of items) {
+        const on = btn.dataset.nav === id;
+        btn.classList.toggle('is-active', on);
+        if (on) btn.setAttribute('aria-current', 'true');
+        else btn.removeAttribute('aria-current');
+      }
+    };
+    if ('IntersectionObserver' in window) {
+      const visible = new Map<string, number>();
+      const io = new IntersectionObserver(entries => {
+        for (const e of entries) {
+          if (e.isIntersecting) visible.set(e.target.id, e.intersectionRatio);
+          else visible.delete(e.target.id);
+        }
+        // Pick the topmost currently-intersecting section (page order = NAV_SECTIONS order).
+        const top = NAV_SECTIONS.find(s => visible.has(s.id));
+        if (top) setActive(top.id);
+      }, { rootMargin: '-10% 0px -70% 0px', threshold: [0, 1] });
+      for (const s of NAV_SECTIONS) {
+        const el = sectionOf(s.id);
+        if (el) io.observe(el);
+      }
+      // Tear down when the view unmounts (the router replaces viewEl's subtree).
+      const mo = new MutationObserver(() => {
+        if (!viewEl.contains(nav)) { io.disconnect(); mo.disconnect(); }
+      });
+      mo.observe(viewEl, { childList: true });
+    }
+
+    // Search — filter the rail by label + keywords; hide non-matching cards while a
+    // query is present so the page itself narrows to what you're looking for.
+    if (search) {
+      const panes = viewEl.querySelector<HTMLElement>('.profile-panes');
+      const apply = () => {
+        const q = search.value.trim().toLowerCase();
+        let matches = 0;
+        for (const s of NAV_SECTIONS) {
+          const btn = items.find(b => b.dataset.nav === s.id);
+          const card = sectionOf(s.id);
+          const hay = `${t(s.label)} ${s.keywords}`.toLowerCase();
+          const hit = !q || hay.includes(q);
+          if (btn) btn.hidden = !hit;
+          // Only narrow the cards while actively searching — an empty query restores
+          // the full page (never leaves a card orphaned hidden).
+          if (card) card.classList.toggle('is-filtered-out', !!q && !hit);
+          if (hit) matches++;
+        }
+        panes?.classList.toggle('is-searching', !!q);
+        if (empty) empty.hidden = matches > 0;
+      };
+      search.addEventListener('input', apply);
+      // Enter jumps to the first (only) remaining match — the quickest path to a
+      // setting you searched for.
+      search.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const first = items.find(b => !b.hidden);
+        if (first) { jump(first.dataset.nav!); first.classList.add('is-active'); }
+      });
+    }
+  })();
 
   // Feature flags — auto-save each toggle (a preference, like the theme picker).
   // `[data-flag]` is either the native checkbox or a <jelly-switch> host; both
@@ -917,7 +1056,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const estP = navigator.storage?.estimate
       ? navigator.storage.estimate().catch(() => null)
       : Promise.resolve(null);
-    const [estimate, sessions, sessionSizes, blobCacheBytes, derivedBytes, allImages, imagesBytes, previews, pins] = await Promise.all([
+    const [estimate, sessions, sessionSizes, blobCacheBytes, derivedBytes, allImages, imagesBytes, previews, pins, speech] = await Promise.all([
       estP,
       host.state.list().catch((): SessionEntry[] => []),
       host.state.sizes!().catch((): Record<string, number> => ({})),
@@ -927,6 +1066,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       host.assets._userAssetsSize!().catch(() => 0),
       measurePreviews(),
       pinnedToolBytes().catch(() => ({ bytes: 0, count: 0 })),
+      speechCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
     // Derived scrub proxies (lib/clip-proxy.ts) are folded into the Asset cache
@@ -942,7 +1082,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
-    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes;
+    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes;
     const hasEstimate = !!(estimate && estimate.usage != null);
     const usage: number | null = hasEstimate ? estimate!.usage! : null;
     const quota: number | null = (estimate && estimate.quota) || null;
@@ -955,6 +1095,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       cache: { bytes: cacheBytes },
       previews,
       pins,
+      speech,
       measured, hasEstimate, usage, quota, overshoot, other, total,
     };
   }
@@ -968,6 +1109,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     ];
     if (m.previews.available) parts.push(`Tool previews ${fmtBytes(m.previews.bytes)}`);
     if (m.pins.count) parts.push(`Available offline ${fmtBytes(m.pins.bytes)}`);
+    if (m.speech.bytes) parts.push(`Voice models ${fmtBytes(m.speech.bytes)}`);
     let s = m.hasEstimate
       ? `Using ${fmtBytes(m.total)}: ${parts.join(', ')}`
       : `Measured ${fmtBytes(m.measured)}: ${parts.join(', ')}`;
@@ -1023,6 +1165,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // Pinned-tools slice only renders once something is pinned — a permanent
     // "0 B" row would be noise for the (default) never-pinned user.
     const hasPins = m.pins.count > 0;
+    // Same for the speech models: the slice appears only after a download.
+    const hasSpeech = m.speech.bytes > 0;
     return `
       <section class="store-meter" aria-label="${escape(t('Storage on this device'))}">
         <header class="store-hero">
@@ -1037,6 +1181,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <button type="button" class="seg" data-cat="cache" style="flex-grow:0"></button>
           <button type="button" class="seg" data-cat="previews" style="flex-grow:0"${hasPrev ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="pins" style="flex-grow:0"${hasPins ? '' : ' hidden'}></button>
+          <button type="button" class="seg" data-cat="speech" style="flex-grow:0"${hasSpeech ? '' : ' hidden'}></button>
           <span class="seg seg--other" data-cat="other" style="flex-grow:0" aria-hidden="true" hidden></span>
         </div>
         <p class="visually-hidden" id="store-aria-sentence"></p>
@@ -1047,6 +1192,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <li><button type="button" class="store-chip" data-cat="cache"><span class="store-chip-sw" data-cat="cache"></span><span class="store-chip-name">${t('Asset cache')}</span><span class="store-chip-val" data-size="cache">—</span></button></li>
           ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">${t('Tool previews')}</span><span class="store-chip-val" data-size="previews">—</span></button></li>` : ''}
           ${hasPins ? `<li><button type="button" class="store-chip" data-cat="pins"><span class="store-chip-sw" data-cat="pins"></span><span class="store-chip-name">${t('Available offline')}</span><span class="store-chip-val" data-size="pins">—</span></button></li>` : ''}
+          ${hasSpeech ? `<li><button type="button" class="store-chip" data-cat="speech"><span class="store-chip-sw" data-cat="speech"></span><span class="store-chip-name">${t('Voice models')}</span><span class="store-chip-val" data-size="speech">—</span></button></li>` : ''}
           ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">—</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead — everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
         </ul>
 
@@ -1095,6 +1241,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           ${hasPins ? `<div class="store-manage store-manage--row" data-cat="pins">
             <span class="store-manage-name">${t('Available offline')} ${infoDot(t('Tools you pinned in the gallery to work offline — their files are kept on this device. Unpinning re-downloads them on demand.'))} <span class="storage-count" data-size-label="pins">0 KB</span></span>
             <button type="button" id="unpin-all-btn" class="btn-link-danger">${t('Unpin all')}</button>
+          </div>` : ''}
+
+          ${hasSpeech ? `<div class="store-manage store-manage--row" data-cat="speech">
+            <span class="store-manage-name">${t('Voice models')} ${infoDot(t('On-device voices for Script audio and narration. Removing them frees the space; they download again with your consent when next used.'))} <span class="storage-count" data-size-label="speech">0 KB</span></span>
+            <button type="button" id="clear-speech-btn" class="btn-link-danger">${t('Remove voices')}</button>
           </div>` : ''}
         </div>
 
@@ -1172,7 +1323,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     };
     function updateReclaim(m: StorageModel) {
       const el = body.querySelector('#store-reclaim');
-      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + m.pins.bytes + selectedSessionBytes()) });
+      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + m.pins.bytes + m.speech.bytes + selectedSessionBytes()) });
     }
 
     // Refresh ONLY the visualization (hero, segments, legend, quota, reclaim, aria,
@@ -1194,6 +1345,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         ['cache', m.cache.bytes, t('Asset cache'), true],
         ['previews', m.previews.bytes, t('Tool previews'), m.previews.available],
         ['pins', m.pins.bytes, t('Available offline'), m.pins.count > 0],
+        ['speech', m.speech.bytes, t('Voice models'), m.speech.bytes > 0],
       ];
       for (const [cat, bytes, label, avail] of segs) {
         const seg = bar?.querySelector<HTMLElement>(`.seg[data-cat="${cat}"]`);
@@ -1211,12 +1363,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size="cache"]', fmtBytes(m.cache.bytes));
       setText('[data-size="previews"]', fmtBytes(m.previews.bytes));
       setText('[data-size="pins"]', fmtBytes(m.pins.bytes));
+      setText('[data-size="speech"]', fmtBytes(m.speech.bytes));
       setText('[data-size="other"]', `~${fmtBytes(m.other)}`);
       setText('[data-count="sessions"]', String(m.sessions.count));
       setText('[data-size-hint="sessions"]', fmtBytes(m.sessions.bytes));
       setText('[data-size-label="cache"]', fmtBytes(m.cache.bytes));
       setText('[data-size-label="previews"]', fmtBytes(m.previews.bytes));
       setText('[data-size-label="pins"]', fmtBytes(m.pins.bytes));
+      setText('[data-size-label="speech"]', fmtBytes(m.speech.bytes));
       const imgCount = body.querySelector('#userimg-count');
       const imgSize = body.querySelector('#userimg-size');
       if (imgCount) imgCount.textContent = `${m.images.count}`;
@@ -1396,6 +1550,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
       const unpinBtn = (e.target as Element).closest<HTMLButtonElement>('#unpin-all-btn');
       if (unpinBtn) { await clearRegenerable(unpinBtn, () => unpinAll(), t('Removed offline copies')); return; }
+
+      // removePart clears BOTH speech buckets and forgets the offline-part
+      // record, so the offline section's Speech row reads not-downloaded again.
+      const speechBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-speech-btn');
+      if (speechBtn) { await clearRegenerable(speechBtn, () => removePart('speech'), t('Removed voice models')); return; }
 
       if ((e.target as Element).closest('.store-selbar-clear')) { body.querySelectorAll<HTMLInputElement>('.store-sess-check').forEach(c => { c.checked = false; }); syncSelbar(); return; }
       const selDel = (e.target as Element).closest<HTMLButtonElement>('.store-selbar-del');
@@ -1801,6 +1960,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       docs: infoManifest ? sum(docsFileList(infoManifest, currentLang())) : 0,
       verify: precache ? sum(precache.groups.ort) + sum(precache.groups.models) : 0,
       catalog: catSummary?.totalBytes ?? 0,
+      speech: precache?.groups.speech ? sum(precache.groups.speech) : 0,
     };
     const liveVersion = (id: OfflinePartId): string | null =>
       id === 'docs' ? (infoManifest?.version ?? null) : (precache?.version ?? null);
@@ -1810,6 +1970,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       { id: 'app', name: t('The app'), desc: t('Every view, editor and font — so the whole app opens and renders with no connection, not just the pages you have already visited.') },
       { id: 'catalog', name: t('Catalogue'), desc: t('Brand assets beyond the essentials — logos, art and music your tools can pull in. Narrow it by tag if you only need some of it.') },
       { id: 'docs', name: t('Guides & docs'), desc: t('The full documentation site in your language, screenshots included.') },
+      { id: 'speech', name: t('Speech voices'), desc: t('Voice models for Script audio and narration. Downloads once (~{size}), runs on-device.', { size: fmtBytes(plannedBytes.speech) }), heavy: true },
       { id: 'verify', name: t('Verify deep scan'), desc: t('The on-device watermark scanner for the Verify page. Big — only worth it if you check content credentials away from a connection.'), heavy: true },
     ];
 
@@ -2027,6 +2188,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // pretending a download happened.
     const partAvailable: Record<OfflinePartId, boolean> = {
       app: !!precache, docs: !!infoManifest, verify: !!precache && plannedBytes.verify > 0, catalog: !!catSummary,
+      speech: !!precache && plannedBytes.speech > 0,
     };
     const isStale = (id: OfflinePartId): boolean => {
       const rec = partState[id];
@@ -2078,14 +2240,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     const syncSweepSize = (): void => {
       // "Everything" = app + catalogue scope + docs + every tool, but NOT the
-      // heavyweight verify row — that stays a stated-size individual opt-in
-      // (a 220 MB surprise inside one button would be dishonest). planned()
+      // heavyweight verify and speech rows — those stay stated-size individual
+      // opt-ins (a 220 MB surprise inside one button would be dishonest, and
+      // the voice models promise the same consent line everywhere). planned()
       // prices only REMAINING work, so downloaded-and-current parts cost 0.
       const remaining = (['app', 'catalog', 'docs'] as const)
         .filter(id => partAvailable[id])
         .reduce((n, id) => n + planned(id), 0);
       sweepSizeEl.textContent = remaining ? t('about {size}', { size: fmtBytes(remaining) }) : '';
-      for (const id of ['app', 'docs', 'verify', 'catalog'] as const) syncPartRow(id);
+      for (const id of ['app', 'docs', 'speech', 'verify', 'catalog'] as const) syncPartRow(id);
     };
 
     const setBusy = (busy: boolean): void => {
@@ -2129,6 +2292,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         if (id === 'app' && precache) await downloadApp(precache, { signal, onProgress });
         else if (id === 'docs' && infoManifest) await downloadDocs(infoManifest, { signal, onProgress });
         else if (id === 'verify' && precache) await downloadVerify(precache, { signal, onProgress });
+        else if (id === 'speech' && precache) await downloadSpeech(precache, { signal, onProgress });
         else if (id === 'catalog') {
           const res = await downloadCatalogScope(syncHost, scope, { signal, onProgress });
           await recordCatalogDownload(scope, res.bytes, res.files);

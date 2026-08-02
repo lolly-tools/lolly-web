@@ -133,3 +133,36 @@ export function videoSupport(): { webm: boolean; mp4: boolean } {
   const ok = (t: string) => canRecord() && (MediaRecorder.isTypeSupported?.(t) ?? false);
   return { webm: WEBM_CODECS.some(ok) || _wcVideo.webm, mp4: MP4_CODECS.some(ok) || _wcVideo.mp4 };
 }
+
+// The audio-only export formats (lib/audio-encode.ts). wav and mp3 are pure JS
+// (engine packWav / lamejs), so they are unconditional — no probe can fail them.
+// m4a and opus ride the platform's WebCodecs AudioEncoder, whose isConfigSupported
+// is async while audioSupport() is a sync gate, so this follows the same shape as
+// probeWebCodecsVideoSupport above: fire once at module load, cache, and report
+// the safe answer (false) until it resolves. The option appears on the next gate
+// read; it is never wrongly offered. Nominal config only — audio-encode.ts
+// re-probes at the clip's real sample rate before it encodes.
+const _wcAudio = { m4a: false, opus: false };
+export async function probeWebCodecsAudioSupport(
+  AE: ConfigProbe | undefined = (globalThis as { AudioEncoder?: ConfigProbe }).AudioEncoder,
+): Promise<{ m4a: boolean; opus: boolean }> {
+  const isSupported = AE?.isConfigSupported?.bind(AE);
+  if (typeof isSupported !== 'function') return _wcAudio;
+  const ok = async (codec: string): Promise<boolean> => {
+    try {
+      return !!(await isSupported({ codec, sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 }))?.supported;
+    } catch { return false; }
+  };
+  // The same codecs export.ts's pickWebCodecsAudio uses, per container.
+  const [m4a, opus] = await Promise.all([ok('mp4a.40.2'), ok('opus')]);
+  _wcAudio.m4a = m4a;
+  _wcAudio.opus = opus;
+  return _wcAudio;
+}
+void probeWebCodecsAudioSupport();
+
+// Which audio-only formats this browser can actually produce. The picker gates on
+// this exactly as it does on videoSupport().
+export function audioSupport(): { wav: boolean; mp3: boolean; m4a: boolean; opus: boolean } {
+  return { wav: true, mp3: true, m4a: _wcAudio.m4a, opus: _wcAudio.opus };
+}

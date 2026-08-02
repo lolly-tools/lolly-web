@@ -69,6 +69,27 @@ test('contract: the frame cap applies to every buffered path, not just gif/apng'
   assert.match(src, /activeFrameWindow\(L, usedGrid,/, 'one grid for the loop and the windows');
 });
 
+test('contract: both mix graphs consume the ONE bed-duck envelope (§6.1)', () => {
+  // The bed's gain automation lives once, in audio-envelope.ts — a bed must duck
+  // identically under a tool's own audio (export.ts) and under a sequence's audio
+  // boxes (this module). Restating the ramp scheduling in either graph is how the
+  // two exports drift apart.
+  const seq = strip(read('./sequence-render.ts'));
+  assert.match(seq, /import\s*\{\s*bedDuckEnvelope, scheduleGainEvents[\s\S]{0,40}from '\.\/audio-envelope\.ts'/,
+    'the sequence bed takes the envelope from audio-envelope.ts');
+  assert.doesNotMatch(seq, /linearRampToValueAtTime/,
+    'no hand-scheduled ramps left in the sequence mix');
+  const exp = strip(read('./export.ts'));
+  assert.match(exp, /import \{ bedDuckEnvelope, scheduleGainEvents \} from '\.\/audio-envelope\.ts'/,
+    'the export mix-in bed takes the same envelope');
+  // The per-span duck: mixSequenceAudio hands connectBed the sequence's own audio
+  // spans (bed back to full BETWEEN clips), not one min..max window.
+  assert.match(seq, /\{ level: duckLevel, spans \}/, 'duck carries the spans themselves');
+  // And the offline WebCodecs bed render threads the mix-in track through.
+  assert.match(exp, /renderMusicBed\(opts\.audio!\.url[\s\S]{0,240}opts\.audio!\.mix\)/,
+    'renderMusicBed receives opts.audio.mix');
+});
+
 // ── the pure geometry helpers ───────────────────────────────────────────────
 
 test('radiiOf reads the border-radius shorthand in unscaled box px', () => {

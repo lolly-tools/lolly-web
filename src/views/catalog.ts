@@ -171,6 +171,7 @@ interface CatalogHost extends HostV1 {
     _deleteUserAsset(id: string): Promise<void>;
     _duplicateUserAsset(id: string): Promise<string | null>;
     _renameUserAsset(id: string, name: string): Promise<void>;
+    _restampUserAsset(id: string, patch: { blob: Blob; credential: Uint8Array; credentialFormat: string }): Promise<void>;
     _iconThemes?(): Promise<IconTheme[]>;
     _photoTreatments?(): Promise<PhotoTreatment[]>;
   };
@@ -312,9 +313,10 @@ const SHIELD_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 // Containers the C2PA reader can inspect (engine c2pa-verify sniffFormat / EXTRACTORS):
 // any asset in one of these formats CAN be checked, so its details page offers the
 // checker — whether or not it currently carries a credential (a plain file honestly
-// reports "No Content Credentials"). Lottie/JSON, audio (mp3/wav), fonts and tokens
-// are not readable, so they get no checker.
-const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'mp4', 'webm', 'mkv']);
+// reports "No Content Credentials"). Audio joined the reader with the wav RIFF
+// binding + mp3 (see /verify's accept list); lottie/JSON, fonts and tokens are
+// still not readable, so they get no checker.
+const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'mp4', 'webm', 'mkv', 'mp3', 'wav']);
 const isVerifiableAsset = (ref: AssetRef): boolean =>
   VERIFIABLE_FORMATS.has(String(ref.format ?? '').toLowerCase());
 
@@ -1413,6 +1415,29 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       let bytes: Uint8Array = new Uint8Array(await resp.arrayBuffer());
       let note: string | undefined;
       const fmt = String(ref.format ?? '').toLowerCase();
+      // Heal-then-check: a TTS clip saved before the wav embed shipped holds bare
+      // bytes, so rebuild its credential from the stored meta.tts recipe, write it
+      // into the file AND the record, and check the stamped bytes — the user sees
+      // credentials appear. shouldHealTts refuses anything without the recipe, so
+      // recorded/uploaded audio is never stamped. Best-effort: a failed heal falls
+      // through to checking the plain bytes.
+      if (ref.source === 'user') {
+        try {
+          const { shouldHealTts, healTtsProvenance } = await import('../lib/tts-provenance.ts');
+          if (shouldHealTts(ref, bytes)) {
+            const healed = await healTtsProvenance(host, ref, bytes);
+            if (healed) {
+              bytes = new Uint8Array(await healed.arrayBuffer());
+              // The record now serves a fresh object URL — swap the grid's ref so
+              // a later open or download reads the stamped bytes, not the stale URL.
+              try {
+                const fresh = await host.assets.get(ref.id);
+                if (fresh) assetById.set(ref.id, fresh);
+              } catch { /* next reload catches up */ }
+            }
+          }
+        } catch { /* heal is additive — the plain bytes still get checked */ }
+      }
       if (!extractC2paStore(bytes)) {
         // Stored file has no embedded credential — fall back to the one captured at ingest.
         let cred: { store: Uint8Array; format: string } | null = null;
@@ -1430,6 +1455,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     } catch {
       announce(t('Could not open the credential checker for this asset.'));
     }
+  }
+
+  // Opportunistic sibling of the heal in checkCredentials: when the details
+  // dialog opens on a user TTS clip, sniff its stored bytes for the RIFF C2PA
+  // chunk and re-stamp a pre-embed clip in the background, so the Check button
+  // (and any share or download) already reads credentialed bytes. Cheap on the
+  // miss: the meta.tts gate below filters everything else before any fetch.
+  async function maybeHealTtsClip(ref: AssetRef): Promise<void> {
+    try {
+      const { shouldHealTts, healTtsProvenance } = await import('../lib/tts-provenance.ts');
+      const bytes = new Uint8Array(await (await fetch(ref.url)).arrayBuffer());
+      if (!shouldHealTts(ref, bytes)) return;
+      if (!(await healTtsProvenance(host, ref, bytes))) return;
+      const fresh = await host.assets.get(ref.id);
+      if (fresh) assetById.set(ref.id, fresh);
+    } catch { /* best-effort — checkCredentials heals on click too */ }
   }
 
   // The canonical shareable link that reopens this modal from the catalog view.
@@ -1452,6 +1493,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   function openDetails(ref: AssetRef, initialTheme?: string | null, initialTreatment?: string | null): void {
+    // Fire-and-forget: heal a pre-embed TTS clip while its details are open
+    // (meta.tts is the cheap pre-filter — everything else never fetches).
+    if (ref.source === 'user' && ref.type === 'audio' && ref.meta?.tts) void maybeHealTtsClip(ref);
     const nav = navRefs(ref);
     const base = assetBaseId(ref.id);
     const isUser = ref.source === 'user';

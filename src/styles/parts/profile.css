@@ -11,13 +11,156 @@
    bleed in and these rules can't leak out. Layout: a centred stack of cards. */
 .profile-view .profile-layout {
   width: 100%;
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
   /* top clears the fixed back pill; bottom clears the fixed .profile-footer toolbar */
   padding: 3rem .5rem calc(5rem + env(safe-area-inset-bottom));
+  /* Settings-view shape: a sticky nav rail beside a scrolling stack of cards.
+     `align-items: start` lets the rail's sticky positioning work against the
+     scroll container rather than being stretched to the full column height. */
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: 1.6rem;
+  align-items: start;
+}
+/* The scrolling column of setting cards — the old single-column stack, now the
+   second grid track. Its own gap keeps the cards evenly spaced. */
+.profile-view .profile-panes {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
+  min-width: 0;
+}
+/* (The visually-hidden <h1> is `position: absolute` — it never occupies a grid
+   track, so it needs no special handling here.) */
+
+/* ─── Settings nav rail ──────────────────────────────────────────────────────
+   Sticky left column: search box + a list of section shortcuts, in page order.
+   Clicking scrolls to the card; scroll-spy lights the section in view. */
+.profile-view .profile-nav {
+  position: sticky;
+  top: 3.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  max-height: calc(100dvh - 5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.profile-view .profile-nav-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.profile-view .profile-nav-search-ic {
+  position: absolute;
+  inset-inline-start: .6rem;
+  display: inline-flex;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+.profile-view .profile-nav-search-input {
+  width: 100%;
+  padding: .5rem .6rem .5rem 2rem;
+  font: inherit;
+  font-size: calc(.85rem * var(--a11y-fs));
+  color: hsl(var(--foreground));
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.5);
+}
+.profile-view .profile-nav-search-input:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 1px;
+}
+/* Silence the native search "×" clear (WebKit) — the input is short-lived scratch. */
+.profile-view .profile-nav-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+.profile-view .profile-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.profile-view .profile-nav-item {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  padding: .5rem .65rem;
+  font: inherit;
+  font-size: calc(.85rem * var(--a11y-fs));
+  font-weight: 600;
+  text-align: start;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius) * 1.1);
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.profile-view .profile-nav-item:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.profile-view .profile-nav-item:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: -1px; }
+.profile-view .profile-nav-item.is-active {
+  background: hsl(var(--primary) / .12);
+  color: hsl(var(--primary));
+}
+.profile-view .profile-nav-ic { flex: 0 0 auto; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.profile-view .profile-nav-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-view .profile-nav-empty {
+  margin: .25rem .65rem;
+  font-size: calc(.8rem * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-view .profile-nav-item { transition: none; }
+}
+
+/* Every card clears the fixed back pill when jumped to (scrollIntoView / :target). */
+.profile-view .profile-card { scroll-margin-top: 4.75rem; }
+/* Search filter: hide cards that don't match the active query. */
+.profile-view .profile-card.is-filtered-out { display: none; }
+
+/* Below the two-column threshold the rail can't stay a fixed side column: fold
+   it into a single flow with the cards, and turn the section list into a
+   horizontally-scrolling chip strip that sticks under the back pill. */
+@media (max-width: 860px) {
+  .profile-view .profile-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .profile-view .profile-nav {
+    position: sticky;
+    top: 2.75rem;
+    z-index: 3;
+    max-height: none;
+    overflow: visible;
+    gap: .5rem;
+    padding: .5rem 0;
+    /* A soft backdrop so cards scrolling under the sticky strip stay legible. */
+    background: linear-gradient(hsl(var(--background)) 70%, transparent);
+  }
+  .profile-view .profile-nav-list {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: .4rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: .15rem;
+  }
+  .profile-view .profile-nav-list::-webkit-scrollbar { display: none; }
+  .profile-view .profile-nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    border: 1px solid hsl(var(--border));
+    border-radius: 999px;
+    padding: .4rem .8rem;
+  }
+  .profile-view .profile-nav-item.is-active { border-color: hsl(var(--primary) / .5); }
+  .profile-view .profile-nav-empty { display: none; }
 }
 
 /* Bottom toolbar — a fixed bar (shares the .gallery-footer chrome; see gallery.css)

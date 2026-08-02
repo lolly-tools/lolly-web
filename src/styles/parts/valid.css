@@ -826,6 +826,22 @@
   flex: 0 0 auto; width: 0.85rem; height: 0.85rem; border-radius: 0.2rem;
   border: 1px solid hsl(var(--border)); box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.25);
 }
+/* ── Script panel — a synthetic-voice step's recorded source text (the TTS
+   credential's parameters.script), shown with its voice/model/lang recipe.
+   Long scripts start clamped to ~6 lines; [data-script-expand] lifts the
+   clamp (valid.ts's delegated handler) and hides itself. */
+.valid-script-note { margin: 0; font-size: calc(0.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-script-text {
+  margin: 0; padding: 0.6rem 0.75rem; border-radius: 0.5rem;
+  background: hsl(var(--background) / 0.6); border: 1px solid hsl(var(--border));
+  font-family: var(--font-mono); font-size: calc(0.72rem * var(--a11y-fs)); line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.valid-script-text.is-clamped {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;
+}
+.valid-script-actions { display: flex; gap: 1.1rem; }
+
 .valid-panel {
   display: grid; gap: 0.7rem; align-content: start; min-width: 0;
   padding: 1rem 1.1rem 1.15rem;

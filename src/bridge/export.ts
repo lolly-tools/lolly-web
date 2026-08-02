@@ -49,12 +49,15 @@ import { recTransition } from '../lib/transitions.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import { RASTER_DEFAULT_SCALE } from './export-scale.ts';
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
+import { bedDuckEnvelope, scheduleGainEvents } from './audio-envelope.ts';
+import type { ExportAudio, ExportAudioMixIn } from './audio-envelope.ts';
 import { encodeMuxWebCodecs, type EncodeAudio } from './video-encode-core.ts';
 import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.ts';
 // Capability probes live in format-support.ts so the tool view can import them
 // without pulling this rasteriser onto the tool-open path. Re-exported here for
 // dynamic callers (e.g. bridge/compose.ts does `await import('./export.ts')`).
 import { canRecord } from './format-support.ts';
+import type { AudioFormat, AudioPcm } from '../lib/audio-encode.ts';
 import { chromePaintsOverLive, countToolMutations, createStaticChromeGuard, staticChromeFrameAction, staticChromeVerdict, type Box, type ChromeEl } from './frame-static.ts';
 export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
@@ -135,7 +138,7 @@ export interface ExportOpts {
   c2paTextAdded?: { sample?: string };   // text over an opened asset → a c2pa.edited "Added text" step (runtime-supplied)
   colorProfile?: string;
   thumbnail?: boolean;
-  audio?: { id?: string; url: string; fadeIn?: number; fadeOut?: number; volume?: number; duck?: number; start?: number };
+  audio?: ExportAudio;
   c2pa?: boolean;
   c2paDays?: number | string;
   /** Embed the Lolly pixel watermark into raster exports (png/jpg/webp/avif/tiff).
@@ -488,6 +491,54 @@ async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif'
   return renderSequence(node, format, opts, _host ?? null);
 }
 
+// ── audio-only export (wav / mp3 / m4a / opus) ───────────────────────────────
+// The picture is not the deliverable here: the file IS the sound. Where that
+// sound comes from is TOOL-SPECIFIC, and this dispatch never guesses. Two ways
+// in, checked in this order:
+//
+//  1. The render target (or a descendant marked [data-audio-source]) exposes
+//     `lollyAudioSource()` — a function returning the planar PCM the tool has
+//     already mixed, `{ channels: Float32Array[], sampleRate }`. This is the
+//     path for a mix no URL can name (Sequence Studio: every clip's own sound
+//     plus the bed). A property, not an attribute, because Float32Arrays do not
+//     fit in one.
+//  2. Otherwise `opts.audio` — the export bar's selection — with `opts.duration`.
+//     That pair means THE TRIMMED EXCERPT: [start, start + duration) of the
+//     source, the Audiogram's "Start at" plus its clip length, not the whole
+//     file.
+//
+// lib/audio-encode.ts owns the encoders and the pass-through rule (an untrimmed,
+// unmixed source already in the requested format comes back as its original
+// bytes rather than a lossy re-encode). Lazy so lamejs and the muxers stay out
+// of the tool-open path.
+interface AudioSourceEl extends Element { lollyAudioSource?: () => AudioPcm | null | Promise<AudioPcm | null> }
+function stageAudioSource(node: Element): AudioSourceEl | null {
+  const self = node as AudioSourceEl;
+  if (typeof self.lollyAudioSource === 'function') return self;
+  const el = node.querySelector?.('[data-audio-source]') as AudioSourceEl | null;
+  return el && typeof el.lollyAudioSource === 'function' ? el : null;
+}
+
+async function renderAudioOnly(node: Element, format: AudioFormat, opts: ExportOpts): Promise<Blob> {
+  const { renderAudioExport } = await import('../lib/audio-encode.ts');
+  const src = stageAudioSource(node);
+  let pcm = src ? await src.lollyAudioSource!() : null;
+  // A sequence stage is rebuilt by the tool's hooks on every render, so it cannot
+  // carry a `lollyAudioSource` property across renders. Mix it here instead,
+  // through the SAME mixer the mp4/webm path uses, so the exported sound is the
+  // exported video's sound.
+  if (!pcm && isSequenceStage(node)) {
+    const { sequenceAudioPcm } = await import('./sequence-render.ts');
+    pcm = await sequenceAudioPcm(node, opts, _host ?? null);
+  }
+  return await renderAudioExport(format, {
+    pcm,
+    audio: opts.audio ?? null,
+    ...(opts.duration != null ? { duration: opts.duration } : {}),
+    log: (l, m) => { _host?.log?.(l, m); },
+  });
+}
+
 // The STILL sibling of the compositor: `cuts=N` (N > 1) on a still format over a
 // [data-sequence] stage → N stills at midpoint times, zipped (raster/svg) or paged
 // (pdf). Lazy for the same reason as above, and because the overwhelmingly common
@@ -604,6 +655,13 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       return await renderApng(node, opts);
     case 'webp-anim':
       return await renderWebpAnim(node, opts);
+    // Audio-only: the sound alone, no picture. See renderAudioOnly for where the
+    // audio comes from and what each format does to it.
+    case 'wav':
+    case 'mp3':
+    case 'm4a':
+    case 'opus':
+      return await renderAudioOnly(node, format, opts);
     default:
       throw new Error(`Unsupported export format: ${format}`);
   }
@@ -7423,6 +7481,9 @@ interface AudioFade {
   volume?: number;
   duck?: { level: number; startSec: number; endSec: number };
   start?: number;
+  /** Loop the source to cover the clip (default true). A tool's own narration
+   *  mixed over a bed plays ONCE — its end is what brings the bed back up. */
+  loop?: boolean;
 }
 
 /**
@@ -7453,7 +7514,7 @@ export function connectMusic(
 ): { start(): void; stop(): void } {
   const src  = ctx.createBufferSource();
   src.buffer = buffer;
-  src.loop   = true;
+  src.loop   = fade.loop !== false;
   // In-point: start playback `offset` into the source, and move the loop window with
   // it — loopStart defaults to 0, so a wrap would otherwise throw the in-point away
   // and play the head of the track the visuals deliberately skipped. loopEnd must be
@@ -7504,7 +7565,52 @@ export function connectMusic(
   };
 }
 
-async function createLoopedAudio(url: string, fade: AudioFade = {}): Promise<LoopedAudio> {
+/**
+ * The extent of the primary track in CLIP time: it starts with the picture at 0
+ * and ends at its natural length (minus the in-point), capped by the clip. This
+ * is the window the mix-in bed ducks under — full bed before/after it (top and
+ * tail), the centre level through it.
+ */
+function primarySpan(buffer: AudioBuffer, fade: AudioFade): { from: number; to: number } {
+  const offset = bedStartOffset(fade.start, buffer.duration);
+  const natural = Math.max(0, buffer.duration - offset);
+  const clip = fade.clipSec ?? 0;
+  return { from: 0, to: clip > 0 ? Math.min(clip, natural) : natural };
+}
+
+/**
+ * Connect the mix-in bed (opts.audio.mix) into the graph: a looping source whose
+ * gain envelope plays FULL where the primary is silent and glides to the centre
+ * level under it (~0.8 s ramps, never steps — bedDuckEnvelope owns the math).
+ * start() schedules at ctx.currentTime, same contract as connectMusic.
+ */
+function connectDuckedBed(
+  ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
+  mix: ExportAudioMixIn, clipSec: number, primary: { from: number; to: number },
+): { start(): void; stop(): void } {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  const gain = ctx.createGain();
+  src.connect(gain).connect(dest);
+  let started = false;
+  return {
+    start() {
+      if (started) return;
+      started = true;
+      const events = bedDuckEnvelope({
+        clipSec, volume: mix.volume, centre: mix.centre,
+        fadeIn: mix.fadeIn, fadeOut: mix.fadeOut,
+        spans: primary.to > primary.from ? [primary] : [],
+      });
+      scheduleGainEvents(gain.gain, events, ctx.currentTime);
+      src.start(0);
+    },
+    stop() { try { src.stop(); } catch { /* never started */ } },
+  };
+}
+
+async function createLoopedAudio(url: string, fade: AudioFade = {}, mix?: ExportAudioMixIn): Promise<LoopedAudio> {
   const AC = globalThis.AudioContext ?? (globalThis as any).webkitAudioContext;
   if (!AC) throw new Error('Web Audio is not supported in this browser');
   const bytes = await (await fetch(url)).arrayBuffer();
@@ -7516,8 +7622,24 @@ async function createLoopedAudio(url: string, fade: AudioFade = {}): Promise<Loo
     ctx.close().catch(() => {});
     throw err instanceof Error ? err : new Error('audio decode failed');
   }
+  // The mix-in bed is best-effort: a bed that won't decode degrades to the
+  // primary track alone with a warning, never a silent or failed export.
+  let bedBuffer: AudioBuffer | null = null;
+  if (mix?.url) {
+    try {
+      bedBuffer = await ctx.decodeAudioData(await (await fetch(mix.url)).arrayBuffer());
+    } catch (err) {
+      _host?.log?.('warn', `Mix-in track unavailable (${(err as any)?.message ?? err}); exporting without it.`);
+    }
+  }
   const dest  = ctx.createMediaStreamDestination();
-  const music = connectMusic(ctx, buffer, dest, fade);
+  // With a bed underneath, the primary (a tool's own narration) plays once —
+  // looping it would hold the bed at the centre level forever and the full-gain
+  // tail would never come.
+  const music = connectMusic(ctx, buffer, dest, bedBuffer ? { ...fade, loop: false } : fade);
+  const bed = bedBuffer && mix
+    ? connectDuckedBed(ctx, bedBuffer, dest, mix, fade.clipSec ?? 0, primarySpan(buffer, fade))
+    : null;
   return {
     track: dest.stream.getAudioTracks()[0]!,
     start() {
@@ -7525,9 +7647,11 @@ async function createLoopedAudio(url: string, fade: AudioFade = {}): Promise<Loo
       // defensively — a suspended context feeds silence into the recording.
       ctx.resume?.().catch(() => {});
       music.start();
+      bed?.start();
     },
     stop() {
       music.stop();
+      bed?.stop();
       ctx.close().catch(() => {});
     },
   };
@@ -7539,7 +7663,7 @@ async function createLoopedAudio(url: string, fade: AudioFade = {}): Promise<Loo
 // can take the fast path too. Returns null when OfflineAudioContext is unavailable
 // or the clip is empty; throws on decode failure so renderVideo can fall back to the
 // live MediaRecorder mux (which decoded the bed successfully earlier).
-async function renderMusicBed(url: string, clipSec: number, sampleRate: number, fade: AudioFade): Promise<AudioBuffer | null> {
+async function renderMusicBed(url: string, clipSec: number, sampleRate: number, fade: AudioFade, mix?: ExportAudioMixIn): Promise<AudioBuffer | null> {
   const OAC = globalThis.OfflineAudioContext ?? (globalThis as any).webkitOfflineAudioContext;
   if (!OAC || !(clipSec > 0)) return null;
   const CHANNELS = 2;                                   // deterministic stereo out
@@ -7551,7 +7675,18 @@ async function renderMusicBed(url: string, clipSec: number, sampleRate: number, 
   } catch (err) {
     throw err instanceof Error ? err : new Error('audio decode failed');
   }
-  connectMusic(octx, buffer, octx.destination, fade).start();  // schedules the envelope at t=0
+  // The mix-in bed rides the same offline render — best-effort, like the live path.
+  let bedBuffer: AudioBuffer | null = null;
+  if (mix?.url) {
+    try {
+      bedBuffer = await octx.decodeAudioData(await (await fetch(mix.url)).arrayBuffer());
+    } catch (err) {
+      _host?.log?.('warn', `Mix-in track unavailable (${(err as any)?.message ?? err}); exporting without it.`);
+    }
+  }
+  // schedules the envelope(s) at t=0; the primary plays once when a bed ducks under it
+  connectMusic(octx, buffer, octx.destination, bedBuffer ? { ...fade, loop: false } : fade).start();
+  if (bedBuffer && mix) connectDuckedBed(octx, bedBuffer, octx.destination, mix, clipSec, primarySpan(buffer, fade)).start();
   return await octx.startRendering();                   // AudioBuffer, exactly clip-length, 2ch
 }
 
@@ -7563,7 +7698,7 @@ async function prepareExportAudio(opts: ExportOpts, preferred: string, clipSec?:
   if (!opts.audio?.url) return { audio: null, mimeType: videoMimeType(preferred) };
   let audio: LoopedAudio | null = null;
   try {
-    audio = await createLoopedAudio(opts.audio.url, { fadeIn: opts.audio.fadeIn, fadeOut: opts.audio.fadeOut, clipSec, volume: opts.audio.volume, start: opts.audio.start });
+    audio = await createLoopedAudio(opts.audio.url, { fadeIn: opts.audio.fadeIn, fadeOut: opts.audio.fadeOut, clipSec, volume: opts.audio.volume, start: opts.audio.start }, opts.audio.mix);
   } catch (err) {
     _host?.log?.('warn', `Audio track unavailable (${(err as any)?.message ?? err}); exporting silent video.`);
   }
@@ -8310,7 +8445,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
         if (wantAudio && audioPick) {
           const bed = await renderMusicBed(opts.audio!.url, clipSec, audioPick.sampleRate, {
             fadeIn: opts.audio!.fadeIn, fadeOut: opts.audio!.fadeOut, clipSec, volume: opts.audio!.volume, start: opts.audio!.start,
-          });                                     // matches prepareExportAudio's envelope (renderVideo beds don't duck)
+          }, opts.audio!.mix);                    // matches prepareExportAudio's envelope + mix-in bed
           if (bed) track = { ...audioPick, buffer: bed };
         }
       } catch { bedOk = false; }
@@ -8588,7 +8723,7 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
       try {
         const bytes = await (await fetch(opts.audio.url)).arrayBuffer();
         const buffer = await actx.decodeAudioData(bytes);
-        music = connectMusic(actx, buffer, dest, {
+        const fade: AudioFade = {
           fadeIn:  opts.audio.fadeIn  ?? 1,
           fadeOut: opts.audio.fadeOut ?? 1.4,
           clipSec: totalMs / 1000,
@@ -8597,7 +8732,22 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
           duck: footageHasAudio && (opts.audio.duck ?? 1) < 1
             ? { level: opts.audio.duck ?? 1, startSec: introMs / 1000, endSec: (introMs + bodyMs) / 1000 }
             : undefined,
-        });
+        };
+        // A mix-in bed (a tool with its own audio, §6.1) rides the same graph:
+        // the primary plays once and the bed's envelope ducks under its extent.
+        let bedBuffer: AudioBuffer | null = null;
+        if (opts.audio.mix?.url) {
+          try {
+            bedBuffer = await actx.decodeAudioData(await (await fetch(opts.audio.mix.url)).arrayBuffer());
+          } catch (err) {
+            _host?.log?.('warn', `Mix-in track unavailable (${(err as { message?: string })?.message ?? err}); exporting without it.`);
+          }
+        }
+        const primary = connectMusic(actx, buffer, dest, bedBuffer ? { ...fade, loop: false } : fade);
+        const bed = bedBuffer && opts.audio.mix
+          ? connectDuckedBed(actx, bedBuffer, dest, opts.audio.mix, totalMs / 1000, primarySpan(buffer, fade))
+          : null;
+        music = { start() { primary.start(); bed?.start(); }, stop() { primary.stop(); bed?.stop(); } };
       } catch (err) {
         _host?.log?.('warn', `Music bed unavailable (${(err as { message?: string })?.message ?? err}).`);
       }
