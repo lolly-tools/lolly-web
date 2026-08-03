@@ -87,3 +87,70 @@ export function audioChunkSchedule(totalFrames: number, sampleRate: number, chun
   }
   return out;
 }
+
+// ── The clip plan: one place where length, frame rate and frame count agree ──
+// Phase 1 of renderVideo buffers every frame as an ImageBitmap before replay, so
+// the frame count is the memory ceiling. It used to be clamped in place, which
+// silently TIME-COMPRESSED the render: the frames were normalised `i / frameCount`
+// against the CLAMPED count while the tool still mapped that fraction onto the
+// full analysed span, so a 90 s narration painted its whole caption track over a
+// 25 s video whose audio bed stopped a third of the way in. Nothing caught it
+// because the two clocks were computed in different files.
+//
+// So the plan is computed once, here, in pure code that a node test can pin, and
+// it degrades in a fixed order: raise the ceiling for audio-driven clips (a
+// truncated narration is a worse failure than a slow export), then LOWER THE FRAME
+// RATE rather than drop the tail, and only truncate when even the floor will not
+// fit. Truncation stays possible — the memory ceiling is real — but it is now an
+// honest prefix with `clipSec` telling the caller exactly what was kept.
+
+/** The frame-rate floor. Below this the animation stops reading as animation. */
+export const FPS_FLOOR = 6;
+
+/** How much further an audio-driven clip may fill the frame buffer. A narration
+ *  audiogram is worthless cut short, so it gets a longer leash than a silent
+ *  render — scaled off the SAME memory signal, so a small device still gets a
+ *  smaller number than a desktop. */
+export const AUDIO_FRAME_HEADROOM = 3;
+
+export interface ClipPlan {
+  /** Frames to render. Never exceeds the (possibly raised) cap. */
+  frameCount: number;
+  /** The frame rate actually used — reduced from `fps` when that is what it took
+   *  to keep the full duration. */
+  fps: number;
+  /** The exported clip's real length in seconds. The audio bed is rendered to
+   *  exactly this, and the picture clock must agree with it. */
+  clipSec: number;
+  /** True when the tail had to be dropped even at FPS_FLOOR. The caller must say
+   *  so somewhere a person will see it, not only through host.log. */
+  truncated: boolean;
+}
+
+/**
+ * Resolve `durationSec` at `fps` against a `maxFrames` buffer ceiling.
+ *
+ * The invariant every caller depends on: `clipSec === frameCount / fps`, and
+ * `clipSec === durationSec` unless `truncated` is true. A tool asked to paint
+ * normalised time `t` is at `t * clipSec` seconds — always, in every branch.
+ */
+export function videoFramePlan(durationSec: number, fps: number, maxFrames: number): ClipPlan {
+  const wantFps = Math.max(1, fps);
+  const dur = Math.max(0, durationSec);
+  const cap = Math.max(1, Math.floor(maxFrames));
+
+  const wanted = Math.ceil(dur * wantFps);
+  if (wanted <= cap) return { frameCount: wanted, fps: wantFps, clipSec: wanted / wantFps, truncated: false };
+
+  // Too many frames at the requested rate. Keep the whole clip by slowing the
+  // frame rate — a choppy complete narration beats a smooth truncated one.
+  const fitFps = Math.floor(cap / Math.max(dur, 1e-6));
+  if (fitFps >= FPS_FLOOR) {
+    const frameCount = Math.min(cap, Math.ceil(dur * fitFps));
+    return { frameCount, fps: fitFps, clipSec: frameCount / fitFps, truncated: false };
+  }
+
+  // Even the floor will not fit. Truncate — but as a genuine prefix, with the
+  // length reported back so the picture clock is cut to match the audio bed.
+  return { frameCount: cap, fps: FPS_FLOOR, clipSec: cap / FPS_FLOOR, truncated: true };
+}
