@@ -48,7 +48,7 @@ import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { recTransition } from '../lib/transitions.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import { RASTER_DEFAULT_SCALE } from './export-scale.ts';
-import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
+import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL, videoFramePlan, AUDIO_FRAME_HEADROOM } from './video-mime.ts';
 import { bedDuckEnvelope, scheduleGainEvents } from './audio-envelope.ts';
 import type { ExportAudio, ExportAudioMixIn } from './audio-envelope.ts';
 import { encodeMuxWebCodecs, type EncodeAudio } from './video-encode-core.ts';
@@ -7768,7 +7768,12 @@ const NO_VIDEO_MSG = 'Video recording is not supported in this browser. Use GIF 
 // Per-NODE channel (not a window global): the hook lives ON the tool's canvas, so
 // it can't leak across SPA tool navigation — a detached canvas from a previous tool
 // is never inside the node being exported, so an unrelated tool never enters this path.
-type FrameClockCanvas = HTMLCanvasElement & { __lollyFrameRender?: (t: number) => void; __lollyFrameDriven?: boolean };
+// The second argument is the exported clip's real length in seconds. It is ADDITIVE:
+// a tool that declares `(t)` ignores it and behaves exactly as before. A tool that
+// maps t onto its own timeline (the audiogram's caption cues) must prefer it over
+// any span of its own, because the export's length is decided here — after a frame
+// plan the tool never sees — and a tool-side guess is what let captions drift.
+type FrameClockCanvas = HTMLCanvasElement & { __lollyFrameRender?: (t: number, clipSec?: number) => void; __lollyFrameDriven?: boolean };
 function frameClockCanvas(node: Element): FrameClockCanvas | null {
   const self = node as FrameClockCanvas;
   if (typeof self.__lollyFrameRender === 'function') return self;
@@ -7782,9 +7787,9 @@ function beginFrameClock(node: Element): FrameClockCanvas | null {
   if (c) c.__lollyFrameDriven = true;   // freeze the tool's own rAF for the capture
   return c;
 }
-function renderFrameAt(c: FrameClockCanvas | null, t: number): void {
+function renderFrameAt(c: FrameClockCanvas | null, t: number, clipSec?: number): void {
   if (!c || typeof c.__lollyFrameRender !== 'function') return;
-  try { c.__lollyFrameRender(t); } catch (e) { _host?.log?.('warn', `__lollyFrameRender threw: ${(e as Error)?.message ?? e}`); }
+  try { c.__lollyFrameRender(t, clipSec); } catch (e) { _host?.log?.('warn', `__lollyFrameRender threw: ${(e as Error)?.message ?? e}`); }
 }
 function endFrameClock(c: FrameClockCanvas | null): void {
   if (c) c.__lollyFrameDriven = false;
@@ -7901,7 +7906,7 @@ function hideLiveCanvases(live: HTMLCanvasElement[]): () => void {
   };
 }
 
-async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
+async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number, clipSec?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
   const targetW = ((opts.width  as number) > 0) ? (opts.width  as number) : nodeW;
@@ -8026,8 +8031,8 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
   return {
     width: targetW,
     height: targetH,
-    async frame(t = 0): Promise<HTMLCanvasElement> {
-      if (frameClock) renderFrameAt(frameClock, t);   // deterministic phase — no settle wait needed
+    async frame(t = 0, clipSec?: number): Promise<HTMLCanvasElement> {
+      if (frameClock) renderFrameAt(frameClock, t, clipSec);   // deterministic phase — no settle wait needed
       else if (!settled) { await new Promise<void>(r => setTimeout(r, waitMs)); settled = true; }
       // Scrub any CSS animation/transition to the exact frame time regardless of
       // frameClock — a clocked canvas can still share the DOM with CSS-animated
@@ -8237,10 +8242,14 @@ async function packZip(members: Array<{ name: string; bytes: Uint8Array }>, opts
 // caps at 8): an 8GB-class device keeps the historical 600, a 2GB mobile WebView
 // gets a tighter ceiling instead of the same flat number as desktop. Floored at
 // 200 so the default 5s clip (150 frames at 30fps) always completes.
-function maxVideoFrames(): number {
+// `hasAudio` raises the ceiling: an audio-driven clip (a narration audiogram) is
+// worthless cut short — losing two thirds of the words is a worse failure than a
+// slow export — so it gets AUDIO_FRAME_HEADROOM times the leash. The memory signal
+// still scales it, so a 2 GB WebView keeps a smaller number than a desktop.
+function maxVideoFrames(hasAudio = false): number {
   const gb = (navigator as { deviceMemory?: number }).deviceMemory;
-  if (!gb) return 600;
-  return Math.max(200, Math.round((Math.min(8, gb) / 8) * 600));
+  const base = !gb ? 600 : Math.max(200, Math.round((Math.min(8, gb) / 8) * 600));
+  return hasAudio ? base * AUDIO_FRAME_HEADROOM : base;
 }
 
 // ── Encode quality: explicit bitrate + deterministic frame delivery ──────────
@@ -8377,21 +8386,25 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     return recordStream(captureEl.captureStream(canvasFps), { durationMs, mimeType, audio, meta: opts.meta, width: captureEl.width, height: captureEl.height, fps: canvasFps });
   }
 
-  const fps        = opts.fps ?? 24;
-  const frameMs    = 1000 / fps;
+  const reqFps     = opts.fps ?? 24;
   const durationMs = (opts.duration ?? 5) * 1000;
-  let   frameCount = Math.ceil(durationMs / frameMs);
 
-  // Phase 1 buffers every frame as an ImageBitmap before replay, so the frame
-  // count is the memory ceiling. Clamp it so a long/high-fps request (the duration
-  // limit is bypassable via the URL) can't queue hundreds of bitmaps and OOM a
-  // mobile WebView. The cap is generous for normal clips; beyond it the clip is
-  // truncated and we warn through the log channel.
-  const cap = maxVideoFrames();
-  if (frameCount > cap) {
-    _host?.log?.('warn', `Video capped at ${cap} frames (requested ${frameCount}); lower the duration or frame rate for a longer clip.`);
-    frameCount = cap;
-  }
+  // Phase 1 buffers every frame as an ImageBitmap before replay, so the frame count
+  // is the memory ceiling. It is resolved by videoFramePlan (video-mime.ts) rather
+  // than clamped in place: clamping in place normalised the frames against the
+  // SHORTENED count while the tool still mapped that fraction onto its full analysed
+  // span, so a 90 s narration exported as a 25 s video with its captions running 3x
+  // fast against a bed that stopped a third of the way in. The plan keeps length,
+  // frame rate and frame count in one place, raises the ceiling when there is audio
+  // to stay in step with, and lowers the frame rate before it ever drops the tail.
+  const plan       = videoFramePlan(durationMs / 1000, reqFps, maxVideoFrames(!!opts.audio?.url));
+  const fps        = plan.fps;
+  const frameMs    = 1000 / fps;
+  const frameCount = plan.frameCount;
+  if (fps !== reqFps)
+    _host?.log?.('warn', `Video frame rate lowered to ${fps}fps to keep the whole ${(durationMs / 1000).toFixed(1)}s clip inside the frame buffer.`);
+  if (plan.truncated)
+    _host?.log?.('warn', `Video truncated to ${plan.clipSec.toFixed(1)}s of the requested ${(durationMs / 1000).toFixed(1)}s. The export is the start of the clip and stays in step with its audio.`);
 
   // Phase 1: render all frames sequentially through the shared FrameSource.
   // Animation advances in real time between frames, so each captures a unique
@@ -8404,7 +8417,10 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   const frames: ImageBitmap[]  = [];
   try {
     for (let i = 0; i < frameCount; i++) {
-      frames.push(await createImageBitmap(await source.frame(i / frameCount)));
+      // `plan.clipSec` travels with the normalised t so a clocked tool can resolve
+      // absolute seconds instead of guessing the span from its own metadata — the
+      // guess is what let the caption clock disagree with the muxed audio.
+      frames.push(await createImageBitmap(await source.frame(i / frameCount, plan.clipSec)));
       // Progress for a slow N-frame render (no-op when no listener is wired).
       opts.onProgress?.(i + 1, frameCount);
     }
