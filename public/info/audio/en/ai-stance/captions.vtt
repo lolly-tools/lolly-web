@@ -1,0 +1,514 @@
+WEBVTT
+
+00:00:00.423 --> 00:00:02.708
+Lolly was built in the middle of the
+
+00:00:02.810 --> 00:00:05.637
+biggest change in how media gets made
+
+00:00:05.710 --> 00:00:08.670
+since the printing press, by people who
+
+00:00:08.739 --> 00:00:11.219
+are neither panicked about AI nor
+
+00:00:11.297 --> 00:00:13.294
+breathless about it.
+
+00:00:14.066 --> 00:00:16.675
+This page states the project's position
+
+00:00:16.764 --> 00:00:19.648
+plainly and pairs every claim with the
+
+00:00:19.710 --> 00:00:23.111
+mechanism that enforces it, so you can
+
+00:00:23.173 --> 00:00:25.719
+verify rather than trust.
+
+00:00:26.461 --> 00:00:29.422
+"We're drinking like the tap will run dry
+
+00:00:29.496 --> 00:00:30.919
+any moment.
+
+00:00:31.669 --> 00:00:34.964
+It won't - today's AI is the worst it will
+
+00:00:35.030 --> 00:00:36.245
+ever be.
+
+00:00:36.998 --> 00:00:40.049
+If we survive the flood, it won't be by
+
+00:00:40.115 --> 00:00:42.457
+hoarding what's in the rusty water tank
+
+00:00:42.518 --> 00:00:45.395
+down the hill, full of sediment.
+
+00:00:46.155 --> 00:00:48.916
+It will be by irrigating and reclaiming
+
+00:00:49.010 --> 00:00:52.394
+our land for a prosperous future."
+
+00:00:53.132 --> 00:00:56.557
+- Andy Fitzsimon, Architect of Lolly
+
+00:00:57.469 --> 00:01:00.723
+To be precise about it, because this page
+
+00:01:00.810 --> 00:01:04.018
+argues that precision matters: the image
+
+00:01:04.068 --> 00:01:07.444
+above is generated, not photographed.
+
+00:01:08.240 --> 00:01:11.174
+No camera was pointed at that homestead,
+
+00:01:11.234 --> 00:01:13.919
+because there is no homestead.
+
+00:01:14.682 --> 00:01:17.591
+It was prompted from Andy's home state of
+
+00:01:17.655 --> 00:01:21.200
+Queensland, Australia, but it did not grow
+
+00:01:21.241 --> 00:01:24.067
+up there - it grew up in a datacenter in
+
+00:01:24.126 --> 00:01:26.119
+the United States.
+
+00:01:26.870 --> 00:01:30.023
+It is faithful to a place without being a
+
+00:01:30.091 --> 00:01:33.389
+record of one, and that distinction is the
+
+00:01:33.478 --> 00:01:36.525
+entire reason its Content Credentials say
+
+00:01:36.615 --> 00:01:37.569
+so.
+
+00:01:38.352 --> 00:01:40.941
+Here is what that looks like when you
+
+00:01:41.016 --> 00:01:42.343
+check it.
+
+00:01:43.134 --> 00:01:46.183
+Nine steps survive in the file: five
+
+00:01:46.241 --> 00:01:49.222
+recorded by Google as it generated and
+
+00:01:49.302 --> 00:01:52.285
+watermarked the image, then four recorded
+
+00:01:52.345 --> 00:01:56.135
+by Lolly as it opened, created, marked and
+
+00:01:56.195 --> 00:01:59.145
+converted the version on this page.
+
+00:01:59.948 --> 00:02:03.049
+Lolly did not generate anything, and its
+
+00:02:03.116 --> 00:02:04.893
+entry says so.
+
+00:02:05.672 --> 00:02:08.993
+Andy's metaphor for a flood is this: the
+
+00:02:09.056 --> 00:02:11.875
+scarcity posture toward AI - invest
+
+00:02:11.958 --> 00:02:14.391
+everything in the few, diminish yourself
+
+00:02:14.452 --> 00:02:17.521
+today, and worry later - is drinking
+
+00:02:17.615 --> 00:02:20.445
+spoiled tank water while the rain sets in
+
+00:02:20.513 --> 00:02:23.148
+and floodwater races across the plains
+
+00:02:23.209 --> 00:02:24.619
+toward you.
+
+00:02:25.393 --> 00:02:28.202
+Generated content is about to be
+
+00:02:28.256 --> 00:02:30.269
+effectively infinite.
+
+00:02:31.029 --> 00:02:33.774
+When something becomes infinite, its value
+
+00:02:33.834 --> 00:02:36.426
+moves to whatever remains scarce around
+
+00:02:36.490 --> 00:02:39.972
+it: trust, provenance, brand coherence and
+
+00:02:40.032 --> 00:02:41.670
+human judgment.
+
+00:02:42.484 --> 00:02:45.389
+Lolly is not a bigger bucket for the
+
+00:02:45.495 --> 00:02:46.617
+flood.
+
+00:02:47.365 --> 00:02:49.924
+It is irrigation - channels that direct
+
+00:02:49.984 --> 00:02:53.106
+the water, and soil where things actually
+
+00:02:53.168 --> 00:02:54.245
+grow.
+
+00:02:55.381 --> 00:02:58.176
+The stance, in five commitments
+
+00:02:59.119 --> 00:03:02.206
+AI is welcome as input, never as
+
+00:03:02.266 --> 00:03:04.019
+impersonation.
+
+00:03:04.786 --> 00:03:07.788
+Agents are first-class users of Lolly:
+
+00:03:07.849 --> 00:03:10.477
+they run the same tools people do, through
+
+00:03:10.532 --> 00:03:14.472
+the MCP server and URL mode, inside
+
+00:03:14.532 --> 00:03:17.194
+exactly the same constraints.
+
+00:03:17.949 --> 00:03:20.998
+A tool that cannot emit an off-brand asset
+
+00:03:21.086 --> 00:03:24.486
+for a person cannot emit one for an agent
+
+00:03:24.548 --> 00:03:27.461
+either - the guard-rails do not care who
+
+00:03:27.543 --> 00:03:29.595
+is throwing the ball.
+
+00:03:30.359 --> 00:03:33.062
+What no agent gets to do is pass its
+
+00:03:33.144 --> 00:03:36.270
+output off as something it is not.
+
+00:03:37.055 --> 00:03:39.793
+AI declares itself.
+
+00:03:40.560 --> 00:03:43.847
+When AI generated the pixels, the export
+
+00:03:43.908 --> 00:03:47.054
+says so: a machine-readable assertion in
+
+00:03:47.099 --> 00:03:49.914
+the file's Content Credentials and a
+
+00:03:49.975 --> 00:03:53.292
+visible GEN AI badge when anyone verifies
+
+00:03:53.346 --> 00:03:54.245
+it.
+
+00:03:55.046 --> 00:03:58.303
+Lolly also reads and surfaces the AI
+
+00:03:58.365 --> 00:04:01.812
+declarations of files made elsewhere, and
+
+00:04:01.910 --> 00:04:05.250
+flags when a SynthID watermark is likely
+
+00:04:05.312 --> 00:04:08.352
+present - reading the declaration, not the
+
+00:04:08.438 --> 00:04:10.344
+watermark itself.
+
+00:04:11.117 --> 00:04:14.028
+Audiences deserve to know how media was
+
+00:04:14.089 --> 00:04:16.850
+made - that sentence appears on our
+
+00:04:16.920 --> 00:04:19.885
+Inclusive Design page as an ethical
+
+00:04:19.946 --> 00:04:22.909
+commitment, and this is the machinery
+
+00:04:22.969 --> 00:04:24.469
+behind it.
+
+00:04:25.220 --> 00:04:28.019
+Provenance is default-on.
+
+00:04:28.781 --> 00:04:31.467
+Exports carry Content Credentials by
+
+00:04:31.525 --> 00:04:34.644
+default, not as a buried setting.
+
+00:04:35.410 --> 00:04:38.814
+The chain covers edits and ingredients, so
+
+00:04:38.893 --> 00:04:41.794
+a work's history travels with it.
+
+00:04:42.580 --> 00:04:45.796
+You can verify this yourself on any file
+
+00:04:45.866 --> 00:04:47.669
+Lolly produces.
+
+00:04:48.429 --> 00:04:51.168
+People stay the authors.
+
+00:04:51.933 --> 00:04:55.156
+Every input is ultimately a decision,
+
+00:04:55.227 --> 00:04:58.245
+triggered somewhere by a person, no matter
+
+00:04:58.318 --> 00:05:01.234
+how many systems or left turns it took to
+
+00:05:01.294 --> 00:05:02.520
+get here.
+
+00:05:03.293 --> 00:05:07.519
+An agent can carry a decision a long way.
+
+00:05:08.284 --> 00:05:11.093
+It cannot originate one.
+
+00:05:11.870 --> 00:05:14.267
+The words, the image, the palette, the
+
+00:05:14.334 --> 00:05:17.225
+call that needed judgment: tools scale
+
+00:05:17.277 --> 00:05:20.469
+that judgment, they do not replace it.
+
+00:05:21.232 --> 00:05:24.507
+The tedious parts are what get automated:
+
+00:05:24.570 --> 00:05:27.090
+the brand-checking, the re-exporting at
+
+00:05:27.174 --> 00:05:30.120
+every size, the hand-localising.
+
+00:05:30.909 --> 00:05:34.093
+What remains is the authorship.
+
+00:05:34.867 --> 00:05:37.243
+Channels, not buckets.
+
+00:05:38.013 --> 00:05:40.769
+Today's models are the floor, not the
+
+00:05:40.878 --> 00:05:44.015
+ceiling, so we refuse to build anything
+
+00:05:44.076 --> 00:05:46.720
+whose value depends on hoarding access to
+
+00:05:46.781 --> 00:05:47.769
+them.
+
+00:05:48.547 --> 00:05:52.093
+The engine is open source, renders on your
+
+00:05:52.156 --> 00:05:54.944
+own device and works offline.
+
+00:05:55.700 --> 00:05:59.060
+There is no model moat, no usage meter, no
+
+00:05:59.130 --> 00:06:01.542
+scarcity business attached to the flood
+
+00:06:01.580 --> 00:06:02.770
+itself.
+
+00:06:03.539 --> 00:06:05.726
+The durable investment is the
+
+00:06:05.814 --> 00:06:08.889
+infrastructure around the water - and that
+
+00:06:08.961 --> 00:06:12.119
+infrastructure is what we give away.
+
+00:06:13.243 --> 00:06:15.972
+Human decision is the point
+
+00:06:16.952 --> 00:06:20.035
+Let us be crystal clear about what sits
+
+00:06:20.113 --> 00:06:22.944
+underneath every commitment above.
+
+00:06:23.705 --> 00:06:26.363
+Individuals shape the earth and our
+
+00:06:26.425 --> 00:06:27.644
+history.
+
+00:06:28.411 --> 00:06:31.590
+Their choices, made one at a time, become
+
+00:06:31.650 --> 00:06:34.619
+the world the rest of us live in.
+
+00:06:35.403 --> 00:06:37.944
+Their actions make it.
+
+00:06:38.715 --> 00:06:41.726
+That is not sentiment, it is simply how
+
+00:06:41.827 --> 00:06:44.194
+anything has ever happened.
+
+00:06:44.991 --> 00:06:48.505
+So we empower human decision and we do not
+
+00:06:48.567 --> 00:06:50.269
+compromise it.
+
+00:06:51.060 --> 00:06:53.418
+The right to choose.
+
+00:06:54.204 --> 00:06:55.715
+Agency.
+
+00:06:56.509 --> 00:06:57.992
+Autonomy.
+
+00:06:58.767 --> 00:07:02.186
+The ability to decide and to act, and for
+
+00:07:02.232 --> 00:07:04.494
+that act to be yours.
+
+00:07:05.274 --> 00:07:09.318
+Tools here scale what a person decided.
+
+00:07:10.079 --> 00:07:12.930
+They do not decide instead of them, and
+
+00:07:12.961 --> 00:07:16.169
+they never quietly stand in for them.
+
+00:07:16.938 --> 00:07:20.343
+Where a decision is carried by automation,
+
+00:07:20.404 --> 00:07:23.230
+the record still leads back to the person
+
+00:07:23.286 --> 00:07:26.283
+who triggered it, however many systems and
+
+00:07:26.344 --> 00:07:29.520
+left turns it passed through on the way.
+
+00:07:30.291 --> 00:07:33.148
+We honour that end to end, and we record
+
+00:07:33.220 --> 00:07:36.361
+it: for history, for accountability, for
+
+00:07:36.433 --> 00:07:38.670
+trust, and for tomorrow.
+
+00:07:39.803 --> 00:07:41.737
+What this is not
+
+00:07:42.726 --> 00:07:44.618
+Not a ban.
+
+00:07:45.395 --> 00:07:48.997
+Tools may use AI where it serves the work,
+
+00:07:49.066 --> 00:07:51.977
+and agents are a supported audience - see
+
+00:07:52.070 --> 00:07:53.869
+AI Agents.
+
+00:07:54.681 --> 00:07:57.393
+Not a purity claim.
+
+00:07:58.191 --> 00:08:01.114
+Lolly reads provenance broadly and writes
+
+00:08:01.176 --> 00:08:04.842
+it honestly; it does not pretend to detect
+
+00:08:04.935 --> 00:08:08.244
+every generated pixel on the internet.
+
+00:08:09.050 --> 00:08:11.543
+Not a moral panic.
+
+00:08:12.323 --> 00:08:15.344
+The flood is not the enemy.
+
+00:08:16.128 --> 00:08:19.044
+Unattributed water is.
+
+00:08:20.174 --> 00:08:22.780
+How to hold us to it
+
+00:08:23.758 --> 00:08:26.151
+Every commitment above is enforced in the
+
+00:08:26.220 --> 00:08:30.345
+open codebase, not in a policy PDF: the
+
+00:08:30.417 --> 00:08:33.818
+provenance path, the GEN AI labelling and
+
+00:08:33.865 --> 00:08:36.555
+the no-trackers guarantee all ship with
+
+00:08:36.627 --> 00:08:39.865
+tests, and the Verify It Yourself page
+
+00:08:39.925 --> 00:08:41.984
+walks you through checking the claims
+
+00:08:42.037 --> 00:08:44.270
+against a real export.
+
+00:08:45.012 --> 00:08:47.636
+If you find a place where the code and
+
+00:08:47.674 --> 00:08:51.420
+this page disagree, the code is the bug.

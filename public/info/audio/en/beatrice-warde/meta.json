@@ -1,0 +1,11 @@
+{
+  "slug": "beatrice-warde",
+  "lang": "en",
+  "voice": "bf_lily",
+  "speed": 0.8,
+  "modelVersion": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "textHash": "5ffcf6c09de324169efca3cb25cb778770862cd9ab0873cf8b74313691a034d9",
+  "duration": 735.125,
+  "bytes": 2207334,
+  "generated": "2026-08-04T05:06:29.071Z"
+}

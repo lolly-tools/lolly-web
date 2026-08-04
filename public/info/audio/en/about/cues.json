@@ -1,0 +1,4211 @@
+{
+  "blocks": [
+    {
+      "blockId": "lolly-tools",
+      "start": 0,
+      "end": 2.275
+    },
+    {
+      "blockId": "lolly-tools:p1",
+      "start": 2.625,
+      "end": 13.2
+    },
+    {
+      "blockId": "what-is-lolly-tools",
+      "start": 13.9,
+      "end": 16.8
+    },
+    {
+      "blockId": "what-is-lolly-tools:p1",
+      "start": 17.15,
+      "end": 40.724999999999994
+    },
+    {
+      "blockId": "what-is-lolly-tools:p2",
+      "start": 41.075,
+      "end": 54.5
+    },
+    {
+      "blockId": "what-is-lolly-tools:p3",
+      "start": 54.85,
+      "end": 58.35
+    },
+    {
+      "blockId": "what-is-lolly-tools:p4",
+      "start": 58.7,
+      "end": 63.425000000000004
+    },
+    {
+      "blockId": "what-is-lolly-tools:p5",
+      "start": 63.775,
+      "end": 68.425
+    },
+    {
+      "blockId": "what-is-lolly-tools:p6",
+      "start": 68.775,
+      "end": 72.275
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization",
+      "start": 72.975,
+      "end": 77.3
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p1",
+      "start": 77.65,
+      "end": 82.275
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p2",
+      "start": 82.625,
+      "end": 102.775
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p3",
+      "start": 103.125,
+      "end": 106.925
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p4",
+      "start": 107.275,
+      "end": 113.375
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p5",
+      "start": 113.725,
+      "end": 119.625
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p6",
+      "start": 119.975,
+      "end": 142.775
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p7",
+      "start": 143.125,
+      "end": 154.975
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p8",
+      "start": 155.325,
+      "end": 159.7
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p9",
+      "start": 160.05,
+      "end": 179.65
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p10",
+      "start": 180,
+      "end": 183.275
+    },
+    {
+      "blockId": "why-deploy-lolly-in-your-organization:p11",
+      "start": 183.625,
+      "end": 188.325
+    },
+    {
+      "blockId": "what-this-is-not",
+      "start": 189.025,
+      "end": 191.57500000000002
+    },
+    {
+      "blockId": "what-this-is-not:p1",
+      "start": 191.925,
+      "end": 195.625
+    },
+    {
+      "blockId": "what-this-is-not:p2",
+      "start": 195.975,
+      "end": 216.025
+    },
+    {
+      "blockId": "repository-layout",
+      "start": 216.725,
+      "end": 219.6
+    },
+    {
+      "blockId": "repository-layout:p1",
+      "start": 219.95,
+      "end": 240.875
+    },
+    {
+      "blockId": "repository-layout:p2",
+      "start": 241.225,
+      "end": 244.525
+    },
+    {
+      "blockId": "repository-layout:p3",
+      "start": 244.875,
+      "end": 298.725
+    },
+    {
+      "blockId": "architectural-commitments",
+      "start": 299.425,
+      "end": 302.35
+    },
+    {
+      "blockId": "architectural-commitments:p1",
+      "start": 302.7,
+      "end": 311.25
+    },
+    {
+      "blockId": "architectural-commitments:p2",
+      "start": 311.6,
+      "end": 336.52500000000003
+    },
+    {
+      "blockId": "architectural-commitments:p3",
+      "start": 336.875,
+      "end": 352.1
+    },
+    {
+      "blockId": "architectural-commitments:p4",
+      "start": 352.45,
+      "end": 375.925
+    },
+    {
+      "blockId": "architectural-commitments:p5",
+      "start": 376.275,
+      "end": 393.625
+    },
+    {
+      "blockId": "architectural-commitments:p6",
+      "start": 393.975,
+      "end": 412.45000000000005
+    },
+    {
+      "blockId": "architectural-commitments:p7",
+      "start": 412.8,
+      "end": 430.975
+    },
+    {
+      "blockId": "architectural-commitments:p8",
+      "start": 431.325,
+      "end": 451.425
+    },
+    {
+      "blockId": "getting-started",
+      "start": 452.125,
+      "end": 454.575
+    },
+    {
+      "blockId": "getting-started:p1",
+      "start": 454.925,
+      "end": 460.40000000000003
+    },
+    {
+      "blockId": "getting-started:p2",
+      "start": 460.75,
+      "end": 464.05
+    },
+    {
+      "blockId": "getting-started:p3",
+      "start": 464.4,
+      "end": 498.97499999999997
+    },
+    {
+      "blockId": "getting-started:p4",
+      "start": 499.325,
+      "end": 502.625
+    },
+    {
+      "blockId": "getting-started:p5",
+      "start": 502.975,
+      "end": 525.125
+    },
+    {
+      "blockId": "the-cli",
+      "start": 525.825,
+      "end": 527.6
+    },
+    {
+      "blockId": "the-cli:p1",
+      "start": 527.95,
+      "end": 562.95
+    },
+    {
+      "blockId": "the-cli:p2",
+      "start": 563.3,
+      "end": 566.5999999999999
+    },
+    {
+      "blockId": "the-cli:p3",
+      "start": 566.95,
+      "end": 586.9250000000001
+    },
+    {
+      "blockId": "the-cli:p4",
+      "start": 587.275,
+      "end": 590.5749999999999
+    },
+    {
+      "blockId": "the-cli:p5",
+      "start": 590.925,
+      "end": 603.425
+    },
+    {
+      "blockId": "development",
+      "start": 604.125,
+      "end": 606.025
+    },
+    {
+      "blockId": "development:p1",
+      "start": 606.375,
+      "end": 637.175
+    },
+    {
+      "blockId": "development:p2",
+      "start": 637.525,
+      "end": 651.125
+    },
+    {
+      "blockId": "development:p3",
+      "start": 651.475,
+      "end": 654.4250000000001
+    },
+    {
+      "blockId": "development:p4",
+      "start": 654.775,
+      "end": 658.0749999999999
+    },
+    {
+      "blockId": "development:p5",
+      "start": 658.425,
+      "end": 667.8
+    },
+    {
+      "blockId": "development:p6",
+      "start": 668.15,
+      "end": 692.75
+    },
+    {
+      "blockId": "development:p7",
+      "start": 693.1,
+      "end": 734.85
+    },
+    {
+      "blockId": "development:p8",
+      "start": 735.2,
+      "end": 748.125
+    },
+    {
+      "blockId": "development:p9",
+      "start": 748.475,
+      "end": 751.775
+    },
+    {
+      "blockId": "development:p10",
+      "start": 752.125,
+      "end": 755.425
+    },
+    {
+      "blockId": "development:p11",
+      "start": 755.775,
+      "end": 777.475
+    },
+    {
+      "blockId": "current-tools",
+      "start": 778.175,
+      "end": 780.3499999999999
+    },
+    {
+      "blockId": "current-tools:p1",
+      "start": 780.7,
+      "end": 799.725
+    },
+    {
+      "blockId": "current-tools:p2",
+      "start": 800.075,
+      "end": 807
+    },
+    {
+      "blockId": "licensing-structure",
+      "start": 807.7,
+      "end": 810.9000000000001
+    },
+    {
+      "blockId": "licensing-structure:p1",
+      "start": 811.25,
+      "end": 822.85
+    },
+    {
+      "blockId": "licensing-structure:p2",
+      "start": 823.2,
+      "end": 831.1
+    },
+    {
+      "blockId": "licensing-structure:p3",
+      "start": 831.45,
+      "end": 864.5500000000001
+    },
+    {
+      "blockId": "licensing-structure:p4",
+      "start": 864.9,
+      "end": 880.525
+    },
+    {
+      "blockId": "licensing-structure:p5",
+      "start": 880.875,
+      "end": 887.4
+    }
+  ],
+  "words": [
+    {
+      "text": "Lolly",
+      "start": 0.4211739833064231,
+      "end": 0.8616118619543854
+    },
+    {
+      "text": "Tools",
+      "start": 0.9769915987973778,
+      "end": 2.018742780135622
+    },
+    {
+      "text": "Powerfully",
+      "start": 3.014231864108699,
+      "end": 3.732283360514899
+    },
+    {
+      "text": "reproducible",
+      "start": 3.7970827505840115,
+      "end": 4.721037147512516
+    },
+    {
+      "text": "assets",
+      "start": 4.812989801426825,
+      "end": 5.454593281323588
+    },
+    {
+      "text": "&",
+      "start": 5.561133788249165,
+      "end": 5.797584312737182
+    },
+    {
+      "text": "tools.",
+      "start": 5.872165740721311,
+      "end": 7.092899105829641
+    },
+    {
+      "text": "Deterministic,",
+      "start": 7.855459246255066,
+      "end": 8.971961230775516
+    },
+    {
+      "text": "fast,",
+      "start": 9.060296400097048,
+      "end": 9.616616590456399
+    },
+    {
+      "text": "open-source",
+      "start": 9.679224906722752,
+      "end": 10.41563030748705
+    },
+    {
+      "text": "platform",
+      "start": 10.477068967950512,
+      "end": 11.062977264194588
+    },
+    {
+      "text": "—",
+      "start": 11.096448941816007,
+      "end": 11.127088083674368
+    },
+    {
+      "text": "bring",
+      "start": 11.1712550248861,
+      "end": 11.409869672565772
+    },
+    {
+      "text": "your",
+      "start": 11.470991416831806,
+      "end": 11.688828364039544
+    },
+    {
+      "text": "own",
+      "start": 11.749607348855163,
+      "end": 11.985610930079446
+    },
+    {
+      "text": "brand.",
+      "start": 12.04685691850424,
+      "end": 13.16924029334144
+    },
+    {
+      "text": "What",
+      "start": 14.306126090198129,
+      "end": 14.613085752650782
+    },
+    {
+      "text": "is",
+      "start": 14.682784004793044,
+      "end": 14.98103192997755
+    },
+    {
+      "text": "Lolly",
+      "start": 15.08702229289251,
+      "end": 15.480532218410495
+    },
+    {
+      "text": "Tools",
+      "start": 15.579641361448935,
+      "end": 16.59160869258881
+    },
+    {
+      "text": "A",
+      "start": 17.52783999041057,
+      "end": 17.706144023351982
+    },
+    {
+      "text": "platform",
+      "start": 17.76702591122926,
+      "end": 18.404812849782317
+    },
+    {
+      "text": "that",
+      "start": 18.464919272078273,
+      "end": 18.61283752020542
+    },
+    {
+      "text": "hosts",
+      "start": 18.67392549457282,
+      "end": 19.09997720672607
+    },
+    {
+      "text": "a",
+      "start": 19.146928334247086,
+      "end": 19.3002410787074
+    },
+    {
+      "text": "library",
+      "start": 19.378253213907836,
+      "end": 19.993268293262943
+    },
+    {
+      "text": "of",
+      "start": 20.048066227609425,
+      "end": 20.19439726512674
+    },
+    {
+      "text": "small,",
+      "start": 20.302101111560088,
+      "end": 20.783947850604928
+    },
+    {
+      "text": "focused",
+      "start": 20.87168681055513,
+      "end": 21.371234377895913
+    },
+    {
+      "text": "tools",
+      "start": 21.444230641318725,
+      "end": 22.258408504048028
+    },
+    {
+      "text": "that",
+      "start": 22.346176060091587,
+      "end": 22.489111124724047
+    },
+    {
+      "text": "produce",
+      "start": 22.548590170626223,
+      "end": 22.99033413526331
+    },
+    {
+      "text": "deterministic",
+      "start": 23.05124445705234,
+      "end": 24.01794175868341
+    },
+    {
+      "text": "creative",
+      "start": 24.07852554517507,
+      "end": 24.625809815903988
+    },
+    {
+      "text": "assets.",
+      "start": 24.687625215342624,
+      "end": 25.894553704068194
+    },
+    {
+      "text": "Users",
+      "start": 26.67942050887713,
+      "end": 27.112414628517122
+    },
+    {
+      "text": "need",
+      "start": 27.172345011146213,
+      "end": 27.44225388995627
+    },
+    {
+      "text": "no",
+      "start": 27.50271647011522,
+      "end": 27.712871523687113
+    },
+    {
+      "text": "design",
+      "start": 27.772741211849855,
+      "end": 28.254576198337734
+    },
+    {
+      "text": "skill,",
+      "start": 28.328084733071655,
+      "end": 29.034131755271154
+    },
+    {
+      "text": "no",
+      "start": 29.097081531555766,
+      "end": 29.30691348830906
+    },
+    {
+      "text": "vendor",
+      "start": 29.367020920802343,
+      "end": 29.69190920537586
+    },
+    {
+      "text": "lock-in",
+      "start": 29.751756308485742,
+      "end": 30.328585507591473
+    },
+    {
+      "text": "and",
+      "start": 30.408302154542127,
+      "end": 30.564691474073054
+    },
+    {
+      "text": "no",
+      "start": 30.624929830010444,
+      "end": 30.83760138473031
+    },
+    {
+      "text": "internet",
+      "start": 30.90070419994436,
+      "end": 31.368771243149165
+    },
+    {
+      "text": "to",
+      "start": 31.457190190417244,
+      "end": 31.654156254563667
+    },
+    {
+      "text": "render,",
+      "start": 31.71395270164474,
+      "end": 32.66645360436493
+    },
+    {
+      "text": "and",
+      "start": 32.72592883289752,
+      "end": 32.865226962350306
+    },
+    {
+      "text": "the",
+      "start": 32.8978379032752,
+      "end": 33.03648680408115
+    },
+    {
+      "text": "platform",
+      "start": 33.09877867044608,
+      "end": 33.74340785465559
+    },
+    {
+      "text": "is",
+      "start": 33.821534551679264,
+      "end": 34.0084027121372
+    },
+    {
+      "text": "designed",
+      "start": 34.068300625889584,
+      "end": 34.611053810474004
+    },
+    {
+      "text": "to",
+      "start": 34.732421234687095,
+      "end": 35.01635195824226
+    },
+    {
+      "text": "add",
+      "start": 35.11197107648158,
+      "end": 35.35604002924859
+    },
+    {
+      "text": "premium",
+      "start": 35.44054714686643,
+      "end": 35.90613369387252
+    },
+    {
+      "text": "production-quality",
+      "start": 35.96601970237011,
+      "end": 37.259697116404055
+    },
+    {
+      "text": "rendering",
+      "start": 37.366059510225874,
+      "end": 37.83495822624185
+    },
+    {
+      "text": "certainty",
+      "start": 37.935565382823,
+      "end": 38.503170383071705
+    },
+    {
+      "text": "to",
+      "start": 38.616389814256124,
+      "end": 38.84900193204231
+    },
+    {
+      "text": "variable",
+      "start": 38.92082177023376,
+      "end": 39.51391323529443
+    },
+    {
+      "text": "data.",
+      "start": 39.57386553871012,
+      "end": 40.694871110000456
+    },
+    {
+      "text": "It's",
+      "start": 41.447086327991535,
+      "end": 41.68469406151073
+    },
+    {
+      "text": "also",
+      "start": 41.74707054024002,
+      "end": 42.19377088826959
+    },
+    {
+      "text": "your",
+      "start": 42.25507633803435,
+      "end": 42.46378018861142
+    },
+    {
+      "text": "personal",
+      "start": 42.530137039731954,
+      "end": 43.0775953890537
+    },
+    {
+      "text": "DAM",
+      "start": 43.13898619384938,
+      "end": 43.81588239832962
+    },
+    {
+      "text": "—",
+      "start": 43.8949089659017,
+      "end": 43.93799922828634
+    },
+    {
+      "text": "every",
+      "start": 44.00279774846344,
+      "end": 44.31231997161385
+    },
+    {
+      "text": "logo,",
+      "start": 44.38492913451005,
+      "end": 45.010468117274755
+    },
+    {
+      "text": "palette,",
+      "start": 45.08692612176259,
+      "end": 45.56993864350628
+    },
+    {
+      "text": "font",
+      "start": 45.65960026480102,
+      "end": 46.01082674945095
+    },
+    {
+      "text": "and",
+      "start": 46.05768566653718,
+      "end": 46.19172008556685
+    },
+    {
+      "text": "upload",
+      "start": 46.25867475646831,
+      "end": 46.68880353852702
+    },
+    {
+      "text": "lives",
+      "start": 46.75007778575125,
+      "end": 47.20650458666236
+    },
+    {
+      "text": "in",
+      "start": 47.246910943388656,
+      "end": 47.38860907850188
+    },
+    {
+      "text": "an",
+      "start": 47.48082629703963,
+      "end": 47.70192608466637
+    },
+    {
+      "text": "on-device",
+      "start": 47.774375448998626,
+      "end": 48.378443077909836
+    },
+    {
+      "text": "catalog,",
+      "start": 48.44009620474113,
+      "end": 49.530150149442804
+    },
+    {
+      "text": "hydrated",
+      "start": 49.59373233401631,
+      "end": 50.23224723017233
+    },
+    {
+      "text": "and",
+      "start": 50.297907400640945,
+      "end": 50.54315354366855
+    },
+    {
+      "text": "supercharged",
+      "start": 50.64539520639336,
+      "end": 51.45520697289105
+    },
+    {
+      "text": "by",
+      "start": 51.51543462022782,
+      "end": 51.73831048451794
+    },
+    {
+      "text": "your",
+      "start": 51.80475840761342,
+      "end": 51.994358834381295
+    },
+    {
+      "text": "design",
+      "start": 52.051106870189365,
+      "end": 52.525815460291625
+    },
+    {
+      "text": "system",
+      "start": 52.58731295594118,
+      "end": 52.9923963638022
+    },
+    {
+      "text": "and",
+      "start": 53.04952277443582,
+      "end": 53.21038795343665
+    },
+    {
+      "text": "tools.",
+      "start": 53.275811011597185,
+      "end": 54.46913511721155
+    },
+    {
+      "text": "Tools",
+      "start": 55.24255353536205,
+      "end": 55.792841253901294
+    },
+    {
+      "text": "can",
+      "start": 55.85783683617663,
+      "end": 56.08759757664354
+    },
+    {
+      "text": "be",
+      "start": 56.15032783285963,
+      "end": 56.34178967189487
+    },
+    {
+      "text": "used",
+      "start": 56.43488379674598,
+      "end": 56.85522807579493
+    },
+    {
+      "text": "via",
+      "start": 56.91945498441421,
+      "end": 57.26760542079547
+    },
+    {
+      "text": "a:",
+      "start": 57.35320691407398,
+      "end": 58.318535820161344
+    },
+    {
+      "text": "Web",
+      "start": 59.10920710968876,
+      "end": 59.3583367951378
+    },
+    {
+      "text": "app",
+      "start": 59.42716308180024,
+      "end": 59.749183480083715
+    },
+    {
+      "text": "-",
+      "start": 59.80634079687185,
+      "end": 59.80634079687185
+    },
+    {
+      "text": "installable",
+      "start": 59.87193837480709,
+      "end": 60.705739273511824
+    },
+    {
+      "text": "offline",
+      "start": 60.79828119422769,
+      "end": 61.36610773742037
+    },
+    {
+      "text": "progressive",
+      "start": 61.42956709385048,
+      "end": 62.122763649031
+    },
+    {
+      "text": "web",
+      "start": 62.19109082884789,
+      "end": 62.42141458264091
+    },
+    {
+      "text": "app",
+      "start": 62.495626596555674,
+      "end": 63.1429963163355
+    },
+    {
+      "text": "Mobile",
+      "start": 64.18303268896885,
+      "end": 64.80898043837958
+    },
+    {
+      "text": "and",
+      "start": 64.91127297645248,
+      "end": 65.15810565134775
+    },
+    {
+      "text": "Desktop",
+      "start": 65.22722484585749,
+      "end": 66.02281992766487
+    },
+    {
+      "text": "installable",
+      "start": 66.10826894001416,
+      "end": 66.92528253706311
+    },
+    {
+      "text": "packages.",
+      "start": 66.98762705163874,
+      "end": 68.39373793436927
+    },
+    {
+      "text": "and",
+      "start": 69.17910054000639,
+      "end": 69.44335444639803
+    },
+    {
+      "text": "of",
+      "start": 69.4849265737542,
+      "end": 69.67301919178418
+    },
+    {
+      "text": "course,",
+      "start": 69.76357349559093,
+      "end": 70.29326545250291
+    },
+    {
+      "text": "the",
+      "start": 70.34049410398991,
+      "end": 70.50264972232637
+    },
+    {
+      "text": "Command",
+      "start": 70.57314016879523,
+      "end": 71.09551097776853
+    },
+    {
+      "text": "Line.",
+      "start": 71.15764302833888,
+      "end": 72.2435440595169
+    },
+    {
+      "text": "Why",
+      "start": 73.37979153945383,
+      "end": 73.66617174752868
+    },
+    {
+      "text": "deploy",
+      "start": 73.72881513679748,
+      "end": 74.24656253774116
+    },
+    {
+      "text": "Lolly",
+      "start": 74.32879309276832,
+      "end": 74.8107903082333
+    },
+    {
+      "text": "in",
+      "start": 74.8874105979937,
+      "end": 75.05993178742688
+    },
+    {
+      "text": "your",
+      "start": 75.1301232990161,
+      "end": 75.37160014659639
+    },
+    {
+      "text": "organization?",
+      "start": 75.4377479103728,
+      "end": 77.26842985707347
+    },
+    {
+      "text": "Hard-coded",
+      "start": 78.05529125965907,
+      "end": 78.93061672960243
+    },
+    {
+      "text": "constraints",
+      "start": 78.99404503270105,
+      "end": 79.8787378559816
+    },
+    {
+      "text": "of",
+      "start": 79.95529492014701,
+      "end": 80.14396883484558
+    },
+    {
+      "text": "design",
+      "start": 80.20727306599807,
+      "end": 80.73557973163156
+    },
+    {
+      "text": "decisions.",
+      "start": 80.79441568594474,
+      "end": 82.24320348951463
+    },
+    {
+      "text": "Free, open-source platform — the engine, every shell, the schemas and docs are MPL-2 point 0.",
+      "start": 82.625,
+      "end": 91.15
+    },
+    {
+      "text": "Tools and assets are just data: bring your own brand content «SUSE's tool & asset packs are proprietary — see Licensing & structure».",
+      "start": 91.5,
+      "end": 102.775
+    },
+    {
+      "text": "Unlimited",
+      "start": 103.52679333435374,
+      "end": 104.1875166118912
+    },
+    {
+      "text": "scale,",
+      "start": 104.27175654355287,
+      "end": 104.77921648353586
+    },
+    {
+      "text": "No",
+      "start": 104.83458981869892,
+      "end": 105.05181400920357
+    },
+    {
+      "text": "SaaS",
+      "start": 105.14590111920575,
+      "end": 105.73419327824031
+    },
+    {
+      "text": "fees.",
+      "start": 105.80316450225966,
+      "end": 106.89425029704338
+    },
+    {
+      "text": "Low-or-Zero",
+      "start": 107.70096059672544,
+      "end": 108.69199240002285
+    },
+    {
+      "text": "server",
+      "start": 108.7900008513662,
+      "end": 109.16319281715897
+    },
+    {
+      "text": "costs:",
+      "start": 109.23589427625336,
+      "end": 110.07278976254058
+    },
+    {
+      "text": "Lolly",
+      "start": 110.16058928614882,
+      "end": 110.4942867078537
+    },
+    {
+      "text": "uses",
+      "start": 110.5596610211546,
+      "end": 111.02744323225603
+    },
+    {
+      "text": "local",
+      "start": 111.11687513912682,
+      "end": 111.51870849998461
+    },
+    {
+      "text": "device",
+      "start": 111.58155190983099,
+      "end": 112.05929248596388
+    },
+    {
+      "text": "compute.",
+      "start": 112.12231934205596,
+      "end": 113.34340238430313
+    },
+    {
+      "text": "Builds",
+      "start": 114.09447201147789,
+      "end": 114.43429660651825
+    },
+    {
+      "text": "for",
+      "start": 114.49593716417701,
+      "end": 114.70912909851558
+    },
+    {
+      "text": "Mac,",
+      "start": 114.76982378468394,
+      "end": 115.16321581961694
+    },
+    {
+      "text": "Linux,",
+      "start": 115.22370099495366,
+      "end": 115.80205444218679
+    },
+    {
+      "text": "iOS,",
+      "start": 115.86519412877227,
+      "end": 116.66973701930283
+    },
+    {
+      "text": "Android,",
+      "start": 116.72865729669583,
+      "end": 117.24606306042236
+    },
+    {
+      "text": "web,",
+      "start": 117.30240039223406,
+      "end": 117.65867744234977
+    },
+    {
+      "text": "and",
+      "start": 117.71558448548022,
+      "end": 117.87086808817305
+    },
+    {
+      "text": "the",
+      "start": 117.90707623731855,
+      "end": 118.05091926950327
+    },
+    {
+      "text": "command",
+      "start": 118.11199590086557,
+      "end": 118.54201111813974
+    },
+    {
+      "text": "line.",
+      "start": 118.5915654212219,
+      "end": 119.59444549207059
+    },
+    {
+      "text": "Huge format support: SVG · EMF · PDF · Print PDF «CMYK» · CMYK TIFF · PNG · JPEG · WebP · AVIF · ICO · WebM · MP4 · GIF · MP3 · M4A · HTML · MD · TXT · JSON · CSV · ICS · VCF · ZIP — plus audio and tracker input «WAV · OGG · FLAC · MIDI · MOD».",
+      "start": 119.975,
+      "end": 142.775
+    },
+    {
+      "text": "Print-ready output: CMYK PDF & TIFF, physical units, bleed, crop/registration marks, colour bars, and press «FOGRA/SWOP» profiles.",
+      "start": 143.125,
+      "end": 154.975
+    },
+    {
+      "text": "Infinite",
+      "start": 155.71815721395404,
+      "end": 156.39744459200853
+    },
+    {
+      "text": "deterministic",
+      "start": 156.48242721047492,
+      "end": 157.6540880122763
+    },
+    {
+      "text": "media",
+      "start": 157.73528913213443,
+      "end": 158.2254511578243
+    },
+    {
+      "text": "creation.",
+      "start": 158.28891464267045,
+      "end": 159.66830661758206
+    },
+    {
+      "text": "Renders and exports 100% offline — the shells need no network at render time.",
+      "start": 160.05,
+      "end": 167.775
+    },
+    {
+      "text": "«The optional hosted services — MCP agent endpoint, Content Credentials CA — are separate opt-ins; see docs/server-surface-md.»",
+      "start": 168.125,
+      "end": 179.65
+    },
+    {
+      "text": "Full",
+      "start": 180.4138341795074,
+      "end": 180.78519307982293
+    },
+    {
+      "text": "command-line",
+      "start": 180.88185602689518,
+      "end": 181.8960310690207
+    },
+    {
+      "text": "support.",
+      "start": 181.97091733046094,
+      "end": 183.24270466061236
+    },
+    {
+      "text": "Save",
+      "start": 184.02358541723675,
+      "end": 184.3266491507519
+    },
+    {
+      "text": "tokens,",
+      "start": 184.39579111429504,
+      "end": 185.1268053335504
+    },
+    {
+      "text": "tell",
+      "start": 185.1881583843705,
+      "end": 185.42869060214164
+    },
+    {
+      "text": "your",
+      "start": 185.48911899826825,
+      "end": 185.6530129169325
+    },
+    {
+      "text": "model",
+      "start": 185.7046051701225,
+      "end": 186.02273112575114
+    },
+    {
+      "text": "to",
+      "start": 186.1206458732313,
+      "end": 186.3745833036501
+    },
+    {
+      "text": "try",
+      "start": 186.43627790114232,
+      "end": 186.73181893711973
+    },
+    {
+      "text": "Lolly",
+      "start": 186.79229053092905,
+      "end": 187.10609353901106
+    },
+    {
+      "text": "first!",
+      "start": 187.20091641220662,
+      "end": 188.29454110466574
+    },
+    {
+      "text": "What",
+      "start": 189.4277083489563,
+      "end": 189.74170617038777
+    },
+    {
+      "text": "this",
+      "start": 189.82589451726923,
+      "end": 190.18320956939928
+    },
+    {
+      "text": "is",
+      "start": 190.26728267445222,
+      "end": 190.5225616720143
+    },
+    {
+      "text": "not",
+      "start": 190.61532203688748,
+      "end": 191.36220570281066
+    },
+    {
+      "text": "A",
+      "start": 192.323877471889,
+      "end": 192.5292398632976
+    },
+    {
+      "text": "general-purpose",
+      "start": 192.6158609986749,
+      "end": 193.81260952346713
+    },
+    {
+      "text": "design",
+      "start": 193.87912052656515,
+      "end": 194.45274940060506
+    },
+    {
+      "text": "tool",
+      "start": 194.55189674825377,
+      "end": 195.4468473258927
+    },
+    {
+      "text": "It",
+      "start": 196.34419084601768,
+      "end": 196.50566429268872
+    },
+    {
+      "text": "does",
+      "start": 196.56548425921733,
+      "end": 196.76203734287944
+    },
+    {
+      "text": "include",
+      "start": 196.7997049817469,
+      "end": 197.2819595691028
+    },
+    {
+      "text": "an",
+      "start": 197.37083731819146,
+      "end": 197.58465208023514
+    },
+    {
+      "text": "open",
+      "start": 197.6528195077206,
+      "end": 198.04409859912636
+    },
+    {
+      "text": "canvas",
+      "start": 198.10591891939123,
+      "end": 198.8953240459412
+    },
+    {
+      "text": "—",
+      "start": 198.96981660312923,
+      "end": 199.00352918927092
+    },
+    {
+      "text": "Layout",
+      "start": 199.0642291251992,
+      "end": 199.47738414295313
+    },
+    {
+      "text": "Studio",
+      "start": 199.53832222367677,
+      "end": 200.14993073758575
+    },
+    {
+      "text": "—",
+      "start": 200.19128556985262,
+      "end": 200.2220372341475
+    },
+    {
+      "text": "but",
+      "start": 200.27814376455652,
+      "end": 200.49509024474526
+    },
+    {
+      "text": "even",
+      "start": 200.55772825029732,
+      "end": 200.8835249733309
+    },
+    {
+      "text": "there,",
+      "start": 200.94404144476047,
+      "end": 201.57565480773354
+    },
+    {
+      "text": "colours,",
+      "start": 201.65395893833272,
+      "end": 202.20023343356436
+    },
+    {
+      "text": "type",
+      "start": 202.26272597053233,
+      "end": 202.56799646480422
+    },
+    {
+      "text": "and",
+      "start": 202.62692167705734,
+      "end": 202.79642465194382
+    },
+    {
+      "text": "assets",
+      "start": 202.85780884443295,
+      "end": 203.33906319411338
+    },
+    {
+      "text": "conform",
+      "start": 203.39945576909452,
+      "end": 203.928373546933
+    },
+    {
+      "text": "to",
+      "start": 204.02437532443204,
+      "end": 204.21192700159872
+    },
+    {
+      "text": "the",
+      "start": 204.26037751156724,
+      "end": 204.40092381785036
+    },
+    {
+      "text": "brand",
+      "start": 204.46151280061162,
+      "end": 204.76430236318973
+    },
+    {
+      "text": "globals,",
+      "start": 204.8247676753585,
+      "end": 205.84175878970714
+    },
+    {
+      "text": "so",
+      "start": 205.9139336076838,
+      "end": 206.1239664761003
+    },
+    {
+      "text": "free",
+      "start": 206.22798139567848,
+      "end": 206.4577667046939
+    },
+    {
+      "text": "arrangement",
+      "start": 206.51781226653654,
+      "end": 207.19974635677232
+    },
+    {
+      "text": "never",
+      "start": 207.2672164975479,
+      "end": 207.5249506510489
+    },
+    {
+      "text": "becomes",
+      "start": 207.57775515057787,
+      "end": 208.06321081990566
+    },
+    {
+      "text": "off-brand",
+      "start": 208.15140515215418,
+      "end": 208.75034662961727
+    },
+    {
+      "text": "output.",
+      "start": 208.81995070342606,
+      "end": 209.99453172696917
+    },
+    {
+      "text": "See",
+      "start": 210.7824020410103,
+      "end": 211.02348109930958
+    },
+    {
+      "text": "docs/positioning-md",
+      "start": 211.08416251559376,
+      "end": 212.95542397523514
+    },
+    {
+      "text": "for",
+      "start": 213.07107234800122,
+      "end": 213.30572902481362
+    },
+    {
+      "text": "the",
+      "start": 213.36520771624893,
+      "end": 213.5174015807986
+    },
+    {
+      "text": "full",
+      "start": 213.6258686278098,
+      "end": 213.85936455099096
+    },
+    {
+      "text": "landscape",
+      "start": 213.91997619874547,
+      "end": 214.54459695634938
+    },
+    {
+      "text": "comparison.",
+      "start": 214.60512419229556,
+      "end": 215.99454418537337
+    },
+    {
+      "text": "Repository",
+      "start": 217.1322653148615,
+      "end": 218.20024160253413
+    },
+    {
+      "text": "layout",
+      "start": 218.30809800852825,
+      "end": 219.36959729675687
+    },
+    {
+      "text": "lolly",
+      "start": 220.36730854393733,
+      "end": 220.73730236895634
+    },
+    {
+      "text": "is",
+      "start": 220.80771089637378,
+      "end": 221.02392629684766
+    },
+    {
+      "text": "an",
+      "start": 221.1056054189835,
+      "end": 221.28531121156118
+    },
+    {
+      "text": "umbrella",
+      "start": 221.35301326857163,
+      "end": 221.8553031324248
+    },
+    {
+      "text": "repo:",
+      "start": 221.91596455300552,
+      "end": 222.66879699976408
+    },
+    {
+      "text": "the",
+      "start": 222.73371372551773,
+      "end": 222.8924221132367
+    },
+    {
+      "text": "app",
+      "start": 222.96909348418671,
+      "end": 223.18557759419684
+    },
+    {
+      "text": "core",
+      "start": 223.24737415280558,
+      "end": 223.49313782752353
+    },
+    {
+      "text": "lives",
+      "start": 223.55370404755618,
+      "end": 223.92386984063097
+    },
+    {
+      "text": "here,",
+      "start": 223.98435621710595,
+      "end": 224.72913061954952
+    },
+    {
+      "text": "and",
+      "start": 224.78826570297733,
+      "end": 224.9610568521546
+    },
+    {
+      "text": "each",
+      "start": 225.0489251031059,
+      "end": 225.30634225935447
+    },
+    {
+      "text": "shippable",
+      "start": 225.3992674724761,
+      "end": 225.8250588579945
+    },
+    {
+      "text": "unit",
+      "start": 225.88655848183728,
+      "end": 226.26457222036294
+    },
+    {
+      "text": "is",
+      "start": 226.32628883656176,
+      "end": 226.48507334924867
+    },
+    {
+      "text": "a",
+      "start": 226.52566056373794,
+      "end": 226.67937971181183
+    },
+    {
+      "text": "git",
+      "start": 226.74946778343858,
+      "end": 226.9652227213299
+    },
+    {
+      "text": "submodule",
+      "start": 227.0546190422562,
+      "end": 227.684847984751
+    },
+    {
+      "text": "hosted",
+      "start": 227.75458203733496,
+      "end": 228.27988981731284
+    },
+    {
+      "text": "under",
+      "start": 228.33656240935863,
+      "end": 228.56905828106048
+    },
+    {
+      "text": "github-com/lolly-tools.",
+      "start": 228.6309563842069,
+      "end": 231.29442555490792
+    },
+    {
+      "text": "Every",
+      "start": 232.05651342500502,
+      "end": 232.36071632281474
+    },
+    {
+      "text": "submodule",
+      "start": 232.45299712183817,
+      "end": 233.09770641617203
+    },
+    {
+      "text": "is",
+      "start": 233.18606204593343,
+      "end": 233.45056759161673
+    },
+    {
+      "text": "mounted",
+      "start": 233.5448895022666,
+      "end": 234.0655530062026
+    },
+    {
+      "text": "at",
+      "start": 234.12243604046466,
+      "end": 234.3056709952336
+    },
+    {
+      "text": "its",
+      "start": 234.37213748253455,
+      "end": 234.61199546445934
+    },
+    {
+      "text": "original",
+      "start": 234.67118543319685,
+      "end": 235.23372649840883
+    },
+    {
+      "text": "path,",
+      "start": 235.3133084522208,
+      "end": 236.10573368555742
+    },
+    {
+      "text": "so",
+      "start": 236.18068203740043,
+      "end": 236.36545506229362
+    },
+    {
+      "text": "the",
+      "start": 236.42538692885338,
+      "end": 236.57739611287874
+    },
+    {
+      "text": "monorepo",
+      "start": 236.63839944759556,
+      "end": 237.34905443379876
+    },
+    {
+      "text": "builds",
+      "start": 237.4104981735993,
+      "end": 237.80850104662596
+    },
+    {
+      "text": "and",
+      "start": 237.90556950982906,
+      "end": 238.1754762429479
+    },
+    {
+      "text": "runs",
+      "start": 238.2453411378794,
+      "end": 238.65977588018012
+    },
+    {
+      "text": "exactly",
+      "start": 238.72360140104118,
+      "end": 239.32909123527978
+    },
+    {
+      "text": "as",
+      "start": 239.39628751439898,
+      "end": 239.62293792117705
+    },
+    {
+      "text": "before.",
+      "start": 239.68320449675784,
+      "end": 240.8445374717229
+    },
+    {
+      "text": "Code",
+      "start": 241.628327947751,
+      "end": 242.10101465641992
+    },
+    {
+      "text": "example",
+      "start": 242.1702623944906,
+      "end": 242.98050799365492
+    },
+    {
+      "text": "omitted.",
+      "start": 243.07934691566635,
+      "end": 244.49244168684268
+    },
+    {
+      "text": "Critical separation: engine/ knows nothing about SUSE.",
+      "start": 244.875,
+      "end": 250.575
+    },
+    {
+      "text": "Brand-specific content lives in brand packs «brands/suse — private; brands/lolly-start — the blank starter brand», brand-agnostic tools in community/; the shells, services, engine and docs are MPL-2 point 0.",
+      "start": 250.925,
+      "end": 269.15
+    },
+    {
+      "text": "The repo-root tools/ and catalog/ paths every script and shell consumes are profile views built by scripts/use-profile-ts from profiles-json — switch brands with npm run profile:suse / npm run profile:start.",
+      "start": 269.5,
+      "end": 288.9
+    },
+    {
+      "text": "Keeping each unit in its own repo lets it ship on its own cadence while the umbrella pins a known-good combination.",
+      "start": 289.25,
+      "end": 298.725
+    },
+    {
+      "text": "Architectural",
+      "start": 299.835072772461,
+      "end": 300.90770392291734
+    },
+    {
+      "text": "commitments",
+      "start": 300.9775285384905,
+      "end": 302.17093698294207
+    },
+    {
+      "text": "These",
+      "start": 303.11308180902745,
+      "end": 303.53417439186705
+    },
+    {
+      "text": "decisions",
+      "start": 303.59766723288743,
+      "end": 304.5151593705083
+    },
+    {
+      "text": "are",
+      "start": 304.63496244526164,
+      "end": 304.8705260517828
+    },
+    {
+      "text": "settled.",
+      "start": 304.9982222604629,
+      "end": 306.16839699967295
+    },
+    {
+      "text": "Changing",
+      "start": 306.9270264019905,
+      "end": 307.55189308548955
+    },
+    {
+      "text": "any",
+      "start": 307.63224832095517,
+      "end": 307.87419544524516
+    },
+    {
+      "text": "of",
+      "start": 307.91837891118433,
+      "end": 308.1007844874992
+    },
+    {
+      "text": "them",
+      "start": 308.16134756714746,
+      "end": 308.5100911002329
+    },
+    {
+      "text": "is",
+      "start": 308.5872630701565,
+      "end": 308.7699148485589
+    },
+    {
+      "text": "a",
+      "start": 308.83172916670713,
+      "end": 309.0100900957761
+    },
+    {
+      "text": "major",
+      "start": 309.07642206873277,
+      "end": 309.645159205632
+    },
+    {
+      "text": "undertaking:",
+      "start": 309.7216908780237,
+      "end": 311.2194103616136
+    },
+    {
+      "text": "Declarative tools.",
+      "start": 311.6,
+      "end": 314.35
+    },
+    {
+      "text": "A tool is a manifest + template + assets.",
+      "start": 314.70000000000005,
+      "end": 319.6
+    },
+    {
+      "text": "Inputs are declared in the manifest, not inferred from template tokens.",
+      "start": 319.95000000000005,
+      "end": 326.3
+    },
+    {
+      "text": "hooks-js is an optional escape hatch for tools that need imperative behavior «chart-js rendering, QR encoding».",
+      "start": 326.65000000000003,
+      "end": 336.52500000000003
+    },
+    {
+      "text": "Tools",
+      "start": 337.2684707114646,
+      "end": 337.7235736845492
+    },
+    {
+      "text": "and",
+      "start": 337.80684367195386,
+      "end": 338.06956498384704
+    },
+    {
+      "text": "assets",
+      "start": 338.13268917030484,
+      "end": 338.6769334695037
+    },
+    {
+      "text": "are",
+      "start": 338.7452364414915,
+      "end": 338.9026620670239
+    },
+    {
+      "text": "data,",
+      "start": 338.96544078548754,
+      "end": 339.5514394091361
+    },
+    {
+      "text": "not",
+      "start": 339.61172476005896,
+      "end": 339.83074785663536
+    },
+    {
+      "text": "bundled",
+      "start": 339.89357897808594,
+      "end": 340.37427377850577
+    },
+    {
+      "text": "code.",
+      "start": 340.4624528518523,
+      "end": 341.5934921425748
+    },
+    {
+      "text": "Clients",
+      "start": 342.3634784016244,
+      "end": 342.8185856045196
+    },
+    {
+      "text": "sync",
+      "start": 342.9072899523008,
+      "end": 343.1723694104067
+    },
+    {
+      "text": "them",
+      "start": 343.2359502198595,
+      "end": 343.50345434528026
+    },
+    {
+      "text": "from",
+      "start": 343.61696348026004,
+      "end": 343.9808786313878
+    },
+    {
+      "text": "a",
+      "start": 344.04327972746376,
+      "end": 344.19815020715845
+    },
+    {
+      "text": "signed",
+      "start": 344.29429060602064,
+      "end": 344.6838266640575
+    },
+    {
+      "text": "manifest",
+      "start": 344.7467303795121,
+      "end": 345.3921056144256
+    },
+    {
+      "text": "URL.",
+      "start": 345.4740744651108,
+      "end": 346.8683237128147
+    },
+    {
+      "text": "New",
+      "start": 347.6745688422061,
+      "end": 347.9080984548687
+    },
+    {
+      "text": "tools",
+      "start": 347.9982104800148,
+      "end": 348.51697721295875
+    },
+    {
+      "text": "and",
+      "start": 348.62020188085677,
+      "end": 348.87726745838773
+    },
+    {
+      "text": "assets",
+      "start": 348.9406375695733,
+      "end": 349.5280321703354
+    },
+    {
+      "text": "don't",
+      "start": 349.6091073511753,
+      "end": 349.86033644771294
+    },
+    {
+      "text": "require",
+      "start": 349.9073121297083,
+      "end": 350.47380701981706
+    },
+    {
+      "text": "app",
+      "start": 350.56631396984534,
+      "end": 350.76477739491884
+    },
+    {
+      "text": "updates.",
+      "start": 350.80786854514014,
+      "end": 352.06809503582514
+    },
+    {
+      "text": "Capability",
+      "start": 352.83572588508366,
+      "end": 353.9190738800012
+    },
+    {
+      "text": "bridge.",
+      "start": 354.0243843247476,
+      "end": 355.1934215048837
+    },
+    {
+      "text": "Tools",
+      "start": 355.9630284337795,
+      "end": 356.4037838385606
+    },
+    {
+      "text": "never",
+      "start": 356.48024547600545,
+      "end": 356.75898227991934
+    },
+    {
+      "text": "touch",
+      "start": 356.84035304400425,
+      "end": 357.1552771151209
+    },
+    {
+      "text": "the",
+      "start": 357.2164748948291,
+      "end": 357.37148937700016
+    },
+    {
+      "text": "filesystem,",
+      "start": 357.4697685408419,
+      "end": 358.51672083372284
+    },
+    {
+      "text": "network,",
+      "start": 358.58013409386183,
+      "end": 359.3367654037674
+    },
+    {
+      "text": "or",
+      "start": 359.398948126162,
+      "end": 359.57713788508295
+    },
+    {
+      "text": "DOM-outside-template",
+      "start": 359.64127554225405,
+      "end": 361.2391979336116
+    },
+    {
+      "text": "directly.",
+      "start": 361.3004463497757,
+      "end": 362.61901782881506
+    },
+    {
+      "text": "They",
+      "start": 363.39282166234227,
+      "end": 363.61214334329156
+    },
+    {
+      "text": "call",
+      "start": 363.700340910066,
+      "end": 364.14238407245443
+    },
+    {
+      "text": "a",
+      "start": 364.21603574894954,
+      "end": 364.41341077984043
+    },
+    {
+      "text": "versioned",
+      "start": 364.5240261444171,
+      "end": 365.1314632181433
+    },
+    {
+      "text": "host.",
+      "start": 365.2019907998097,
+      "end": 366.34345789099683
+    },
+    {
+      "text": "*",
+      "start": 367.1211962349806,
+      "end": 367.99002448993497
+    },
+    {
+      "text": "API.",
+      "start": 368.09232938946525,
+      "end": 369.69371334978064
+    },
+    {
+      "text": "This",
+      "start": 370.45447622998313,
+      "end": 370.7089445900643
+    },
+    {
+      "text": "is",
+      "start": 370.771821115117,
+      "end": 370.97329184095565
+    },
+    {
+      "text": "what",
+      "start": 371.0348896945519,
+      "end": 371.3025169552137
+    },
+    {
+      "text": "makes",
+      "start": 371.36256870766766,
+      "end": 371.6417809031729
+    },
+    {
+      "text": "the",
+      "start": 371.69429800447915,
+      "end": 371.8462328202967
+    },
+    {
+      "text": "same",
+      "start": 371.9382244297369,
+      "end": 372.2395614369582
+    },
+    {
+      "text": "tool",
+      "start": 372.3128663978215,
+      "end": 372.6285441235114
+    },
+    {
+      "text": "work",
+      "start": 372.68892604284173,
+      "end": 372.9734651759569
+    },
+    {
+      "text": "in",
+      "start": 373.0072234647537,
+      "end": 373.1518004313468
+    },
+    {
+      "text": "browser,",
+      "start": 373.2122868587833,
+      "end": 373.89989394837534
+    },
+    {
+      "text": "Tauri,",
+      "start": 373.9799799521097,
+      "end": 374.48315884653977
+    },
+    {
+      "text": "and",
+      "start": 374.5422194345095,
+      "end": 374.7515612070645
+    },
+    {
+      "text": "CLI.",
+      "start": 374.8122544801958,
+      "end": 375.89461605477936
+    },
+    {
+      "text": "Stable",
+      "start": 376.68579492581,
+      "end": 377.20604583868095
+    },
+    {
+      "text": "asset",
+      "start": 377.29890346920604,
+      "end": 377.91028050753016
+    },
+    {
+      "text": "ID'S",
+      "start": 378.03039312032763,
+      "end": 378.69628076346345
+    },
+    {
+      "text": "forever.",
+      "start": 378.77304848182047,
+      "end": 379.96814930605
+    },
+    {
+      "text": "suse/logo/primary",
+      "start": 380.7619846755416,
+      "end": 383.3597033859487
+    },
+    {
+      "text": "is",
+      "start": 383.4429350502175,
+      "end": 383.61162318039396
+    },
+    {
+      "text": "a",
+      "start": 383.650044165852,
+      "end": 383.8019032831946
+    },
+    {
+      "text": "contract.",
+      "start": 383.86344652453636,
+      "end": 385.2191555624277
+    },
+    {
+      "text": "Never",
+      "start": 386.02208379112545,
+      "end": 386.388398147308
+    },
+    {
+      "text": "reuse,",
+      "start": 386.4573131302067,
+      "end": 387.30546506068976
+    },
+    {
+      "text": "never",
+      "start": 387.3966159731568,
+      "end": 387.6990074465023
+    },
+    {
+      "text": "rename.",
+      "start": 387.7612419447033,
+      "end": 388.968718061628
+    },
+    {
+      "text": "Version",
+      "start": 389.7647145334818,
+      "end": 390.32646644536266
+    },
+    {
+      "text": "in",
+      "start": 390.38507221772613,
+      "end": 390.51480557270924
+    },
+    {
+      "text": "the",
+      "start": 390.56306589094703,
+      "end": 390.71969932374253
+    },
+    {
+      "text": "manifest,",
+      "start": 390.7825575030355,
+      "end": 391.6615147308514
+    },
+    {
+      "text": "never",
+      "start": 391.7470255498701,
+      "end": 392.0696189902556
+    },
+    {
+      "text": "in",
+      "start": 392.13325690946897,
+      "end": 392.27249523837315
+    },
+    {
+      "text": "the",
+      "start": 392.3168066444417,
+      "end": 392.47298656176224
+    },
+    {
+      "text": "path.",
+      "start": 392.5443930195594,
+      "end": 393.593387826917
+    },
+    {
+      "text": "URL",
+      "start": 394.3964583373572,
+      "end": 395.04470999262355
+    },
+    {
+      "text": "mode",
+      "start": 395.11744626456624,
+      "end": 395.58495602993446
+    },
+    {
+      "text": "is",
+      "start": 395.6640101905581,
+      "end": 395.8981260264483
+    },
+    {
+      "text": "first-class.",
+      "start": 395.9939854795794,
+      "end": 397.5682978938556
+    },
+    {
+      "text": "Every",
+      "start": 398.3400883963827,
+      "end": 398.67631769030686
+    },
+    {
+      "text": "input",
+      "start": 398.7537391772608,
+      "end": 399.2157496064773
+    },
+    {
+      "text": "must",
+      "start": 399.27672499143836,
+      "end": 399.5006241989945
+    },
+    {
+      "text": "be",
+      "start": 399.5583900105546,
+      "end": 399.69255261126733
+    },
+    {
+      "text": "expressible",
+      "start": 399.753440174946,
+      "end": 400.65397132724155
+    },
+    {
+      "text": "as",
+      "start": 400.7417186287489,
+      "end": 400.94935428526395
+    },
+    {
+      "text": "URL",
+      "start": 401.0401841096481,
+      "end": 401.632072448078
+    },
+    {
+      "text": "params.",
+      "start": 401.69471237329986,
+      "end": 402.91892602204246
+    },
+    {
+      "text": "CLI",
+      "start": 403.67735746591416,
+      "end": 404.003202187734
+    },
+    {
+      "text": "mode",
+      "start": 404.0639080599088,
+      "end": 404.48603083506157
+    },
+    {
+      "text": "=",
+      "start": 404.5759144516274,
+      "end": 405.01380149978036
+    },
+    {
+      "text": "hidden",
+      "start": 405.0750660106565,
+      "end": 405.3890365771757
+    },
+    {
+      "text": "browser",
+      "start": 405.4501087374348,
+      "end": 406.01510351294843
+    },
+    {
+      "text": "+",
+      "start": 406.08964368411586,
+      "end": 406.3772032853035
+    },
+    {
+      "text": "URL",
+      "start": 406.4492383561514,
+      "end": 407.00600006347327
+    },
+    {
+      "text": "mode",
+      "start": 407.0668244594089,
+      "end": 407.4457139081005
+    },
+    {
+      "text": "+",
+      "start": 407.5187531287469,
+      "end": 407.8056604775016
+    },
+    {
+      "text": "file",
+      "start": 407.8737828876108,
+      "end": 408.20570884548965
+    },
+    {
+      "text": "output.",
+      "start": 408.26608861323,
+      "end": 409.44444007571275
+    },
+    {
+      "text": "One",
+      "start": 410.2375732361995,
+      "end": 410.6310432611124
+    },
+    {
+      "text": "render",
+      "start": 410.73871941561634,
+      "end": 411.2725758654927
+    },
+    {
+      "text": "path.",
+      "start": 411.37148050469125,
+      "end": 412.4182244570578
+    },
+    {
+      "text": "Storage via the bridge.",
+      "start": 412.8,
+      "end": 415.95
+    },
+    {
+      "text": "Tools call host-state-save«» / host-state-load«».",
+      "start": 416.3,
+      "end": 420.975
+    },
+    {
+      "text": "The bridge picks IndexedDB «web», filesystem «Tauri», or memory «CLI».",
+      "start": 421.325,
+      "end": 427.5
+    },
+    {
+      "text": "Tools never know which.",
+      "start": 427.85,
+      "end": 430.975
+    },
+    {
+      "text": "Maturity",
+      "start": 431.7312266569645,
+      "end": 432.77665608812384
+    },
+    {
+      "text": "tags.",
+      "start": 432.8762143347199,
+      "end": 434.11808195563486
+    },
+    {
+      "text": "Every",
+      "start": 434.892541592797,
+      "end": 435.20909204730646
+    },
+    {
+      "text": "tool",
+      "start": 435.299698787026,
+      "end": 435.6268585369089
+    },
+    {
+      "text": "declares",
+      "start": 435.68833529937484,
+      "end": 436.15452917813525
+    },
+    {
+      "text": "status:",
+      "start": 436.2428673922206,
+      "end": 437.1619359808035
+    },
+    {
+      "text": "official",
+      "start": 437.22999288226504,
+      "end": 437.7437226260599
+    },
+    {
+      "text": "|",
+      "start": 437.7914217398471,
+      "end": 437.7914217398471
+    },
+    {
+      "text": "community",
+      "start": 437.8537240605172,
+      "end": 438.568374993476
+    },
+    {
+      "text": "|",
+      "start": 438.6271876304482,
+      "end": 438.6271876304482
+    },
+    {
+      "text": "experimental.",
+      "start": 438.6913072926312,
+      "end": 440.3938191354356
+    },
+    {
+      "text": "Experimental",
+      "start": 441.169111972541,
+      "end": 442.09921694119555
+    },
+    {
+      "text": "tools",
+      "start": 442.1860351668429,
+      "end": 442.71332616804443
+    },
+    {
+      "text": "watermark",
+      "start": 442.8183903218597,
+      "end": 443.47404825234963
+    },
+    {
+      "text": "their",
+      "start": 443.533779387953,
+      "end": 443.7326444647174
+    },
+    {
+      "text": "exports.",
+      "start": 443.795148327255,
+      "end": 445.1188176803744
+    },
+    {
+      "text": "This",
+      "start": 445.88223858366877,
+      "end": 446.13596425217094
+    },
+    {
+      "text": "is",
+      "start": 446.1953045508397,
+      "end": 446.3773972268353
+    },
+    {
+      "text": "the",
+      "start": 446.43794558678445,
+      "end": 446.6035305003379
+    },
+    {
+      "text": "structural",
+      "start": 446.6696977639545,
+      "end": 447.2700409783852
+    },
+    {
+      "text": "answer",
+      "start": 447.3370492889028,
+      "end": 447.764675498755
+    },
+    {
+      "text": "to",
+      "start": 447.8877058108738,
+      "end": 448.1568226203091
+    },
+    {
+      "text": "the",
+      "start": 448.21747697449695,
+      "end": 448.3807434730532
+    },
+    {
+      "text": "\"brand",
+      "start": 448.43655685869464,
+      "end": 448.87640020179174
+    },
+    {
+      "text": "approved",
+      "start": 448.9255712953051,
+      "end": 449.3816897202645
+    },
+    {
+      "text": "by",
+      "start": 449.4413051249754,
+      "end": 449.64949261879974
+    },
+    {
+      "text": "default\"",
+      "start": 449.70898574516,
+      "end": 450.3152057972271
+    },
+    {
+      "text": "risk.",
+      "start": 450.37570547838357,
+      "end": 451.3944507053061
+    },
+    {
+      "text": "Getting",
+      "start": 452.5260423593608,
+      "end": 453.0700279307902
+    },
+    {
+      "text": "started",
+      "start": 453.2009888741107,
+      "end": 454.3446360102549
+    },
+    {
+      "text": "Because",
+      "start": 455.30438145875826,
+      "end": 455.6870995628145
+    },
+    {
+      "text": "the",
+      "start": 455.750323780562,
+      "end": 455.9700495676344
+    },
+    {
+      "text": "shippable",
+      "start": 456.1231266856734,
+      "end": 456.59757292938957
+    },
+    {
+      "text": "units",
+      "start": 456.65992930317515,
+      "end": 457.0586000950047
+    },
+    {
+      "text": "are",
+      "start": 457.15507451380086,
+      "end": 457.38203575103273
+    },
+    {
+      "text": "submodules,",
+      "start": 457.4707444863278,
+      "end": 458.3391997312155
+    },
+    {
+      "text": "clone",
+      "start": 458.4089802773665,
+      "end": 458.7775939904593
+    },
+    {
+      "text": "recursively:",
+      "start": 458.83657598042447,
+      "end": 460.3688097120393
+    },
+    {
+      "text": "Code",
+      "start": 461.153327947751,
+      "end": 461.6260146564199
+    },
+    {
+      "text": "example",
+      "start": 461.6952623944906,
+      "end": 462.50550799365493
+    },
+    {
+      "text": "omitted.",
+      "start": 462.6043469156663,
+      "end": 464.0174416868427
+    },
+    {
+      "text": "Content profiles.",
+      "start": 464.4,
+      "end": 467.2
+    },
+    {
+      "text": "tools/ and catalog/ are gitignored views assembled from the mounted packs «profiles-json»: the private brands/suse pack «skipped automatically on clone if you don't have access — it's update = none» plus the public community/ tools.",
+      "start": 467.54999999999995,
+      "end": 487.625
+    },
+    {
+      "text": "Without SUSE access you land on the blank lolly-start brand and everything still builds and runs.",
+      "start": 487.97499999999997,
+      "end": 496.025
+    },
+    {
+      "text": "Switch explicitly:",
+      "start": 496.375,
+      "end": 498.97499999999997
+    },
+    {
+      "text": "Code",
+      "start": 499.728327947751,
+      "end": 500.2010146564199
+    },
+    {
+      "text": "example",
+      "start": 500.2702623944906,
+      "end": 501.0805079936549
+    },
+    {
+      "text": "omitted.",
+      "start": 501.1793469156663,
+      "end": 502.5924416868427
+    },
+    {
+      "text": "See docs/authoring-tools-md to build your first tool, and Development below for the submodule workflow.",
+      "start": 502.975,
+      "end": 512
+    },
+    {
+      "text": "A new brand pack can be generated from design tokens with npm run ingest:brand «DTCG / Tokens Studio / Penpot exports».",
+      "start": 512.35,
+      "end": 525.125
+    },
+    {
+      "text": "The",
+      "start": 526.2340591098123,
+      "end": 526.4985978445827
+    },
+    {
+      "text": "CLI",
+      "start": 526.6007742063924,
+      "end": 527.3779796186631
+    },
+    {
+      "text": "lolly",
+      "start": 528.3595352835067,
+      "end": 528.6404490486816
+    },
+    {
+      "text": "runs",
+      "start": 528.7002552921087,
+      "end": 529.0012191793088
+    },
+    {
+      "text": "any",
+      "start": 529.0753628795087,
+      "end": 529.2719577796167
+    },
+    {
+      "text": "tool",
+      "start": 529.3573606145453,
+      "end": 529.6723166349586
+    },
+    {
+      "text": "from",
+      "start": 529.7321263578752,
+      "end": 529.9279397342826
+    },
+    {
+      "text": "the",
+      "start": 529.9695700393722,
+      "end": 530.1151143610864
+    },
+    {
+      "text": "terminal",
+      "start": 530.1776443167166,
+      "end": 530.6986048141217
+    },
+    {
+      "text": "through",
+      "start": 530.7916435805737,
+      "end": 530.9865922608726
+    },
+    {
+      "text": "the",
+      "start": 531.0379896446184,
+      "end": 531.1882756763415
+    },
+    {
+      "text": "same",
+      "start": 531.2782522055063,
+      "end": 531.5763256860193
+    },
+    {
+      "text": "engine",
+      "start": 531.649641634607,
+      "end": 532.3698003150104
+    },
+    {
+      "text": "and",
+      "start": 532.4570721287232,
+      "end": 532.5850173994048
+    },
+    {
+      "text": "the",
+      "start": 532.624317220452,
+      "end": 532.7743460508408
+    },
+    {
+      "text": "same",
+      "start": 532.8679056343744,
+      "end": 533.1513386387264
+    },
+    {
+      "text": "render",
+      "start": 533.2109653703084,
+      "end": 533.516858963126
+    },
+    {
+      "text": "path",
+      "start": 533.5870519409993,
+      "end": 533.9572103416535
+    },
+    {
+      "text": "as",
+      "start": 534.0269974115796,
+      "end": 534.2055058340608
+    },
+    {
+      "text": "the",
+      "start": 534.2632918526941,
+      "end": 534.4104122856586
+    },
+    {
+      "text": "web",
+      "start": 534.4703191763263,
+      "end": 534.6841944360453
+    },
+    {
+      "text": "shell",
+      "start": 534.7750257674163,
+      "end": 535.5277751741518
+    },
+    {
+      "text": "—",
+      "start": 535.6094099284202,
+      "end": 535.651135303249
+    },
+    {
+      "text": "it",
+      "start": 535.7077363465132,
+      "end": 535.9433437461083
+    },
+    {
+      "text": "is",
+      "start": 536.0156466473755,
+      "end": 536.1812350435673
+    },
+    {
+      "text": "URL",
+      "start": 536.2425902903283,
+      "end": 536.7816018456485
+    },
+    {
+      "text": "mode",
+      "start": 536.8559698840646,
+      "end": 537.2685035702721
+    },
+    {
+      "text": "under",
+      "start": 537.3288527974787,
+      "end": 537.578301729158
+    },
+    {
+      "text": "a",
+      "start": 537.6398974160886,
+      "end": 537.8149575098013
+    },
+    {
+      "text": "different",
+      "start": 537.8751458321191,
+      "end": 538.1807951011524
+    },
+    {
+      "text": "transport,",
+      "start": 538.2395010062137,
+      "end": 539.3537584188883
+    },
+    {
+      "text": "so",
+      "start": 539.4275628316118,
+      "end": 539.6276292331999
+    },
+    {
+      "text": "--url=x",
+      "start": 539.6894916714309,
+      "end": 541.1158861592068
+    },
+    {
+      "text": "is",
+      "start": 541.1557522943824,
+      "end": 541.3188763407722
+    },
+    {
+      "text": "the",
+      "start": 541.3786346280078,
+      "end": 541.5289001467938
+    },
+    {
+      "text": "value",
+      "start": 541.5888873580636,
+      "end": 542.0060056441556
+    },
+    {
+      "text": "the",
+      "start": 542.0647920303227,
+      "end": 542.2246096044914
+    },
+    {
+      "text": "app",
+      "start": 542.3157457265229,
+      "end": 542.54728616477
+    },
+    {
+      "text": "reads",
+      "start": 542.6066391516791,
+      "end": 542.9088754084748
+    },
+    {
+      "text": "from",
+      "start": 542.9776401046731,
+      "end": 543.7494183459717
+    },
+    {
+      "text": "?",
+      "start": 543.9173610781917,
+      "end": 543.9947480867022
+    },
+    {
+      "text": "url=x.",
+      "start": 544.8070576634365,
+      "end": 547.4927873024807
+    },
+    {
+      "text": "That",
+      "start": 548.2619660729248,
+      "end": 548.4342122765792
+    },
+    {
+      "text": "makes",
+      "start": 548.4738930177501,
+      "end": 548.7498090208647
+    },
+    {
+      "text": "it",
+      "start": 548.8021696679016,
+      "end": 548.9707792978894
+    },
+    {
+      "text": "the",
+      "start": 549.0273321650449,
+      "end": 549.1733648297084
+    },
+    {
+      "text": "build-pipeline,",
+      "start": 549.2355461548276,
+      "end": 550.2668933928868
+    },
+    {
+      "text": "CI",
+      "start": 550.3522783284716,
+      "end": 550.6973218057883
+    },
+    {
+      "text": "and",
+      "start": 550.7604601587796,
+      "end": 550.9300707307829
+    },
+    {
+      "text": "scripting",
+      "start": 550.9906845860538,
+      "end": 551.4842644432453
+    },
+    {
+      "text": "surface:",
+      "start": 551.5651152710665,
+      "end": 552.6573613278036
+    },
+    {
+      "text": "generate",
+      "start": 552.7281448483809,
+      "end": 553.3047127821483
+    },
+    {
+      "text": "an",
+      "start": 553.3718538707463,
+      "end": 553.5627632402644
+    },
+    {
+      "text": "OG",
+      "start": 553.6509240821861,
+      "end": 553.8770522177608
+    },
+    {
+      "text": "card",
+      "start": 553.9481816571981,
+      "end": 554.3363960089375
+    },
+    {
+      "text": "at",
+      "start": 554.4209415469277,
+      "end": 554.6153401564497
+    },
+    {
+      "text": "build",
+      "start": 554.6763649520506,
+      "end": 554.9411053827786
+    },
+    {
+      "text": "time,",
+      "start": 555.0052963469427,
+      "end": 555.7487505459301
+    },
+    {
+      "text": "fan",
+      "start": 555.8297878305016,
+      "end": 556.1042508792791
+    },
+    {
+      "text": "a",
+      "start": 556.1611153506634,
+      "end": 556.317765702342
+    },
+    {
+      "text": "CSV",
+      "start": 556.4168184235109,
+      "end": 557.0495178667478
+    },
+    {
+      "text": "out",
+      "start": 557.1231525178763,
+      "end": 557.3949437410713
+    },
+    {
+      "text": "into",
+      "start": 557.4282488139033,
+      "end": 557.6614133919794
+    },
+    {
+      "text": "400",
+      "start": 557.7618263321368,
+      "end": 558.3670282479625
+    },
+    {
+      "text": "badges,",
+      "start": 558.4277150943286,
+      "end": 559.3503970366418
+    },
+    {
+      "text": "render-check",
+      "start": 559.4170429238133,
+      "end": 560.0787227783959
+    },
+    {
+      "text": "the",
+      "start": 560.1376086692537,
+      "end": 560.288404472703
+    },
+    {
+      "text": "whole",
+      "start": 560.3492915689556,
+      "end": 560.617536445199
+    },
+    {
+      "text": "catalog",
+      "start": 560.6824673084479,
+      "end": 561.3308437557914
+    },
+    {
+      "text": "as",
+      "start": 561.4016867353417,
+      "end": 561.6086869407505
+    },
+    {
+      "text": "a",
+      "start": 561.666531490437,
+      "end": 561.8388243720823
+    },
+    {
+      "text": "gate.",
+      "start": 561.8996891487437,
+      "end": 562.9194383662722
+    },
+    {
+      "text": "Code",
+      "start": 563.703327947751,
+      "end": 564.1760146564199
+    },
+    {
+      "text": "example",
+      "start": 564.2452623944906,
+      "end": 565.0555079936549
+    },
+    {
+      "text": "omitted.",
+      "start": 565.1543469156663,
+      "end": 566.5674416868426
+    },
+    {
+      "text": "Every",
+      "start": 567.3389661653785,
+      "end": 567.6504075798449
+    },
+    {
+      "text": "export",
+      "start": 567.7214765758339,
+      "end": 568.2688619616553
+    },
+    {
+      "text": "carries",
+      "start": 568.3305636226993,
+      "end": 568.7574250787312
+    },
+    {
+      "text": "Content",
+      "start": 568.8322286052238,
+      "end": 569.3501307939013
+    },
+    {
+      "text": "Credentials",
+      "start": 569.4115115386263,
+      "end": 570.174634203503
+    },
+    {
+      "text": "by",
+      "start": 570.2356130733001,
+      "end": 570.4475796342438
+    },
+    {
+      "text": "default,",
+      "start": 570.5045072899628,
+      "end": 571.3058495574401
+    },
+    {
+      "text": "signed",
+      "start": 571.3937786362444,
+      "end": 571.8076189908958
+    },
+    {
+      "text": "on-device.",
+      "start": 571.8726634590281,
+      "end": 573.2689927524696
+    },
+    {
+      "text": "To",
+      "start": 574.0388750216274,
+      "end": 574.2448596777274
+    },
+    {
+      "text": "sign",
+      "start": 574.327974542095,
+      "end": 574.6515850047168
+    },
+    {
+      "text": "as",
+      "start": 574.7160123520783,
+      "end": 574.9492472494682
+    },
+    {
+      "text": "you",
+      "start": 575.0284387145438,
+      "end": 575.3444134279407
+    },
+    {
+      "text": "—",
+      "start": 575.4042930869788,
+      "end": 575.4410172375271
+    },
+    {
+      "text": "so",
+      "start": 575.5164859143264,
+      "end": 575.8556750428237
+    },
+    {
+      "text": "a",
+      "start": 575.9362536144822,
+      "end": 576.0775802306393
+    },
+    {
+      "text": "recipient",
+      "start": 576.1325723701549,
+      "end": 576.7220566870968
+    },
+    {
+      "text": "who",
+      "start": 576.7791239704766,
+      "end": 576.9354115025726
+    },
+    {
+      "text": "pins",
+      "start": 577.0009301208328,
+      "end": 577.3394485497283
+    },
+    {
+      "text": "your",
+      "start": 577.399616781992,
+      "end": 577.5973610747591
+    },
+    {
+      "text": "root",
+      "start": 577.6610291493404,
+      "end": 577.8968702895985
+    },
+    {
+      "text": "reads",
+      "start": 577.9570311383623,
+      "end": 578.2774470903041
+    },
+    {
+      "text": "Verified",
+      "start": 578.3378507760945,
+      "end": 578.9942814444202
+    },
+    {
+      "text": "with",
+      "start": 579.0487280234165,
+      "end": 579.2469783135937
+    },
+    {
+      "text": "your",
+      "start": 579.3072517650527,
+      "end": 579.4814850433241
+    },
+    {
+      "text": "address",
+      "start": 579.540267840523,
+      "end": 579.9871846407017
+    },
+    {
+      "text": "on",
+      "start": 580.051324440804,
+      "end": 580.2303556596264
+    },
+    {
+      "text": "it",
+      "start": 580.2948480521054,
+      "end": 580.5093371887219
+    },
+    {
+      "text": "rather",
+      "start": 580.5737950960491,
+      "end": 580.9084248730599
+    },
+    {
+      "text": "than",
+      "start": 580.9689267000301,
+      "end": 581.2663177784017
+    },
+    {
+      "text": "an",
+      "start": 581.3490454960745,
+      "end": 581.4992447878836
+    },
+    {
+      "text": "anonymous",
+      "start": 581.5432341985066,
+      "end": 582.0541667721294
+    },
+    {
+      "text": "signer",
+      "start": 582.1429464235588,
+      "end": 582.9008863754055
+    },
+    {
+      "text": "—",
+      "start": 582.9831048563811,
+      "end": 583.0181158447638
+    },
+    {
+      "text": "point",
+      "start": 583.0764307436423,
+      "end": 583.4219558141475
+    },
+    {
+      "text": "it",
+      "start": 583.4922900305322,
+      "end": 583.671782254103
+    },
+    {
+      "text": "at",
+      "start": 583.7382415740456,
+      "end": 583.9255436152991
+    },
+    {
+      "text": "your",
+      "start": 583.9855235654354,
+      "end": 584.1828123377634
+    },
+    {
+      "text": "own",
+      "start": 584.2440217241958,
+      "end": 584.50705344695
+    },
+    {
+      "text": "key",
+      "start": 584.5993658234967,
+      "end": 584.9169069973909
+    },
+    {
+      "text": "and",
+      "start": 584.9739012008376,
+      "end": 585.1024543450127
+    },
+    {
+      "text": "certificate",
+      "start": 585.1624899509446,
+      "end": 585.7472448192391
+    },
+    {
+      "text": "chain:",
+      "start": 585.8072415883079,
+      "end": 586.8946308986431
+    },
+    {
+      "text": "Code",
+      "start": 587.678327947751,
+      "end": 588.1510146564199
+    },
+    {
+      "text": "example",
+      "start": 588.2202623944906,
+      "end": 589.030507993655
+    },
+    {
+      "text": "omitted.",
+      "start": 589.1293469156664,
+      "end": 590.5424416868426
+    },
+    {
+      "text": "Full",
+      "start": 591.3227071576384,
+      "end": 591.5558493071464
+    },
+    {
+      "text": "command",
+      "start": 591.6166215036584,
+      "end": 592.036559207489
+    },
+    {
+      "text": "surface",
+      "start": 592.1263963065558,
+      "end": 592.6531942045652
+    },
+    {
+      "text": "in",
+      "start": 592.6929311314668,
+      "end": 592.8438466264722
+    },
+    {
+      "text": "docs/cli-md;",
+      "start": 592.9054571069931,
+      "end": 594.7586444937002
+    },
+    {
+      "text": "the",
+      "start": 594.8198165775448,
+      "end": 594.9733424356332
+    },
+    {
+      "text": "setup",
+      "start": 595.0648973076576,
+      "end": 595.4263798972045
+    },
+    {
+      "text": "path",
+      "start": 595.4871063381465,
+      "end": 595.7873510828981
+    },
+    {
+      "text": "from",
+      "start": 595.8636013342028,
+      "end": 596.187961916358
+    },
+    {
+      "text": "a",
+      "start": 596.233455868413,
+      "end": 596.3545231786088
+    },
+    {
+      "text": "clean",
+      "start": 596.4180994559127,
+      "end": 596.6954613955786
+    },
+    {
+      "text": "machine",
+      "start": 596.7291416079097,
+      "end": 597.1462567646658
+    },
+    {
+      "text": "to",
+      "start": 597.2360037960414,
+      "end": 597.4996850000433
+    },
+    {
+      "text": "a",
+      "start": 597.567647151317,
+      "end": 597.7459048108057
+    },
+    {
+      "text": "working,",
+      "start": 597.8066053160554,
+      "end": 598.631389391313
+    },
+    {
+      "text": "trusted",
+      "start": 598.6976120367478,
+      "end": 599.1475993559799
+    },
+    {
+      "text": "signing",
+      "start": 599.216766090888,
+      "end": 599.6202772784991
+    },
+    {
+      "text": "identity",
+      "start": 599.6811288356787,
+      "end": 600.4446770660994
+    },
+    {
+      "text": "is",
+      "start": 600.5255143176242,
+      "end": 600.7063615174408
+    },
+    {
+      "text": "docs/cli-signing-md.",
+      "start": 600.7830346584979,
+      "end": 603.3945798039026
+    },
+    {
+      "text": "Development",
+      "start": 604.520760032603,
+      "end": 605.8814548805522
+    },
+    {
+      "text": "New",
+      "start": 606.7891358794445,
+      "end": 607.1419472275361
+    },
+    {
+      "text": "contributor?",
+      "start": 607.2286599014789,
+      "end": 609.093693145143
+    },
+    {
+      "text": "Start",
+      "start": 609.8730588988394,
+      "end": 610.1815857644461
+    },
+    {
+      "text": "at",
+      "start": 610.2328947206436,
+      "end": 610.4120607499524
+    },
+    {
+      "text": "CONTRIBUTING-md",
+      "start": 610.4726333987023,
+      "end": 611.7789248597336
+    },
+    {
+      "text": "—",
+      "start": 611.8284836744826,
+      "end": 611.8642240294572
+    },
+    {
+      "text": "it",
+      "start": 611.915739861736,
+      "end": 612.0906635374877
+    },
+    {
+      "text": "routes",
+      "start": 612.1521761365998,
+      "end": 612.4562343336503
+    },
+    {
+      "text": "you",
+      "start": 612.5437347676799,
+      "end": 612.762881159144
+    },
+    {
+      "text": "through",
+      "start": 612.8432289368708,
+      "end": 613.0304828771873
+    },
+    {
+      "text": "the",
+      "start": 613.0754373604112,
+      "end": 613.2058609775668
+    },
+    {
+      "text": "recursive",
+      "start": 613.2646295007813,
+      "end": 613.8568626497753
+    },
+    {
+      "text": "clone,",
+      "start": 613.9242929270014,
+      "end": 614.4520199939232
+    },
+    {
+      "text": "content",
+      "start": 614.5147580230973,
+      "end": 615.0098851249962
+    },
+    {
+      "text": "profiles,",
+      "start": 615.0703427199793,
+      "end": 616.2993314571636
+    },
+    {
+      "text": "the",
+      "start": 616.3606448698049,
+      "end": 616.5175606302413
+    },
+    {
+      "text": "tools//catalog/",
+      "start": 616.5884934205834,
+      "end": 618.7977275956871
+    },
+    {
+      "text": "symlink-view",
+      "start": 618.8884744044572,
+      "end": 619.5097784256727
+    },
+    {
+      "text": "trap,",
+      "start": 619.5712120494632,
+      "end": 620.08271654688
+    },
+    {
+      "text": "which",
+      "start": 620.1362105663494,
+      "end": 620.3583631599935
+    },
+    {
+      "text": "repo",
+      "start": 620.4190330497943,
+      "end": 620.8220389585979
+    },
+    {
+      "text": "owns",
+      "start": 620.8833904766286,
+      "end": 621.2264585883831
+    },
+    {
+      "text": "which",
+      "start": 621.2860780564589,
+      "end": 621.5319952495686
+    },
+    {
+      "text": "file,",
+      "start": 621.5952016248183,
+      "end": 622.4152877937414
+    },
+    {
+      "text": "and",
+      "start": 622.4740437429325,
+      "end": 622.6177305620205
+    },
+    {
+      "text": "the",
+      "start": 622.6520867493244,
+      "end": 622.8042880640564
+    },
+    {
+      "text": "commands",
+      "start": 622.8653088533264,
+      "end": 623.3405422238773
+    },
+    {
+      "text": "to",
+      "start": 623.4320433172437,
+      "end": 623.6433326166969
+    },
+    {
+      "text": "run",
+      "start": 623.7042792395558,
+      "end": 623.9843815784028
+    },
+    {
+      "text": "before",
+      "start": 624.0366768375173,
+      "end": 624.4004936532341
+    },
+    {
+      "text": "a",
+      "start": 624.4620160502111,
+      "end": 624.6444328972756
+    },
+    {
+      "text": "PR.",
+      "start": 624.7173162758431,
+      "end": 625.8945132143283
+    },
+    {
+      "text": "Auditors",
+      "start": 626.66231320937,
+      "end": 627.2570970110979
+    },
+    {
+      "text": "and",
+      "start": 627.3513065349923,
+      "end": 627.6167201018361
+    },
+    {
+      "text": "anyone",
+      "start": 627.704960461508,
+      "end": 628.2120348671303
+    },
+    {
+      "text": "touching",
+      "start": 628.2998100916077,
+      "end": 628.7956759815587
+    },
+    {
+      "text": "a",
+      "start": 628.8532224792048,
+      "end": 628.9899611827698
+    },
+    {
+      "text": "parser",
+      "start": 629.0559363005688,
+      "end": 629.5293742871563
+    },
+    {
+      "text": "or",
+      "start": 629.58929552157,
+      "end": 629.7228037602547
+    },
+    {
+      "text": "a",
+      "start": 629.7746672389909,
+      "end": 629.9203883115648
+    },
+    {
+      "text": "crypto",
+      "start": 629.9826278692306,
+      "end": 630.4339752788684
+    },
+    {
+      "text": "module",
+      "start": 630.4946378699434,
+      "end": 631.0616389343559
+    },
+    {
+      "text": "should",
+      "start": 631.1925090413478,
+      "end": 631.4209331362762
+    },
+    {
+      "text": "read",
+      "start": 631.4872311455395,
+      "end": 631.7444089440844
+    },
+    {
+      "text": "docs/threat-model-md",
+      "start": 631.8171750904033,
+      "end": 633.9801061621325
+    },
+    {
+      "text": "and",
+      "start": 634.0832394804952,
+      "end": 634.2476034050444
+    },
+    {
+      "text": "docs/parser-inventory-md.",
+      "start": 634.3086593201313,
+      "end": 637.1444720395481
+    },
+    {
+      "text": "Lolly is an umbrella repo composed of git submodules «see Repository layout».",
+      "start": 637.525,
+      "end": 644.75
+    },
+    {
+      "text": "That changes two things: how you clone, and where each change is committed.",
+      "start": 645.1,
+      "end": 651.125
+    },
+    {
+      "text": "Clone",
+      "start": 651.8678490713665,
+      "end": 652.3981017998233
+    },
+    {
+      "text": "/",
+      "start": 652.5164644774429,
+      "end": 653.0696764923288
+    },
+    {
+      "text": "update",
+      "start": 653.163640150383,
+      "end": 654.185707985731
+    },
+    {
+      "text": "Code",
+      "start": 655.178327947751,
+      "end": 655.6510146564199
+    },
+    {
+      "text": "example",
+      "start": 655.7202623944906,
+      "end": 656.530507993655
+    },
+    {
+      "text": "omitted.",
+      "start": 656.6293469156664,
+      "end": 658.0424416868426
+    },
+    {
+      "text": "Each",
+      "start": 658.8116097344191,
+      "end": 659.094614178411
+    },
+    {
+      "text": "submodule",
+      "start": 659.1843490067306,
+      "end": 659.8517639352015
+    },
+    {
+      "text": "is",
+      "start": 659.9243333901715,
+      "end": 660.1110316655318
+    },
+    {
+      "text": "checked",
+      "start": 660.1755107238021,
+      "end": 660.5023993770315
+    },
+    {
+      "text": "out",
+      "start": 660.5629075871162,
+      "end": 660.8169603856253
+    },
+    {
+      "text": "on",
+      "start": 660.856929217107,
+      "end": 660.970352423859
+    },
+    {
+      "text": "its",
+      "start": 661.0029624124847,
+      "end": 661.2132374169796
+    },
+    {
+      "text": "own",
+      "start": 661.2714087368049,
+      "end": 661.5132406018319
+    },
+    {
+      "text": "main,",
+      "start": 661.5755881990506,
+      "end": 662.3515424315157
+    },
+    {
+      "text": "tracking",
+      "start": 662.4192677997607,
+      "end": 662.8234868772215
+    },
+    {
+      "text": "its",
+      "start": 662.8572691670342,
+      "end": 663.0781490224515
+    },
+    {
+      "text": "repo",
+      "start": 663.1408554422377,
+      "end": 663.6349956344426
+    },
+    {
+      "text": "under",
+      "start": 663.6982233572983,
+      "end": 663.9419935965411
+    },
+    {
+      "text": "github-com/lolly-tools/*.",
+      "start": 664.0198381258685,
+      "end": 667.7685650865311
+    },
+    {
+      "text": "Where",
+      "start": 668.5374522074927,
+      "end": 668.7579363717213
+    },
+    {
+      "text": "your",
+      "start": 668.8199422390378,
+      "end": 669.0296286172928
+    },
+    {
+      "text": "changes",
+      "start": 669.0896761654571,
+      "end": 669.6478634728024
+    },
+    {
+      "text": "go",
+      "start": 669.7078734404649,
+      "end": 670.1175614546884
+    },
+    {
+      "text": "—",
+      "start": 670.1680113634117,
+      "end": 670.1994125109063
+    },
+    {
+      "text": "the",
+      "start": 670.2500317719824,
+      "end": 670.4243319403713
+    },
+    {
+      "text": "umbrella",
+      "start": 670.5280350551757,
+      "end": 671.0275352125182
+    },
+    {
+      "text": "pins",
+      "start": 671.1070427665893,
+      "end": 671.6181918705435
+    },
+    {
+      "text": "a",
+      "start": 671.6952423149071,
+      "end": 671.8620208550323
+    },
+    {
+      "text": "specific",
+      "start": 671.9209263538105,
+      "end": 672.5209747874142
+    },
+    {
+      "text": "commit",
+      "start": 672.5809209814108,
+      "end": 672.9222709995397
+    },
+    {
+      "text": "of",
+      "start": 672.9572765882064,
+      "end": 673.1222054119135
+    },
+    {
+      "text": "each",
+      "start": 673.1814497354447,
+      "end": 673.4122785244748
+    },
+    {
+      "text": "submodule,",
+      "start": 673.4719799707368,
+      "end": 674.531182926042
+    },
+    {
+      "text": "so",
+      "start": 674.6018831287862,
+      "end": 674.7936355101765
+    },
+    {
+      "text": "a",
+      "start": 674.8492948116057,
+      "end": 675.0178316035868
+    },
+    {
+      "text": "change",
+      "start": 675.0850230942561,
+      "end": 675.5764659954273
+    },
+    {
+      "text": "is",
+      "start": 675.6222533180368,
+      "end": 675.7921595460215
+    },
+    {
+      "text": "committed",
+      "start": 675.8521577662042,
+      "end": 676.2800247365387
+    },
+    {
+      "text": "to",
+      "start": 676.371496072535,
+      "end": 676.5750913139832
+    },
+    {
+      "text": "the",
+      "start": 676.6331150429359,
+      "end": 676.7821499096582
+    },
+    {
+      "text": "repo",
+      "start": 676.8419373554746,
+      "end": 677.2822491913221
+    },
+    {
+      "text": "that",
+      "start": 677.340429147463,
+      "end": 677.5067017599388
+    },
+    {
+      "text": "owns",
+      "start": 677.5677478953238,
+      "end": 677.9198569384598
+    },
+    {
+      "text": "the",
+      "start": 677.9787078786269,
+      "end": 678.1290627704814
+    },
+    {
+      "text": "file,",
+      "start": 678.2207711997718,
+      "end": 679.0647019702865
+    },
+    {
+      "text": "then",
+      "start": 679.1238296136194,
+      "end": 679.2930297551941
+    },
+    {
+      "text": "the",
+      "start": 679.3504922633115,
+      "end": 679.5009590506245
+    },
+    {
+      "text": "umbrella",
+      "start": 679.5975981515178,
+      "end": 680.1047902670044
+    },
+    {
+      "text": "records",
+      "start": 680.1645577506802,
+      "end": 680.7133999808226
+    },
+    {
+      "text": "the",
+      "start": 680.7722929432393,
+      "end": 680.9144277005456
+    },
+    {
+      "text": "new",
+      "start": 680.9740186404673,
+      "end": 681.1562627232857
+    },
+    {
+      "text": "pointer.",
+      "start": 681.2162649164604,
+      "end": 682.4199206926374
+    },
+    {
+      "text": "The",
+      "start": 683.1833651579296,
+      "end": 683.3397913443041
+    },
+    {
+      "text": "full",
+      "start": 683.4332724719109,
+      "end": 683.6606804431756
+    },
+    {
+      "text": "path-to-repo",
+      "start": 683.7290389952948,
+      "end": 684.5390766077386
+    },
+    {
+      "text": "ownership",
+      "start": 684.612801070932,
+      "end": 685.1853172168168
+    },
+    {
+      "text": "table",
+      "start": 685.2577631458064,
+      "end": 685.6803256215071
+    },
+    {
+      "text": "lives",
+      "start": 685.755851922809,
+      "end": 686.2648147919581
+    },
+    {
+      "text": "in",
+      "start": 686.3237966732804,
+      "end": 686.4794617223907
+    },
+    {
+      "text": "CONTRIBUTING-md",
+      "start": 686.5403149266851,
+      "end": 687.6963555668938
+    },
+    {
+      "text": "§4,",
+      "start": 687.7590751004051,
+      "end": 689.0533750105928
+    },
+    {
+      "text": "which",
+      "start": 689.1112704670021,
+      "end": 689.3429535259932
+    },
+    {
+      "text": "is",
+      "start": 689.4083829691807,
+      "end": 689.5916342864825
+    },
+    {
+      "text": "the",
+      "start": 689.6520190719383,
+      "end": 689.8108788179825
+    },
+    {
+      "text": "single",
+      "start": 689.9429729073336,
+      "end": 690.3337509505941
+    },
+    {
+      "text": "source",
+      "start": 690.4296116949135,
+      "end": 690.7734172104072
+    },
+    {
+      "text": "of",
+      "start": 690.8067386385491,
+      "end": 690.9570606097205
+    },
+    {
+      "text": "truth",
+      "start": 691.0404347298685,
+      "end": 691.3841459448887
+    },
+    {
+      "text": "for",
+      "start": 691.478762053584,
+      "end": 691.7120767035202
+    },
+    {
+      "text": "it.",
+      "start": 691.7898361669551,
+      "end": 692.7195125566936
+    },
+    {
+      "text": "⚠️ Committing from the umbrella root does not capture edits made inside a submodule — git only sees the pointer.",
+      "start": 693.1,
+      "end": 702.45
+    },
+    {
+      "text": "Commit inside the submodule, or use loldev «below».",
+      "start": 702.8000000000001,
+      "end": 707.8000000000001
+    },
+    {
+      "text": "The tools/ and catalog/ views are symlinks into the packs, so editing through them lands in the right pack checkout automatically.",
+      "start": 708.15,
+      "end": 719.45
+    },
+    {
+      "text": "Editing a SUSE tool touches two repos «suse-lolly + umbrella pointer»; a community tool touches three «lolly-tools manifest, suse-lolly regenerated index, umbrella pointer».",
+      "start": 719.8000000000001,
+      "end": 734.85
+    },
+    {
+      "text": "loldev",
+      "start": 735.6133764620402,
+      "end": 736.2754654301638
+    },
+    {
+      "text": "—",
+      "start": 736.3139109297376,
+      "end": 736.3456484170962
+    },
+    {
+      "text": "one",
+      "start": 736.40419209683,
+      "end": 736.634705927011
+    },
+    {
+      "text": "command",
+      "start": 736.6972597457769,
+      "end": 737.1385423258289
+    },
+    {
+      "text": "to",
+      "start": 737.239958568839,
+      "end": 737.5332057055416
+    },
+    {
+      "text": "ship",
+      "start": 737.643510573122,
+      "end": 737.8601063315974
+    },
+    {
+      "text": "a",
+      "start": 737.8950782484975,
+      "end": 738.0341290425192
+    },
+    {
+      "text": "change.",
+      "start": 738.0967267499743,
+      "end": 739.3186032384431
+    },
+    {
+      "text": "A",
+      "start": 740.0892425924726,
+      "end": 740.2785405247926
+    },
+    {
+      "text": "helper",
+      "start": 740.3421938960897,
+      "end": 740.7759566813058
+    },
+    {
+      "text": "that",
+      "start": 740.838550595718,
+      "end": 741.0070050483189
+    },
+    {
+      "text": "does",
+      "start": 741.0694443289426,
+      "end": 741.2902182322127
+    },
+    {
+      "text": "the",
+      "start": 741.3528336780635,
+      "end": 741.5468640117148
+    },
+    {
+      "text": "multi-repo",
+      "start": 741.647638851657,
+      "end": 742.4916091899433
+    },
+    {
+      "text": "dance",
+      "start": 742.5546984950008,
+      "end": 742.9689835806943
+    },
+    {
+      "text": "for",
+      "start": 743.0719400735953,
+      "end": 743.3398843737186
+    },
+    {
+      "text": "you.",
+      "start": 743.4352536915679,
+      "end": 744.4185014443781
+    },
+    {
+      "text": "Install",
+      "start": 745.2088101465824,
+      "end": 745.9420418640483
+    },
+    {
+      "text": "it",
+      "start": 746.0455275986868,
+      "end": 746.3449459470322
+    },
+    {
+      "text": "on",
+      "start": 746.4212821517588,
+      "end": 746.6307583188853
+    },
+    {
+      "text": "your",
+      "start": 746.7016682048569,
+      "end": 746.9747950762394
+    },
+    {
+      "text": "PATH:",
+      "start": 747.0451997298088,
+      "end": 748.0931132306488
+    },
+    {
+      "text": "Code",
+      "start": 748.878327947751,
+      "end": 749.3510146564199
+    },
+    {
+      "text": "example",
+      "start": 749.4202623944907,
+      "end": 750.230507993655
+    },
+    {
+      "text": "omitted.",
+      "start": 750.3293469156664,
+      "end": 751.7424416868427
+    },
+    {
+      "text": "Code",
+      "start": 752.528327947751,
+      "end": 753.0010146564199
+    },
+    {
+      "text": "example",
+      "start": 753.0702623944907,
+      "end": 753.880507993655
+    },
+    {
+      "text": "omitted.",
+      "start": 753.9793469156664,
+      "end": 755.3924416868426
+    },
+    {
+      "text": "loldev operates on ~/Build/lolly by default «override with LOLLY_ROOT».",
+      "start": 755.775,
+      "end": 763.5749999999999
+    },
+    {
+      "text": "The underlying scripts live in scripts/subrepo/ — sync-sh, status-sh, verify-sh, plus migrate-sh/snap-history-sh «the one-time split».",
+      "start": 763.925,
+      "end": 777.475
+    },
+    {
+      "text": "Current",
+      "start": 778.5791386678899,
+      "end": 779.0089566337354
+    },
+    {
+      "text": "tools",
+      "start": 779.1039707230103,
+      "end": 780.1000003685145
+    },
+    {
+      "text": "The SUSE catalog ships 64 tools today — 63 listed in the gallery, plus one unlisted helper «Asset Export».",
+      "start": 780.7,
+      "end": 791.1
+    },
+    {
+      "text": "Generated from catalog/tools/index-json by npm run build:readme-tools:",
+      "start": 791.45,
+      "end": 799.725
+    },
+    {
+      "text": "The",
+      "start": 800.4762609266907,
+      "end": 800.6453391450647
+    },
+    {
+      "text": "utility",
+      "start": 800.7084159889231,
+      "end": 801.5758010849672
+    },
+    {
+      "text": "\"Offline",
+      "start": 801.6683878208288,
+      "end": 802.2536164691645
+    },
+    {
+      "text": "Utilities\"",
+      "start": 802.313541167676,
+      "end": 803.1214735426358
+    },
+    {
+      "text": "section",
+      "start": 803.18551863512,
+      "end": 803.7585050006888
+    },
+    {
+      "text": "always",
+      "start": 803.8645142282514,
+      "end": 804.309942577981
+    },
+    {
+      "text": "renders",
+      "start": 804.3820387918806,
+      "end": 804.8310318882718
+    },
+    {
+      "text": "last",
+      "start": 804.9099350538478,
+      "end": 805.3736909193026
+    },
+    {
+      "text": "in",
+      "start": 805.4417645739837,
+      "end": 805.5656484102452
+    },
+    {
+      "text": "the",
+      "start": 805.6058018647416,
+      "end": 805.7345997624781
+    },
+    {
+      "text": "gallery.",
+      "start": 805.7974849248208,
+      "end": 806.968473104269
+    },
+    {
+      "text": "Licensing",
+      "start": 808.1321689532024,
+      "end": 809.074728331329
+    },
+    {
+      "text": "&",
+      "start": 809.1898670850953,
+      "end": 809.4783429073299
+    },
+    {
+      "text": "structure",
+      "start": 809.545056611493,
+      "end": 810.5443272925016
+    },
+    {
+      "text": "Every unit now lives in its own repo under github-com/lolly-tools, pinned as a submodule of this umbrella «see Repository layout».",
+      "start": 811.25,
+      "end": 822.85
+    },
+    {
+      "text": "Code",
+      "start": 823.5745603049701,
+      "end": 823.922177292076
+    },
+    {
+      "text": "—",
+      "start": 823.9562372234238,
+      "end": 823.9871732611603
+    },
+    {
+      "text": "engine/,",
+      "start": 824.035154894532,
+      "end": 825.0594696109816
+    },
+    {
+      "text": "shells/,",
+      "start": 825.1249119277358,
+      "end": 825.9900043212074
+    },
+    {
+      "text": "services/,",
+      "start": 826.0550923940586,
+      "end": 827.1115257918433
+    },
+    {
+      "text": "docs/",
+      "start": 827.1701944032587,
+      "end": 828.1194543297224
+    },
+    {
+      "text": "—",
+      "start": 828.1870061717361,
+      "end": 828.2196143658513
+    },
+    {
+      "text": "is",
+      "start": 828.2725401508026,
+      "end": 828.4504044799197
+    },
+    {
+      "text": "MPL-2",
+      "start": 828.5162425854545,
+      "end": 829.4953065295199
+    },
+    {
+      "text": "point",
+      "start": 829.556881292307,
+      "end": 829.8532652765189
+    },
+    {
+      "text": "0.",
+      "start": 829.9147804898868,
+      "end": 831.0691742819068
+    },
+    {
+      "text": "Tool content ships as brand packs.",
+      "start": 831.45,
+      "end": 835.4250000000001
+    },
+    {
+      "text": "community/ «public lolly-tools» holds the brand-agnostic tools; brands/suse/ «private suse-lolly» holds the SUSE tools and catalog — including its licensed PremiumBeat music, which stays private with the pack.",
+      "start": 835.7750000000001,
+      "end": 853.475
+    },
+    {
+      "text": "The repo-root tools/ and catalog/ are gitignored profile views assembled from those packs; see each pack's NOTICE-md.",
+      "start": 853.825,
+      "end": 864.5500000000001
+    },
+    {
+      "text": "catalog/fonts/ ships the SUSE and SUSE Mono typefaces under the SIL Open Font License 1 point 1 — neither the MPL nor SUSE-proprietary «\"SUSE\" is a SUSE trademark».",
+      "start": 864.9,
+      "end": 880.525
+    },
+    {
+      "text": "Bundled",
+      "start": 881.264547137334,
+      "end": 881.7578106625987
+    },
+    {
+      "text": "third-party",
+      "start": 881.8541406845742,
+      "end": 882.6578562325782
+    },
+    {
+      "text": "attributions",
+      "start": 882.7134873599566,
+      "end": 883.6448610042329
+    },
+    {
+      "text": "are",
+      "start": 883.7520666631511,
+      "end": 883.9694429892099
+    },
+    {
+      "text": "listed",
+      "start": 884.0320823075763,
+      "end": 884.5390767219852
+    },
+    {
+      "text": "in",
+      "start": 884.6140880699085,
+      "end": 884.7935359873482
+    },
+    {
+      "text": "THIRD-PARTY-NOTICES-md.",
+      "start": 884.9029793771081,
+      "end": 887.3687852474501
+    }
+  ]
+}

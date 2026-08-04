@@ -1,0 +1,11 @@
+{
+  "slug": "privacy",
+  "lang": "en",
+  "voice": "bf_lily",
+  "speed": 0.8,
+  "modelVersion": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "textHash": "ea89ac9addc1d29da464f2176701ca2f890bde60211233264509660d2454e9ec",
+  "duration": 1705.85,
+  "bytes": 5137527,
+  "generated": "2026-08-04T04:56:28.562Z"
+}

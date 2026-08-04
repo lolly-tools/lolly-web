@@ -1,0 +1,175 @@
+WEBVTT
+
+00:00:00.402 --> 00:00:03.969
+Most software asks you to trust it.
+
+00:00:04.734 --> 00:00:07.840
+This section is the opposite: every claim
+
+00:00:07.901 --> 00:00:11.056
+Lolly makes about your content, your data
+
+00:00:11.149 --> 00:00:14.118
+and its own behaviour is written down here
+
+00:00:14.178 --> 00:00:17.399
+with the mechanism that enforces it, so
+
+00:00:17.465 --> 00:00:20.195
+you can check rather than believe.
+
+00:00:20.993 --> 00:00:24.167
+Three questions bring people here.
+
+00:00:24.953 --> 00:00:27.594
+Start wherever yours sits.
+
+00:00:28.731 --> 00:00:31.893
+Where did this content come from?
+
+00:00:32.651 --> 00:00:35.778
+Every image, PDF and video Lolly renders
+
+00:00:35.852 --> 00:00:39.148
+carries Content Credentials by default - a
+
+00:00:39.246 --> 00:00:42.300
+signed record of what made it, from what,
+
+00:00:42.358 --> 00:00:43.620
+and when.
+
+00:00:44.388 --> 00:00:47.249
+When a file arrives with a history already
+
+00:00:47.309 --> 00:00:50.336
+attached, Lolly preserves it rather than
+
+00:00:50.426 --> 00:00:53.518
+flattening it, so the chain stays intact
+
+00:00:53.598 --> 00:00:55.194
+through an edit.
+
+00:00:55.954 --> 00:00:58.639
+Content Credentials - what gets signed,
+
+00:00:58.699 --> 00:01:01.144
+what the signature proves, and who the
+
+00:01:01.239 --> 00:01:02.719
+signer is.
+
+00:01:03.474 --> 00:01:06.009
+Content Credentials - Engineering - the
+
+00:01:06.082 --> 00:01:09.995
+C2PA implementation itself: manifests,
+
+00:01:10.057 --> 00:01:13.220
+ingredients, action histories, formats.
+
+00:01:13.992 --> 00:01:17.590
+Our AI Stance - where AI is welcome, where
+
+00:01:17.653 --> 00:01:21.088
+it is not, and why AI-generated content
+
+00:01:21.129 --> 00:01:22.770
+declares itself.
+
+00:01:23.891 --> 00:01:27.093
+Can I check that for myself?
+
+00:01:27.877 --> 00:01:30.305
+You can, and you should - the point of
+
+00:01:30.384 --> 00:01:33.071
+provenance is that it does not need our
+
+00:01:33.133 --> 00:01:34.194
+word.
+
+00:01:34.978 --> 00:01:37.923
+Verify It Yourself - walk the claims on
+
+00:01:37.984 --> 00:01:41.193
+this site against a real export, step by
+
+00:01:41.270 --> 00:01:42.294
+step.
+
+00:01:43.074 --> 00:01:46.340
+Security & Verification - how the code is
+
+00:01:46.415 --> 00:01:48.869
+built, signed and checked.
+
+00:01:49.651 --> 00:01:52.498
+Threat Model - what Lolly defends against,
+
+00:01:52.563 --> 00:01:55.594
+and what it explicitly does not.
+
+00:01:56.353 --> 00:01:58.968
+Parser Inventory - every format Lolly
+
+00:01:59.033 --> 00:02:01.577
+parses, because parsers are where
+
+00:02:01.682 --> 00:02:04.869
+untrusted input meets your device.
+
+00:02:05.665 --> 00:02:08.616
+Server Surface - the complete list of what
+
+00:02:08.665 --> 00:02:10.869
+a server ever sees.
+
+00:02:12.007 --> 00:02:15.043
+What happens to my data?
+
+00:02:15.851 --> 00:02:18.993
+Lolly renders on your device.
+
+00:02:19.768 --> 00:02:22.870
+That is not a privacy posture bolted on
+
+00:02:22.972 --> 00:02:26.590
+afterwards - it is the architecture, and
+
+00:02:26.659 --> 00:02:29.836
+it is why most of the usual questions have
+
+00:02:29.928 --> 00:02:31.569
+short answers.
+
+00:02:32.320 --> 00:02:35.271
+Privacy Policy - what is collected, what
+
+00:02:35.329 --> 00:02:38.544
+is not, and what leaves your device.
+
+00:02:39.314 --> 00:02:42.172
+Data Transfer - moving your work in and
+
+00:02:42.233 --> 00:02:44.969
+out, with nothing held hostage.
+
+00:02:45.742 --> 00:02:48.513
+Inclusive Design - who the software is
+
+00:02:48.575 --> 00:02:50.519
+built to work for.
+
+00:02:51.268 --> 00:02:54.259
+If you find a place where these pages and
+
+00:02:54.291 --> 00:02:57.860
+the code disagree, the code is the bug -
+
+00:02:57.919 --> 00:03:00.508
+and the repository is public so you can
+
+00:03:00.579 --> 00:03:02.520
+prove it either way.

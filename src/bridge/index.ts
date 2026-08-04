@@ -275,6 +275,18 @@ export async function createBridge(): Promise<WebHost> {
     transcribe: async (src, opts) => (await loadSpeech()).transcribe(src, opts),
   };
 
+  // Deep image codecs (v1.100) — a float pixel frame in, deep image bytes out
+  // (16-bit PNG / EXR / Radiance / dithered 8-bit). Lazy facade: bridge/codec.ts
+  // pulls the engine's off-barrel EXR/Radiance/PNG writers, which have no place
+  // in the boot chunk (only a tool's exportStill deep path ever calls this).
+  const loadCodec = memo(async () => (await import('./codec.ts')).createCodecAPI());
+  host.codec = {
+    png16: async (f, o) => (await loadCodec()).png16(f, o),
+    exr: async (f, o) => (await loadCodec()).exr(f, o),
+    radiance: async (f, o) => (await loadCodec()).radiance(f, o),
+    dither8: async (f, o) => (await loadCodec()).dither8(f, o),
+  };
+
   // Fresh-manifest Content Credentials for redacted derivatives (v1.85) — no
   // ingredients, no ingredient thumbnails. A lazy facade for the same reason
   // export is: the signer lives inside the 90 KB export bridge, and nothing

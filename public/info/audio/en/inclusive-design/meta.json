@@ -1,0 +1,11 @@
+{
+  "slug": "inclusive-design",
+  "lang": "en",
+  "voice": "bf_lily",
+  "speed": 0.8,
+  "modelVersion": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "textHash": "19f21c447d8a41496f6b6372b29c2edd22425c4450b2b5567894d142783b745e",
+  "duration": 832.55,
+  "bytes": 2497454,
+  "generated": "2026-08-04T05:01:47.846Z"
+}

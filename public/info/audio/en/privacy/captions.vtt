@@ -1,0 +1,1240 @@
+WEBVTT
+
+00:00:00.405 --> 00:00:04.810
+Last updated: 29 July 20 26
+
+00:00:05.746 --> 00:00:08.019
+In plain terms.
+
+00:00:08.791 --> 00:00:12.107
+The documents, images, videos and files
+
+00:00:12.173 --> 00:00:15.369
+you make in Lolly stay on your device.
+
+00:00:16.137 --> 00:00:19.016
+There are no accounts for ordinary use, no
+
+00:00:19.088 --> 00:00:21.800
+cookies from the app itself, and no
+
+00:00:21.861 --> 00:00:24.173
+analytics or trackers anywhere in the
+
+00:00:24.234 --> 00:00:27.451
+codebase - not "we don't use the data,"
+
+00:00:27.513 --> 00:00:30.420
+genuinely not present in the source.
+
+00:00:31.180 --> 00:00:33.515
+A short, complete list of exceptions
+
+00:00:33.583 --> 00:00:36.150
+exists where the software talks to a
+
+00:00:36.209 --> 00:00:39.154
+network at all, and every one of them is
+
+00:00:39.214 --> 00:00:42.605
+described below in specifics: what leaves,
+
+00:00:42.681 --> 00:00:44.695
+to whom, and when.
+
+00:00:45.459 --> 00:00:48.282
+The only exception that involves anything
+
+00:00:48.347 --> 00:00:51.229
+personal is a sign-in you have to
+
+00:00:51.290 --> 00:00:53.244
+explicitly start.
+
+00:00:54.007 --> 00:00:56.988
+If it isn't in this document, it doesn't
+
+00:00:57.051 --> 00:00:58.144
+happen.
+
+00:00:59.286 --> 00:01:01.791
+What this policy covers
+
+00:01:02.350 --> 00:01:13.525
+Lolly is open-source software - an engine, several app shells «web, desktop, mobile, CLI», and a browser extension - that anyone can run.
+
+00:01:13.875 --> 00:01:17.150
+This policy has two parts:
+
+00:01:17.882 --> 00:01:20.554
+The software itself: what it does and
+
+00:01:20.596 --> 00:01:23.424
+doesn't do with your data, wherever it
+
+00:01:24.390 --> 00:01:25.643
+runs.
+
+00:01:26.421 --> 00:01:29.332
+This is a property of the code, so it's
+
+00:01:29.410 --> 00:01:32.427
+true of every Lolly deployment, ours or
+
+00:01:32.509 --> 00:01:34.194
+anyone else's.
+
+00:01:34.981 --> 00:01:37.833
+lolly-tools, the reference deployment SUSE
+
+00:01:37.912 --> 00:01:40.704
+operates: the specific choices
+
+00:01:41.225 --> 00:01:48.125
+made running its optional server-side pieces «what's logged, for how long, by whom».
+
+00:01:48.859 --> 00:01:51.204
+If you're using a self-hosted or
+
+00:01:51.268 --> 00:01:54.083
+enterprise Lolly instance, the software
+
+00:01:54.143 --> 00:01:57.085
+behaviour below still applies, but the
+
+00:01:57.168 --> 00:02:00.169
+operator of that instance - not SUSE - is
+
+00:02:00.219 --> 00:02:03.455
+responsible for anything server-side:
+
+00:02:03.521 --> 00:02:06.876
+their render endpoint, their MCP server,
+
+00:02:06.938 --> 00:02:09.088
+their Content Credentials certificate
+
+00:02:09.151 --> 00:02:11.869
+authority, if they run one.
+
+00:02:12.646 --> 00:02:15.380
+Ask them for their own policy; see
+
+00:02:15.441 --> 00:02:18.267
+Adoption & Governance for what operating
+
+00:02:18.329 --> 00:02:19.994
+Lolly involves.
+
+00:02:21.127 --> 00:02:24.155
+The app: what stays on your device
+
+00:02:25.159 --> 00:02:28.251
+Lolly's web, desktop and mobile shells run
+
+00:02:28.309 --> 00:02:31.719
+the entire render engine client-side.
+
+00:02:32.484 --> 00:02:35.360
+Opening a tool, filling in inputs,
+
+00:02:35.429 --> 00:02:37.980
+previewing and exporting all happen on
+
+00:02:38.042 --> 00:02:41.336
+your device - no server is involved, and
+
+00:02:41.375 --> 00:02:44.369
+the app works offline once loaded.
+
+00:02:45.167 --> 00:02:47.917
+The app sets no cookies.
+
+00:02:48.687 --> 00:02:51.566
+To function, it keeps a small amount of
+
+00:02:51.628 --> 00:02:54.214
+data on your device only, never
+
+00:02:54.276 --> 00:02:55.744
+transmitted:
+
+00:02:56.503 --> 00:02:59.256
+Interface preferences - theme, language,
+
+00:02:59.316 --> 00:03:02.204
+sound settings, sidebar/zoom
+
+00:03:03.113 --> 00:03:05.853
+sizing, sort and view choices, which
+
+00:03:05.943 --> 00:03:07.806
+onboarding tips you've seen - in
+
+00:03:07.866 --> 00:03:10.965
+localStorage, so they're available before
+
+00:03:11.025 --> 00:03:13.395
+the app has finished booting.
+
+00:03:14.176 --> 00:03:17.233
+An offline cache of the tool catalogue and
+
+00:03:17.301 --> 00:03:20.121
+asset previews, so the gallery
+
+00:03:21.062 --> 00:03:23.793
+works without a connection.
+
+00:03:24.175 --> 00:03:30.750
+Local usage counters for your profile card's stats «how many exports, which
+
+00:03:31.100 --> 00:03:38.675
+tools» - a small bounded blob in localStorage, never read by us, never sent anywhere.
+
+00:03:39.423 --> 00:03:41.753
+Your own documents, saved sessions,
+
+00:03:41.811 --> 00:03:44.283
+uploaded assets and fonts - stored in
+
+00:03:45.259 --> 00:03:48.902
+IndexedDB on your device, never uploaded,
+
+00:03:48.967 --> 00:03:51.694
+never read by anyone but you.
+
+00:03:52.075 --> 00:03:57.850
+None of this is shared, sold, or used to identify or track you.
+
+00:03:58.200 --> 00:04:08.125
+There is nothing to consent to, because there is no collection happening - only this notice, so you know what's kept and where.
+
+00:04:08.475 --> 00:04:18.625
+Wipe all of it at any time with Profile → Clear all my data, or by clearing the site's storage in your browser.
+
+00:04:18.975 --> 00:04:23.275
+«Under the ePrivacy Directive Art.
+
+00:04:23.625 --> 00:04:38.000
+5«3», storage that is strictly necessary for the service you asked for doesn't require consent - only transparency, which is what this document and the in-app notice both are.»
+
+00:04:38.758 --> 00:04:41.344
+Your own backup of this data - the
+
+00:04:41.428 --> 00:04:44.380
+lolly-backup bundle produced by Export my
+
+00:04:44.441 --> 00:04:47.981
+data & render everything - is a file you
+
+00:04:48.041 --> 00:04:49.895
+keep and control.
+
+00:04:50.646 --> 00:04:53.356
+It never touches our servers unless you
+
+00:04:53.418 --> 00:04:56.544
+choose to send it somewhere yourself.
+
+00:04:57.343 --> 00:04:59.893
+See Data Transfer.
+
+00:05:01.023 --> 00:05:03.539
+On-device utilities
+
+00:05:04.506 --> 00:05:07.210
+Some tools - Strip Hidden Data, Compress
+
+00:05:07.297 --> 00:05:10.713
+PDF, and others carrying the "Runs on your
+
+00:05:10.772 --> 00:05:13.404
+device" badge - operate on a file you
+
+00:05:13.459 --> 00:05:14.695
+provide.
+
+00:05:15.466 --> 00:05:17.902
+The file is read into memory in your
+
+00:05:17.964 --> 00:05:21.116
+browser, transformed locally, and offered
+
+00:05:21.178 --> 00:05:23.344
+back as a download.
+
+00:05:24.100 --> 00:05:26.844
+It is never uploaded, because there is no
+
+00:05:26.964 --> 00:05:30.394
+server in the path to upload it to.
+
+00:05:31.168 --> 00:05:34.057
+These utilities work offline, and their
+
+00:05:34.140 --> 00:05:37.486
+output carries no watermark or metadata of
+
+00:05:37.575 --> 00:05:40.533
+ours - the point of most of them is to
+
+00:05:40.593 --> 00:05:44.345
+remove & protect data, not add risk.
+
+00:05:45.447 --> 00:05:48.082
+When the app talks to a network, in full
+
+00:05:48.961 --> 00:05:51.893
+The table below is the complete list of
+
+00:05:51.989 --> 00:05:55.139
+everything the app fetches or sends over a
+
+00:05:55.199 --> 00:05:56.370
+network.
+
+00:05:57.110 --> 00:06:00.570
+If it isn't here, the app doesn't do it.
+
+00:06:00.950 --> 00:06:07.725
+None of these send your documents, projects, sessions or uploaded files anywhere.
+
+00:06:08.075 --> 00:06:20.300
+They exist to bring things to your device «tools, fonts, models», never to send things from it, with the exceptions named explicitly in the sections below.
+
+00:06:21.053 --> 00:06:24.343
+A note on what we removed.
+
+00:06:25.118 --> 00:06:28.498
+Verify can check SEAL signatures, a scheme
+
+00:06:28.557 --> 00:06:31.357
+where a file's signing key is published in
+
+00:06:31.419 --> 00:06:32.744
+DNS.
+
+00:06:33.507 --> 00:06:37.051
+Browsers can't make DNS queries, so any
+
+00:06:37.113 --> 00:06:39.880
+web implementation has to route the lookup
+
+00:06:39.974 --> 00:06:43.332
+through a third-party DNS-over-HTTPS
+
+00:06:43.392 --> 00:06:46.313
+resolver - which would show that operator
+
+00:06:46.374 --> 00:06:49.116
+the domain being checked plus your IP
+
+00:06:49.175 --> 00:06:50.345
+address.
+
+00:06:51.146 --> 00:06:54.268
+We used to use Cloudflare's.
+
+00:06:55.034 --> 00:06:57.206
+We don't any more, and there is no
+
+00:06:57.263 --> 00:07:00.329
+replacement: the web app now passes no
+
+00:07:00.389 --> 00:07:03.711
+resolver at all, so SEAL verification here
+
+00:07:03.771 --> 00:07:06.445
+makes zero network requests.
+
+00:07:07.225 --> 00:07:10.094
+Files whose SEAL record carries its key
+
+00:07:10.158 --> 00:07:13.893
+inline still verify completely offline.
+
+00:07:14.662 --> 00:07:17.943
+Files whose key lives in DNS report "no
+
+00:07:18.031 --> 00:07:21.066
+key resolver" instead, and you can check
+
+00:07:21.126 --> 00:07:24.357
+those in the desktop or command-line app,
+
+00:07:24.415 --> 00:07:27.198
+which resolve DNS natively through your
+
+00:07:27.263 --> 00:07:30.795
+own machine with no third party involved.
+
+00:07:31.579 --> 00:07:34.520
+You can confirm this yourself: greppable
+
+00:07:34.583 --> 00:07:37.095
+checks for this and every other claim on
+
+00:07:37.136 --> 00:07:40.162
+this page, with the exact commands and
+
+00:07:40.218 --> 00:07:43.244
+expected output, live at Verify It
+
+00:07:43.293 --> 00:07:44.544
+Yourself.
+
+00:07:45.681 --> 00:07:48.053
+Hot-linked render URL'S
+
+00:07:49.024 --> 00:07:52.493
+Currently switched off on lolly-tools.
+
+00:07:53.278 --> 00:07:55.543
+Every lolly-tools>.
+
+00:07:56.348 --> 00:08:00.493
+URL returns 404 today.
+
+00:08:01.260 --> 00:08:03.621
+The section below describes what the
+
+00:08:03.715 --> 00:08:07.110
+feature does when an operator enables it,
+
+00:08:07.169 --> 00:08:09.169
+and why we have not.
+
+00:08:09.920 --> 00:08:12.683
+It will be turned on here once the service
+
+00:08:12.758 --> 00:08:16.176
+moves to SUSE-operated infrastructure, and
+
+00:08:16.229 --> 00:08:19.420
+this notice will change when it is.
+
+00:08:20.193 --> 00:08:23.136
+The app itself stays entirely on your
+
+00:08:23.197 --> 00:08:24.419
+device.
+
+00:08:25.211 --> 00:08:27.745
+Separately, an operator can enable
+
+00:08:27.837 --> 00:08:31.444
+hot-link render URL'S - /tool/ .
+
+00:08:32.195 --> 00:08:32.267
+?
+
+00:08:33.009 --> 00:08:35.849
+- so a shared Lolly link can appear as a
+
+00:08:35.909 --> 00:08:39.063
+live image in a README, a wiki or a
+
+00:08:39.123 --> 00:08:40.445
+dashboard.
+
+00:08:41.210 --> 00:08:43.866
+Fetching one asks the server to render
+
+00:08:43.926 --> 00:08:47.040
+public tool and catalogue data with the
+
+00:08:47.111 --> 00:08:50.020
+inputs written into the URL.
+
+00:08:50.814 --> 00:08:54.019
+No accounts, no cookies, no state.
+
+00:08:54.801 --> 00:08:58.345
+The endpoint is anonymous, and nothing
+
+00:08:59.239 --> 00:09:02.118
+on your device is read.
+
+00:09:02.897 --> 00:09:06.035
+Your documents, sessions and uploads never
+
+00:09:06.095 --> 00:09:08.526
+leave your browser - they cannot appear in
+
+00:09:08.587 --> 00:09:10.420
+these links at all.
+
+00:09:11.185 --> 00:09:14.894
+But the URL itself is recorded.
+
+00:09:15.666 --> 00:09:18.423
+A URL'S query string is part of the
+
+00:09:18.482 --> 00:09:19.537
+request
+
+00:09:20.569 --> 00:09:22.971
+line, so it lands in the hosting
+
+00:09:23.033 --> 00:09:26.064
+platform's ordinary access logs the same
+
+00:09:26.125 --> 00:09:29.069
+way every requested path does.
+
+00:09:29.824 --> 00:09:32.572
+If a link's inputs contain someone's name
+
+00:09:32.632 --> 00:09:35.782
+or email - a name badge, an email
+
+00:09:35.874 --> 00:09:39.128
+signature - that text sits in those logs,
+
+00:09:39.189 --> 00:09:41.915
+and no amount of policy wording changes
+
+00:09:41.977 --> 00:09:42.895
+it.
+
+00:09:43.668 --> 00:09:46.757
+This is the specific reason the feature is
+
+00:09:46.814 --> 00:09:49.094
+off here rather than on.
+
+00:09:49.869 --> 00:09:52.539
+The inputs are public by construction
+
+00:09:52.636 --> 00:09:55.484
+anyway - they are whatever the link's
+
+00:09:56.440 --> 00:09:59.720
+author typed into the URL, readable by
+
+00:09:59.810 --> 00:10:02.219
+anyone the link reaches.
+
+00:10:02.989 --> 00:10:06.156
+Don't put secrets in a shared link; Lolly
+
+00:10:06.225 --> 00:10:08.771
+offers link encryption for sensitive
+
+00:10:08.833 --> 00:10:10.144
+content.
+
+00:10:10.922 --> 00:10:13.895
+Responses are cached and rate-limited like
+
+00:10:13.954 --> 00:10:16.823
+any public image, and marked
+
+00:10:17.838 --> 00:10:21.145
+noindex so search engines don't index your
+
+00:10:21.207 --> 00:10:22.419
+renders.
+
+00:10:23.205 --> 00:10:26.260
+Self-hosting Lolly and don't want a public
+
+00:10:26.321 --> 00:10:27.994
+render surface?
+
+00:10:28.779 --> 00:10:32.097
+Set LOLLY_DISABLE_RENDER_GET=1 - what
+
+00:10:32.157 --> 00:10:35.360
+lolly-tools itself currently does - and
+
+00:10:35.456 --> 00:10:39.520
+every one of these URL'S returns 404.
+
+00:10:40.250 --> 00:10:45.200
+The MCP server «optional, for AI agents»
+
+00:10:45.550 --> 00:11:01.150
+Lolly can also be reached by an AI agent over the Model Context Protocol - an operator-run endpoint «lolly-tools runs one; anyone can self-host their own, including fully air-gapped».
+
+00:11:01.500 --> 00:11:09.900
+It shares the render path's no-accounts posture, plus three tools that necessarily handle file bytes:
+
+00:11:10.250 --> 00:11:16.625
+lolly_transform «run an on-device utility server-side, on the calling
+
+00:11:16.975 --> 00:11:29.900
+agent's behalf», lolly_verify «check Content Credentials» and lolly_redact «black out regions of an image or PDF» all accept a file's bytes from the caller.
+
+00:11:30.250 --> 00:11:43.175
+They are processed in-process, in memory, and the result is returned in that same call - the file is never written to disk and never stored once the request completes.
+
+00:11:43.903 --> 00:11:45.892
+Every other tool - lolly_render,
+
+00:11:45.959 --> 00:11:49.144
+lolly_build_url, lolly_list_tools,
+
+00:11:49.525 --> 00:12:02.300
+lolly_describe_tool - works from parameters only «text, numbers, colours, URL'S, catalogue asset ids», the same inputs a hot-link render URL takes.
+
+00:12:03.028 --> 00:12:05.461
+Access is either a shared token the
+
+00:12:05.523 --> 00:12:08.462
+operator issues to clients they trust, or
+
+00:12:09.479 --> 00:12:12.871
+stateless OAuth 2 point 1: short-lived
+
+00:12:12.959 --> 00:12:15.652
+signed tokens verified against a shared
+
+00:12:15.737 --> 00:12:19.037
+secret, nothing stored server-side, and
+
+00:12:19.068 --> 00:12:22.105
+the token itself is never written to a log
+
+00:12:22.172 --> 00:12:24.419
+or a render URL.
+
+00:12:25.150 --> 00:12:31.200
+Content Credentials identity «a sign-in you have to start yourself»
+
+00:12:31.550 --> 00:12:44.050
+Lolly can seal a cryptographic Content Credential into your exports so anyone can verify, offline, that a file is unaltered since it left Lolly.
+
+00:12:44.400 --> 00:12:59.525
+That much is on by default and fully local - the signing key is generated on your device, is non-extractable «not even Lolly's own code can read it», and signing itself happens offline.
+
+00:12:59.875 --> 00:13:14.525
+This section covers the one optional step on top of that: enrolling a verified identity, so your exports say "Verified - signed by \ " instead of an anonymous key.
+
+00:13:14.875 --> 00:13:23.600
+If you skip enrolment, nothing in this section applies to you, and no personal data ever leaves your device.
+
+00:13:24.330 --> 00:13:27.284
+If you do enrol, here is exactly what
+
+00:13:27.346 --> 00:13:28.594
+happens:
+
+00:13:28.975 --> 00:13:35.175
+You choose a sign-in method - GitHub, Google, SUSE «Okta», or an emailed
+
+00:13:35.947 --> 00:13:36.967
+link.
+
+00:13:37.755 --> 00:13:40.293
+For the three OIDC providers, you're
+
+00:13:40.357 --> 00:13:43.146
+redirected to that provider's own login
+
+00:13:43.209 --> 00:13:46.395
+page, governed by their privacy policy,
+
+00:13:46.457 --> 00:13:49.620
+not ours; Lolly's certificate service
+
+00:13:49.678 --> 00:13:52.511
+receives back only a verified email
+
+00:13:52.569 --> 00:13:55.344
+address and the provider's name.
+
+00:13:56.120 --> 00:13:58.615
+For the email link, the address you type
+
+00:13:58.657 --> 00:14:02.009
+is passed to Resend, a transactional email
+
+00:14:02.070 --> 00:14:05.745
+API, solely to deliver that one link.
+
+00:14:06.519 --> 00:14:08.987
+A short-lived cookie protects the
+
+00:14:09.054 --> 00:14:10.568
+redirect.
+
+00:14:11.357 --> 00:14:14.200
+This is the one cookie the
+
+00:14:15.225 --> 00:14:18.778
+entire Lolly system sets: lolly_ca_state,
+
+00:14:18.835 --> 00:14:23.417
+HttpOnly, scoped to /api/ca,
+
+00:14:23.481 --> 00:14:25.994
+expiring within ten minutes.
+
+00:14:26.741 --> 00:14:29.767
+It carries a random value, not a tracking
+
+00:14:29.827 --> 00:14:33.208
+identifier, and exists only to stop the
+
+00:14:33.293 --> 00:14:36.245
+OAuth redirect being forged.
+
+00:14:37.006 --> 00:14:39.619
+It is cleared as soon as sign-in
+
+00:14:39.682 --> 00:14:40.943
+completes.
+
+00:14:41.732 --> 00:14:44.872
+Your IP address is used, briefly, to
+
+00:14:44.933 --> 00:14:47.290
+prevent abuse of the sign-in
+
+00:14:47.900 --> 00:15:02.875
+endpoints «so one script can't spam an inbox or exhaust the email quota» - held in server memory only, for a sliding window of about a minute, never written to a log or persisted anywhere.
+
+00:15:03.225 --> 00:15:12.150
+The certificate service issues a short-lived certificate «7, 30, 90 or 365
+
+00:15:12.500 --> 00:15:24.175
+days, your choice, capped by the operator's policy» binding your verified email to the public half of the keypair generated on your device.
+
+00:15:24.525 --> 00:15:28.725
+The private half never leaves your browser.
+
+00:15:29.505 --> 00:15:33.243
+Nothing about the issuance is recorded.
+
+00:15:34.033 --> 00:15:37.092
+The certificate service keeps no
+
+00:15:38.024 --> 00:15:40.616
+issuance log: not your email, not the
+
+00:15:40.677 --> 00:15:43.247
+provider, not a serial number, not a
+
+00:15:43.308 --> 00:15:44.720
+timestamp.
+
+00:15:45.523 --> 00:15:49.293
+No database, no log line, no webhook.
+
+00:15:50.097 --> 00:15:53.388
+Your email address exists in the request
+
+00:15:53.510 --> 00:15:56.028
+only long enough to be written into the
+
+00:15:56.090 --> 00:15:59.594
+certificate that your own device receives,
+
+00:15:59.658 --> 00:16:02.232
+and then it is gone from our side
+
+00:16:02.301 --> 00:16:03.744
+entirely.
+
+00:16:04.511 --> 00:16:07.499
+After that, signing is offline again for
+
+00:16:07.559 --> 00:16:10.319
+the certificate's whole lifetime.
+
+00:16:11.095 --> 00:16:13.767
+Exporting a file never contacts the
+
+00:16:13.829 --> 00:16:17.719
+certificate service - only enrolling did.
+
+00:16:18.501 --> 00:16:21.469
+The tradeoff, stated plainly.
+
+00:16:22.242 --> 00:16:25.368
+An earlier version of this service did log
+
+00:16:25.446 --> 00:16:28.357
+each issuance, so that a misissued or
+
+00:16:28.431 --> 00:16:31.495
+compromised certificate could be traced.
+
+00:16:32.269 --> 00:16:35.184
+We removed it, because that log was the
+
+00:16:35.276 --> 00:16:38.104
+only place in all of Lolly where personal
+
+00:16:38.164 --> 00:16:41.969
+data came to rest on a server, and we
+
+00:16:42.024 --> 00:16:44.248
+would rather not hold it than hold it
+
+00:16:44.312 --> 00:16:45.545
+carefully.
+
+00:16:46.325 --> 00:16:48.342
+What we give up is server-side
+
+00:16:48.405 --> 00:16:52.121
+traceability: if a certificate is misused
+
+00:16:52.186 --> 00:16:55.219
+we cannot look up who obtained it.
+
+00:16:55.993 --> 00:16:58.925
+Certificates are short-lived by design - 7
+
+00:16:59.013 --> 00:17:03.854
+to 365 days, your choice, capped by the
+
+00:17:03.915 --> 00:17:07.125
+operator - and expire on their own, which
+
+00:17:07.187 --> 00:17:10.570
+is the mitigation we rely on instead.
+
+00:17:11.354 --> 00:17:14.399
+Self-hosters whose own obligations require
+
+00:17:14.500 --> 00:17:18.000
+an audit log can add one, and become the
+
+00:17:18.061 --> 00:17:21.420
+controller of that data by doing so.
+
+00:17:22.560 --> 00:17:24.939
+The browser extension
+
+00:17:25.866 --> 00:17:29.085
+The Lolly URL Screenshot browser extension
+
+00:17:29.158 --> 00:17:32.288
+does not collect, store, or transmit any
+
+00:17:32.349 --> 00:17:34.069
+personal data.
+
+00:17:34.855 --> 00:17:37.620
+No analytics, no tracking, no remote
+
+00:17:37.711 --> 00:17:38.819
+server.
+
+00:17:39.607 --> 00:17:41.368
+What it does.
+
+00:17:42.138 --> 00:17:44.253
+When you ask the Lolly web app to
+
+00:17:44.333 --> 00:17:48.238
+screenshot a URL, the extension opens that
+
+00:17:48.322 --> 00:17:51.008
+page in a temporary background tab,
+
+00:17:51.084 --> 00:17:53.537
+captures it in your browser using the
+
+00:17:53.603 --> 00:17:57.036
+DevTools Protocol, hands the image back to
+
+00:17:57.096 --> 00:17:59.970
+the app, and closes the tab.
+
+00:18:00.734 --> 00:18:03.558
+Everything happens locally, on your own
+
+00:18:03.617 --> 00:18:05.669
+device and network.
+
+00:18:06.454 --> 00:18:07.709
+Data.
+
+00:18:08.511 --> 00:18:10.668
+We collect nothing.
+
+00:18:11.442 --> 00:18:14.618
+The extension has no servers and makes no
+
+00:18:14.681 --> 00:18:15.641
+network
+
+00:18:16.651 --> 00:18:19.168
+requests of its own.
+
+00:18:19.921 --> 00:18:22.589
+Captured images go straight to the Lolly
+
+00:18:22.662 --> 00:18:25.142
+app in the same browser - never
+
+00:18:26.205 --> 00:18:29.192
+uploaded by the extension.
+
+00:18:29.964 --> 00:18:32.734
+The URL'S you capture are used only to
+
+00:18:32.796 --> 00:18:35.564
+load that one page for that one
+
+00:18:36.501 --> 00:18:37.966
+screenshot.
+
+00:18:38.751 --> 00:18:41.768
+They are not logged or shared.
+
+00:18:42.539 --> 00:18:44.093
+Permissions.
+
+00:18:44.475 --> 00:18:50.675
+debugger - to capture the rendered page via the DevTools Protocol «the
+
+00:18:51.025 --> 00:18:55.650
+same mechanism the Lolly desktop app uses».
+
+00:18:56.386 --> 00:18:59.504
+tabs - to open and close the temporary tab
+
+00:18:59.565 --> 00:19:01.544
+the page loads in.
+
+00:19:01.925 --> 00:19:07.200
+Host access « » - because the page you choose to capture can be
+
+00:19:07.942 --> 00:19:09.844
+on any site.
+
+00:19:10.611 --> 00:19:14.009
+Chrome surfaces this at install time as a
+
+00:19:14.102 --> 00:19:17.138
+broad permission warning; the extension
+
+00:19:17.229 --> 00:19:20.819
+only ever visits the URL you give it.
+
+00:19:21.617 --> 00:19:24.683
+None of these are used to read, monitor,
+
+00:19:24.748 --> 00:19:27.602
+or transmit your browsing beyond that one
+
+00:19:27.662 --> 00:19:29.544
+requested capture.
+
+00:19:30.674 --> 00:19:32.869
+Infrastructure logs
+
+00:19:33.864 --> 00:19:36.245
+Like any website, the servers behind
+
+00:19:36.304 --> 00:19:38.858
+lolly-tools - and behind any Lolly
+
+00:19:38.918 --> 00:19:41.591
+deployment - generate standard web-server
+
+00:19:41.658 --> 00:19:44.436
+access logs whenever a request reaches
+
+00:19:44.471 --> 00:19:48.106
+them at all: IP address, requested path,
+
+00:19:48.176 --> 00:19:50.570
+timestamp, user agent.
+
+00:19:51.339 --> 00:19:54.201
+That's baseline hosting behaviour, not
+
+00:19:54.265 --> 00:19:57.418
+something Lolly adds on top, and it never
+
+00:19:57.479 --> 00:20:00.411
+contains the contents of your documents,
+
+00:20:00.470 --> 00:20:03.036
+because those never reach a server to
+
+00:20:03.095 --> 00:20:04.519
+begin with.
+
+00:20:05.284 --> 00:20:07.954
+The one deliberate exception is a file you
+
+00:20:08.012 --> 00:20:12.228
+explicitly hand to an MCP lolly_transform,
+
+00:20:12.315 --> 00:20:15.400
+lolly_verify or lolly_redact call, which
+
+00:20:15.467 --> 00:20:17.983
+is processed in memory and never written
+
+00:20:18.071 --> 00:20:21.970
+to disk or a log, as described above.
+
+00:20:22.350 --> 00:20:26.925
+Lolly's own code writes nothing to those logs.
+
+00:20:27.275 --> 00:20:33.075
+The MCP server contains no logging statements at all.
+
+00:20:33.425 --> 00:20:52.550
+The certificate service emits exactly two lines, both on failure and both deliberately stripped: a send-failure status code with no recipient address, and an error message with no stack trace or URL «a stack could carry an enrolment token».
+
+00:20:52.900 --> 00:20:58.525
+Everything else in the log is the hosting platform's, not ours.
+
+00:20:59.278 --> 00:21:02.079
+For lolly-tools, hosting is Vercel and
+
+00:21:02.146 --> 00:21:05.150
+access-log retention follows Vercel's own
+
+00:21:05.211 --> 00:21:08.353
+platform defaults for our plan; we
+
+00:21:08.413 --> 00:21:11.404
+configure no log drain, no long-term log
+
+00:21:11.476 --> 00:21:14.344
+export, and no analytics or monitoring
+
+00:21:14.405 --> 00:21:16.120
+product on top.
+
+00:21:16.873 --> 00:21:19.999
+We keep no copy of these logs ourselves,
+
+00:21:20.054 --> 00:21:22.905
+which also means we have no way to search
+
+00:21:22.964 --> 00:21:25.495
+them for you - see Your rights.
+
+00:21:26.639 --> 00:21:30.169
+Legal bases, retention and recipients
+
+00:21:31.084 --> 00:21:34.400
+Almost nothing here needs a legal basis,
+
+00:21:34.460 --> 00:21:37.444
+because almost nothing is processed.
+
+00:21:38.218 --> 00:21:41.369
+For completeness, the entire list:
+
+00:21:41.750 --> 00:21:43.825
+Recipients.
+
+00:21:44.175 --> 00:21:50.425
+The categories of recipient are: our hosting provider «Vercel Inc.»
+
+00:21:50.775 --> 00:21:59.025
+, and - only if you use the email sign-in option - a transactional email provider «Resend».
+
+00:21:59.375 --> 00:22:13.975
+If you sign in with GitHub, Google or SUSE Okta, you interact with that provider directly under their own privacy policy; they tell us a verified email address and nothing else.
+
+00:22:14.325 --> 00:22:23.200
+We share personal data with no one else, and we do not sell data, run advertising, or profile users.
+
+00:22:23.550 --> 00:22:26.950
+Transfers outside the EEA.
+
+00:22:27.300 --> 00:22:31.700
+Vercel and Resend are US companies.
+
+00:22:32.050 --> 00:22:48.600
+Function compute for lolly-tools is pinned to Vercel's Frankfurt «fra1» region so processing happens in the EU, but as US-headquartered providers they may still access data as processors from the US.
+
+00:22:48.950 --> 00:23:04.150
+Those transfers rely on the European Commission's Standard Contractual Clauses and/or the EU-US Data Privacy Framework, as set out in each provider's data processing agreement.
+
+00:23:04.500 --> 00:23:19.350
+Because the personal data reaching either provider is so limited - an email address passed through to send one message, and ordinary access logs - the exposure is correspondingly small.
+
+00:23:19.700 --> 00:23:23.175
+Automated decision-making.
+
+00:23:23.525 --> 00:23:25.000
+None.
+
+00:23:25.350 --> 00:23:34.500
+There is no profiling and no automated decision producing legal or similarly significant effects «Art.
+
+00:23:34.850 --> 00:23:36.950
+22».
+
+00:23:38.040 --> 00:23:40.045
+Children's privacy
+
+00:23:40.650 --> 00:23:52.525
+Lolly does not knowingly collect personal information from anyone, of any age, in the ordinary course of using the app - there is nothing to collect.
+
+00:23:52.875 --> 00:24:07.125
+The one place personal information «an email address» is ever gathered is Content Credentials enrolment, described above, which is not directed at or intended for children.
+
+00:24:08.249 --> 00:24:09.468
+Your rights
+
+00:24:09.950 --> 00:24:35.225
+Because almost everything Lolly touches is stored only on your own device, most of what data-protection law calls "your rights" - access, correction, deletion, portability - are things you can already do yourself, instantly, without asking anyone: your data lives in your browser's storage, in a form you can inspect, export «Export my data & render everything, above», or delete «Profile → Clear all
+
+00:24:35.575 --> 00:24:37.775
+my data».
+
+00:24:38.125 --> 00:25:06.000
+Formally, under GDPR Articles 15 to 22 you have the right to access your personal data, to rectify it, to erase it, to restrict or object to its processing «including objecting to anything we base on legitimate interests», to data portability, and - where processing rests on consent - to withdraw that consent at any time, without affecting the lawfulness of what happened before you withdrew it.
+
+00:25:06.749 --> 00:25:09.976
+Here is the honest position on exercising
+
+00:25:10.039 --> 00:25:11.993
+them against us.
+
+00:25:12.769 --> 00:25:15.834
+Since we no longer keep an issuance log,
+
+00:25:15.893 --> 00:25:18.882
+we hold no personal data about you that we
+
+00:25:18.942 --> 00:25:22.395
+can look up, correct, export or delete.
+
+00:25:23.143 --> 00:25:25.890
+If you write and ask what we have on you,
+
+00:25:25.950 --> 00:25:28.518
+the truthful answer is nothing, and we
+
+00:25:28.576 --> 00:25:30.120
+will say so.
+
+00:25:30.889 --> 00:25:33.823
+The one category that exists at all is
+
+00:25:33.883 --> 00:25:36.845
+hosting access logs keyed to an IP
+
+00:25:36.905 --> 00:25:39.942
+address, held by our hosting provider
+
+00:25:40.024 --> 00:25:43.194
+under their retention defaults; we have no
+
+00:25:43.254 --> 00:25:46.125
+facility to search or selectively delete
+
+00:25:46.213 --> 00:25:49.178
+those, and we will tell you that rather
+
+00:25:49.239 --> 00:25:51.395
+than pretend otherwise.
+
+00:25:52.158 --> 00:25:54.860
+Everything that is actually yours is on
+
+00:25:54.922 --> 00:25:58.187
+your device, where you can already read,
+
+00:25:58.257 --> 00:26:00.879
+export and destroy it without asking
+
+00:26:00.961 --> 00:26:02.744
+anyone's permission.
+
+00:26:03.125 --> 00:26:06.575
+You have the right to complain.
+
+00:26:06.925 --> 00:26:25.550
+If you think we have handled your data improperly, you can lodge a complaint with a data protection supervisory authority - in the EU, the authority in your country of residence, place of work, or where you believe the infringement occurred «Art.
+
+00:26:25.900 --> 00:26:28.250
+77».
+
+00:26:28.600 --> 00:26:38.475
+Our lead supervisory authority is the Bayerisches Landesamt für Datenschutzaufsicht «BayLDA» in Ansbach, Germany.
+
+00:26:38.825 --> 00:26:45.350
+You do not need to contact us first, though we would like the chance to fix it.
+
+00:26:46.112 --> 00:26:48.643
+We don't sell data.
+
+00:26:49.428 --> 00:26:52.243
+We don't have any to sell.
+
+00:26:53.354 --> 00:26:55.908
+Changes to this policy
+
+00:26:56.475 --> 00:27:01.525
+The date at the top changes whenever this document does.
+
+00:27:01.875 --> 00:27:16.775
+A change that alters what leaves your device or what's retained gets its own line here, not a silent edit - if you want to see what changed, ask «below» or compare against the public source.
+
+00:27:17.870 --> 00:27:21.488
+Who is responsible, and how to reach us
+
+00:27:22.534 --> 00:27:26.543
+The data controller for lolly-tools is:
+
+00:27:27.342 --> 00:27:31.210
+SUSE Software Solutions Germany GmbH
+
+00:27:31.312 --> 00:27:33.950
+Frankenstraße 146
+
+00:27:34.052 --> 00:27:38.532
+90461 Nürnberg Germany
+
+00:27:39.423 --> 00:27:42.233
+SUSE has appointed a Data Protection
+
+00:27:42.294 --> 00:27:46.569
+Officer, reachable at privacy@suse-com.
+
+00:27:47.353 --> 00:27:50.250
+Use that address for any formal request
+
+00:27:50.311 --> 00:27:52.619
+under "Your rights" above.
+
+00:27:53.396 --> 00:27:55.927
+For anything about Lolly itself - how it
+
+00:27:55.987 --> 00:27:59.585
+works, why a thing is the way it is, or a
+
+00:27:59.645 --> 00:28:02.476
+correction to this document - contact Andy
+
+00:28:02.536 --> 00:28:05.645
+Fitzsimon, fitzy@suse-com.
+
+00:28:06.431 --> 00:28:09.302
+For a self-hosted or enterprise Lolly
+
+00:28:09.364 --> 00:28:12.391
+instance, contact whoever operates it
+
+00:28:12.450 --> 00:28:15.744
+instead: the operator is the controller
+
+00:28:15.858 --> 00:28:18.069
+for their own deployment.
+
+00:28:18.868 --> 00:28:21.969
+SUSE and the Lolly open source project
+
+00:28:22.045 --> 00:28:24.755
+hold no data for deployments they don't
+
+00:28:24.816 --> 00:28:25.819
+run.
