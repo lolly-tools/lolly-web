@@ -748,6 +748,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // writes an icon() constant, with the model's warning text going through
   // setAttribute (data-tip/aria-label), never HTML.
   'views/upscale-dialog.ts': 2,
+  // 1 as of 2026-08-04 (new file, the host.matte Remove-Background dialog). The
+  // one innerHTML sink is the panel scaffold: every interpolated value is a t()
+  // literal or escapeHtml()'d (the aria-labels, the model <option> id/name pairs);
+  // all later writes are textContent / setAttribute, never HTML.
+  'views/matte-dialog.ts': 1,
 };
 
 test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {

@@ -67,8 +67,29 @@ function member(orgConfig: unknown): void {
 const cfg = (injectables: unknown[]): unknown => ({ instance: { name: 'Acme' }, inboxUnread: 0, injectables });
 const banner = () => document.querySelector('.org-chrome--banner');
 
-// give the lazy import('./chrome.ts') a microtask tick to resolve + mount
-const settle = () => new Promise((r) => setTimeout(r, 0));
+/**
+ * Wait for the lazy `import('./chrome.ts')` to resolve AND mount.
+ *
+ * This was a single `setTimeout(0)`, which is one macrotask — enough on a warm
+ * module cache and not enough on a cold one. It passed on every developer machine
+ * and failed in CI, where the import is compiled fresh: "member injectables …
+ * render a chrome banner" has been red on main for several commits for exactly
+ * this reason, with a nonsense symptom (the banner simply absent).
+ *
+ * So poll the caller's condition rather than guess a duration. With no condition
+ * it keeps the old single-tick behaviour, which is all the assertion-free call
+ * sites need. A test whose condition never arrives still fails, just after the
+ * deadline rather than immediately — the assertion after it reports the real
+ * problem either way.
+ */
+const settle = async (until?: () => unknown, timeoutMs = 3000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 0));
+    if (!until || until()) return;
+    if (Date.now() > deadline) return;
+  }
+};
 
 test('member injectables populate the tool registry + render a chrome banner', async () => {
   reset();
@@ -77,7 +98,7 @@ test('member injectables populate the tool registry + render a chrome banner', a
     { id: 'c1', kind: 'chrome', title: 'Welcome', slot: 'banner', tone: 'info', text: 'Welcome to Acme', link: { label: 'Docs', href: '#/docs' } },
   ]));
   await initOrg();
-  await settle();
+  await settle(banner);
   const tools = getInjectedTools();
   assert.equal(tools.length, 1);
   assert.equal(tools[0]!.id, 'event-badge'); // the SERVED id, not the injectable id
@@ -129,7 +150,7 @@ test('a dismissed chrome banner does not reappear', async () => {
   const one = () => member(cfg([{ id: 'c1', kind: 'chrome', title: 'N', slot: 'banner', text: 'Notice', tone: 'warn' }]));
   one();
   await initOrg();
-  await settle();
+  await settle(banner);
   const bar = banner();
   assert.ok(bar);
   (bar!.querySelector('.org-chrome-dismiss') as HTMLElement).click();
@@ -169,7 +190,7 @@ test('a javascript: link href is dropped, not rendered as a clickable anchor', a
   reset();
   member(cfg([{ id: 'x', kind: 'chrome', title: 'X', slot: 'banner', text: 'Notice', link: { label: 'Run', href: 'javascript:fetch("/steal")' } }]));
   await initOrg();
-  await settle();
+  await settle(banner);
   const bar = banner();
   assert.ok(bar);
   assert.match(bar!.textContent || '', /Notice/); // text still shows
