@@ -448,6 +448,8 @@ async function renderFormat(node: Element, format: string, opts: ExportOpts = {}
   const key = format === 'webm' || format === 'mp4'
     ? (blob.type.includes('mp4') ? 'mp4' : 'webm')
     : format === 'webp-anim' ? 'webp'          // animated WebP stamps like a still WebP (placeWebp appends a C2PA RIFF chunk)
+    : format === 'svg-anim' ? 'svg'            // an animated SVG is a real SVG doc — stamps via the svg placer (<c2pa:manifest> in <metadata>)
+    : format === 'opus' ? 'webm'               // Opus ships in a WebM container — stamps via placeWebm's attachment (Lolly's verifier reads it; c2patool can't, same as WebM)
     : format;
   if (opts.c2pa && C2PA_STAMPABLE.has(key)) {
     // The output size is only knowable here (node + opts); pass it to the stamp so

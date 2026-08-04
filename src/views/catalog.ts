@@ -69,6 +69,8 @@ import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
 import { icon } from '../lib/icons.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
 import type { PickerHost } from './picker.ts';
+import type { UpscaleHost } from './upscale-dialog.ts';
+import type { MatteHost } from './matte-dialog.ts';
 import { mountAudioThumbs } from './picker.ts';
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
 import { peaksFingerprint, derivePeaks, memoPeaks } from '../lib/audio-peaks.ts';
@@ -316,7 +318,7 @@ const SHIELD_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 // reports "No Content Credentials"). Audio joined the reader with the wav RIFF
 // binding + mp3 (see /verify's accept list); lottie/JSON, fonts and tokens are
 // still not readable, so they get no checker.
-const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'mp4', 'webm', 'mkv', 'mp3', 'wav']);
+const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'avif', 'mp4', 'm4a', 'webm', 'mkv', 'mp3', 'wav', 'opus']);
 const isVerifiableAsset = (ref: AssetRef): boolean =>
   VERIFIABLE_FORMATS.has(String(ref.format ?? '').toLowerCase());
 
@@ -1543,6 +1545,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       && !(ref.type === 'lottie' && !isMotionLottie);
     // Crop only makes sense on a static raster/vector — never a live motion preview.
     const croppable = zoomable && !isMotionLottie;
+    // On-device AI edits for a raster, brought over from the asset picker: Upscale
+    // (host.upscale, v1.101) and Remove background (host.matte, v1.103) — same gates the
+    // picker uses. Both route through their dialogs, which PRESERVE the source's
+    // provenance: an ingested AI image (Gemini, ChatGPT, …) keeps its Content Credential
+    // and Gen-AI flag through the edit — recorded as a cut-out/upscale ingredient, never
+    // laundered away — which is the whole reason to offer these on a credentialed asset.
+    const canUpscale = zoomable && ref.type === 'raster' && host.upscale?.isAvailable() === true;
+    const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
+      && host.matte?.isAvailable() === true && host.matte.models().length > 0;
     const wasOpen = !!detailsDialog; // paging (←/→) replaces an open modal — cue only a FRESH open
     closeDetails();
     const content = `
@@ -1580,6 +1591,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>
           <button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>
           ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
+          ${canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
+          ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
           <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>
           <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
           ${isUser
@@ -1761,6 +1774,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         else await directDownload(ref);
       }
       else if (act === 'crop') await openCropDialog(ref, isThemable(ref) ? dTheme : dTreatment);
+      else if (act === 'upscale' || act === 'matte') {
+        // Enlarge / cut-out THIS asset on-device, save the result as a user asset, then
+        // show it. The dialogs carry the source's Content Credential forward as an
+        // ingredient (with the Gen-AI flag intact), so an AI image keeps its provenance.
+        try {
+          const made = act === 'upscale'
+            ? await (await import('./upscale-dialog.ts')).openUpscaleDialog(host as unknown as UpscaleHost, { source: ref, sourceName: name })
+            : await (await import('./matte-dialog.ts')).openMatteDialog(host as unknown as MatteHost, { source: ref, sourceName: name });
+          if (made) { await reload(); rerender(); openDetails(made); }
+          else openDetails(ref); // cancelled — restore the asset the user was inspecting
+        } catch (err) {
+          host.log('error', act === 'upscale' ? 'Upscale failed' : 'Background removal failed', { id: ref.id, error: String(err) });
+        }
+      }
       else if (act === 'recategorise') await recategorise(ref);
       else if (act === 'rename') await renameUserAsset(ref);
       else if (act === 'hide') await setHidden(base, true);

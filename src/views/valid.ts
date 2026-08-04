@@ -953,7 +953,7 @@ function checksHtml(report: VerifyReport): string {
 // MKV) fall back to a labelled placeholder. The object URL is owned by handle().
 type PreviewKind = 'image' | 'video' | 'pdf' | 'none';
 interface Preview { url?: string; kind: PreviewKind; format: string; name: string; }
-const PREVIEW_IMG = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'webp']);
+const PREVIEW_IMG = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif']);
 const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
 // Raster formats a <canvas> can decode to RGBA — shared by the Lolly-Imprint/
 // LSB pixel pass (mountValid's pixelChecks) AND the TrustMark deep-scan
@@ -961,7 +961,7 @@ const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
 // SVG is deliberately excluded even though it's in PREVIEW_IMG: watermarks
 // live in RASTER pixels, and rasterising a vector for the sake of a scan
 // would be meaningless (there is no pixel grid to have carried a mark).
-const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp']);
+const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp', 'avif']);
 function previewKind(format: string | null, name: string): PreviewKind {
   const f = (format || name.split('.').pop() || '').toLowerCase();
   if (PREVIEW_IMG.has(f)) return 'image';
@@ -1225,7 +1225,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       </header>
 
       <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
-        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.mp4,.m4v,.mov,.webm,.mkv,.mp3,.wav,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,video/mp4,video/webm,video/x-matroska,audio/mpeg,audio/wav,audio/x-wav" hidden>
+        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
         <strong>${t('Drop files here')}</strong>
         <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm · mp3 · wav — check one or several at once')}</span>

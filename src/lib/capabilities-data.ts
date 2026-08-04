@@ -190,7 +190,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'PDF · Print PDF (CMYK) · CMYK TIFF', desc: 'True page sizes and DeviceCMYK output for the press — see Print production below.' },
       ] },
       { icon: ICONS.film, title: 'Motion', features: [
-        { name: 'MP4 · WebM · GIF · APNG · Animated WebP', desc: 'Animated tools record to video (the picker shows what your browser can encode), or to GIF, lossless animated PNG, and colour-plus-alpha animated WebP — all of which work everywhere.' },
+        { name: 'MP4 · WebM · GIF · Animated PNG · Animated WebP', desc: 'Animated tools record to video (the picker shows what your browser can encode), or to GIF, lossless animated PNG, and colour-plus-alpha animated WebP — all of which work everywhere.' },
         { name: 'Animated SVG', desc: 'A self-contained vector animation — stacks vector snapshots with embedded CSS keyframes, so it scales to any size with no codec and loops in a browser tab or an <code>&lt;img&gt;</code>.' },
       ] },
       { icon: ICONS.film, title: 'Audio', features: [
@@ -215,7 +215,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
     cards: [
       { icon: ICONS.image, title: 'Images', features: [
         { name: 'PNG · JPG · WebP · AVIF · HEIC/HEIF', desc: 'Drop a photo or graphic into any image picker or your <strong>My images</strong> library. Stills are downscaled and stripped of EXIF/GPS on ingest; iPhone HEIC/HEIF decodes even where the browser can’t, via a bundled fallback. AVIF reads wherever the browser decodes it.' },
-        { name: 'Animated GIF · APNG · animated WebP', desc: 'Animated rasters are recognised and kept <em>verbatim</em> — frames intact — so a looping GIF or animated PNG stays animated when you place it.' },
+        { name: 'Animated GIF · Animated PNG · Animated WebP', desc: 'Animated rasters are recognised and kept <em>verbatim</em> — frames intact — so a looping GIF or animated PNG stays animated when you place it.' },
         { name: 'SVG', desc: 'Vector artwork is sanitised — scripts, <code>on*</code> handlers and <code>javascript:</code> URLs are stripped — and normalised to a clean viewBox before it’s stored.' },
       ] },
       { icon: ICONS.vector, title: 'Design files', features: [
@@ -231,7 +231,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'MP4 · MOV · WebM', desc: 'Video files are stored <em>verbatim</em> — never transcoded — and their dimensions probed locally, ready to place in motion tools.' },
       ] },
       { icon: ICONS.credential, title: 'Content Credentials (verify)', features: [
-        { name: 'Read provenance from any file', desc: 'Verify checks a signed <a href="https://c2pa.org" target="_blank" rel="noopener">C2PA</a> manifest embedded in PDF, PNG/APNG, JPG, GIF, SVG, TIFF, WebP, MP4 and WebM/MKV — cryptographically, entirely on-device. See <a href="#/verify">Verify</a>.' },
+        { name: 'Read provenance from any file', desc: 'Verify checks a signed <a href="https://c2pa.org" target="_blank" rel="noopener">C2PA</a> manifest embedded in PDF, PNG/APNG, JPG, GIF, SVG, TIFF, WebP, AVIF, MP4 and WebM/MKV — cryptographically, entirely on-device. See <a href="#/verify">Verify</a>.' },
       ] },
     ],
   },
