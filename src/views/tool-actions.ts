@@ -147,7 +147,7 @@ const ZIP_BUNDLE = new Set(['png', 'jpg', 'jpeg', 'webp', 'webp-anim', 'avif', '
 // hide it everywhere it can't be produced or cleanly downloaded.
 const CMYK_TIFF_OK = cmykTiffSupport();
 const TIFF_OK = tiffSupport();
-const keepFormat = (f: string): boolean =>
+const keepFormat = (f: string, deepExportOk = false): boolean =>
   f === 'webm' ? videoSupport().webm
   : f === 'mp4' ? videoSupport().mp4
   // wav/mp3 are pure JS and always pass; m4a/opus need the platform's WebCodecs
@@ -155,10 +155,13 @@ const keepFormat = (f: string): boolean =>
   : isAudioFmt(f) ? audioSupport()[f]
   : f === 'cmyk-tiff' ? CMYK_TIFF_OK
   : f === 'tiff' ? TIFF_OK
-  // The pro float formats (exr/hdr) need a float rasterisation the browser has no
-  // path to — see proFormatSupport. False today, so they never reach the picker and
-  // the Pro <optgroup> below never has anything to hold.
-  : isProFormat(f) ? proFormatSupport()
+  // The pro float formats (exr/hdr) reach the picker two ways: the generic Node
+  // float rasteriser (proFormatSupport — false on the web), OR a tool that owns
+  // them through an exportStill hook computed in float via host.codec (bitmap
+  // studio). `deepExportOk` is that second, tool-specific producer — the runtime
+  // routes exr/hdr to exportStill before the 8-bit DOM path (runtime.ts:752), so
+  // where a tool can genuinely originate the float master the option is honest.
+  : isProFormat(f) ? (proFormatSupport() || deepExportOk)
   : true;
 
 const fmtLabel = (f: string): string => FMT_LABEL[f] ?? f.toUpperCase();
@@ -313,7 +316,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const isVectorFmt   = (f: string | undefined): boolean => f === 'svg' || f === 'pdf' || f === 'pdf-cmyk';
   // Show only the video containers this browser can produce (Safari→mp4, Firefox→webm,
   // recent Chrome→both); non-video formats always pass. See keepFormat / videoSupport.
-  const formats       = manifest.render.formats.filter(keepFormat);
+  // A tool with a float-compose exportStill hook + host.codec can originate the pro
+  // float formats (exr/hdr) on-device even without the Node float rasteriser — so the
+  // Pro <optgroup> opens for it here (e.g. Bitmap Studio's EXR/Radiance masters).
+  const toolDeepExport = !!manifest.hooks?.exportStill && !!host.codec;
+  const formats       = manifest.render.formats.filter(f => keepFormat(f, toolDeepExport));
   const hasAnimated   = formats.some(isAnimatedFmt);
   // matchExportFormat: default the export to a dropped file's OWN format (a JPEG →
   // jpg) until the user picks one. Reads AssetRef.format off the flagged input.
@@ -380,9 +387,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // The float interchange formats (exr/hdr) are compositing containers, not peers
   // of png/jpg, so they sit in their own native <optgroup> — no custom CSS, no
   // extra space, native a11y. The group is built from what SURVIVED keepFormat, so
-  // it exists only where those formats can actually be produced; on the web that is
-  // nowhere today (see proFormatSupport), and the markup below then has no optgroup
-  // in it at all. See views/export-depth.ts.
+  // it exists only where those formats can actually be produced: on the web that is
+  // a tool with a float-compose exportStill hook (see toolDeepExport above — Bitmap
+  // Studio), and otherwise nowhere (a plain tool has no float master). The markup
+  // then has no optgroup in it at all. See views/export-depth.ts.
   const formatOptions = formatOptionsHtml(formats, initialFmt, fmtLabel);
   const filenameRow = `
       <div class="filename-extension">

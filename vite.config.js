@@ -159,7 +159,12 @@ export function groupPrecacheFiles(all) {
   // the offline-download manager can state the part's true size up front. Like the
   // verify/speech models, /models/upscale/ is SW-bypassed (single IDB copy).
   const upscale = all.filter(f => f.url.startsWith('/models/upscale/'));
-  return { app, ort, models, speech, upscale };
+  // The background-removal models (host.matte, engine 1.103) — downloaded via
+  // lib/matter.ts's own IDB path (the shared ORT model fetcher), listed here so
+  // the offline-download manager can state the part's true size up front. Like the
+  // upscale/speech/verify models, /models/matte/ is SW-bypassed (single IDB copy).
+  const matte = all.filter(f => f.url.startsWith('/models/matte/'));
+  return { app, ort, models, speech, upscale, matte };
 }
 
 // Content hash for files whose URL does NOT already encode their bytes.
