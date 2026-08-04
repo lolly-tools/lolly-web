@@ -1356,6 +1356,34 @@ background-color:hsl(var(--background) / 1);
   border-top: 1px solid hsl(var(--border));
 }
 
+/* Dense sections (opt-in via manifest render.denseSections) — a pro tool with
+   many short controls (sliders, selects, numbers) fits roughly twice as many per
+   screen in a 2-column grid, so the panel scrolls far less. Chrome-only: it
+   never touches the render, export, model, or URL. Wide controls span both
+   columns, and the grid collapses back to one column on a narrow panel or under
+   the large-text a11y preference, so nothing is ever squeezed. */
+.input-section--dense .input-section-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  align-items: start;
+}
+.input-section--dense .input-section-body > .input-row:has(.vector-input),
+.input-section--dense .input-section-body > .input-row:has(textarea),
+.input-section--dense .input-section-body > .input-row:has(.blocks-input),
+.input-section--dense .input-section-body > .input-row:has(.asset-picker-row),
+.input-section--dense .input-section-body > .input-row:has(input[type="color"]),
+.input-section--dense .input-section-body > .input-row:has(.color-input),
+.input-section--dense .input-section-body > .input-pillbar {
+  grid-column: 1 / -1;
+}
+@media (max-width: 380px) {
+  .input-section--dense .input-section-body { grid-template-columns: 1fr; }
+}
+html[data-a11y-text="large"] .input-section--dense .input-section-body {
+  grid-template-columns: 1fr;
+}
+
 .blocks-input {margin-top: 2em; display: flex; flex-direction: column; gap: 6px; }
 .blocks-list  { display: flex; flex-direction: column; gap: 4px;     margin: 0 -12px;}
 

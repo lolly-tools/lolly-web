@@ -477,6 +477,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const parts: string[] = [];
   let openSection: string | null = null;
   let prevInput: InputModelItem | null = null;
+  // Tool-scoped density hint (chrome-only): sections named here render their short
+  // controls in a 2-column grid. Never touches the model, URL, or determinism.
+  const denseSections = new Set(
+    (runtime.manifest.render as { denseSections?: string[] })?.denseSections ?? [],
+  );
   let pillbarOpen = false;   // a run of consecutive `display:'pill'` booleans, wrapped
   const isPillInput = (i: InputModelItem): boolean => i.control === 'checkbox' && i.display === 'pill';
   const closePillbar = (): void => { if (pillbarOpen) { parts.push('</div>'); pillbarOpen = false; } };
@@ -487,7 +492,8 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       if (openSection !== null) parts.push('</div></details>');
       if (sec !== null) {
         const wasOpen = openSections.has(sec);
-        parts.push(`<details class="input-section"${wasOpen ? ' open' : ''}><summary class="input-section-summary">${escape(sec)}</summary><div class="input-section-body">`);
+        const dense = denseSections.has(sec) ? ' input-section--dense' : '';
+        parts.push(`<details class="input-section${dense}"${wasOpen ? ' open' : ''}><summary class="input-section-summary">${escape(sec)}</summary><div class="input-section-body">`);
       }
       openSection = sec;
       prevInput = null;   // a section break ends any pairing
