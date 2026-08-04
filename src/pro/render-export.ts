@@ -221,7 +221,7 @@ async function mountToolCanvas(
 
   try {
     // Brand semantic vars (--brand-primary, …) must reach EVERY path that mounts
-    // tool markup (plans/brand-token-contract.md §3). This offscreen stage serves
+    // tool markup (plans/archive/brand-token-contract.md §3). This offscreen stage serves
     // /pro batch rows, compose children, featured renders and personalize
     // previews — the live view applies the same vars in mountTool (views/tool.ts),
     // so without this call a batch/compose render of a semantic-var template

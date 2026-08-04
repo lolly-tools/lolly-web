@@ -179,7 +179,7 @@ const JPEG_SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 
  * question it answers is the ingest path's honesty clause — Lolly currently
  * edits every pixel at 8 bits per channel, so a deeper source (16-bit PNG/TIFF)
  * is flattened the moment it is drawn, and the caller should SAY that rather
- * than crush it silently (plans/deeprichpixels.md Phase A).
+ * than crush it silently (plans/61-deeprichpixels.md Phase A).
  *
  * Sources and where each number comes from:
  * - PNG: the IHDR bit-depth byte. Per the PNG spec (W3C PNG 3rd ed §11.2.1),

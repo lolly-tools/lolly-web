@@ -36,6 +36,7 @@ import { hasCaptureExtension } from './capture-extension.ts';
 import { vizSupported } from '../lib/viz-support.ts';
 import { KOKORO_MODEL_BYTES } from '../lib/speech-kokoro.ts';
 import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
+import { stagedUpscaleModels, UPSCALE_MODEL_BYTES } from '../lib/upscale-models.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
 import { openDB } from './db.ts';
 
@@ -285,6 +286,53 @@ export async function createBridge(): Promise<WebHost> {
     exr: async (f, o) => (await loadCodec()).exr(f, o),
     radiance: async (f, o) => (await loadCodec()).radiance(f, o),
     dither8: async (f, o) => (await loadCodec()).dither8(f, o),
+  };
+
+  // Layered-bitmap write-back (v1.102) — host.layers.writePsd, the engine's own
+  // PSD writer behind a lazy import (psd-write.ts is off the boot chunk; only
+  // the layer-stack tool's "Download layered PSD" action ever calls it). Blend
+  // strings from the open contract are narrowed here: an unknown value writes
+  // as 'normal' rather than refusing the file.
+  host.layers = {
+    writePsd: async (doc) => {
+      const mod = await import('../../../../engine/src/psd-write.ts');
+      const known = new Set(Object.keys((await import('../../../../engine/src/raster-layers.ts')).CSS_TO_PSD_BLEND));
+      return mod.writePsd({
+        width: doc.width,
+        height: doc.height,
+        layers: doc.layers.map((l) => ({
+          ...l,
+          blend: (l.blend && known.has(l.blend) ? l.blend : 'normal') as import('../../../../engine/src/raster-layers.ts').CssBlendMode,
+        })),
+      });
+    },
+  };
+
+  // On-device AI upscaling (v1.101). Lazy facade: bridge/upscale.ts owns a Worker
+  // whose chunk drags onnxruntime-web + the tiling/alpha runner, none of which
+  // belongs in the boot chunk (only the picker's Upscale affordance ever calls it).
+  // The SYNCHRONOUS contract methods are answered here without the import: the
+  // availability check from the same feature detection upscale.ts uses (wasm +
+  // Worker — the latter answers false under jsdom/CLI), the catalogue + byte totals
+  // from the pure constants module (lib/upscale-models.ts). `backend()` reflects the
+  // resolved execution provider once a run/canRun has loaded the runner, else null
+  // (the contract's "before one is probed" state).
+  let upscaleApi: { backend(): 'webgpu' | 'wasm' | null } | null = null;
+  const loadUpscale = memo(async () => {
+    const api = (await import('./upscale.ts')).createUpscaleAPI();
+    upscaleApi = api;
+    return api;
+  });
+  host.upscale = {
+    isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
+    backend: () => upscaleApi?.backend() ?? null,
+    // Only OFFER models whose weights are actually vendored — a placeholder-pinned
+    // model would promise a download that can never complete (honesty gate).
+    models: () => stagedUpscaleModels(),
+    modelBytes: (id) => UPSCALE_MODEL_BYTES[id],
+    cached: async (id) => (await loadUpscale()).cached(id),
+    canRun: async (src, o) => (await loadUpscale()).canRun(src, o),
+    run: async (f, o) => (await loadUpscale()).run(f, o),
   };
 
   // Fresh-manifest Content Credentials for redacted derivatives (v1.85) — no

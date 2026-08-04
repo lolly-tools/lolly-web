@@ -37,7 +37,7 @@
 import '../styles/parts/platform.css'; // shared dashboard chrome (.plat-* / .cap-*)
 import '../styles/parts/dashboard.css'; // this view's layout + signature pieces
 import { escape } from '../utils.ts';
-import { t, loadNamespace } from '../i18n.ts';
+import { t, tRaw, loadNamespace } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
@@ -203,7 +203,7 @@ function brandHero(): string {
 function tokensSection(): string {
   return `
     <section class="plat-section dash-section dash-tokens" id="dash-tokens" data-flag="tokens radius spacing shadow gradient" hidden>
-      ${sectionHead(t('Brand tokens'), 'dash-tokens-h', t('The primitives the tokens document carries — shape, space, effects — exactly as tools consume them. Adjusted at {link}.', { link: `<a href="#/start?tab=tokens">${t('Start')}</a>` }))}
+      ${sectionHead(t('Brand tokens'), 'dash-tokens-h', tRaw('The primitives the tokens document carries — shape, space, effects — exactly as tools consume them. Adjusted at {link}.', { link: `<a href="#/start?tab=tokens">${t('Start')}</a>` }))}
       <ul class="dash-token-grid" data-token-grid></ul>
     </section>`;
 }
@@ -401,7 +401,7 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
   return `
     <div class="dash-cap-item">
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
-              aria-label="${escape(card.features.length === 1 ? t('{title} — 1 detail', { title: t(card.title) }) : t('{title} — {n} details', { title: t(card.title), n: card.features.length }))}"
+              aria-label="${escape(card.features.length === 1 ? tRaw('{title} — 1 detail', { title: t(card.title) }) : tRaw('{title} — {n} details', { title: t(card.title), n: card.features.length }))}"
         <span class="dash-cap-card-top">
           <span class="dash-cap-icon" aria-hidden="true">${card.icon}</span>
           <span class="dash-cap-title">${escape(t(card.title))}</span>
@@ -578,7 +578,7 @@ function storeDonut(usedBytes: number, quotaBytes: number): string {
   const pct = quotaBytes > 0 ? (usedBytes / quotaBytes) * 100 : 0;
   const pctLabel = pct <= 0 ? '0%' : pct < 0.1 ? '<0.1%' : pct < 10 ? `${pct.toFixed(1)}%` : `${Math.round(pct)}%`;
   return `
-    <div class="dash-store-donut" role="img" aria-label="${escape(t('{used} used of {quota} ({pct})', { used: fmtBytes(usedBytes), quota: fmtBytes(quotaBytes), pct: pctLabel }))}">
+    <div class="dash-store-donut" role="img" aria-label="${escape(tRaw('{used} used of {quota} ({pct})', { used: fmtBytes(usedBytes), quota: fmtBytes(quotaBytes), pct: pctLabel }))}">
       <svg viewBox="0 0 120 120" aria-hidden="true">
         <circle class="dash-donut-track" cx="60" cy="60" r="${R}" fill="none" stroke-width="11"></circle>
         <circle class="dash-donut-arc" cx="60" cy="60" r="${R}" fill="none" stroke-width="11" stroke-linecap="round"
@@ -586,8 +586,8 @@ function storeDonut(usedBytes: number, quotaBytes: number): string {
       </svg>
       <div class="dash-store-donut-c">
         <strong>${escape(fmtBytes(usedBytes))}</strong>
-        <span>${t('of {quota}', { quota: escape(fmtBytes(quotaBytes)) })}</span>
-        <em>${t('{pct} used', { pct: pctLabel })}</em>
+        <span>${t('of {quota}', { quota: fmtBytes(quotaBytes) })}</span>
+        <em>${tRaw('{pct} used', { pct: pctLabel })}</em>
       </div>
     </div>`;
 }
@@ -602,12 +602,12 @@ function renderStorageGlance(m: StorageGlance): string {
   // measured line (some browsers withhold an estimate).
   const hero = m.usage != null && m.quota
     ? storeDonut(m.total, m.quota)
-    : `<p class="dash-store-headline">${t('<strong>{n}</strong> measured on this device', { n: escape(fmtBytes(m.total)) })}</p>`;
+    : `<p class="dash-store-headline">${t('<strong>{n}</strong> measured on this device', { n: fmtBytes(m.total) })}</p>`;
   return `
     ${hero}
-    <div class="dash-store-bar" role="img" aria-label="${escape(t('Storage composition: {list}', { list: segs.map((s) => `${s.label} ${fmtBytes(s.bytes)}`).join(', ') }))}">${bar || '<span class="dash-store-seg dash-store-seg--other" style="flex:1"></span>'}</div>
+    <div class="dash-store-bar" role="img" aria-label="${escape(tRaw('Storage composition: {list}', { list: segs.map((s) => `${s.label} ${fmtBytes(s.bytes)}`).join(', ') }))}">${bar || '<span class="dash-store-seg dash-store-seg--other" style="flex:1"></span>'}</div>
     <div class="dash-store-legend">${legend}</div>
-    <p class="dash-store-note">${t('A read-only view — manage or clear it in your {link}. Nothing is uploaded.', { link: `<a href="#/profile?focus=storage-section">${t('Profile')}</a>` })}</p>`;
+    <p class="dash-store-note">${tRaw('A read-only view — manage or clear it in your {link}. Nothing is uploaded.', { link: `<a href="#/profile?focus=storage-section">${t('Profile')}</a>` })}</p>`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -736,8 +736,8 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           ${tokensSection()}
           ${refPanel('print cmyk', false, 'dash-print', t('Print & CMYK'), printBody(palette))}
           <p class="plat-note dash-foot" role="note">
-            ${t('<strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at {start}; personal preferences — theme and sound — live on your {profile}.', { start: `<a href="#/start">${t('Start')}</a>`, profile: `<a href="#/profile">${t('Profile')}</a>` })}
-            ${' '}${t('Building the UI? Browse the shell’s primitives & views in the {link}.', { link: `<a href="#/components">${t('Component library')}</a>` })}
+            ${tRaw('<strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at {start}; personal preferences — theme and sound — live on your {profile}.', { start: `<a href="#/start">${t('Start')}</a>`, profile: `<a href="#/profile">${t('Profile')}</a>` })}
+            ${' '}${tRaw('Building the UI? Browse the shell’s primitives & views in the {link}.', { link: `<a href="#/components">${t('Component library')}</a>` })}
           </p>
         `)}
 
@@ -885,7 +885,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         ${renderBrandSeal(sealColors(palette))}
         <div class="dash-lock-text">
           <h2 class="dash-lock-title">${escape(t('Brand locked'))}</h2>
-          <p class="dash-lock-desc">${t('<span class="dash-lock-brand">{brand}</span> ships with this build and is authoritative — its colours, type and tokens come from the catalogue and cannot be edited on this device. Every tool, page and export already wears it.', { brand: escape(brandLabel) })}</p>
+          <p class="dash-lock-desc">${t('<span class="dash-lock-brand">{brand}</span> ships with this build and is authoritative — its colours, type and tokens come from the catalogue and cannot be edited on this device. Every tool, page and export already wears it.', { brand: brandLabel })}</p>
         </div>`;
       lockEl.hidden = false;
     }
@@ -926,7 +926,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
         const code = chip.querySelector<HTMLElement>('[data-hero-primary-code]');
         if (code) code.textContent = o ? `${hex} · ${formatOklch(o)}` : hex;
         chip.dataset.copy = hex;
-        chip.title = t('Primary · {hex} (click to copy)', { hex });
+        chip.title = tRaw('Primary · {hex} (click to copy)', { hex });
       }
     }
 

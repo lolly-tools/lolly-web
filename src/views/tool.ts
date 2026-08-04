@@ -40,7 +40,7 @@ import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { hasGuide, guideButtonHtml, showToolGuide, autoOpenToolGuide } from '../components/tool-guide.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
-import { docsHref, currentLang, t } from '../i18n.ts';
+import { docsHref, currentLang, t, tRaw } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
@@ -78,6 +78,7 @@ import type { Unit } from '../../../../engine/src/units.js';
 // file). They only `import type` back from here, so these value imports don't cycle.
 import { icon } from '../lib/icons.ts';
 import { asRow } from './tool-types.ts';
+import { encodeBlocksCompact } from '../lib/blocks-url.ts';
 import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
 import { isTextEditingTarget } from '../lib/typing-target.ts';
 import {
@@ -249,7 +250,7 @@ export interface RunExportOpts {
   hdrRichness?: number;
   /** Requested export bit depth from ?depth= (8/16/float). Absent ⇒ 'auto'. A
    *  request only — the export bridge emits deep bits solely where the pipeline
-   *  produced them (plans/deeprichpixels.md §10). */
+   *  produced them (plans/61-deeprichpixels.md §10). */
   depth?: DepthSetting;
   bleed?: string;
   cropMarks?: boolean;
@@ -424,7 +425,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // stores the modified source and hydrates it like any other template.
   const inputIds = (tool.manifest.inputs ?? []).map(i => i.id);
   tool.template = annotateTemplate(tool.template, inputIds);
-  document.title = t('{name} — Lolly', { name: tool.manifest.name });
+  document.title = tRaw('{name} — Lolly', { name: tool.manifest.name });
 
   // A password-gated link (`?zx=…`) carries the whole state ENCRYPTED. Prompt for
   // the password client-side (no server), decrypt to the readable query, and carry
@@ -468,6 +469,17 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   if (slot) {
     const saved = await host.state.load(slot);
     if (saved) initialValues = { ...saved, ...values };
+  }
+
+  // A one-shot seed armed by the drop router's layered-import route (psd-import
+  // stores the layer assets, then stashes the block rows + canvas size here).
+  // Consumed generically — tool.ts knows nothing about PSD. URL/saved values
+  // still win per key: the seed route always arrives on a bare hash, so in
+  // practice the seed applies whole; a crafted link's own params keep priority.
+  {
+    const { takePendingToolSeed } = await import('../lib/drop-router.ts');
+    const seed = takePendingToolSeed(toolId);
+    if (seed) initialValues = { ...(seed as Record<string, InputValue>), ...initialValues };
   }
 
   // "+ New tool" from the Projects view leaves a sessionStorage marker so the first
@@ -621,7 +633,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       el.querySelector('.toast-action')!.addEventListener('click', () => {
         kind === 'undo' ? redoHistory() : undoHistory();
       });
-      announce(t('{verb} {label}', { verb, label: String(label) }));
+      announce(tRaw('{verb} {label}', { verb, label: String(label) }));
     }
     // Animate the slide-in only when coming from hidden; if it's already showing
     // (rapid undo/redo), just swap the content and reset the timer — no flicker.
@@ -756,13 +768,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Authors can declare a live Handlebars summary (manifest.a11yLabel); otherwise
   // it's "<name> preview". Kept current in the render subscriber below.
   const canvasLabel = (): string => {
-    if (!tool.manifest.a11yLabel) return t('{name} preview', { name: tool.manifest.name });
+    if (!tool.manifest.a11yLabel) return tRaw('{name} preview', { name: tool.manifest.name });
     // Handlebars HTML-escapes {{values}}; an aria-label is plain text, so decode
     // the entities back (it's set via setAttribute, not innerHTML).
     const custom = runtime.getHydratedString(tool.manifest.a11yLabel)
       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"').replace(/&#(?:39|x27);/g, "'").trim();
-    return custom || t('{name} preview', { name: tool.manifest.name });
+    return custom || tRaw('{name} preview', { name: tool.manifest.name });
   };
 
   const SIDEBAR_DEFAULT = 272;
@@ -783,8 +795,8 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const unresolved = dropped.filter(d => d.reason !== 'baked-bytes-lost');
   const fieldsWere = (n: number): string => (n > 1 ? t('fields were') : t('field was'));
   const droppedLines = [
-    unresolved.length ? t('An image used in this saved design is no longer available, so the <strong>{fields}</strong> {were} left blank.', { fields: escape(unresolved.map(d => d.label).join(', ')), were: fieldsWere(unresolved.length) }) : '',
-    bakedLost.length ? t("A frozen image's data was missing from this saved design, so the <strong>{fields}</strong> {were} left blank.", { fields: escape(bakedLost.map(d => d.label).join(', ')), were: fieldsWere(bakedLost.length) }) : '',
+    unresolved.length ? t('An image used in this saved design is no longer available, so the <strong>{fields}</strong> {were} left blank.', { fields: unresolved.map(d => d.label).join(', '), were: fieldsWere(unresolved.length) }) : '',
+    bakedLost.length ? t("A frozen image's data was missing from this saved design, so the <strong>{fields}</strong> {were} left blank.", { fields: bakedLost.map(d => d.label).join(', '), were: fieldsWere(bakedLost.length) }) : '',
   ].filter(Boolean);
   const droppedNotice = droppedLines.length ? `
     <div class="tool-notice" role="status" id="dropped-assets-notice">
@@ -796,6 +808,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // so tell the author capture-to-file needs the extension/desktop while compose works.
   const captureNotice = captureHint ? `
     <div class="tool-notice" role="status" id="capture-hint-notice">
+      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsHref() over a build-time slug constant, always '/info/…' */ ''}
       <span class="tool-notice-text">${t('Compose a shot and copy its recipe here. Saving it to a file needs the desktop app or browser extension.')} <a href="${escape(docsHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a></span>
       <button type="button" class="tool-notice-close" id="capture-hint-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
     </div>` : '';
@@ -982,8 +995,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Removed-image notice: announce it (live region) and let the user dismiss it.
   if (dropped.length) {
     announce([
-      unresolved.length ? t('An image used in this saved design is no longer available; the {fields} {were} left blank.', { fields: unresolved.map(d => d.label).join(', '), were: fieldsWere(unresolved.length) }) : '',
-      bakedLost.length ? t("A frozen image's data was missing; the {fields} {were} left blank.", { fields: bakedLost.map(d => d.label).join(', '), were: fieldsWere(bakedLost.length) }) : '',
+      unresolved.length ? tRaw('An image used in this saved design is no longer available; the {fields} {were} left blank.', { fields: unresolved.map(d => d.label).join(', '), were: fieldsWere(unresolved.length) }) : '',
+      bakedLost.length ? tRaw("A frozen image's data was missing; the {fields} {were} left blank.", { fields: bakedLost.map(d => d.label).join(', '), were: fieldsWere(bakedLost.length) }) : '',
     ].filter(Boolean).join(' '), { assertive: true });
     viewEl.querySelector('#dropped-assets-dismiss')
       ?.addEventListener('click', () => viewEl.querySelector('#dropped-assets-notice')?.remove());
@@ -1642,11 +1655,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       }
       if (type === 'blocks') {
         if (Array.isArray(value) && value.length > 0) {
-          // blocksForUrl: a baked sub-field ref collapses to its provenance URL —
-          // its data: bytes would blow the 8000-char cap and silently drop the
-          // ENTIRE blocks param (every row) from the bar.
-          const json = JSON.stringify(blocksForUrl(value));
-          if (json.length <= 8000) params.set(id, json);
+          // Compact form first (the share dialog's encoder, in its address-bar
+          // variant that keeps device-local user/ ids) — a 20-layer import is
+          // ~10× smaller than the JSON form and stays under the 8000 cap
+          // instead of silently dropping every row. JSON stays the fallback
+          // for separator-bearing values and field-less blocks; blocksForUrl
+          // collapses baked sub-field refs to their provenance URL first (the
+          // data: bytes would blow the cap).
+          const compact = encodeBlocksCompact(value, entry.fields ?? [], { keepUserIds: true });
+          const encoded = compact ?? JSON.stringify(blocksForUrl(value));
+          if (encoded.length <= 8000) params.set(id, encoded);
         }
         continue;
       }
@@ -1829,7 +1847,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Deep-link an overlay open on load, so a share link OR a screenshot recipe can
   // reproduce a state that otherwise lives only in a click. `?share` opens the Share
   // dialog. This is the pattern for making the app's click-only surfaces addressable
-  // (see plans/deep-linking.md) — each new one reads its flag here or in its view.
+  // (see plans/43-deep-linking.md) — each new one reads its flag here or in its view.
   if (urlFlags.has('share')) {
     requestAnimationFrame(() => showShareDialog(runtime, actionsEl, tool.manifest));
   }
@@ -2239,7 +2257,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       }
     }
     const ref = await host.assets.pick({
-      title: t('Choose {name}', { name: input.label ?? input.id }),
+      title: tRaw('Choose {name}', { name: input.label ?? input.id }),
       type: input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
       tags: (input.filter?.tags as string[] | undefined),
       namespace: (input.filter?.namespace as string | undefined),
@@ -2621,7 +2639,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         if (urlImprint !== false && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(fmt)) expOpts.imprint = true;
         // Opt-in durable Content Credential (?durable=1): a neural TrustMark mark
         // carrying Lolly's id. Raster-only (no container rasters yet) and a no-op
-        // until the encoder model is on-device. See plans/durable-content-credentials.md.
+        // until the encoder model is on-device. See plans/28-durable-content-credentials.md.
         if (urlDurable && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(fmt)) expOpts.durable = true;
         // Opt-in HDR (?hdr=1): Rec.2100 PQ raster export with brand-colour glow.
         // PNG/JPEG/AVIF/TIFF (WebP excluded — no working HDR decode path). See engine/src/hdr.ts.
@@ -2993,7 +3011,7 @@ function mount404(viewEl: HTMLElement, toolId: string): void {
       <div class="not-found-inner">
         <p class="not-found-code">404</p>
         <h1 class="not-found-title">${t('Tool not found')}</h1>
-        <p class="not-found-desc">${t('There\'s no tool at <code>{id}</code>.', { id: escape(toolId) })}</p>
+        <p class="not-found-desc">${t('There\'s no tool at <code>{id}</code>.', { id: toolId })}</p>
         <a href="/" class="not-found-home">${t('Browse all tools')}</a>
       </div>
     </div>
@@ -3003,14 +3021,14 @@ function mount404(viewEl: HTMLElement, toolId: string): void {
 // Shown when a tool is opened in a shell that can't fulfil its capabilities
 // (e.g. a 'capture' tool in the web PWA). Mirrors the 404 layout.
 function mountUnavailable(viewEl: HTMLElement, manifest: ToolManifest, unmet: readonly string[]): void {
-  document.title = t('{name} — Desktop only', { name: manifest.name });
+  document.title = tRaw('{name} — Desktop only', { name: manifest.name });
   const why = unmet.map(capabilityLabel).join(', ');
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
         <p class="not-found-code">${t('Desktop')}</p>
-        <h1 class="not-found-title">${t('{name} needs the desktop app', { name: escape(manifest.name) })}</h1>
-        <p class="not-found-desc">${t('This tool uses <strong>{why}</strong>, which the web app can’t provide — a browser can’t screenshot cross-origin pages. Open it in the Lolly desktop app.', { why: escape(why) })}</p>
+        <h1 class="not-found-title">${t('{name} needs the desktop app', { name: manifest.name })}</h1>
+        <p class="not-found-desc">${t('This tool uses <strong>{why}</strong>, which the web app can’t provide — a browser can’t screenshot cross-origin pages. Open it in the Lolly desktop app.', { why })}</p>
         <a href="/" class="not-found-home">${t('Browse all tools')}</a>
       </div>
     </div>
@@ -3020,13 +3038,14 @@ function mountUnavailable(viewEl: HTMLElement, manifest: ToolManifest, unmet: re
 // Shown on a Chromium browser for a capture tool when the extension isn't
 // installed — the tool CAN run here once the free extension is added.
 function mountInstallPrompt(viewEl: HTMLElement, manifest: ToolManifest): void {
-  document.title = t('{name} — Add the extension', { name: manifest.name });
+  document.title = tRaw('{name} — Add the extension', { name: manifest.name });
   viewEl.innerHTML = `
     <div class="not-found">
       <div class="not-found-inner">
         <p class="not-found-code">${t('Add&#8209;on')}</p>
-        <h1 class="not-found-title">${t('Enable {name} in your browser', { name: escape(manifest.name) })}</h1>
+        <h1 class="not-found-title">${t('Enable {name} in your browser', { name: manifest.name })}</h1>
         <p class="not-found-desc">${t('Add the free Lolly screenshot extension and this tool captures pages right here — no desktop app needed. Install it, then reload this page.')}</p>
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsHref() over a build-time slug constant, always '/info/…' */ ''}
         <a href="${escape(docsHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">${t('Get the extension')}</a>
         <a href="/#/" class="not-found-back">${t('Back to all tools')}</a>
       </div>
@@ -3156,41 +3175,8 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
   history.replaceState(null, '', newQs ? `${base}?${newQs}` : base);
 }
 
-/**
- * Encode a blocks array into the compact tilde-delimited URL format.
- * Each item's fields are comma-separated; items are tilde-separated.
- * Field values are encodeURIComponent'd so commas inside values become %2C
- * and are safe to split on. Color fields have their # stripped.
- * Returns null if encoding isn't possible (no fields defined).
- */
-function encodeBlocksCompact(items: InputValue, fields: BlockFieldSpec[]): string | null {
-  if (!Array.isArray(items) || !items.length || !fields.length) return null;
-  // Raw (pre-encoding) value of each field, for the separator-safety check below.
-  const rowVals = items.map(item =>
-    fields.map(f => {
-      const raw = asRow(item)[f.id];
-      // Asset sub-fields hold an AssetRef object — its link-safe id via
-      // assetIdForUrl (a baked ref shares as its provenance URL, never its
-      // data: bytes); uploaded user/ refs aren't shareable, same as top-level.
-      if (f.type === 'asset') {
-        const id = raw && typeof raw === 'object' ? assetIdForUrl(raw as AssetRef) : '';
-        return id && !String(id).startsWith('user/') ? String(id) : '';
-      }
-      const v = String(raw ?? '');
-      return f.type === 'color' ? v.replace(/^#/, '') : v;
-    })
-  );
-  // The record ('~') and field (',') separators can't be escaped inside a value:
-  // the compact string is pushed into the share URL raw, and on parse
-  // URLSearchParams percent-DECODES the whole value (%7E→'~', %2C→',') BEFORE the
-  // block splitter runs — so an escaped separator collapses back into a real one
-  // and one row splits into several with shifted fields. A '~' or ',' is easy to
-  // inject via CSV/JSON import (or by typing one into a label). When any value
-  // carries either separator, bail: return null so the caller falls back to the
-  // lossless JSON block form (which round-trips cleanly through URLSearchParams).
-  if (rowVals.some(r => r.some(v => v.includes('~') || v.includes(',')))) return null;
-  return rowVals.map(r => r.map(encodeURIComponent).join(',')).join('~');
-}
+// encodeBlocksCompact moved to lib/blocks-url.ts (imported above) so the wire
+// format is directly testable and the share dialog + syncUrl share one encoder.
 
 // btnScopeEl — element containing the copy-url button (the actions bar)
 // exportScopeEl — element containing format/filename/w/h inputs (actionsEl); optional

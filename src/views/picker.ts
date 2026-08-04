@@ -66,7 +66,7 @@ import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
-import { t, docsHref } from '../i18n.ts';
+import { t, tRaw, docsHref } from '../i18n.ts';
 import { genAiPill, assetAiKind } from '../lib/genai-pill.ts';
 import { isFlagOn, STRIP_UPLOAD_META_FLAG } from '../feature-flags.ts';
 import type { AssetRef, AssetPickerOpts, ComposeUrlOpts, ExportFormat, HostV1, Profile } from '@lolly-tools/core/host-v1';
@@ -256,6 +256,12 @@ type WindowWithToolIndex = typeof window & { __toolIndex?: { tools?: PickerTool[
 
 let modalEl: HTMLDivElement | null = null;
 
+// Per-open gate for the per-card raster "Upscale" button. Set in render() below —
+// the card renderers (card / userCard / projectImageCard) that read it are
+// module-level and can't see render()'s closure, and the picker is a singleton
+// (one modalEl), so a shared flag is safe.
+let upscaleEnabled = false;
+
 /**
  * Clicking an image slot that already holds a live Lolly render doesn't jump
  * straight into the picker: ask which of the two intents the click meant.
@@ -265,7 +271,7 @@ let modalEl: HTMLDivElement | null = null;
 export function askLollyIntent(toolName?: string): Promise<string | null> {
   return choiceDialog({
     title: t('This image is a Lolly'),
-    message: t("It's a live render from {toolName}. Tweak its inputs, or put a different image in this slot?", { toolName: toolName ?? t('a Lolly tool') }),
+    message: tRaw("It's a live render from {toolName}. Tweak its inputs, or put a different image in this slot?", { toolName: toolName ?? t('a Lolly tool') }),
     choices: [
       { id: 'edit', label: `✦ ${t('Edit this Lolly')}`, primary: true },
       { id: 'pick', label: t('Select another asset') },
@@ -351,6 +357,20 @@ async function render(
   // untyped upload slot. Feature-detected on the bridge, not capability-gated.
   const canScriptAudio = showUserAssets && (opts.type === 'audio' || opts.type === undefined)
     && host.speech?.isAvailable() === true;
+
+  // "Upscale" beside it: enlarge a raster image on-device via the optional
+  // host.upscale bridge (v1.101), saving the result as a user raster asset.
+  // Offered for a raster slot or an untyped upload slot (never vector/audio/video).
+  // Feature-detected on the bridge, not capability-gated.
+  const canUpscale = showUserAssets && (opts.type === 'raster' || opts.type === undefined)
+    && host.upscale?.isAvailable() === true;
+
+  // The per-card "Upscale" affordance (a hover-revealed button on RASTER cards —
+  // library assets AND the user's own uploads) is a distinct entry point from the
+  // footer shortcut above: it upscales an image the user ALREADY has as the source,
+  // without re-uploading it. Gated purely on the on-device upscaler being present;
+  // the per-ref raster check lives in the module-level card renderers (upscaleButton).
+  upscaleEnabled = host.upscale?.isAvailable() === true;
 
   // A pasted https URL that is NOT a Lolly link can still become an image where the
   // shell can capture pages (extension installed / Tauri) — see showUrlFallback.
@@ -469,13 +489,13 @@ async function render(
     <div class="asset-picker-backdrop" aria-hidden="true"></div>
     <div class="asset-picker-panel" role="dialog" aria-modal="true" aria-labelledby="asset-picker-title">
       <header class="asset-picker-header">
-        <h2 id="asset-picker-title">${escapeHtml(opts.title ?? (collect ? t('Add to {name}', { name: collect.folderName }) : t('Choose an asset')))}</h2>
+        <h2 id="asset-picker-title">${escapeHtml(opts.title ?? (collect ? tRaw('Add to {name}', { name: collect.folderName }) : t('Choose an asset')))}</h2>
         <input type="search" class="asset-picker-search" placeholder="${escapeHtml(placeholderFor('library'))}" autocomplete="off" spellcheck="false" aria-label="${escapeHtml(t('Search assets'))}">
         <button type="button" class="asset-picker-close" aria-label="${escapeHtml(t('Close'))}">×</button>
       </header>
       ${tabs.length > 1 ? `<div class="asset-picker-tabs" role="tablist" aria-label="${escapeHtml(t('Asset sources'))}">${tabs.map(tabBtn).join('')}</div>` : ''}
       ${currentToolUrl ? `<div class="asset-picker-current">
-        <span class="asset-picker-current-label"><span class="asset-picker-current-spark" aria-hidden="true">✦</span> ${t('Current image is from <strong>{name}</strong> — tweak it, or pick a different image below', { name: escapeHtml(opts.currentToolName ?? t('a Lolly tool')) })}</span>
+        <span class="asset-picker-current-label"><span class="asset-picker-current-spark" aria-hidden="true">✦</span> ${t('Current image is from <strong>{name}</strong> — tweak it, or pick a different image below', { name: opts.currentToolName ?? t('a Lolly tool') })}</span>
         <button type="button" class="asset-picker-current-edit">${t('Edit inputs…')}</button>
       </div>` : ''}
       <div class="asset-picker-body">
@@ -501,6 +521,7 @@ async function render(
           ${canWebcam ? `<button type="button" class="asset-picker-webcam">${cameraGlyph} ${t('Take a photo')}</button>` : ''}
           ${canScreencap ? `<button type="button" class="asset-picker-screencap">${icon('monitor', { size: 14 })} ${t('Capture screen')}</button>` : ''}
           ${canScriptAudio ? `<button type="button" class="asset-picker-scriptaudio">${icon('mic', { size: 14 })} ${t('Script audio')}</button>` : ''}
+          ${canUpscale ? `<button type="button" class="asset-picker-upscale">${icon('aiSpark', { size: 14 })} ${t('Upscale')}</button>` : ''}
         </footer>
       ` : ''}
     </div>
@@ -782,7 +803,7 @@ async function render(
       // (shared modal, matching the Catalog/Projects delete flows).
       const ok = await confirmDialog({
         title: t('Delete this image?'),
-        message: t('“{name}” will be permanently removed from your images. This can’t be undone.', { name }),
+        message: tRaw('“{name}” will be permanently removed from your images. This can’t be undone.', { name }),
       });
       if (!ok) return;
       const card = del.closest<HTMLElement>('.asset-picker-card');
@@ -801,7 +822,7 @@ async function render(
         renderUserAssets();
         renderFavourites();
         updateUploadAffordance();
-        announce(t('Deleted {name}.', { name }));
+        announce(tRaw('Deleted {name}.', { name }));
       } catch (err) {
         host.log('error', 'Failed to delete user image', { id, error: String(err) });
         // The card is still on screen (the delete threw) — surface the failure beside
@@ -814,6 +835,31 @@ async function render(
           msg.textContent = t('Couldn’t delete — try again.');
           card.appendChild(msg);
         }
+      }
+      return;
+    }
+    // Per-card "Upscale": enlarge THIS existing raster (a library asset or one of the
+    // user's uploads) on-device, without re-uploading it. Resolves the ref exactly like
+    // the pick path (host.assets.get), pre-loads it into the upscale dialog as the
+    // source (skipping its choose step), and on success treats the returned upscaled
+    // asset like a normal pick. Sits beside the pick button, so returning here before the
+    // [data-asset-id] branch below is what stops the click from also picking the source.
+    const up = (e.target as HTMLElement).closest<HTMLElement>('[data-upscale-id]');
+    if (up) {
+      e.preventDefault();
+      const id = up.dataset.upscaleId!;
+      const known = candidateById.get(id) ?? userAssets.find(a => a.id === id);
+      const sourceName = (known?.meta?.name as string | undefined) ?? id;
+      try {
+        const ref = await host.assets.get(id);
+        const { openUpscaleDialog } = await import('./upscale-dialog.ts');
+        const upscaled = await openUpscaleDialog(host, { source: ref, sourceName });
+        if (!upscaled) return;
+        if (collect) { collectToast(await collect.onAsset(upscaled)); return; }
+        close(upscaled);
+      } catch (err) {
+        host.log('error', 'Failed to upscale asset', { id, error: String(err) });
+        announce(t('Couldn’t open the upscaler for this image.'), { assertive: true });
       }
       return;
     }
@@ -855,7 +901,7 @@ async function render(
         close(resolved);
       } catch (err) {
         host.log('error', 'Failed to resolve asset', { id: pickId, error: String(err) });
-        announce(t('Could not resolve asset: {message}', { message: (err as Error).message }), { assertive: true });
+        announce(tRaw('Could not resolve asset: {message}', { message: (err as Error).message }), { assertive: true });
         // The picked card is still on screen — surface the failure beside it rather than
         // blocking on a native alert (same inline note as the delete path above).
         const card = pick.closest<HTMLElement>('.asset-picker-card');
@@ -1008,7 +1054,7 @@ async function render(
       } catch (e) {
         host.log('error', 'Upload failed', { error: String(e) });
         // Cap/quota errors carry a user-ready message; prefix only the rest.
-        announce((e as { code?: unknown }).code ? (e as Error).message : t('Upload failed: {message}', { message: (e as Error).message }), { assertive: true });
+        announce((e as { code?: unknown }).code ? (e as Error).message : tRaw('Upload failed: {message}', { message: (e as Error).message }), { assertive: true });
       } finally {
         fileInput.value = ''; // allow re-selecting the same file after an error
       }
@@ -1050,6 +1096,17 @@ async function render(
   root.querySelector('.asset-picker-scriptaudio')?.addEventListener('click', async () => {
     const { openScriptAudioDialog } = await import('./script-audio.ts');
     const ref = await openScriptAudioDialog(host);
+    if (!ref) return;
+    if (collect) { collectToast(await collect.onAsset(ref)); return; }
+    close(ref);
+  });
+
+  // "Upscale": choose a raster image, enlarge it on-device (host.upscale), save it
+  // as a user raster asset. A lazy chunk (views/upscale-dialog.ts) so the model UI
+  // costs nothing until asked for; teardown (abort/revoke) lives inside it.
+  root.querySelector('.asset-picker-upscale')?.addEventListener('click', async () => {
+    const { openUpscaleDialog } = await import('./upscale-dialog.ts');
+    const ref = await openUpscaleDialog(host);
     if (!ref) return;
     if (collect) { collectToast(await collect.onAsset(ref)); return; }
     close(ref);
@@ -1400,12 +1457,26 @@ async function render(
         : ref.type === 'audio'
           ? audioThumb(ref, 'asset-picker-thumb')
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
-    return `
+    const upBtn = upscaleButton(ref, name);
+    const inner = `${thumb}
+        <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`;
+    // A raster folder image splits into wrapper + pick button (like a user card) so the
+    // Upscale sibling is valid HTML; everything else stays the single plain pick button.
+    if (!upBtn) {
+      return `
       <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}" title="${escapeHtml(name)}">
-        ${thumb}
-        <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        ${inner}
         ${formatBadge(ref)}
       </button>`;
+    }
+    return `
+      <div class="asset-picker-card asset-picker-card-actionable">
+        <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}" title="${escapeHtml(name)}">
+          ${inner}
+        </button>
+        ${upBtn}
+        ${formatBadge(ref)}
+      </div>`;
   }
 
   function renderProjects(q: string): void {
@@ -1504,7 +1575,7 @@ async function render(
         <div class="asset-picker-toolcard-head">
           <button type="button" class="asset-picker-toolcard-back" aria-label="${escapeHtml(t('Back to list'))}">←</button>
           <span class="asset-picker-toolcard-spark" aria-hidden="true">✦</span>
-          <span>${t('Render the <strong>{name}</strong> tool as your image', { name: escapeHtml(desc.name) })}</span>
+          <span>${t('Render the <strong>{name}</strong> tool as your image', { name: desc.name })}</span>
         </div>
         <div class="asset-picker-toolcard-controls">
           <label>${t('Format')} <select class="tc-format field-select field-select--auto" aria-label="${escapeHtml(t('Render format'))}">${fmtOptions}</select></label>
@@ -1578,9 +1649,9 @@ async function render(
       if (!ref) { previewEl.innerHTML = `<p class="asset-picker-error">${t("Couldn't render this link.")}</p>`; return; }
       posterRef = ref;
       const note = isMotion(fmtSel.value)
-        ? `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">▶ ${t('Placed as a moving {format} — the clip renders when you add it.', { format: escapeHtml(fmtSel.value.toUpperCase()) })}</p>`
+        ? `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">▶ ${t('Placed as a moving {format} — the clip renders when you add it.', { format: fmtSel.value.toUpperCase() })}</p>`
         : '';
-      previewEl.innerHTML = `<img class="asset-picker-toolcard-img" src="${escapeHtml(ref.url)}" alt="${escapeHtml(t('Preview of the {name} render', { name: desc.name }))}">${note}`;
+      previewEl.innerHTML = `<img class="asset-picker-toolcard-img" src="${escapeHtml(ref.url)}" alt="${escapeHtml(tRaw('Preview of the {name} render', { name: desc.name }))}">${note}`;
       useBtn.disabled = false;
     };
 
@@ -1663,6 +1734,7 @@ async function render(
         ? `<br>${t('Add the free Lolly screenshot extension and any web page can drop in here as an image — install it, then reload.')}`
         : ''}</p>
       ${offerExtension ? `<div class="asset-picker-toolcard-actions" style="justify-content:center">
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsHref() returns a build-time `/info/…` path from a literal slug */ ''}
         <a class="tc-back" href="${escapeHtml(docsHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a>
       </div>` : ''}`);
   }
@@ -1706,7 +1778,7 @@ async function render(
         goBtn.disabled = false;
         goBtn.classList.remove('is-rendering');
         goBtn.textContent = t('Screenshot this page');
-        errEl.textContent = t('Couldn’t capture that page: {message}', { message: (e as Error).message });
+        errEl.textContent = tRaw('Couldn’t capture that page: {message}', { message: (e as Error).message });
         errEl.hidden = false;
       }
     });
@@ -1719,7 +1791,7 @@ async function render(
   async function embedSession(slot: string): Promise<void> {
     const entry = (sessions ?? []).find(s => s.slot === slot);
     if (!entry) return;
-    showTakeover(`<div class="asset-picker-loading">${t('Opening “{name}”…', { name: escapeHtml(entry.toolName) })}</div>`);
+    showTakeover(`<div class="asset-picker-loading">${t('Opening “{name}”…', { name: entry.toolName })}</div>`);
     try {
       const data = await host.state.load(slot);
       if (!data) throw new Error('empty session');
@@ -1749,7 +1821,7 @@ async function render(
       if (ref) close(ref);
       return; // cancelled → stay on the Tools tab
     }
-    showTakeover(`<div class="asset-picker-loading">${t('Opening {name}…', { name: escapeHtml(tool?.name ?? toolId) })}</div>`);
+    showTakeover(`<div class="asset-picker-loading">${t('Opening {name}…', { name: tool?.name ?? toolId })}</div>`);
     const desc = await host.compose._describeUrl(url).catch(() => null);
     if (desc) showToolCard(desc, url, { editUrl: url });
     else {
@@ -1918,7 +1990,7 @@ async function render(
       }, 120);
     });
   } catch (e) {
-    libraryEl.innerHTML = `<p class="asset-picker-error">${t('Failed to load: {message}', { message: escapeHtml((e as Error).message) })}</p>`;
+    libraryEl.innerHTML = `<p class="asset-picker-error">${t('Failed to load: {message}', { message: (e as Error).message })}</p>`;
   }
 }
 
@@ -2184,6 +2256,18 @@ export function mountAudioThumbs(
   };
 }
 
+// The hover/focus-revealed "Upscale" affordance for a still-raster card — a SIBLING
+// of the pick button (never nested; nested buttons are invalid HTML and break the
+// delegated click handler, same reasoning as the user card's delete button), carrying
+// data-upscale-id for the body delegation. Empty string for anything that shouldn't
+// offer it: the host has no on-device upscaler (upscaleEnabled), or the ref isn't a
+// still raster — vector/video/lottie/audio, or an animated raster (gif/apng/animated
+// webp) whose motion a single-frame upscale would silently flatten.
+function upscaleButton(ref: AssetRef, name: string): string {
+  if (!upscaleEnabled || ref.type !== 'raster' || ref.meta?.animated) return '';
+  return `<button type="button" class="asset-picker-card-upscale" data-upscale-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Upscale'))}" aria-label="${escapeHtml(tRaw('Upscale {name}', { name }))}">${icon('aiSpark', { size: 14 })}</button>`;
+}
+
 function card(ref: AssetRef): string {
   const isPlaceholder = ref.meta?._placeholder;
   const name = ref.meta?.name ?? ref.id;
@@ -2201,13 +2285,29 @@ function card(ref: AssetRef): string {
         : ref.type === 'audio'
           ? audioThumb(ref, 'asset-picker-thumb')
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
-  return `
-    <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}">
-      ${thumb}
+  const upBtn = upscaleButton(ref, String(name));
+  const inner = `${thumb}
       <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-      <span class="asset-picker-id">${escapeHtml(ref.id)}</span>
+      <span class="asset-picker-id">${escapeHtml(ref.id)}</span>`;
+  // A raster library card splits into wrapper + pick button (mirroring the user card)
+  // so the Upscale sibling is valid HTML; everything non-raster stays the exact single
+  // plain pick button it was before.
+  if (!upBtn) {
+    return `
+    <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}">
+      ${inner}
       ${formatBadge(ref)}
     </button>
+  `;
+  }
+  return `
+    <div class="asset-picker-card asset-picker-card-actionable">
+      <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}">
+        ${inner}
+      </button>
+      ${upBtn}
+      ${formatBadge(ref)}
+    </div>
   `;
 }
 
@@ -2324,7 +2424,8 @@ function userCard(ref: AssetRef): string {
         ${thumb}
         <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
       </button>
-      <button type="button" class="asset-picker-card-delete" data-delete-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Delete'))}" aria-label="${escapeHtml(t('Delete {name}', { name: String(name) }))}">×</button>
+      <button type="button" class="asset-picker-card-delete" data-delete-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Delete'))}" aria-label="${escapeHtml(tRaw('Delete {name}', { name: String(name) }))}">×</button>
+      ${upscaleButton(ref, String(name))}
       ${formatBadge(ref)}
     </div>
   `;
@@ -2574,7 +2675,7 @@ const HUGE_UPLOAD_BYTES = 40 * 1024 * 1024;         // 40 MB
 function assertVerbatimSize(file: File, max: number, kind: string): void {
   if (file.size > max) {
     throw Object.assign(
-      new Error(t('This {kind} is {size} MB — over the {max} MB limit. Trim or compress it and try again.', {
+      new Error(tRaw('This {kind} is {size} MB — over the {max} MB limit. Trim or compress it and try again.', {
         kind, size: (file.size / 1e6).toFixed(1), max: Math.round(max / 1e6),
       })),
       { code: 'FILE_TOO_LARGE' },
@@ -2708,6 +2809,20 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   // otherwise pass the generic audio test, so it's detected first (ext, MIME, or the
   // 'MThd' header magic) and excluded from isAudio.
   const head4 = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  // Layered bitmaps (Photoshop '8BPS' / GIMP 'gimp xcf ') reaching THIS funnel
+  // (an asset picker, a dropToAdd zone — the front-door drop router offers the
+  // layered journeys itself) store as their FLATTENED composite, so a PSD works
+  // anywhere an image does. Delegated to psd-import.ts's lazy chunk, which
+  // re-enters this function with an ordinary PNG.
+  if (head4[0] === 0x38 && head4[1] === 0x42 && head4[2] === 0x50 && head4[3] === 0x53
+    || /\.(psd|psb|xcf)$/i.test(file.name)) {
+    const headStr = new TextDecoder('latin1').decode(new Uint8Array(await file.slice(0, 9).arrayBuffer()));
+    const isPsdMagic = head4[0] === 0x38 && head4[1] === 0x42 && head4[2] === 0x50 && head4[3] === 0x53;
+    if (isPsdMagic || headStr === 'gimp xcf ') {
+      const { ingestLayeredFileFlattened } = await import('./psd-import.ts');
+      return ingestLayeredFileFlattened(host, file);
+    }
+  }
   const isMidi = !isLottie && !isVector && !isVideo
     && (/\.midi?$/i.test(file.name) || /^audio\/(x-)?midi?$/i.test(file.type)
         || (head4[0] === 0x4d && head4[1] === 0x54 && head4[2] === 0x68 && head4[3] === 0x64)); // 'MThd'
@@ -2936,7 +3051,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       const resizePart = r.width ? ` to ${r.width}×${r.height}px` : '';
       const picked = await choiceDialog({
         title: t('Very large image'),
-        message: t('“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?', {
+        message: tRaw('“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?', {
           name: file.name, size: fmtBytes(file.size), dims: dimsPart, resize: resizePart,
         }),
         choices: [{ id: 'resize', label: t('Resize') }, { id: 'keep', label: t('Keep original'), primary: true }],
@@ -2949,7 +3064,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       await keepBytes();
     }
 
-    // Depth honesty (plans/deeprichpixels.md Phase A): every editing/export
+    // Depth honesty (plans/61-deeprichpixels.md Phase A): every editing/export
     // surface downstream of ingest is 8 bits per channel today, so a deeper
     // source (a 16-bit PNG/TIFF) is flattened the first time it is drawn — even
     // a verbatim-kept file. Same class of notice as profileHint's "no profile,
@@ -2966,7 +3081,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 
   // The depth of what we are actually STORING — the twin of the catalog label
   // scripts/checksum-assets.ts writes, so a user's own image carries the same
-  // written origin a pack asset does (plans/deeprichpixels.md §10 item 6).
+  // written origin a pack asset does (plans/61-deeprichpixels.md §10 item 6).
   //
   // Deliberately sniffed from `blob`, not from `raw` above: those two answer
   // different questions and only one of them is honest here. `raw` is the

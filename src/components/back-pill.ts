@@ -32,7 +32,7 @@
  * the confirm dialog and the pill never both navigate.
  */
 
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { canGoBack, getPrevView } from '../lib/back-nav.ts';
@@ -116,8 +116,10 @@ export function backPillHtml(opts: BackPillOpts = {}): string {
   const mode = target.useHistory ? 'history' : 'link';
   const arrow = `<span class="back-pill-icon" aria-hidden="true">${icon('arrowLeft', { size: 18 })}</span>`;
   if (opts.iconOnly) {
-    return `<a href="${escape(target.href)}" class="${cls}" data-back-pill="${mode}" aria-label="${escape(t('Back to {view}', { view: target.label }))}">${arrow}</a>`;
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation — resolveBackTarget() returns only an origin-relative in-app route (back-nav toRelative(), the '/#/p…' returnTo marker, or the '/#/' literal)
+    return `<a href="${escape(target.href)}" class="${cls}" data-back-pill="${mode}" aria-label="${escape(tRaw('Back to {view}', { view: target.label }))}">${arrow}</a>`;
   }
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation — same resolveBackTarget() origin-relative route as above
   return `<a href="${escape(target.href)}" class="tools-home${cls ? ` ${cls}` : ''}" data-back-pill="${mode}">${arrow}<span class="back-pill-label">${escape(target.label)}</span></a>`;
 }
 

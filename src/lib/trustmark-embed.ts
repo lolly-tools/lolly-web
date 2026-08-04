@@ -4,7 +4,7 @@
  * decode-only lib/trustmark.ts. Hides Lolly's own durable identifier
  * (engine buildLollyDurablePayload) into an image's pixels as a TrustMark-format
  * watermark, so a metadata strip can't erase the "made with Lolly" link and any
- * TrustMark-aware tool can recover it. See plans/durable-content-credentials.md.
+ * TrustMark-aware tool can recover it. See plans/28-durable-content-credentials.md.
  *
  * LAZY BY DESIGN, exactly like lib/trustmark.ts: only ever reached via a dynamic
  * import from the export path when opts.durable is set, so onnxruntime-web + the

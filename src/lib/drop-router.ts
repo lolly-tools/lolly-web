@@ -33,7 +33,7 @@
  * cost is one hint pill per attached root.
  */
 
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
@@ -47,7 +47,7 @@ type PickerModule = typeof import('../views/picker.ts');
 /** Everything the file-picker fallback should let through — a superset of the
  *  picker's UPLOAD_ACCEPT (that list deliberately excludes design formats). */
 const UNIVERSAL_ACCEPT =
-  '.fig,.penpot,.zip,.svg,.idml,.indd,.pdf,.ai,.pptx,image/*,video/*,audio/*,' +
+  '.fig,.penpot,.zip,.svg,.idml,.indd,.pdf,.ai,.pptx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
   '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac';
 
 // Extension fallbacks for files whose MIME type the OS didn't fill in.
@@ -79,6 +79,23 @@ export function takePendingToolFile(toolId: string): File | null {
   return f;
 }
 
+let pendingToolSeed: { toolId: string; values: Record<string, unknown> } | null = null;
+
+/** Arm a one-shot initial-values seed for `toolId` — the layered-import route
+ *  (psd-import) parses + stores layer assets BEFORE navigating, then stashes
+ *  the block rows here; views/tool.ts folds them into initialValues on mount. */
+export function setPendingToolSeed(toolId: string, values: Record<string, unknown>): void {
+  pendingToolSeed = { toolId, values };
+}
+
+/** Consume the seed stashed for `toolId`. Single use; null for other tools. */
+export function takePendingToolSeed(toolId: string): Record<string, unknown> | null {
+  if (pendingToolSeed?.toolId !== toolId) return null;
+  const v = pendingToolSeed.values;
+  pendingToolSeed = null;
+  return v;
+}
+
 // ── sniffing ───────────────────────────────────────────────────────────────────
 
 interface Sniff {
@@ -87,6 +104,8 @@ interface Sniff {
   pptx: boolean;
   media: boolean;
   c2pa: boolean;
+  /** A layered bitmap (Photoshop PSD/PSB or GIMP XCF). */
+  layers: boolean;
 }
 
 const isMediaFile = (f: File): boolean =>
@@ -115,8 +134,17 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
   // JUMBF box type / C2PA manifest label / PNG caBX chunk — a heuristic "this
   // carries Content Credentials" signal, not a verification (that's /verify's job).
   const c2pa = /jumb|c2pa|caBX/.test(text);
-  const design = !pdf && !pptx && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
-  return { design, pdf, pptx, media: isMediaFile(file), c2pa };
+  // Layered bitmaps: '8BPS' (PSD/PSB) or 'gimp xcf ' at offset 0 — the same
+  // prefix check as the engine's sniffLayeredRaster, inlined so a JPEG drop
+  // never pulls the engine chunk. Extension fallback for a blank OS MIME.
+  const layers = head
+    ? ((head[0] === 0x38 && head[1] === 0x42 && head[2] === 0x50 && head[3] === 0x53)
+      || text.startsWith('gimp xcf '))
+    : /\.(psd|psb|xcf)$/i.test(file.name);
+  const design = !pdf && !pptx && !layers && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
+  // A PSD/XCF often carries an image/* MIME — the layered routes own it, not
+  // the plain media ones (the library route still exists, as a flatten).
+  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers };
 }
 
 const toolExists = (id: string): boolean =>
@@ -149,6 +177,15 @@ export async function openDropChooser(
   );
 
   const choices: DialogChoice[] = [];
+  if (single && s.layers && toolExists('layer-stack')) {
+    choices.push({ id: 'layers', label: t('Open as layers'), primary: true });
+  }
+  if (single && s.layers && toolExists('layout-studio')) {
+    choices.push({ id: 'design', label: t('Edit in Layout Studio') });
+  }
+  if (single && s.layers) {
+    choices.push({ id: 'flatten', label: t('Add the flattened image to your library') });
+  }
   if (single && (s.design || s.pdf) && toolExists('layout-studio')) {
     choices.push({ id: 'design', label: t('Edit in Layout Studio'), primary: true });
   }
@@ -183,11 +220,12 @@ export async function openDropChooser(
 
   let message: string;
   if (!single) message = t('{n} files are ready to import.', { n: files.length });
-  else if (s.pdf) message = t('“{name}” is a PDF or Illustrator document.', { name: first.name });
-  else if (s.pptx) message = t('“{name}” is a PowerPoint deck.', { name: first.name });
-  else if (s.design) message = t('“{name}” looks like a design file.', { name: first.name });
-  else if (s.media) message = t('“{name}” is ready to import.', { name: first.name });
-  else message = t('“{name}” isn’t a format Lolly can import directly.', { name: first.name });
+  else if (s.layers) message = tRaw('“{name}” is a layered image (Photoshop/GIMP).', { name: first.name });
+  else if (s.pdf) message = tRaw('“{name}” is a PDF or Illustrator document.', { name: first.name });
+  else if (s.pptx) message = tRaw('“{name}” is a PowerPoint deck.', { name: first.name });
+  else if (s.design) message = tRaw('“{name}” looks like a design file.', { name: first.name });
+  else if (s.media) message = tRaw('“{name}” is ready to import.', { name: first.name });
+  else message = tRaw('“{name}” isn’t a format Lolly can import directly.', { name: first.name });
 
   const chosen = await choiceDialog({
     title: single ? t('What should Lolly do with this file?') : t('What should Lolly do with these files?'),
@@ -201,6 +239,34 @@ export async function openDropChooser(
   if (!chosen) return;
 
   switch (chosen) {
+    case 'layers': {
+      // Parse + store per-layer assets BEFORE navigating (the dialog for
+      // flat-vs-grouped lives inside), then arm the seed and go.
+      try {
+        const { importLayeredFileAsSeed } = await import('../views/psd-import.ts');
+        const seed = await importLayeredFileAsSeed(host, first, {
+          warn: (m: string) => announce(m, { assertive: true }),
+        });
+        if (!seed) break; // user cancelled the flat/grouped dialog
+        setPendingToolSeed('layer-stack', seed);
+        playSfx('drop');
+        routeToConsumer('#/tool/layer-stack', onToolRoute('layer-stack'));
+      } catch (err) {
+        announce(tRaw('Import failed: {message}', { message: (err as Error).message }), { assertive: true });
+      }
+      break;
+    }
+    case 'flatten': {
+      try {
+        const { ingestLayeredFileFlattened } = await import('../views/psd-import.ts');
+        await ingestLayeredFileFlattened(host, first);
+        playSfx('drop');
+        announce(t('Added 1 file to your library.'));
+      } catch (err) {
+        announce(tRaw('Upload failed: {message}', { message: (err as Error).message }), { assertive: true });
+      }
+      break;
+    }
     case 'design':
       pendingDesign = first;
       routeToConsumer('#/tool/layout-studio', onToolRoute('layout-studio'));
@@ -277,7 +343,7 @@ async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerMo
       announce(
         (err as { code?: unknown }).code
           ? (err as Error).message
-          : t('Upload failed: {message}', { message: (err as Error).message }),
+          : tRaw('Upload failed: {message}', { message: (err as Error).message }),
         { assertive: true },
       );
     }
@@ -309,7 +375,7 @@ async function ingestExportsToLibrary(file: File, host: PickerHost): Promise<voi
     announce(
       (err as { code?: unknown }).code
         ? (err as Error).message
-        : t('Upload failed: {message}', { message: (err as Error).message }),
+        : tRaw('Upload failed: {message}', { message: (err as Error).message }),
       { assertive: true },
     );
   }

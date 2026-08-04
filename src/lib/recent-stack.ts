@@ -32,6 +32,7 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
   root.innerHTML = `
     <div class="dash-stack-deck" data-deck>
       ${items.map((it) => `
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — callers build this as `#/tool/<id>…` (views/dashboard.ts), so the fixed `#/` prefix makes a scheme impossible */ ''}
         <a class="dash-stack-card" href="${escapeHtml(it.href)}" aria-label="${escapeHtml(it.label)}">
           <span class="dash-stack-imgwrap"><img class="dash-stack-img" src="${escapeHtml(it.thumb)}" alt="" draggable="false" loading="lazy" decoding="async"></span>
           <span class="dash-stack-cap">${escapeHtml(it.label)}</span>
@@ -42,6 +43,7 @@ export function createRecentStack(root: HTMLElement, items: StackItem[]): StackH
       <span class="dash-stack-count" data-count aria-live="polite"></span>
       <button type="button" class="dash-stack-nav" data-next aria-label="Next">›</button>
     </div>
+    ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — same `#/tool/<id>…` construction as the deck cards above */ ''}
     <a class="dash-stack-open" data-open href="${escapeHtml(items[0]!.href)}">Open<span class="dash-stack-open-label" data-open-label>${escapeHtml(items[0]!.label)}</span></a>`;
 
   const deck = root.querySelector<HTMLElement>('[data-deck]')!;

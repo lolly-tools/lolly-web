@@ -82,7 +82,7 @@ const ASSET_INDEX_URL = '/catalog/assets/index.json';
 
 /** The user-installed brand tokens' well-known asset id. Its presence flips
  *  discovery away from the catalog's tokens (e.g. `lolly/tokens/brand`) — the
- *  shell's branded/unbranded signal (plans/brand-token-contract.md §5). */
+ *  shell's branded/unbranded signal (plans/archive/brand-token-contract.md §5). */
 export const USER_TOKENS_ID = 'user/tokens/brand';
 
 /** The host slice installUserTokens needs: the asset store's user-upload writer
@@ -115,7 +115,7 @@ export class BrandLockedError extends Error {
 }
 
 /**
- * Install the user's own brand tokens (plans/brand-token-contract.md §5):
+ * Install the user's own brand tokens (plans/archive/brand-token-contract.md §5):
  * validate + write the DTCG document as the well-known `user/tokens/brand`
  * asset, then bust the tokens caches so the very next get()/resolve() re-runs
  * discovery — which now returns the user asset ahead of the shipped brand.

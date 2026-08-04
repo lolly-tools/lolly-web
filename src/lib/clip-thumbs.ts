@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Lazy filmstrips + waveforms + stills + node rasters for timeline clip bars
- * (phase 2, §4 of plans/fable-timeline-phase-2.md).
+ * (phase 2, §4 of plans/53-fable-timeline-phase-2.md).
  *
  * A timeline shows one bar per clip and each bar wants a picture painted into a
  * <canvas>: a strip of frames (video), a peak envelope (audio), or ONE tile-able

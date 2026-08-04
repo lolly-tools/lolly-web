@@ -43,6 +43,7 @@ export function helpTip(text: string, link: HelpTipLink | null = null): { id: st
   let linkHtml = '';
   if (link && link.href) {
     const external = /^https?:/i.test(link.href);
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation — every call site passes a literal in-app route ('#/verify', '#/components'); no remote value reaches it
     linkHtml = ` <a class="help-tip-link" href="${escape(link.href)}"` +
       (external ? ' target="_blank" rel="noopener"' : '') +
       `>${escape(link.text || 'Learn more')}</a>`;

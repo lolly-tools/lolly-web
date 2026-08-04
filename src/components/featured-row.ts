@@ -163,6 +163,7 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
   // seeded URL, so opening the tile lands in the look you're watching; see refreshLinkHref).
   return `
     <li class="ftile${iconHero ? ' ftile--icon' : ''}" data-tool="${escape(entry.id)}">
+      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — every entry.href is a fixed-prefix in-app route ('#/tool/…', '#/c?asset=…', '#/pro?session=…'), else the '#/tool/<id>' fallback */ ''}
       <a class="ftile-link" href="${escape(href)}" data-basehref="${escape(href)}" aria-label="${escape(label)}" draggable="false">
         <span class="ftile-stage" aria-hidden="true">
           ${iconFill}
@@ -223,6 +224,7 @@ export function mountFeaturedRow(
 
   mount.innerHTML = `
     <section class="featured${reduced ? ' featured--static' : ''}${coverflow ? ' featured--coverflow' : ''}" aria-label="${escape(opts.ariaLabel || opts.label || 'Featured tools')}" aria-roledescription="carousel">
+      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — opts.labelHref is a call-site literal doc route, never remote data */ ''}
       ${opts.label ? `<span class="featured-label">${escape(opts.label)}${opts.labelHref ? `<a class="featured-label-help" href="${escape(opts.labelHref)}" aria-label="${escape(opts.labelHelp || 'Learn more')}" title="${escape(opts.labelHelp || 'Learn more')}">${HELP_ICON}</a>` : ''}</span>` : ''}
       <div class="featured-viewport">
         <ul class="featured-track">${entries.map((e, i) => tileMarkup(e, i === 0, tileMenu)).join('')}</ul>

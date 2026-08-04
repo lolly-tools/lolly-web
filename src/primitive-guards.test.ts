@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Primitive-drift guards — static scans that make regressions against the shared
- * primitive layer (plans/component-audit.md, repo root) fail loudly instead of
+ * primitive layer (plans/76-component-audit.md, repo root) fail loudly instead of
  * silently re-forking atoms. Each rule names the audit rec it protects.
  *
  * These are ratchets, not aspirations: the allowlists encode the SURVEYED state
@@ -742,6 +742,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // page (decoded payload/message hex, schema, filenames, hex dumps of file
   // bytes, handoff notes) is escape()d at its sink; the rest are static t().
   'views/valid.ts': 21,
+  // 2 as of 2026-08-04 (new file). Reviewed as part of the SUSE assessment
+  // close-out: the panel build escapeHtml()s every interpolated value — the
+  // model <option> id/name pairs, both aria-labels — and the only other sink
+  // writes an icon() constant, with the model's warning text going through
+  // setAttribute (data-tip/aria-label), never HTML.
+  'views/upscale-dialog.ts': 2,
 };
 
 test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {

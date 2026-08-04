@@ -25,7 +25,7 @@
  */
 import { THEMES, THEME_LABELS, THEME_ICONS, nextTheme, currentTheme } from '../theme.ts';
 import { setTheme, type SetThemeHost as ThemeToggleHost } from '../lib/set-theme.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { segHtml } from '../lib/seg.ts';
 
 export function createThemeToggle(
@@ -45,7 +45,7 @@ export function createThemeToggle(
   const paint = (theme: string) => {
     btn.dataset.theme = theme;
     btn.innerHTML = icons[theme] ?? '';
-    const label = t('Theme: {name} — switch theme', { name: t(labels[theme] ?? theme) });
+    const label = tRaw('Theme: {name} — switch theme', { name: t(labels[theme] ?? theme) });
     btn.setAttribute('aria-label', label);
     btn.title = label;
   };

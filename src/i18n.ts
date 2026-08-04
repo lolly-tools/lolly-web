@@ -21,6 +21,9 @@
 // scripts/check-bundle-budget.ts.
 import { LANGS, LANG_META, normalizeLang, flagEmoji, sortedLangs } from '../../../engine/src/lang.ts';
 import type { Lang, LangSort } from '../../../engine/src/lang.ts';
+// utils.ts is a dependency-free leaf (escape/safeHref/NAV_EVENTS only), so this
+// adds nothing to the boot chunk and cannot cycle back into i18n.
+import { escape } from './utils.ts';
 
 export { LANGS, LANG_META, normalizeLang, flagEmoji, sortedLangs };
 export type { Lang, LangSort };
@@ -231,15 +234,44 @@ export function docsHref(slug: string): string {
   return lang === 'en' ? `/info/${file}` : `/info/${lang}/${file}`;
 }
 
+/** Shared interpolation. `esc` decides whether a param is HTML-escaped. */
+function interpolate(source: string, params: Record<string, string | number> | undefined, esc: boolean): string {
+  let out = catalog[source] ?? source;
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      const v = String(value);
+      out = out.replaceAll(`{${key}}`, esc ? escape(v) : v);
+    }
+  }
+  return out;
+}
+
 /**
  * Translate a UI string. The English source doubles as the lookup key, so an
  * untranslated (or not-yet-wrapped) string simply renders as English instead of
  * breaking. `params` does plain {name} interpolation.
+ *
+ * **Interpolated params are HTML-escaped.** t()'s result is routinely assigned
+ * to `innerHTML`, so safety must not rest on every caller remembering to escape
+ * (SUSE assessment 2026-08, S5). The catalog string ITSELF is still raw, because
+ * translations intentionally carry markup (`'Up to <strong>{n}</strong>…'`) —
+ * that is the locale-file trust boundary documented in docs/threat-model.md.
+ *
+ * Use {@link tRaw} instead when the result does NOT go to an HTML sink — text
+ * assigned to `textContent`, `document.title`, `announce()`, `setAttribute`, or
+ * a string that is itself about to be `escape()`d — or when a param is meant to
+ * be markup. Escaping there would render `O&#39;Brien` to the user.
  */
 export function t(source: string, params?: Record<string, string | number>): string {
-  let out = catalog[source] ?? source;
-  if (params) {
-    for (const [key, value] of Object.entries(params)) out = out.replaceAll(`{${key}}`, String(value));
-  }
-  return out;
+  return interpolate(source, params, true);
+}
+
+/**
+ * t() without param escaping — the pre-2026-08 behaviour, kept for the two
+ * legitimate cases: a TEXT sink (where entities would be shown literally) and a
+ * param that is intentionally HTML. Every tRaw() call in an HTML context is a
+ * site a reviewer must check by hand, so prefer t() unless you know why.
+ */
+export function tRaw(source: string, params?: Record<string, string | number>): string {
+  return interpolate(source, params, false);
 }

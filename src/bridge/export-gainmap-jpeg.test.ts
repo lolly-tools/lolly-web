@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * bridge/export-gainmap-jpeg.ts — HDR JPEG as an ISO 21496-1 gain-map file
- * (plans/deeprichpixels.md §6 B2 wiring).
+ * (plans/61-deeprichpixels.md §6 B2 wiring).
  *
  * The seam under test is DOM-free by design — `Uint8ClampedArray` in, file
  * bytes out, with JPEG encoding injected — so the whole HDR JPEG path runs here

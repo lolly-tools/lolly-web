@@ -11,7 +11,7 @@
  * assignable to it.
  */
 
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import type { IconName } from '../lib/icons.ts';
 
@@ -243,9 +243,9 @@ export function resolveState(report: VerifyReport): ResolvedState {
     : state === STATE_COPY.expired && identity
       ? t('The file still matches exactly what its credential signed — nothing was modified — but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.')
       : state === STATE_COPY.trusted && thirdPartyRoot
-        ? t('The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>{issuer}</strong> — a recognised C2PA trust anchor{signer}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.', {
+        ? tRaw('The file is exactly what its embedded credential signed, and the signing certificate chains to <strong>{issuer}</strong> — a recognised C2PA trust anchor{signer}. Integrity plus a CA-verified identity; what it records about how it was made is still the signer’s own claim.', {
             issuer: escape(identity!.issuer!),
-            signer: signerOrg ? t(', identifying the signer as <strong>{org}</strong>', { org: escape(signerOrg) }) : '',
+            signer: signerOrg ? t(', identifying the signer as <strong>{org}</strong>', { org: signerOrg }) : '',
           })
         : t(state.sub);
   return { state, sub, identity };

@@ -25,7 +25,46 @@ globalThis.history = win.history as unknown as History; // i18n.ts uses the bare
 globalThis.document = { documentElement: { lang: '', dir: '' } } as unknown as Document;
 globalThis.localStorage = { getItem: () => null, setItem: () => {} } as unknown as Storage;
 
-const { setActiveLang } = await import('./i18n.ts');
+const { setActiveLang, t, tRaw } = await import('./i18n.ts');
+
+// ── t() / tRaw() param escaping (SUSE assessment 2026-08, S5) ─────────────────
+// t()'s result is routinely assigned to innerHTML, so param escaping must be the
+// DEFAULT rather than a thing each caller remembers. tRaw() keeps the old
+// behaviour for text sinks and markup params. The catalog string stays raw in
+// both — locale files carry markup on purpose (docs/threat-model.md).
+
+test('t() HTML-escapes interpolated params', () => {
+  assert.equal(
+    t('Checking {name}', { name: '<img src=x onerror=alert(1)>' }),
+    'Checking &lt;img src=x onerror=alert(1)&gt;',
+  );
+  assert.equal(t('Hi {who}', { who: `O'Brien & Sons` }), 'Hi O&#39;Brien &amp; Sons');
+});
+
+test('t() escapes every occurrence of a repeated param', () => {
+  assert.equal(t('{x} and {x}', { x: '<b>' }), '&lt;b&gt; and &lt;b&gt;');
+});
+
+test('t() leaves numeric params alone (escaping is a no-op there)', () => {
+  assert.equal(t('{n} items', { n: 12 }), '12 items');
+});
+
+test('tRaw() does NOT escape params — the text-sink / markup escape hatch', () => {
+  assert.equal(tRaw('Hi {who}', { who: `O'Brien` }), `Hi O'Brien`);
+  assert.equal(tRaw('go {link}', { link: '<a href="#">x</a>' }), 'go <a href="#">x</a>');
+});
+
+test('the catalog source string itself is never escaped by either function', () => {
+  // Translations intentionally contain markup; escaping the catalog value would
+  // render those tags as visible text. Only PARAMS are escaped.
+  assert.equal(t('Up to <strong>{n}</strong> free', { n: 3 }), 'Up to <strong>3</strong> free');
+  assert.equal(tRaw('Up to <strong>{n}</strong> free', { n: 3 }), 'Up to <strong>3</strong> free');
+});
+
+test('t() and tRaw() agree when there are no params at all', () => {
+  assert.equal(t('Save Profile'), tRaw('Save Profile'));
+  assert.equal(t('Save Profile'), 'Save Profile');
+});
 
 async function stripped(url: string): Promise<string | null> {
   win.location = new URL(url);

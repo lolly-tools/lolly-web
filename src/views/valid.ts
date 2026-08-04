@@ -32,7 +32,7 @@ import { escape } from '../utils.ts';
 // Aliased (not `icon`) — this file has function parameters named `icon` (fact(),
 // the change-history `section` builder) that would otherwise shadow the import.
 import { icon as glyph, type IconName } from '../lib/icons.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { takePendingVerify } from '../lib/verify-handoff.ts';
@@ -67,7 +67,7 @@ const VERIFY_OPTS: { trustAnchors: Uint8Array[] } = {
 const MAX_VERIFY_BYTES = 256 * 1024 * 1024;
 
 // Path data for all of these (including 'shield'/'chevronDown' below) lives in
-// lib/icons.ts — the shared registry (see plans/component-audit.md rec 5).
+// lib/icons.ts — the shared registry (see plans/76-component-audit.md rec 5).
 // 'globe', 'calendar', 'package' and 'image' are deduped there against
 // near-identical glyphs from catalog-summary.ts/category-icons.ts/profile.ts.
 const ICON_SHIELD = glyph('shield');
@@ -141,7 +141,7 @@ export function inputsDigestHtml(
   }).join('');
   const cta = recreate ? `
       <a class="btn valid-recreate" style="margin-top:.65rem" href="#/tool/${escape(recreate.toolId)}"
-         data-recreate="${recreate.fileIndex}" data-recreate-tool="${escape(recreate.toolId)}">${t('Recreate with these settings in {tool}', { tool: escape(recreate.toolName) })}</a>` : '';
+         data-recreate="${recreate.fileIndex}" data-recreate-tool="${escape(recreate.toolId)}">${t('Recreate with these settings in {tool}', { tool: recreate.toolName })}</a>` : '';
   return `
     <div class="valid-inputs valid-panel">
       <h3>${svgIcon('sparkle')}<span>${t('Made from')}</span></h3>
@@ -228,7 +228,8 @@ interface LocalExportMatch { href: string; at: number }
 const mineNote = (mine: LocalExportMatch): string =>
   `<div class="valid-note valid-note--mine">
     <span class="valid-note-ic" aria-hidden="true">${svgIcon('userCheck')}</span>
-    <p class="valid-note-body">${t('<strong>You made this here.</strong> This exact file matches one you exported on this device ({when}).', { when: escape(fmtDate(mine.at)) })} <a href="${escape(mine.href)}">${t('Reopen it exactly as it was')}</a></p>
+    ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — exportReopenHref() builds a fixed '#/tool/<id>' hash route from this device's own export history */ ''}
+    <p class="valid-note-body">${t('<strong>You made this here.</strong> This exact file matches one you exported on this device ({when}).', { when: fmtDate(mine.at) })} <a href="${escape(mine.href)}">${t('Reopen it exactly as it was')}</a></p>
   </div>`;
 
 const fmtDate = (iso: unknown): string => {
@@ -299,7 +300,7 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
   const lead = signal
     ? `<span class="valid-item-maker is-lolly" title="${escape(signal)}">${escape(signal)}</span>`
     : (tone === 'good' && maker)
-      ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(t(state.title))}">${t('Made with {names}', { names: escape(maker.names.join(' · ')) })}</span>`
+      ? `<span class="valid-item-maker ${maker.lolly ? 'is-lolly' : 'is-other'}" title="${escape(t(state.title))}">${t('Made with {names}', { names: maker.names.join(' · ') })}</span>`
       : `<span class="valid-item-badge is-${tone}">${escape(t(state.title))}</span>`;
   const aiDecl = report.aiGenerated ? t('Content Credential declares AI-generated content')
     : meta?.ai ? t('Embedded metadata declares AI-generated content') : null;
@@ -309,7 +310,7 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
     ${lead}
     ${aiDecl ? `<span class="valid-item-ai" title="${escape(aiDecl)}">${svgIcon('aiSpark')}<span>${t('AI')}</span></span>` : ''}
     <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
-    ${who ? `<span class="valid-item-signer" title="${escape(t('Signed by {who}', { who }))}">${svgIcon('mail')}<span>${escape(who)}</span></span>` : ''}
+    ${who ? `<span class="valid-item-signer" title="${escape(tRaw('Signed by {who}', { who }))}">${svgIcon('mail')}<span>${escape(who)}</span></span>` : ''}
     ${miniScoreHtml(report, watermark, [...extraPips(origin, makerHint, isVideo, meta), ...(sealPip(seal) ? [sealPip(seal)!] : [])])}
     <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>`;
 }
@@ -371,6 +372,7 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
       ${renderLocator(meta.gps.lat, meta.gps.lon)}
       <div class="valid-meta-loc-read">
         ${loc.map((f) => `<span class="valid-meta-loc-item"><span class="k">${escape(f.label)}</span><span class="v">${escape(f.value)}</span></span>`).join('')}
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — engine file-metadata.ts builds mapUrl as a literal 'https://www.openstreetmap.org/…' prefix over numeric EXIF lat/lon (toFixed), so no EXIF string reaches the scheme */ ''}
         ${meta.mapUrl ? `<a class="valid-meta-map" href="${escape(meta.mapUrl)}" target="_blank" rel="noopener noreferrer">OpenStreetMap ↗</a>` : ''}
       </div>
     </section>` : '';
@@ -382,12 +384,12 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
       </div>
       ${mediaPreviewHtml(preview, 'sm')}
       <p class="valid-meta-note">${t("Read on this device from the file's own bytes — the EXIF, XMP and container data it carries wherever it travels.")}${sensitive ? ` ${t('Values that can identify a person, place or device are marked.')}` : ''} ${isStrippableFormat(meta.format)
-    ? t('{button} or use the {link} tool for more control.', {
+    ? tRaw('{button} or use the {link} tool for more control.', {
         button: `<button type="button" class="valid-clean-link" data-clean-copy="${fileIndex}" data-clean-format="${escape(meta.format)}">${t('Download a cleaned copy')}</button>`,
         link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>`,
       })
-    : t('Remove it with the {link} tool.', { link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>` })}${isRedactableFormat(meta.format)
-    ? ` ${t('To remove content the pixels themselves show, use the {link} tool.', { link: `<a href="#/tool/redact">${t('Redact')}</a>` })}`
+    : tRaw('Remove it with the {link} tool.', { link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>` })}${isRedactableFormat(meta.format)
+    ? ` ${tRaw('To remove content the pixels themselves show, use the {link} tool.', { link: `<a href="#/tool/redact">${t('Redact')}</a>` })}`
     : ''}</p>
       <div class="valid-meta-grid">
         ${locationBlock}
@@ -522,8 +524,8 @@ function sealPip(seal: SealVerifyResult | undefined): ScorecardItem | null {
 function sealNoteHtml(seal: SealVerifyResult | undefined): string {
   if (!seal?.found) return '';
   const domain = seal.domain ? escape(seal.domain) : t('an undisclosed domain');
-  const idLine = seal.signerId ? ` ${t('Signer id: {id}.', { id: escape(seal.signerId) })}` : '';
-  const whenLine = seal.timestamp ? ` ${t('Self-asserted signing time: {when}.', { when: escape(seal.timestamp) })}` : '';
+  const idLine = seal.signerId ? ` ${t('Signer id: {id}.', { id: seal.signerId })}` : '';
+  const whenLine = seal.timestamp ? ` ${t('Self-asserted signing time: {when}.', { when: seal.timestamp })}` : '';
   if (seal.valid && seal.keySource === 'dns') {
     const coverage = seal.coversWholeFile
       ? t('The signature covers the whole file, so its bytes are unchanged since it was signed.')
@@ -532,7 +534,7 @@ function sealNoteHtml(seal: SealVerifyResult | undefined): string {
     <div class="valid-wm" role="note">
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon('seal')}</span>
       <div class="valid-wm-text">
-        <strong>${t('Signed by {domain} (SEAL)', { domain })}</strong>
+        <strong>${tRaw('Signed by {domain} (SEAL)', { domain })}</strong>
         <span>${t('A SEAL cryptographic signature over the file’s bytes verified against the public key published in DNS for this domain.')} ${coverage}${idLine}${whenLine}</span>
         <span>${t('SEAL proves control of the domain — domain-level attribution, not a CA-verified legal identity — and says nothing about the visual content. Checked on this device; only a public-key DNS lookup left the device, never the file.')}</span>
       </div>
@@ -546,7 +548,7 @@ function sealNoteHtml(seal: SealVerifyResult | undefined): string {
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon('seal')}</span>
       <div class="valid-wm-text">
         <strong>${t('SEAL signature is internally consistent')}</strong>
-        <span>${t('This file’s SEAL signature verifies against a public key the file itself supplied, but that key was not confirmed against DNS for {domain} — so the bytes are self-consistent, without proven domain attribution.', { domain })}${idLine}${whenLine}</span>
+        <span>${tRaw('This file’s SEAL signature verifies against a public key the file itself supplied, but that key was not confirmed against DNS for {domain} — so the bytes are self-consistent, without proven domain attribution.', { domain })}${idLine}${whenLine}</span>
       </div>
     </div>`;
   }
@@ -555,7 +557,7 @@ function sealNoteHtml(seal: SealVerifyResult | undefined): string {
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon('seal')}</span>
       <div class="valid-wm-text">
         <strong>${t('SEAL signature did not verify')}</strong>
-        <span>${t('This file carries a SEAL signature record naming {domain}, but it did not validate: {reason}', { domain, reason: escape(seal.reason) })}</span>
+        <span>${tRaw('This file carries a SEAL signature record naming {domain}, but it did not validate: {reason}', { domain, reason: escape(seal.reason) })}</span>
       </div>
     </div>`;
 }
@@ -639,7 +641,7 @@ function payloadPreviewHtml(bytes: Uint8Array, kind: string): string {
 }
 
 // ── Deep scan for third-party watermarks (Adobe TrustMark + Meta Content Seal) ──
-// See plans/watermark-detectors.md. The two neural decoders (lib/trustmark.ts,
+// See plans/31-watermark-detectors.md. The two neural decoders (lib/trustmark.ts,
 // lib/contentseal.ts) each pull in onnxruntime-web + a model and must NEVER load
 // on the default verify path — they're lazily dynamic-imported. The scan runs
 // AUTOMATICALLY (scanOne/scanAllDecodable in mountValid) once the models are
@@ -662,7 +664,7 @@ function trustmarkNoteHtml(payloadHex: string, schema: string): string {
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
       <div class="valid-wm-text">
         <strong>${t('Adobe TrustMark detected')}</strong>
-        <span>${t('A TrustMark watermark ({schema}) was decoded from the pixels and passed its error-correction check — a real, on-device read, not a guess. Recovered payload: {payload}', { schema: escape(schema), payload: `<code>${escape(payloadHex)}</code>` })}</span>
+        <span>${tRaw('A TrustMark watermark ({schema}) was decoded from the pixels and passed its error-correction check — a real, on-device read, not a guess. Recovered payload: {payload}', { schema: escape(schema), payload: `<code>${escape(payloadHex)}</code>` })}</span>
       </div>
     </div>`;
 }
@@ -670,7 +672,7 @@ function trustmarkNoteHtml(payloadHex: string, schema: string): string {
  *  carrying Lolly's identifier, recognised on-device (engine readLollyDurable).
  *  It's a real, ECC-validated read, so (like the Lolly Imprint) a green pass pip
  *  — and it's the more specific answer, so it REPLACES the generic TrustMark pip
- *  when the payload is ours. See plans/durable-content-credentials.md. */
+ *  when the payload is ours. See plans/28-durable-content-credentials.md. */
 function lollyDurablePip(): ScorecardItem {
   return { ...TRUSTMARK_DETECTED_PIP, label: t('Lolly durable mark'), statusWord: t('detected') };
 }
@@ -684,7 +686,7 @@ function lollyDurableNoteHtml(schema: string): string {
       <span class="valid-wm-ic" aria-hidden="true">${svgIcon('imprint')}</span>
       <div class="valid-wm-text">
         <strong>${t('Durable Lolly credential')}</strong>
-        <span>${t('A TrustMark-format watermark ({schema}) carrying Lolly’s own identifier was decoded from the pixels and passed its error-correction check — a real, on-device read. Unlike the Content Credential, which lives in metadata and is stripped on upload, this identifier is hidden in the pixels, so it can re-link this file to Lolly even after the metadata is gone.', { schema: escape(schema) })}</span>
+        <span>${t('A TrustMark-format watermark ({schema}) carrying Lolly’s own identifier was decoded from the pixels and passed its error-correction check — a real, on-device read. Unlike the Content Credential, which lives in metadata and is stripped on upload, this identifier is hidden in the pixels, so it can re-link this file to Lolly even after the metadata is gone.', { schema })}</span>
       </div>
     </div>`;
 }
@@ -701,7 +703,7 @@ function contentSealPip(): ScorecardItem {
 // never shown at all (see scanOne), so this only appears on a real detection.
 function contentSealNoteHtml(messageHex: string): string {
   const msg = messageHex
-    ? ` ${t('Recovered message: {payload}', { payload: `<code>${escape(messageHex)}</code>` })}`
+    ? ` ${tRaw('Recovered message: {payload}', { payload: `<code>${escape(messageHex)}</code>` })}`
     : '';
   return `
     <div class="valid-wm" role="note">
@@ -971,14 +973,14 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
   if (!p) return '';
   const cls = `valid-preview valid-preview--${size} is-${p.kind}`;
   if (p.kind === 'image' && p.url)
-    return `<figure class="${cls}"><img src="${escape(p.url)}" alt="${escape(t('Preview of {name}', { name: p.name }))}" decoding="async"></figure>`;
+    return `<figure class="${cls}"><img src="${escape(p.url)}" alt="${escape(tRaw('Preview of {name}', { name: p.name }))}" decoding="async"></figure>`;
   if (p.kind === 'video' && p.url)
     return `<figure class="${cls}"><video src="${escape(p.url)}#t=0.1" preload="metadata" playsinline muted${size === 'lg' ? ' controls' : ''}></video></figure>`;
   if (p.kind === 'pdf' && p.url && size === 'lg')
     return `<figure class="${cls}"><embed src="${escape(p.url)}#toolbar=0&view=FitH" type="application/pdf"></figure>`;
   // Not inline-previewable at this size — a quiet labelled placeholder (large only).
   if (size === 'lg')
-    return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon('image')}</span><figcaption>${t('No inline preview for {format}', { format: escape((p.format || t('this format')).toUpperCase()) })}</figcaption></figure>`;
+    return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon('image')}</span><figcaption>${t('No inline preview for {format}', { format: (p.format || t('this format')).toUpperCase() })}</figcaption></figure>`;
   return '';
 }
 
@@ -1006,8 +1008,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const signerWho = identity ? (identity.email || signer.organization || signer.commonName) : null;
   const identityLine = (identity && signerWho) ? `
           <p class="valid-identity-line">${report.trusted
-    ? t('Signed by <strong>{who}</strong> — identity verified by <strong>{issuer}</strong>', { who: escape(signerWho), issuer: escape(identity!.issuer ?? t('a recognised C2PA root')) })
-    : t('Signed by <strong>{who}</strong> — identity was CA-verified; the certificate has since expired', { who: escape(signerWho) })}</p>` : '';
+    ? t('Signed by <strong>{who}</strong> — identity verified by <strong>{issuer}</strong>', { who: signerWho, issuer: identity!.issuer ?? t('a recognised C2PA root') })
+    : t('Signed by <strong>{who}</strong> — identity was CA-verified; the certificate has since expired', { who: signerWho })}</p>` : '';
   // "Made from", "what happened" and "what was checked" — distinct boxed panels,
   // paired with the file/facts summary so they share one row wherever the page
   // has the room (see .valid-panels). madeFromBlock is placed ahead of stepsBlock
@@ -1065,7 +1067,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
             <div class="valid-vbadge"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('hash')}</span><span>${t('This file has not changed since it was made')}</span></div>
           </div>
           <p class="valid-hero-signedby">${identity
-    ? t('Signed with <strong>{ca}</strong> Certificate Authority.', { ca: escape(signedByCa ?? t('a Certificate Authority')) })
+    ? t('Signed with <strong>{ca}</strong> Certificate Authority.', { ca: signedByCa ?? t('a Certificate Authority') })
     : t('Signed with an on-device key, not a CA identity.')}</p>` : '';
   // Mirrors lollyValidationsHtml's badge treatment for the broken-credential
   // verdict — three plain facts instead of one sentence to parse.
@@ -1133,8 +1135,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? t("<strong>Checked entirely on this device</strong> — the file was not uploaded. WebM has no standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment: only Lolly (here and via <code>lolly validate</code>) can read it — external C2PA viewers don't support WebM at all.")
     : identity
-      ? t("<strong>Checked entirely on this device</strong> — the file was not uploaded. The signer's identity was verified against the Lolly CA root pinned in this app (the same root <code>lolly validate --trust-anchor</code> uses). Validators that don't pin that root — {link}, or <code>c2patool</code> without <code>--trust_anchors</code> — still show the signer as an unknown source.", { link: '<a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>' })
-      : t('<strong>Checked entirely on this device</strong> — the file was not uploaded. The same file on {link} reads the same, with the signer shown as an unknown source (there is no CA behind an on-device key — by design).', { link: '<a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>' })) : ''}
+      ? tRaw("<strong>Checked entirely on this device</strong> — the file was not uploaded. The signer's identity was verified against the Lolly CA root pinned in this app (the same root <code>lolly validate --trust-anchor</code> uses). Validators that don't pin that root — {link}, or <code>c2patool</code> without <code>--trust_anchors</code> — still show the signer as an unknown source.", { link: '<a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>' })
+      : tRaw('<strong>Checked entirely on this device</strong> — the file was not uploaded. The same file on {link} reads the same, with the signer shown as an unknown source (there is no CA behind an on-device key — by design).', { link: '<a href="https://verify.contentauthenticity.org/" target="_blank" rel="noopener">verify.contentauthenticity.org</a>' })) : ''}
     </div>`;
 }
 
@@ -1551,7 +1553,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // (Adobe TrustMark + Meta Content Seal) in cacheOnly mode (NEVER downloads —
   // that's the header banner's one-time job), and — ONLY on a positive
   // detection — inject that maker's green/amber pip + note. Absence is never
-  // shown as a verdict (per plans/watermark-detectors.md): a negative or
+  // shown as a verdict (per plans/31-watermark-detectors.md): a negative or
   // not-installed scan stays silent. Runs at most once per file per batch.
   const scannedIndexes = new Set<number>();
   async function scanOne(fileIndex: number): Promise<void> {
@@ -1795,7 +1797,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
       return {
         label: t('Hidden text'),
-        value: t('{words} words in {runs} places on {pages} pages are covered by opaque shapes — still in the file, not visible on the page{scope}. For example: {sample}', {
+        value: tRaw('{words} words in {runs} places on {pages} pages are covered by opaque shapes — still in the file, not visible on the page{scope}. For example: {sample}', {
           words, runs: findings.length, pages, scope, sample,
         }),
         group: 'structure',
@@ -1830,7 +1832,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         <span class="valid-item-name">${escape(fileName)}</span>
         <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>
       </summary>
-      <div class="valid-item-body"><p class="valid-busy">${t('Could not check this file: {message}', { message: escape(message) })}</p></div>`;
+      <div class="valid-item-body"><p class="valid-busy">${t('Could not check this file: {message}', { message })}</p></div>`;
   }
 
   // Object URLs minted for the media previews. Revoked wholesale at the start of
@@ -1866,12 +1868,12 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     // One file reads exactly as before — the full report inline, no collapse chrome.
     if (list.length === 1) {
       const file = list[0]!;
-      reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: escape(file.name) })}</p></div>`;
+      reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: file.name })}</p></div>`;
       const { report, error, meta, watermark, mine, seal } = await verifyFile(file);
       activeDigests[0] = report?.environment?.inputs;
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
         ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark, mine, seal)
-        : `<p class="valid-busy">${t('Could not check this file: {message}', { message: escape(error!) })}</p>`;
+        : `<p class="valid-busy">${t('Could not check this file: {message}', { message: error! })}</p>`;
       const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
       if (panels) layoutMasonry(panels);
       // Audible verdict, as two composable signals: the spooky ghost "hoooo" marks
@@ -1918,7 +1920,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
           <span class="valid-item-name">${escape(file.name)}</span>
           <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>
         </summary>
-        <div class="valid-item-body"><p class="valid-busy">${t('Checking {name}…', { name: escape(file.name) })}</p></div>`;
+        <div class="valid-item-body"><p class="valid-busy">${t('Checking {name}…', { name: file.name })}</p></div>`;
       listEl.appendChild(card);
       return card;
     });
@@ -2167,7 +2169,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   async function verifyFromUrl(url: string, onFail: (host: string) => string): Promise<void> {
     const name = decodeURIComponent(new URL(url, location.origin).pathname.split('/').pop() || 'image');
     reportEl.hidden = false;
-    reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: escape(name) })}</p></div>`;
+    reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name })}</p></div>`;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(String(res.status));
@@ -2193,7 +2195,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       say(t('That drop carried no file. Drag a file from your computer, or drop an image from a web page.'));
       return;
     }
-    await verifyFromUrl(url, (h) => t('Dragging an image between pages hands over a link, not the file — and {host} would not let this page fetch it. Save the image to your device and drop that file here instead.', { host: h }));
+    await verifyFromUrl(url, (h) => tRaw('Dragging an image between pages hands over a link, not the file — and {host} would not let this page fetch it. Save the image to your device and drop that file here instead.', { host: h }));
   }
 
   // `#/verify?src=/path/to/file` — verify a file this site already serves, on load.
@@ -2206,7 +2208,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   const src = new URLSearchParams(params).get('src');
   if (src) {
     if (/^\/[^/]/.test(src)) {
-      await verifyFromUrl(src, () => t('Could not read {src} from this site.', { src }));
+      await verifyFromUrl(src, () => tRaw('Could not read {src} from this site.', { src }));
     } else {
       sayVerifyProblem(t('Only files served by this site can be checked from a link. Drop the file here instead.'));
     }

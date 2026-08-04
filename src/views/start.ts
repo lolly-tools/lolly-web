@@ -51,7 +51,7 @@ import { applyTheme } from '../theme.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
 import { swatchTile } from '../lib/swatches.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import type { LangSwitchHost } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -273,7 +273,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       },
     });
   } catch (err) {
-    editorMount.innerHTML = `<p class="be-err">${t('Couldn’t open the brand editor: {error}', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
+    editorMount.innerHTML = `<p class="be-err">${t('Couldn’t open the brand editor: {error}', { error: String((err as { message?: unknown })?.message ?? err) })}</p>`;
   }
   const editorRoot = editorMount.querySelector<HTMLElement>('[data-brand-editor]');
   // Complete the ARIA tabs contract on the editor's panel wrappers (the editor
@@ -361,7 +361,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     const btn = e.currentTarget as HTMLButtonElement;
     if (!editor) { showNote(t('The brand editor didn’t open — reload to export.'), true); return; }
     btn.disabled = true;
-    try { const { filename } = await editor.exportPack(); showNote(t('Exported {filename}', { filename })); }
+    try { const { filename } = await editor.exportPack(); showNote(tRaw('Exported {filename}', { filename })); }
     catch (err) { showNote(String((err as { message?: unknown })?.message ?? err), true); }
     btn.disabled = false;
   });
@@ -443,13 +443,13 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       btn.disabled = false;
       btn.textContent = prevLabel;
       selectTab('color');
-      announce(t('{label} installed — the studio now shows it', { label }));
+      announce(tRaw('{label} installed — the studio now shows it', { label }));
       playSfx('saveProfile');
     } catch (err) {
       installing = false;
       btn.disabled = false;
       btn.textContent = prevLabel;
-      const msg = t('Couldn’t install the brand: {error}', { error: String((err as { message?: unknown })?.message ?? err) });
+      const msg = tRaw('Couldn’t install the brand: {error}', { error: String((err as { message?: unknown })?.message ?? err) });
       showImportResult(`<p class="start-import-err">${escape(msg)}</p>`);
       announce(msg, { assertive: true });
     }
@@ -542,18 +542,18 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // fill as part of the brand.
     if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') {
       if (file.size > 10 * 1024 * 1024) {
-        showImportResult(`<p class="start-import-err">${t('{filename} is too large for an SVG scan (max 10 MB).', { filename: escape(file.name) })}</p>`);
+        showImportResult(`<p class="start-import-err">${t('{filename} is too large for an SVG scan (max 10 MB).', { filename: file.name })}</p>`);
         return;
       }
       let svgColors: string[] = [];
       try {
         svgColors = extractSvgColors(await file.text());
       } catch {
-        showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} as SVG.', { filename: escape(file.name) })}</p>`);
+        showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} as SVG.', { filename: file.name })}</p>`);
         return;
       }
       if (!svgColors.length) {
-        showImportResult(`<p class="start-import-err">${t('No colours found in {filename}.', { filename: escape(file.name) })}</p>`);
+        showImportResult(`<p class="start-import-err">${t('No colours found in {filename}.', { filename: file.name })}</p>`);
         return;
       }
       importedLabel = file.name.replace(/\.svg$/i, '') || t('My brand');
@@ -593,7 +593,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // zip archive under a different extension.
     if (/\.(zip|penpot)$/i.test(file.name) || file.type === 'application/zip') {
       if (file.size > 64 * 1024 * 1024) {
-        showImportResult(`<p class="start-import-err">${t('{filename} is too large (max 64 MB).', { filename: escape(file.name) })}</p>`);
+        showImportResult(`<p class="start-import-err">${t('{filename} is too large (max 64 MB).', { filename: file.name })}</p>`);
         return;
       }
       let files: Record<string, Uint8Array>;
@@ -610,7 +610,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           showImportResult(`<p class="start-import-err">${t('The brand editor didn’t open — reload the page and try again.')}</p>`);
           return;
         }
-        showImportResult(`<p class="start-import-stats">${t('Loading {filename}…', { filename: escape(file.name) })}</p>`);
+        showImportResult(`<p class="start-import-stats">${t('Loading {filename}…', { filename: file.name })}</p>`);
         try {
           await editor.importPack(file);
           // The pack carries its own theme preference (prefs.json → localStorage);
@@ -640,7 +640,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
             showImportResult(`<p class="start-import-err">${t(warnings[0]
               ? 'No design tokens found in {filename} — {warning}. Try exporting an SVG instead so we can read its colours.'
               : 'No design tokens found in {filename}. Try exporting an SVG instead so we can read its colours.',
-              { filename: escape(file.name), warning: escape(warnings[0] ?? '') })}</p>`);
+              { filename: file.name, warning: warnings[0] ?? '' })}</p>`);
             return;
           }
           pendingUsage = usage;
@@ -659,8 +659,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
             [t('Text'), roles.text],
           ];
           const fontLines = [
-            fonts.google.length ? `<p class="start-import-stats">${escape(t('Fonts: {list}', { list: fonts.google.join(', ') }))}</p>` : '',
-            fonts.missing.length ? `<p class="start-import-warn">${escape(t(fonts.missing.length === 1
+            fonts.google.length ? `<p class="start-import-stats">${escape(tRaw('Fonts: {list}', { list: fonts.google.join(', ') }))}</p>` : '',
+            fonts.missing.length ? `<p class="start-import-warn">${escape(tRaw(fonts.missing.length === 1
               ? '{list} has no downloadable source, so it stays as a name only.'
               : '{list} have no downloadable source, so they stay as names only.', { list: fonts.missing.join(', ') }))}</p>` : '',
           ].join('');
@@ -727,31 +727,31 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
                   <span class="start-color-role">${escape(label)}</span>
                 </li>`).join('')}
             </ul>` : ''}
-          ${tokenFonts?.missing.length ? `<p class="start-import-stats">${escape(t('Type: {list}', { list: tokenFonts.missing.slice(0, 4).join(', ') }))}</p>` : ''}
+          ${tokenFonts?.missing.length ? `<p class="start-import-stats">${escape(tRaw('Type: {list}', { list: tokenFonts.missing.slice(0, 4).join(', ') }))}</p>` : ''}
           <button type="button" class="be-cta start-cta--import" data-install-import>${t('Install these tokens')}</button>`);
         return;
       }
 
-      showImportResult(`<p class="start-import-err">${t('{filename} isn’t a brand file or a Penpot export we recognise.', { filename: escape(file.name) })}</p>`);
+      showImportResult(`<p class="start-import-err">${t('{filename} isn’t a brand file or a Penpot export we recognise.', { filename: file.name })}</p>`);
       return;
     }
 
     // Token documents are hand-authored JSON, a few KB to a few MB — bound the
     // read so a mispicked/hostile multi-GB file can't be parsed into memory.
     if (file.size > 10 * 1024 * 1024) {
-      showImportResult(`<p class="start-import-err">${t('{filename} is too large for a token file (max 10 MB).', { filename: escape(file.name) })}</p>`);
+      showImportResult(`<p class="start-import-err">${t('{filename} is too large for a token file (max 10 MB).', { filename: file.name })}</p>`);
       return;
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(await file.text());
     } catch {
-      showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} — is it valid JSON?', { filename: escape(file.name) })}</p>`);
+      showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} — is it valid JSON?', { filename: file.name })}</p>`);
       return;
     }
     const { doc, warnings, source } = coerceTokensDoc(parsed);
     if (!doc) {
-      showImportResult(`<p class="start-import-err">${t('No tokens found: {reason}.', { reason: escape(warnings[0] ?? t('unrecognised document')) })}</p>`);
+      showImportResult(`<p class="start-import-err">${t('No tokens found: {reason}.', { reason: warnings[0] ?? t('unrecognised document') })}</p>`);
       return;
     }
     importedDoc = doc;

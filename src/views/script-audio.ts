@@ -28,7 +28,7 @@ import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { fmtBytes } from '../lib/format.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import type { AssetRef, HostV1, SpeechProgress, SpeechResult } from '@lolly-tools/core/host-v1';
 
 /** The user-asset record this dialog writes (mirrors bridge/assets.ts's
@@ -481,7 +481,7 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
         // Quota errors carry a user-ready message (code set); prefix only the rest.
         showStatus((e as { code?: unknown }).code
           ? (e as Error).message
-          : t("Couldn't save the audio: {message}", { message: (e as Error).message }), true);
+          : tRaw("Couldn't save the audio: {message}", { message: (e as Error).message }), true);
         saveBtn.disabled = false;
       }
     });

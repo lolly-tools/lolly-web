@@ -21,7 +21,7 @@
  *             (precache.json `ort` group) into ORT_CACHE, plus the TrustMark /
  *             Content Seal models through their own IndexedDB fetchers
  *             (lib/trustmark.ts, lib/contentseal.ts). ~220 MB — opt-in.
- *   speech  — the on-device voice models (Kokoro — plans/tts-stt-programme.md
+ *   speech  — the on-device voice models (Kokoro — plans/41-tts-stt-programme.md
  *             §3): model/config/tokenizer files into transformers.js's OWN
  *             'transformers-cache' bucket under the exact request keys its hub
  *             probes (bridge/speech.ts cached() matches the same shape), voice
@@ -93,7 +93,7 @@ export interface PrecacheManifest {
 }
 
 /** /info/manifest.json — emitted by docs/build.ts. `audio` is the docs
- *  narration + its player bundle (plans/docs-audio-listen.md §7); optional
+ *  narration + its player bundle (plans/40-docs-audio-listen.md §7); optional
  *  because manifests built before it existed don't carry the group. */
 export interface InfoManifest {
   version: string;
@@ -463,7 +463,7 @@ export async function downloadSpeechFiles(
 }
 
 /** Download the speech part — the on-device voice models, into the exact
- *  caches the speech worker reads (plans/tts-stt-programme.md §3). */
+ *  caches the speech worker reads (plans/41-tts-stt-programme.md §3). */
 export async function downloadSpeech(
   manifest: PrecacheManifest,
   opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},

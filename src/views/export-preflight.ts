@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Preflight in the export panel — "Before you export" (plans/preflight-and-cost.md §8, phase 1).
+ * Preflight in the export panel — "Before you export" (plans/65-preflight-and-cost.md §8, phase 1).
  *
  * The engine owns the RULES (`engine/src/preflight.ts`, a pure synchronous
  * `preflight(job) -> PreflightReport`); this module owns only the two shell-side
@@ -35,7 +35,7 @@
  *
  * There is no currency, rate or price in this module, and none may be added.
  */
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { preflightGoverned } from '../lib/preflight-policy.ts';
@@ -109,11 +109,11 @@ const COPY: Record<string, (f: Finding) => string> = {
   // defect that is actually left: overprint is implemented nowhere, so the finish
   // plate knocks out the artwork under it. Telling the user "your foil will print
   // gold" would send them to fix something that is already fixed.
-  'print.finish-separates-as-ink': f => t(
+  'print.finish-separates-as-ink': f => tRaw(
     '“{name}” is a {finish} finish. Lolly writes it as its own named plate with a 100% black process fallback, and it is not overprinted, so it knocks out the artwork beneath it. Agree with your printer how they want the finish supplied before sending this.',
     { name: evStr(f, 'swatch') || evStr(f, 'spotName'), finish: evStr(f, 'finish') },
   ),
-  'print.finish-flattened-into-process': f => t(
+  'print.finish-flattened-into-process': f => tRaw(
     '“{name}” is a {finish} finish, and this format has no separation plates. It is written into the process build as solid black, so it is a mask rather than a finish, and it is not overprinted. Supply the finish as its own artwork.',
     { name: evStr(f, 'swatch') || evStr(f, 'spotName'), finish: evStr(f, 'finish') },
   ),

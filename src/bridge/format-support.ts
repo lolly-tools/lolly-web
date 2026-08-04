@@ -41,7 +41,7 @@ export function tiffSupport(): boolean {
   return cmykTiffSupport();
 }
 
-// The pro float interchange formats (OpenEXR, Radiance RGBE — plans/deeprichpixels.md
+// The pro float interchange formats (OpenEXR, Radiance RGBE — plans/61-deeprichpixels.md
 // §4.2/§6 B3). The engine owns the writers, but they are fed by a float rasterisation
 // the WEB shell cannot do: packages/node-shell/src/raster.ts renders the tool to an
 // SVG, rasterises it with resvg and hands the un-premultiplied RGBA to packExr /

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The cost panel's chrome strings — the minimum set (plans/preflight-and-cost.md §6
+ * The cost panel's chrome strings — the minimum set (plans/65-preflight-and-cost.md §6
  * "Minimum chrome string set"), defined once as `t()` call sites so the surfaces
  * that render money import them from here rather than re-spelling them.
  *
@@ -28,7 +28,7 @@
  * total and the one serialised into `preflight.json` can never drift.
  */
 
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 
 // ── The 11 minimum strings ─────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ export const noCardBody = (): string =>
 /** 3. The figure sentence. `total` is formatted (currency + amount) BEFORE it is
  *  interpolated here; issuer and date stay in the same sentence as the figure. */
 export const figureLine = (total: string, issuer: string, date: string): string =>
-  t('{total} using {issuer} rates dated {date}', { total, issuer, date });
+  tRaw('{total} using {issuer} rates dated {date}', { total, issuer, date });
 
 /** 4. Rule 6 disclaimer, under every total. Identical to `COST_DISCLAIMER`. */
 export const disclaimerLine = (): string =>
@@ -70,7 +70,7 @@ export const headroom = (amount: string): string =>
 
 /** 9. §5 reported speech: the card's claims, never a bare attribution beside a figure. */
 export const reportedSource = (issuer: string, issued: string): string =>
-  t('The file says: {issuer}, {issued}. Lolly has not verified this.', { issuer, issued });
+  tRaw('The file says: {issuer}, {issued}. Lolly has not verified this.', { issuer, issued });
 
 /** 10. The adjustment row label. The `+{amount}` renders as a string-free amount cell. */
 export const minimumChargeApplied = (): string => t('minimum charge applied');
@@ -82,7 +82,7 @@ export const showCostsPrompt = (): string => t('You hold rates for this job. Sho
 
 /** Shown when the card's `validUntil` has passed and the user has not opted in. */
 export const ratesExpired = (date: string): string =>
-  t('These rates expired on {date}. Showing counts only.', { date });
+  tRaw('These rates expired on {date}. Showing counts only.', { date });
 
 /** The opt-in action that stamps every resulting figure with the expiry date (§5). */
 export const useExpiredAnyway = (): string => t('Use these rates anyway');
@@ -90,4 +90,4 @@ export const useExpiredAnyway = (): string => t('Use these rates anyway');
 /** The stamp on a figure computed from opted-in expired rates (§5): the expiry date
  *  rides WITH the total so a lapsed figure is never read as a current one. */
 export const figureExpiredNote = (date: string): string =>
-  t('These rates expired on {date}. This figure was computed from lapsed prices.', { date });
+  tRaw('These rates expired on {date}. This figure was computed from lapsed prices.', { date });

@@ -37,7 +37,7 @@ import {
 } from './catalog-filter.ts';
 import { audioTransportHtml, wireAudioTransport } from '../lib/audio-transport.ts';
 import type { VizHandle } from '../lib/butterchurn-viz.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { genAiPill, assetAiKind, GENAI_CLAIM } from '../lib/genai-pill.ts';
 import { announce } from '../a11y.ts';
 import { mountModal } from '../components/modal.ts';
@@ -496,7 +496,7 @@ interface ViewElement extends HTMLElement { _cleanup?: () => void; }
 export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params = ''): Promise<void> {
   const host = hostIn as CatalogHost;
   // Titles the tab AND labels this view for the next view's back pill (lib/back-nav.ts).
-  document.title = t('{name} — Lolly', { name: t('Catalogue') });
+  document.title = tRaw('{name} — Lolly', { name: t('Catalogue') });
   // Deep link: /#/c?asset=<id> focuses (scrolls to + highlights) that asset on load.
   const linkedAsset = new URLSearchParams(params).get('asset');
   // Deep link: /#/c?section=<key>[,<key>…] lands with those sections EXPANDED (over the
@@ -910,15 +910,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const sel = isUser && selected.has(ref.id);
     return `
       <div class="cat-tile${fav ? ' is-fav' : ''}${hidden ? ' is-hidden-asset' : ''}${sel ? ' is-selected' : ''}" data-id="${escape(ref.id)}">
-        ${isUser ? `<button type="button" class="cat-check" data-select="${escape(ref.id)}" aria-pressed="${sel}" aria-label="${escape(t('Select {name}', { name }))}" title="${escape(t('Select'))}">${CHECK_ICON}</button>` : ''}
-        <button type="button" class="cat-tile-open" data-open="${escape(ref.id)}" aria-label="${escape(t('View {name} details', { name }))}">
+        ${isUser ? `<button type="button" class="cat-check" data-select="${escape(ref.id)}" aria-pressed="${sel}" aria-label="${escape(tRaw('Select {name}', { name }))}" title="${escape(t('Select'))}">${CHECK_ICON}</button>` : ''}
+        <button type="button" class="cat-tile-open" data-open="${escape(ref.id)}" aria-label="${escape(tRaw('View {name} details', { name }))}">
           <span class="cat-tile-fig">${thumbHtml(ref, true)}</span>
           <span class="cat-tile-cap">
             <span class="cat-tile-name" title="${escape(name)}">${escape(name)}</span>
             <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}</span>
           </span>
         </button>
-        <button type="button" class="cat-star" data-star="${escape(ref.id)}" data-sfx="twinkle" aria-pressed="${fav}" title="${escape(fav ? t('Remove from favourites') : t('Add to favourites'))}" aria-label="${escape(fav ? t('Remove {name} from favourites', { name }) : t('Add {name} to favourites', { name }))}">${STAR_ICON}</button>
+        <button type="button" class="cat-star" data-star="${escape(ref.id)}" data-sfx="twinkle" aria-pressed="${fav}" title="${escape(fav ? t('Remove from favourites') : t('Add to favourites'))}" aria-label="${escape(fav ? tRaw('Remove {name} from favourites', { name }) : tRaw('Add {name} to favourites', { name }))}">${STAR_ICON}</button>
       </div>`;
   }
 
@@ -1070,9 +1070,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (!visible.length && (query || typeFilter !== 'all')) {
       const typeLabel = typeFilter === 'all' ? '' : t((TYPE_FILTERS.find(f => f.key === typeFilter)?.label ?? '')).toLowerCase();
       const msg = query && typeLabel
-        ? t('No {type} assets match “{query}”.', { type: typeLabel, query: escape(query) })
+        ? t('No {type} assets match “{query}”.', { type: typeLabel, query })
         : query
-          ? t('No assets match “{query}”.', { query: escape(query) })
+          ? t('No assets match “{query}”.', { query })
           : t('No {type} assets in the catalogue.', { type: typeLabel });
       // A "clear search" button when a query is active (mirrors projects.ts) — routed to
       // clearSearch() via the body's delegated [data-search-clear] handler in wire().
@@ -1202,7 +1202,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const name = String(assetById.get(id)?.meta?.name ?? id);
       star.setAttribute('aria-pressed', String(on));
       star.setAttribute('title', on ? t('Remove from favourites') : t('Add to favourites'));
-      star.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name }) : t('Add {name} to favourites', { name }));
+      star.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name }) : tRaw('Add {name} to favourites', { name }));
     }
   }
 
@@ -1266,7 +1266,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const body = `
       <p class="cat-panel-desc">${t('The fonts your brand carries — available to every tool canvas and the app UI. Add more from the brand editor.')}</p>
       <div class="plat-font-grid cat-font-grid">${cards}</div>
-      ${anyBundled ? `<p class="cat-panel-foot">${t('Bundled faces licensed under the {link}.', { link: `<a href="${FONT_LICENSE.href}" target="_blank" rel="noopener">${escape(FONT_LICENSE.label)}</a>` })}</p>` : ''}`;
+      ${anyBundled ? `<p class="cat-panel-foot">${tRaw('Bundled faces licensed under the {link}.', { link: `<a href="${FONT_LICENSE.href}" target="_blank" rel="noopener">${escape(FONT_LICENSE.label)}</a>` })}</p>` : ''}`;
     return groupSection('fonts', 'Fonts', catFonts.length, body);
   }
 
@@ -1733,7 +1733,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // Reflect in the grid + favourites strip behind the modal, in place (no full
         // re-render — favouriting never moves a tile between buckets).
         if (mounted) { reflectFavInGrid(base, on); refreshFavStrip(); }
-        announce(on ? t('Added {name} to favourites', { name }) : t('Removed {name} from favourites', { name }));
+        announce(on ? tRaw('Added {name} to favourites', { name }) : tRaw('Removed {name} from favourites', { name }));
         return;
       }
       if (act === 'share') {
@@ -2260,7 +2260,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     reflectFavInGrid(base, on);
     refreshFavStrip();
     const name = String(assetById.get(id)?.meta?.name ?? id);
-    announce(on ? t('Added {name} to favourites', { name }) : t('Removed {name} from favourites', { name }));
+    announce(on ? tRaw('Added {name} to favourites', { name }) : tRaw('Removed {name} from favourites', { name }));
   }
 
   async function setHidden(base: string, hide: boolean): Promise<void> {
@@ -2268,7 +2268,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (profile) await saveHiddenAssets(host, profile, hiddenSet);
     if (!mounted) return;
     const hidName = String(assetById.get(base)?.meta?.name ?? base);
-    announce(hide ? t('{name} hidden', { name: hidName }) : t('{name} unhidden', { name: hidName }));
+    announce(hide ? tRaw('{name} hidden', { name: hidName }) : tRaw('{name} unhidden', { name: hidName }));
     // Hiding relocates a tile between buckets (category grid ↔ Hidden section), so a naive
     // class-toggle isn't faithful. Try a minimal in-place DOM move for the common case and
     // fall back to a full re-render for the structural sub-cases where splicing a section
@@ -2316,7 +2316,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const current = libCategory(ref, overrides);
     const chosen = await choiceDialog({
       title: t('Recategorise asset'),
-      message: t('Move “{name}” into which group? (Currently {category}.)', { name: String(ref.meta?.name ?? ref.id), category: t(categoryLabel(current)) }),
+      message: tRaw('Move “{name}” into which group? (Currently {category}.)', { name: String(ref.meta?.name ?? ref.id), category: t(categoryLabel(current)) }),
       choices: [
         ...LIB_GROUPS.map(g => ({ id: g.key, label: t(g.label), primary: g.key === current })),
         { id: '__auto__', label: t('Auto (from tags)') },
@@ -2327,7 +2327,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     setOverrides(loadAssetCategories(profile));
     // '__auto__' clears the override, so the resulting group is the tag-derived one.
     const newCat = chosen === '__auto__' ? libCategory(ref, overrides) : chosen;
-    announce(t('Moved {name} to {category}', { name: String(ref.meta?.name ?? ref.id), category: t(categoryLabel(newCat)) }));
+    announce(tRaw('Moved {name} to {category}', { name: String(ref.meta?.name ?? ref.id), category: t(categoryLabel(newCat)) }));
     rerender();
   }
 
@@ -2751,7 +2751,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const name = String(ref.meta?.name ?? ref.id);
     const fmts: [string, string][] = vector ? [['svg', 'SVG'], ['png', 'PNG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP']];
     const content = `
-      <h2 class="cat-dl-title">${t('Crop {name}', { name: escape(name) })}</h2>
+      <h2 class="cat-dl-title">${t('Crop {name}', { name })}</h2>
       <div class="cat-crop-work">
         <div class="cat-crop-viewport">
           <div class="cat-crop-stage">
@@ -3025,7 +3025,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
     closeDownloadDialog();
     const content = `
-      <h2 class="cat-dl-title">${t('Download {name}', { name: escape(name) })}</h2>
+      <h2 class="cat-dl-title">${t('Download {name}', { name })}</h2>
       <div class="cat-dl-preview"><img alt="" class="cat-dl-img"></div>
       ${themable ? `
       <div class="cat-dl-section">
@@ -3157,7 +3157,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
     closeDownloadDialog();
     const content = `
-      <h2 class="cat-dl-title">${t('Download {name}', { name: escape(name) })}</h2>
+      <h2 class="cat-dl-title">${t('Download {name}', { name })}</h2>
       <div class="cat-dl-preview"><img alt="" class="cat-dl-img" src="${escape(ref.url)}"></div>
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Colour')}</span>
@@ -3317,7 +3317,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         try {
           const { blob, filename } = exportSwatches(paletteEntriesToSwatches(palette), sdl.dataset.swatchDl as SwatchExportFormat);
           await host.export.download(blob, filename);
-          announce(t('Palette downloaded as {filename}', { filename }));
+          announce(tRaw('Palette downloaded as {filename}', { filename }));
         } catch { announce(t('Couldn’t export the palette.')); }
         return;
       }

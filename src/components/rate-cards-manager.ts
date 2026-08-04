@@ -41,7 +41,7 @@ import { mountModal } from './modal.ts';
 import { icon } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 
 export interface RateCardsPanelOpts {
   host: RateCardsHost;
@@ -121,7 +121,7 @@ export function factLine(e: RateCardEntry): string {
 export function reportedSpeech(e: RateCardEntry): string | null {
   const said = [e.issuerName, e.issued].filter(Boolean).join(', ');
   if (!said) return null;
-  return t('The file says: {said}. Lolly has not verified this.', { said });
+  return tRaw('The file says: {said}. Lolly has not verified this.', { said });
 }
 
 /** "prices N of M lines" — a COUNT, never money. */
@@ -142,7 +142,7 @@ function rowHtml(e: RateCardEntry): string {
         <span class="rcm-row-priced">${escape(pricedSummary(e))}</span>
       </div>
       <button type="button" class="rcm-remove" data-rcm-remove
-        aria-label="${escape(t('Remove {name}', { name: e.name }))}">${escape(t('Remove'))}</button>
+        aria-label="${escape(tRaw('Remove {name}', { name: e.name }))}">${escape(t('Remove'))}</button>
     </li>`;
 }
 
@@ -216,7 +216,7 @@ export function openRateCardsPanel(opts: RateCardsPanelOpts): Promise<void> {
           continue;
         }
         // A stored card — state the COUNTS, never money.
-        say(t('Added {name} — {summary}.', { name: r.name, summary: pricedSummary(r).toLowerCase() }));
+        say(tRaw('Added {name} — {summary}.', { name: r.name, summary: pricedSummary(r).toLowerCase() }));
         await opts.onChange?.();
       }
       drop.classList.remove('is-busy');

@@ -45,7 +45,7 @@
  * "silently wrong path" this module must never return. Callers get an explicit
  * `no-outline` failure (or a `skipped` list) instead — see `boxOutlineKind`.
  *
- * ## Coordinate convention for path boxes (fixed by plans/pen-tool-and-vector-ops.md)
+ * ## Coordinate convention for path boxes (fixed by plans/57-pen-tool-and-vector-ops.md)
  *
  * A path box's nodes are stored NORMALISED to the box frame: `x`/`y`/`w`/`h` is the
  * reference rectangle and node coordinates are fractions of it, legally outside [0,1].

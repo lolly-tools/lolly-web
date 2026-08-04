@@ -9,7 +9,7 @@
  * (a multi-MB dependency before it's even fetched a model) and the tens-of-
  * MB ONNX decoder models entirely out of the boot/preload budget; importing
  * this module eagerly would defeat the whole point of "deep scan" being an
- * opt-in, user-invoked action (see plans/watermark-detectors.md).
+ * opt-in, user-invoked action (see plans/31-watermark-detectors.md).
  *
  * Model bytes are fetched from same-origin `/models/trustmark/<file>.onnx`
  * (see the download instructions in scripts/fetch-trustmark-models.ts — this

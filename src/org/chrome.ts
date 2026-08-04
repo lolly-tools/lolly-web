@@ -16,7 +16,7 @@
  */
 
 import { t } from '../i18n.ts';
-import { escape } from '../utils.ts';
+import { escape, safeHref } from '../utils.ts';
 import { getInstanceBase } from '../lib/instance.ts';
 import type { ChromeInjectable } from './index.ts';
 
@@ -48,13 +48,6 @@ export function mountOrgChrome(injectables: readonly ChromeInjectable[]): void {
   if (rendered > 0) mounted = true;
 }
 
-/** Only http(s)/mailto or a relative path/hash reach the DOM as a link — a
- *  javascript:/data: href from a compromised control plane is dropped, not rendered.
- *  The shell stays safe on its own, independent of the control plane's own guard. */
-function safeHref(href: string): boolean {
-  return /^(https?:\/\/|mailto:|\/|#)/i.test(href) && !/[<>]/.test(href);
-}
-
 /** A single dismissible chrome bar above the app — banner.ts's `showBar`, driven by
  *  `tone` instead of severity, dismissed locally (a descriptor has no ack endpoint).
  *  Returns whether a bar was actually inserted (false when #app isn't ready yet). */
@@ -75,6 +68,7 @@ function renderBanner(d: ChromeInjectable): boolean {
   // A link is rendered only when its href is a safe scheme — a javascript:/data:
   // href is dropped (the text still shows), never turned into a clickable anchor.
   const link = d.link?.label && d.link?.href && safeHref(d.link.href)
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in the condition above
     ? `<a class="btn btn--sm org-chrome-cta" href="${escape(d.link.href)}">${escape(d.link.label)}</a>`
     : '';
   bar.innerHTML = `

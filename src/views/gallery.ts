@@ -15,7 +15,7 @@
  */
 
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
@@ -213,7 +213,7 @@ const PIN_DONE_ICON = icon('circleCheck');
 
 /** The "keep available offline" download→progress→tick button, shared by both card layouts. */
 function pinButtonHtml(tool: GalleryTool, isPinned: boolean): string {
-  return `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? t('Remove {name} from offline', { name: tool.name }) : t('Keep {name} available offline', { name: tool.name }))}">
+  return `<button type="button" class="gtile-iconbtn gtile-pin${isPinned ? ' is-pinned' : ''}" data-pin="${escape(tool.id)}" aria-pressed="${isPinned}" title="${escape(isPinned ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(isPinned ? tRaw('Remove {name} from offline', { name: tool.name }) : tRaw('Keep {name} available offline', { name: tool.name }))}">
     <span class="pin-layer pin-dl" aria-hidden="true">${DOWNLOAD_ICON}</span>
     <span class="pin-layer pin-ring" aria-hidden="true">${PIN_RING_ICON}</span>
     <span class="pin-layer pin-done" aria-hidden="true">${PIN_DONE_ICON}</span>
@@ -621,12 +621,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       ${visibleCats.length === 0 ? (index.tools.length === 0 ? `
         <div class="gallery-empty" role="status">
           <p class="gallery-empty-title">${t("Couldn't load the tools.")}</p>
-          <p class="gallery-empty-hint">${t('Check your connection, then {button}.', { button: `<button type="button" class="gallery-retry">${t('retry')}</button>` })}</p>
+          <p class="gallery-empty-hint">${tRaw('Check your connection, then {button}.', { button: `<button type="button" class="gallery-retry">${t('retry')}</button>` })}</p>
         </div>
       ` : `
         <div class="gallery-empty" role="status">
           <p class="gallery-empty-title">${t('It looks like there are no tools available.')}</p>
-          <p class="gallery-empty-hint">${t('Try turning on categories in {link}.', { link: `<a href="#/profile?focus=feature-flags">${t('your feature flags')}</a>` })}</p>
+          <p class="gallery-empty-hint">${tRaw('Try turning on categories in {link}.', { link: `<a href="#/profile?focus=feature-flags">${t('your feature flags')}</a>` })}</p>
         </div>
       `) : `
         <div class="featured-mount"></div>
@@ -1246,7 +1246,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     }
     if (shown === 0) {
       noResults.innerHTML = query
-        ? t('No tools match "<strong>{query}</strong>" — {button}', { query: escape(query.trim()), button: `<button type="button" class="gallery-retry" data-search-clear>${t('clear search')}</button>` })
+        ? tRaw('No tools match "<strong>{query}</strong>" — {button}', { query: escape(query.trim()), button: `<button type="button" class="gallery-retry" data-search-clear>${t('clear search')}</button>` })
         : activeCat === FAV_CAT
           ? t('No favourites yet — tap the <span class="star-inline" aria-hidden="true">★</span> on any tool to add it here.')
           : t('No tools to show.');
@@ -1286,7 +1286,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         el.classList.toggle('is-fav', on);
         el.setAttribute('aria-pressed', String(on));
         const nm = toolById.get(id)?.name ?? t('tool');
-        el.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name: nm }) : t('Add {name} to favourites', { name: nm }));
+        el.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name: nm }) : tRaw('Add {name} to favourites', { name: nm }));
         el.title = on ? t('In favourites') : t('Add to favourites');
         // A favourited plain tool joins (or leaves) the featured hero strip; a manifest-
         // featured tool is already there, so skip the remount for it.
@@ -1309,7 +1309,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         el.classList.toggle('is-fav', on);
         el.setAttribute('aria-pressed', String(on));
         const nm = utilityViews(speechOk).find(v => v.id === id)?.name ?? t('tool');
-        el.setAttribute('aria-label', on ? t('Remove {name} from favourites', { name: nm }) : t('Add {name} to favourites', { name: nm }));
+        el.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name: nm }) : tRaw('Add {name} to favourites', { name: nm }));
         el.title = on ? t('In favourites') : t('Add to favourites');
         refreshFeatured();                      // the view joins/leaves the hero strip
         if (activeCat === FAV_CAT) applyView(); // the card must hide/show in place
@@ -1349,8 +1349,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           el.classList.toggle('is-pinned', on);
           el.setAttribute('aria-pressed', String(on));
           el.title = on ? t('Available offline') : t('Keep available offline');
-          el.setAttribute('aria-label', on ? t('Remove {name} from offline', { name: nm }) : t('Keep {name} available offline', { name: nm }));
-          announce(on ? t('{name} is available offline', { name: nm }) : t('{name} removed from offline', { name: nm }));
+          el.setAttribute('aria-label', on ? tRaw('Remove {name} from offline', { name: nm }) : tRaw('Keep {name} available offline', { name: nm }));
+          announce(on ? tRaw('{name} is available offline', { name: nm }) : tRaw('{name} removed from offline', { name: nm }));
           if (on) {
             // Download complete: the circled tick pops + draws in (one-shot class so a
             // later re-render doesn't replay it) with a small victory chime.
@@ -1362,7 +1362,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           }
         } catch (err) {
           host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
-          announce(t('Couldn’t save {name} for offline — check your connection', { name: nm }), { assertive: true });
+          announce(tRaw('Couldn’t save {name} for offline — check your connection', { name: nm }), { assertive: true });
         } finally {
           el.classList.remove('is-busy');
         }
@@ -1734,14 +1734,15 @@ function viewCardMarkup(v: UtilityView, isFav: boolean): string {
         <div class="gtile-cap">
           <span class="tool-card-icon" aria-hidden="true">${icon(v.icon, { size: 24 })}</span>
           <span class="gtile-meta">
+            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — v.href comes from the hardcoded utilityViews() table ('#/verify', '#/pdf', '#/lab', '#/script') */ ''}
             <a class="gtile-name" href="${escape(v.href)}">${escape(v.name)}</a>
             <p class="gtile-desc">${escape(v.description)}</p>
           </span>
         </div>
       </div>
       <div class="gtile-actions">
-        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav-view="${escape(v.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: v.name }) : t('Add {name} to favourites', { name: v.name }))}">${STAR_ICON}</button>
-        <button type="button" class="gtile-iconbtn" data-info-view="${escape(v.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(t('About {name}', { name: v.name }))}">${INFO_ICON}</button>
+        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav-view="${escape(v.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? tRaw('Remove {name} from favourites', { name: v.name }) : tRaw('Add {name} to favourites', { name: v.name }))}">${STAR_ICON}</button>
+        <button type="button" class="gtile-iconbtn" data-info-view="${escape(v.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(tRaw('About {name}', { name: v.name }))}">${INFO_ICON}</button>
       </div>
     </article>`;
 }
@@ -1765,6 +1766,7 @@ function showViewInfoDialog(v: UtilityView): void {
         <div><dt>${t('Offline')}</dt><dd>${t('Ships with the app, so it always works offline')}</dd></div>
       </dl>
       <div class="meta-dialog-actions">
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — same hardcoded utilityViews() table route as the card link */ ''}
         <a class="btn meta-dialog-open" href="${escape(v.href)}">${t('Open utility')}</a>
         <button type="button" class="btn meta-dialog-close">${t('Close')}</button>
       </div>
@@ -1811,9 +1813,9 @@ function cardMarkup(
     const uHasSession = !!latest && !unavailable;
     const uName = unavailable
       ? `<span class="gtile-name" aria-disabled="true">${escape(tool.name)}</span>`
-      : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${uHasSession ? ` aria-label="${escape(t('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
+      : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${uHasSession ? ` aria-label="${escape(tRaw('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
     const uHistoryBtn = (!unavailable && sessionCount > 0)
-      ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? t('1 saved session for {name}', { name: tool.name }) : t('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
+      ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? tRaw('1 saved session for {name}', { name: tool.name }) : tRaw('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
       : '';
     return `
       <article class="gtile gtile--utility${unavailable ? ' gtile--unavailable' : ''}" data-tool-id="${escape(tool.id)}">
@@ -1829,9 +1831,9 @@ function cardMarkup(
           </div>
         </div>
         <div class="gtile-actions">
-          <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
+          <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? tRaw('Remove {name} from favourites', { name: tool.name }) : tRaw('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
           ${unavailable ? '' : pinButtonHtml(tool, isPinned)}
-          <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
+          <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this utility'))}" aria-label="${escape(tRaw('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
           ${uHistoryBtn}
         </div>
       </article>
@@ -1889,7 +1891,7 @@ function cardMarkup(
     // (bag-video's animated Geeko) leads with the tool's real hero. Only one lead.
     const leadSlide = hasThumbHero
       ? `<li class="gcar-slide gcar-slide--lead">
-           <button class="gcar-open" type="button" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}" aria-label="${escape(t('Continue {name}', { name: latest!.filename || tool.name }))}">
+           <button class="gcar-open" type="button" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}" aria-label="${escape(tRaw('Continue {name}', { name: latest!.filename || tool.name }))}">
              <img class="gcar-img" src="${escape(latest!.thumb!)}" alt="" aria-hidden="true" decoding="async">
              <span class="gtile-stamp">${escape(relativeTime(latest!.updatedAt))}</span>
              <span class="gtile-continue">${t('Continue')}</span>
@@ -1943,7 +1945,7 @@ function cardMarkup(
     ).join('');
     visual = `
       <button class="gtile-hero${rotate ? ' gtile-hero--rotate' : ''}" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}"
-              aria-label="${escape(t('Continue {name}', { name: latest!.filename || tool.name }))}">
+              aria-label="${escape(tRaw('Continue {name}', { name: latest!.filename || tool.name }))}">
         ${heroImgs}
         <span class="gtile-stamp">${escape(relativeTime(latest!.updatedAt))}</span>
         <span class="gtile-continue">${t('Continue')}</span>
@@ -1952,7 +1954,7 @@ function cardMarkup(
   } else if (hasSession) {
     // Session exists but its preview failed to capture — still resumable from the card.
     visual = `<button class="gtile-tile gtile-tile--resume" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}"
-              aria-label="${escape(t('Continue {name}', { name: latest!.filename || tool.name }))}"><span class="gtile-tile-txt">${t('Continue · {time}', { time: escape(relativeTime(latest!.updatedAt)) })}</span></button>`;
+              aria-label="${escape(tRaw('Continue {name}', { name: latest!.filename || tool.name }))}"><span class="gtile-tile-txt">${t('Continue · {time}', { time: relativeTime(latest!.updatedAt) })}</span></button>`;
   } else if (hasPreview) {
     // No saved session, but a committed demo preview exists (npm run thumbs) — show
     // it as a hero that starts a NEW session. Decorative duplicate of the name link
@@ -1983,7 +1985,7 @@ function cardMarkup(
   // The category is deliberately omitted here — it's discoverable via the filter
   // pills and shown in the info dialog — so the card stays about this tool itself.
   const sub = hasSession
-    ? t('Last opened · {time}', { time: escape(relativeTime(latest!.updatedAt)) })
+    ? t('Last opened · {time}', { time: relativeTime(latest!.updatedAt) })
     : '';
 
   // Export formats no longer clutter the card — they live in the info (i) dialog now,
@@ -1996,10 +1998,10 @@ function cardMarkup(
   // reads as "new" against the hero's "Continue".
   const name = unavailable
     ? `<span class="gtile-name" aria-disabled="true">${escape(tool.name)}</span>`
-    : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${hasSession ? ` aria-label="${escape(t('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
+    : `<a class="gtile-name" href="${openHref}" data-new-tool="${escape(tool.id)}"${hasSession ? ` aria-label="${escape(tRaw('Start a new {name} session', { name: tool.name }))}"` : ''}>${escape(tool.name)}</a>`;
 
   const historyBtn = (!unavailable && sessionCount > 0)
-    ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? t('1 saved session for {name}', { name: tool.name }) : t('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
+    ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? tRaw('1 saved session for {name}', { name: tool.name }) : tRaw('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
     : '';
 
   return `
@@ -2023,9 +2025,9 @@ function cardMarkup(
         </div>
       </div>
       <div class="gtile-actions">
-        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? t('Remove {name} from favourites', { name: tool.name }) : t('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
+        <button type="button" class="gtile-iconbtn gtile-fav${isFav ? ' is-fav' : ''}" data-fav="${escape(tool.id)}" data-sfx="twinkle" aria-pressed="${isFav}" title="${escape(isFav ? t('In favourites') : t('Add to favourites'))}" aria-label="${escape(isFav ? tRaw('Remove {name} from favourites', { name: tool.name }) : tRaw('Add {name} to favourites', { name: tool.name }))}">${STAR_ICON}</button>
         ${unavailable ? '' : pinButtonHtml(tool, isPinned)}
-        <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(t('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
+        <button type="button" class="gtile-iconbtn" data-info="${escape(tool.id)}" title="${escape(t('About this tool'))}" aria-label="${escape(tRaw('About {name}', { name: tool.name }))}">${INFO_ICON}</button>
         ${historyBtn}
       </div>
     </article>
@@ -2247,7 +2249,8 @@ function savedItem(entry: SavedEntry, bytes: number | undefined): string {
   const title = batch ? (entry.label || t('Batch session')) : (entry.filename || entry.toolId);
   // The tool name is the row's title (h4) just above, so the sub-line only needs
   // the timestamp — no need to repeat the name.
-  const subtitle = batch ? t('Batch · {when}', { when }) : when;
+  // sessionRow() escapes `subtitle` itself — tRaw keeps that the single escaping step.
+  const subtitle = batch ? tRaw('Batch · {when}', { when }) : when;
   const searchText = [title, entry.toolId, batch ? 'batch' : ''].filter(Boolean).join(' ').toLowerCase();
   // Tool sessions resume into #/tool; batch sessions resume into #/pro.
   const resumeAttrs = batch

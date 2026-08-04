@@ -31,7 +31,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -159,6 +159,15 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // missing store can never escalate into wiping real data, and out of the
         // portable backup since it is recomputable from the recipe.
         db.createObjectStore('audio-cover-bakes', { keyPath: 'key' });
+      }
+      if (oldVersion < 11) {
+        // On-device AI-upscaler model weights (host.upscale, engine 1.101), keyed by
+        // filename — the fetch-once/IndexedDB-forever cache the shared ORT model
+        // fetcher writes (createModelFetcher store:'upscale-models'). A pure,
+        // re-downloadable cache like 'trustmark-models'/'contentseal-models', so it
+        // is intentionally NOT in REQUIRED_STORES (its absence must never escalate
+        // into a data-wipe) and is out of the portable backup.
+        db.createObjectStore('upscale-models');
       }
     },
     blocking() {

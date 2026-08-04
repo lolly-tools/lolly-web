@@ -18,7 +18,7 @@
  */
 
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { displayGamutClaim } from './display-gamut.ts';
 
 const DASH = '—';
@@ -469,7 +469,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   });
 
   const arch = hints?.architecture
-    ? `${hints.architecture}${hints.bitness ? ` · ${t('{n}-bit', { n: hints.bitness })}` : ''}`
+    ? `${hints.architecture}${hints.bitness ? ` · ${tRaw('{n}-bit', { n: hints.bitness })}` : ''}`
     : DASH;
   groups.push({
     key: 'system',
@@ -621,7 +621,7 @@ export async function collectDevice(): Promise<DeviceSnapshot> {
   const headline: DeviceStat[] = [
     { label: t('Machine'), value: chip, sub: hwVendor !== DASH ? hwVendor : gpuApi !== DASH ? gpuApi : undefined, icon: gpuIcon(hwVendor) || ICONS.graphics!, mono: true },
     { label: t('Operating system'), value: os, sub: arch !== DASH ? arch : undefined, icon: osIcon(os) || ICONS.system! },
-    { label: t('Browser'), value: browserName, sub: engine !== DASH ? t('{engine} engine', { engine }) : undefined, icon: browserIcon(browser) || ICONS.browser! },
+    { label: t('Browser'), value: browserName, sub: engine !== DASH ? tRaw('{engine} engine', { engine }) : undefined, icon: browserIcon(browser) || ICONS.browser! },
     { label: t('Display'), value: `${screen.width} × ${screen.height}`, sub: dpr ? t('{n}× density', { n: Math.round(dpr * 100) / 100 }) : undefined, icon: ICONS.display! },
     { label: t('Colour'), value: gamut, sub: dynRange !== DASH ? dynRange : undefined, icon: ICONS.capabilities! },
     { label: t('Viewport'), value: liveValue('viewport'), sub: t('live'), icon: ICONS.layers!, live: 'viewport' },

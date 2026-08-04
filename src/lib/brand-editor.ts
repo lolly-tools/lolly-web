@@ -99,7 +99,7 @@ import type { BrandTransferHost } from '../brand-transfer.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
 import { fmtBytes } from './device-info.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { segHtml } from './seg.ts';
 import { announce } from '../a11y.ts';
@@ -208,14 +208,14 @@ function rampRow(set: TokenSet, ramp: string, label: string, steps: number, sele
   for (let i = 1; i <= steps; i++) {
     const v = set.resolve(`color.ramp.${ramp}.${i}`);
     const css = typeof v === 'string' ? v : 'transparent';
-    const title = t('{label} {step} · {value}', { label, step: i, value: css });
+    const title = tRaw('{label} {step} · {value}', { label, step: i, value: css });
     cells += selected === undefined
       ? `<span class="be-ramp-cell" style="background:${escape(css)}" title="${escape(title)}"></span>`
       : `<button type="button" class="be-ramp-cell${i === selected ? ' is-selected' : ''}" style="background:${escape(css)}"
            title="${escape(title)}" data-be-ramp="${escape(ramp)}" data-be-step="${i}"
            aria-pressed="${i === selected}" aria-label="${escape(title)}"></button>`;
   }
-  return `<div class="be-ramp-row"><span class="be-ramp-label">${escape(label)}</span><div class="be-ramp" role="${selected === undefined ? 'img' : 'group'}" aria-label="${escape(t('{label} ramp', { label }))}">${cells}</div></div>`;
+  return `<div class="be-ramp-row"><span class="be-ramp-label">${escape(label)}</span><div class="be-ramp" role="${selected === undefined ? 'img' : 'group'}" aria-label="${escape(tRaw('{label} ramp', { label }))}">${cells}</div></div>`;
 }
 /**
  * The primary→secondary hue bridge: `rampOklab` through the two semantic
@@ -230,7 +230,7 @@ function blendRow(set: TokenSet, steps: number): string {
   let hexes: string[];
   try { hexes = rampOklab([a, b], steps, { correctLightness: true }); } catch { return ''; }
   const cells = hexes.map((hex, i) =>
-    `<span class="be-ramp-cell" style="background:${escape(hex)}" title="${escape(t('Blend {step} · {value}', { step: i + 1, value: hex }))}"></span>`).join('');
+    `<span class="be-ramp-cell" style="background:${escape(hex)}" title="${escape(tRaw('Blend {step} · {value}', { step: i + 1, value: hex }))}"></span>`).join('');
   return `<div class="be-ramp-row"><span class="be-ramp-label" title="${escape(t('Primary → Secondary, perceptually even (OKLab)'))}">${t('Blend')}</span><div class="be-ramp" role="img" aria-label="${escape(t('Primary to secondary blend'))}">${cells}</div></div>`;
 }
 function specCard(name: string, set: TokenSet): string {
@@ -238,8 +238,8 @@ function specCard(name: string, set: TokenSet): string {
   const edge = slot(set, 'edge'), prim = slot(set, 'primary'), on = slot(set, 'on-primary');
   const ratio = ratioOf(text, s);
   const lc = apcaOf(text, s);
-  const btnTip = t('Primary button — WCAG {ratio}:1 · APCA Lc {lc} (advisory)', { ratio: ratioOf(on, prim), lc: apcaOf(on, prim) });
-  const ratioTip = t('Text on surface — WCAG {ratio}:1 · APCA Lc {lc} (advisory: 60≈body, 75≈small text)', { ratio, lc });
+  const btnTip = tRaw('Primary button — WCAG {ratio}:1 · APCA Lc {lc} (advisory)', { ratio: ratioOf(on, prim), lc: apcaOf(on, prim) });
+  const ratioTip = tRaw('Text on surface — WCAG {ratio}:1 · APCA Lc {lc} (advisory: 60≈body, 75≈small text)', { ratio, lc });
   return `
     <article class="be-spec" style="background:${escape(s)};border-color:${escape(edge)}">
       <span class="be-spec-name" style="color:${escape(muted)}">${escape(name)}</span>
@@ -390,7 +390,7 @@ function printLockHtml(): string {
 }
 
 // ── Per-space faces: what this colour becomes everywhere else ────────────────
-// The generalisation of the print lock, per plans/color-spaces.md §11.3. Each
+// The generalisation of the print lock, per plans/60-color-spaces.md §11.3. Each
 // row is a target the swatch can be expressed in; each is either DERIVED from
 // the canonical value or AUTHORED, and an authored one wins at export.
 //
@@ -548,7 +548,7 @@ function mountFaces(mount: HTMLElement, ctx: FacesCtx): { render: () => void } {
               </span>`
             : `<span class="be-face-tag">${escape(t('derived'))}</span>`}
         ${isSet && editable
-          ? `<input type="text" class="field-input be-face-in" data-be-face-in="${escape(f.target)}" value="${escape(String(f.value))}" spellcheck="false" autocomplete="off" aria-label="${escape(t('Value for {t}', { t: f.label ?? f.target }))}">`
+          ? `<input type="text" class="field-input be-face-in" data-be-face-in="${escape(f.target)}" value="${escape(String(f.value))}" spellcheck="false" autocomplete="off" aria-label="${escape(tRaw('Value for {t}', { t: f.label ?? f.target }))}">`
           : ''}
       </div>`;
     }).join('')}</div>`;
@@ -1093,7 +1093,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
               <summary><span class="be-subst-details-label">${t('Print substitutes')}</span><span class="be-subst-chips" data-be-subst-chips></span></summary>
               <div data-be-subst-mount></div>
             </details>
-            ${/* What this colour becomes everywhere else (plans/color-spaces.md
+            ${/* What this colour becomes everywhere else (plans/60-color-spaces.md
                   §11.3). Folded, and BELOW the print substitutes: those are the
                   established control and this widens the same idea, so leading
                   with it would make the familiar row look like the afterthought. */''}
@@ -1263,7 +1263,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           setSwatches(cols.map(c => ({ value: c.value, label: c.name, group: c.group, ref: c.ref })));
         } catch { /* pickers refresh on next tool mount regardless */ }
       } catch (err) {
-        if (root.isConnected) announce(t("Couldn't save the brand: {error}", { error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true });
+        if (root.isConnected) announce(tRaw("Couldn't save the brand: {error}", { error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true });
       }
     };
     if (immediate) void run(); else saveTimer = setTimeout(run, 300);
@@ -1404,7 +1404,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     repaintPalette();       // refreshes swatches + picker + wheel + (via hook) the generator
     persist(true);          // officiate: the accent is now part of the brand
     playSfx('click');
-    announce(t('{name} added to your palette', { name }));
+    announce(tRaw('{name} added to your palette', { name }));
   });
   paletteHooks.push(renderGenerator); // keep candidates + previews in sync with the palette
   renderGenerator();                  // initial paint
@@ -1489,7 +1489,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   $('[data-be-derive]')?.addEventListener('click', async () => {
     let next: Record<string, unknown>;
     try { next = deriveBrandTokens({ primary, scheme, surface, contrast, steps, foreground, name: 'My brand' }) as Record<string, unknown>; }
-    catch (err) { announce(t("Couldn't derive from {primary}: {error}", { primary, error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true }); return; }
+    catch (err) { announce(tRaw("Couldn't derive from {primary}: {error}", { primary, error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true }); return; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);
     // Read the lock LIVE off the pre-derive `doc` — whichever surface (Colour
@@ -1653,7 +1653,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   function renderFacesChips(): void {
     if (!facesChips) return;
     const n = selected >= 0 ? [...getSwatchFaces(doc, swatches[selected]!.path).keys()].length : 0;
-    facesChips.textContent = n ? t('{n} set', { n: String(n) }) : '';
+    facesChips.textContent = n ? tRaw('{n} set', { n: String(n) }) : '';
   }
 
   // "Stored as" — re-serialise the open swatch's $value in the picked notation.
@@ -1841,7 +1841,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (cur.kind === 'ramp' || cur.kind === 'semantic') {
       setSwatchExcluded(doc, cur.key, true);
       closeEditor(); repaintPalette(); persist(true);
-      announce(t('{name} removed from your palette', { name: cur.name }));
+      announce(tRaw('{name} removed from your palette', { name: cur.name }));
       return;
     }
     if (!cur.deletable) return;
@@ -1852,10 +1852,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const refs = gradientAliasRefCount(doc, cur.key);
     if (refs) {
       const message = refs === 1
-        ? t('{refs} gradient stop wears this colour — it keeps its current value as a fixed colour.', { refs })
-        : t('{refs} gradient stops wear this colour — they keep their current value as a fixed colour.', { refs });
+        ? tRaw('{refs} gradient stop wears this colour — it keeps its current value as a fixed colour.', { refs })
+        : tRaw('{refs} gradient stops wear this colour — they keep their current value as a fixed colour.', { refs });
       const ok = await confirmDialog({
-        title: t('Delete {name}?', { name: cur.name }),
+        title: tRaw('Delete {name}?', { name: cur.name }),
         message,
         confirmLabel: t('Delete'),
       });
@@ -2220,11 +2220,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <span class="be-font-roles">
       ${f.primary ? `<span class="be-font-badge">${t('Primary')}</span>`
         : `<button type="button" class="be-btn be-font-mp" data-mp="${escape(f.family)}">${t('Make primary')}</button>`}
-      ${roleControl(f.family, f.family === displayFamily, t('Headings'), 'display', 'data-display', t('Use for headings'), t('Use {family} for h1/h2 headings', { family: f.family }))}
-      ${roleControl(f.family, f.family === monoFamily, t('Code'), 'mono', 'data-mono', t('Use for code'), t('Use {family} for code & data', { family: f.family }))}
-      ${roleControl(f.family, f.family === italicFamily, t('Italic'), 'italic', 'data-italic', t('Use for italic'), t('Use {family} for italic text', { family: f.family }))}
+      ${roleControl(f.family, f.family === displayFamily, t('Headings'), 'display', 'data-display', t('Use for headings'), tRaw('Use {family} for h1/h2 headings', { family: f.family }))}
+      ${roleControl(f.family, f.family === monoFamily, t('Code'), 'mono', 'data-mono', t('Use for code'), tRaw('Use {family} for code & data', { family: f.family }))}
+      ${roleControl(f.family, f.family === italicFamily, t('Italic'), 'italic', 'data-italic', t('Use for italic'), tRaw('Use {family} for italic text', { family: f.family }))}
       </span>
-      <button type="button" class="be-font-del" data-del="${escape(f.family)}" aria-label="${escape(t('Remove {family}', { family: f.family }))}">&#x2715;</button>
+      <button type="button" class="be-font-del" data-del="${escape(f.family)}" aria-label="${escape(tRaw('Remove {family}', { family: f.family }))}">&#x2715;</button>
     </li>`;
   };
   // The live specimen (Type roles panel): each role rendered in the face that
@@ -2293,7 +2293,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     btn.disabled = input.disabled = true; btn.textContent = t('Downloading…');
     try {
       const fam = await installGoogleFont(fontsHost, family); input.value = ''; playSfx('saveProfile'); await paintFonts(); notify('type');
-      announce(fam.primary ? t('Added {family} as your primary font', { family: fam.family }) : t('Added {family}', { family: fam.family }));
+      announce(fam.primary ? tRaw('Added {family} as your primary font', { family: fam.family }) : tRaw('Added {family}', { family: fam.family }));
     }
     // Clear on failure too — otherwise the failed attempt's text blocks searching
     // for a different font until manually cleared (matches the success path above).
@@ -2302,20 +2302,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   });
   $('[data-be-fonts]')?.addEventListener('click', async (e) => {
     const mp = (e.target as Element).closest<HTMLButtonElement>('[data-mp]');
-    if (mp) { mp.disabled = true; try { await setPrimaryFont(fontsHost, mp.dataset.mp!); await paintFonts(); notify('type'); announce(t('{family} is now your primary font', { family: mp.dataset.mp ?? '' })); } catch (err) { mp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    if (mp) { mp.disabled = true; try { await setPrimaryFont(fontsHost, mp.dataset.mp!); await paintFonts(); notify('type'); announce(tRaw('{family} is now your primary font', { family: mp.dataset.mp ?? '' })); } catch (err) { mp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const mono = (e.target as Element).closest<HTMLButtonElement>('[data-mono]');
-    if (mono) { mono.disabled = true; try { await setMonoFont(fontsHost, mono.dataset.mono!); await paintFonts(); notify('type'); announce(t('{family} now serves code & data', { family: mono.dataset.mono ?? '' })); } catch (err) { mono.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    if (mono) { mono.disabled = true; try { await setMonoFont(fontsHost, mono.dataset.mono!); await paintFonts(); notify('type'); announce(tRaw('{family} now serves code & data', { family: mono.dataset.mono ?? '' })); } catch (err) { mono.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const disp = (e.target as Element).closest<HTMLButtonElement>('[data-display]');
-    if (disp) { disp.disabled = true; try { await setDisplayFont(fontsHost, disp.dataset.display!); await paintFonts(); notify('type'); announce(t('{family} now serves h1/h2 headings', { family: disp.dataset.display ?? '' })); } catch (err) { disp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    if (disp) { disp.disabled = true; try { await setDisplayFont(fontsHost, disp.dataset.display!); await paintFonts(); notify('type'); announce(tRaw('{family} now serves h1/h2 headings', { family: disp.dataset.display ?? '' })); } catch (err) { disp.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const ital = (e.target as Element).closest<HTMLButtonElement>('[data-italic]');
-    if (ital) { ital.disabled = true; try { await setItalicFont(fontsHost, ital.dataset.italic!); await paintFonts(); notify('type'); announce(t('{family} now serves italic text', { family: ital.dataset.italic ?? '' })); } catch (err) { ital.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
+    if (ital) { ital.disabled = true; try { await setItalicFont(fontsHost, ital.dataset.italic!); await paintFonts(); notify('type'); announce(tRaw('{family} now serves italic text', { family: ital.dataset.italic ?? '' })); } catch (err) { ital.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); } return; }
     const del = (e.target as Element).closest<HTMLButtonElement>('[data-del]'); if (!del) return;
     const fam = fontFamilies.find(f => f.family === del.dataset.del); if (!fam) return;
     const ok = await confirmDialog({
-      title: t('Remove {family}?', { family: fam.family }),
+      title: tRaw('Remove {family}?', { family: fam.family }),
       message: fam.primary
-        ? t('Its font files ({size}) are deleted from this device and the next font becomes primary.', { size: fmtBytes(fam.bytes) })
-        : t('Its font files ({size}) are deleted from this device.', { size: fmtBytes(fam.bytes) }),
+        ? tRaw('Its font files ({size}) are deleted from this device and the next font becomes primary.', { size: fmtBytes(fam.bytes) })
+        : tRaw('Its font files ({size}) are deleted from this device.', { size: fmtBytes(fam.bytes) }),
       confirmLabel: t('Remove'),
     });
     if (!ok) return; del.disabled = true;
@@ -2350,7 +2350,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const name = label ?? slot?.label ?? (tm ? tm.label : prettify(v));
     const hint = slot ? t('Click to replace') : (tm ? tm.hint : t('Your own named mark.'));
     const body = slot
-      ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(t('{name} logo', { name }))}" loading="lazy"></span>`
+      ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(tRaw('{name} logo', { name }))}" loading="lazy"></span>`
       : `<span class="be-logo-empty" aria-hidden="true">+</span>`;
     // The slot's file input is `visually-hidden`, never `hidden`: a display:none
     // input is not focusable, which made every logo slot mouse-only. The label
@@ -2358,10 +2358,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // (brand-studio.css) — the same construction the shared dropzone uses.
     return `<div class="be-logo-slot${slot ? ' is-filled' : ''}" data-be-logo="${escape(v)}" data-treatment="${treatment ?? 'custom'}">
         <div class="be-logo-slot-head"><span class="be-logo-slot-name">${escape(name)}</span>
-          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${escape(v)}" data-identity="${escape(identity)}" aria-label="${escape(t('Remove the {name} mark', { name }))}">&#x2715;</button>` : ''}</div>
+          ${slot ? `<button type="button" class="be-logo-del" data-logo-del="${escape(v)}" data-identity="${escape(identity)}" aria-label="${escape(tRaw('Remove the {name} mark', { name }))}">&#x2715;</button>` : ''}</div>
         <label class="be-logo-drop">
           ${body}
-          <input type="file" class="be-logo-file visually-hidden" data-logo-file="${escape(v)}" data-identity="${escape(identity)}" accept="image/png,image/jpeg,image/svg+xml,image/webp" aria-label="${escape(t('Replace the {name} mark', { name }))}">
+          <input type="file" class="be-logo-file visually-hidden" data-logo-file="${escape(v)}" data-identity="${escape(identity)}" accept="image/png,image/jpeg,image/svg+xml,image/webp" aria-label="${escape(tRaw('Replace the {name} mark', { name }))}">
         </label>
         <p class="be-logo-hint">${escape(hint)}</p>
       </div>`;
@@ -2470,7 +2470,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         await installLogo(fontsHost, slug, file, { identity, label });
         playSfx('saveProfile'); await paintLogos(); notify('logos');
         void suggestFromLogo(file);
-        announce(t('{label} mark added', { label }));
+        announce(tRaw('{label} mark added', { label }));
       } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
       return;
     }
@@ -2483,7 +2483,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       await installLogo(fontsHost, variant, file, identity === 'default' ? undefined : { identity });
       playSfx('saveProfile'); await paintLogos(); notify('logos');
       void suggestFromLogo(file);
-      announce(t('{variant} logo added', { variant: variantLabel(variant) }));
+      announce(tRaw('{variant} logo added', { variant: variantLabel(variant) }));
     } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
   });
   $('[data-be-logos]')?.addEventListener('submit', (e) => {
@@ -2515,7 +2515,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     e.preventDefault();
     const variant = del.dataset.logoDel!;
     const identity = del.dataset.identity || 'default';
-    const ok = await confirmDialog({ title: t('Remove the {variant} mark?', { variant: variantLabel(variant).toLowerCase() }), message: t('It’s deleted from this device.'), confirmLabel: t('Remove') });
+    const ok = await confirmDialog({ title: tRaw('Remove the {variant} mark?', { variant: variantLabel(variant).toLowerCase() }), message: t('It’s deleted from this device.'), confirmLabel: t('Remove') });
     if (!ok) return; del.disabled = true;
     try {
       await removeLogo(fontsHost, variant, identity === 'default' ? undefined : identity);
@@ -2532,7 +2532,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const format = (palFmtSel?.value ?? 'tokens-json') as SwatchExportFormat;
       const { blob, filename } = exportSwatches(swatches, format);
       saveBlob(blob, filename);
-      announce(t('Palette downloaded as {filename}', { filename }));
+      announce(tRaw('Palette downloaded as {filename}', { filename }));
     } catch (err) {
       if (palErr) { palErr.textContent = String((err as { message?: unknown })?.message ?? err); palErr.hidden = false; }
     }
@@ -2628,8 +2628,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const { blob, filename, summary } = await exportBrandPack(transferHost);
     saveBlob(blob, filename);
     announce(summary.fontFamilies === 1
-      ? t('Brand exported — {n} font family', { n: summary.fontFamilies })
-      : t('Brand exported — {n} font families', { n: summary.fontFamilies }));
+      ? tRaw('Brand exported — {n} font family', { n: summary.fontFamilies })
+      : tRaw('Brand exported — {n} font families', { n: summary.fontFamilies }));
     return { filename };
   };
   // Something replaced the installed tokens underneath us (a pack import, the
