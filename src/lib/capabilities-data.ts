@@ -172,7 +172,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
   },
   {
     flag: 'formats', id: 'cap-formats', title: 'Export formats', icon: ICONS.image,
-    desc: 'Thirty formats across vector, raster, print, motion, documents and data. A tool offers only the formats its author declared, and the picker hides any your browser can’t produce.',
+    desc: 'Forty formats across vector, raster, layered, print, motion, audio, documents, data and design tokens. A tool offers only the formats its author declared, and the picker hides any your browser can’t produce.',
     cards: [
       { icon: ICONS.vector, title: 'Vector', features: [
         { name: 'SVG', desc: 'Infinitely scalable and self-contained — text is outlined to paths (HarfBuzz-shaped) so it renders identically without the font installed.' },
@@ -180,7 +180,11 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'DXF (cut file)', desc: 'AutoCAD R12 interchange for laser cutters, vinyl plotters and CNC/CAD — outline paths in millimetres, colour as the nearest AutoCAD Color Index. Line-art only.' },
       ] },
       { icon: ICONS.image, title: 'Raster', features: [
-        { name: 'PNG · JPG · WebP · AVIF · ICO', desc: 'Lossless or compact, alpha where supported, with the real DPI and an embedded sRGB ICC profile so colour reproduces faithfully.' },
+        { name: 'PNG · JPG · WebP · AVIF · TIFF · ICO', desc: 'Lossless or compact, alpha where supported, with the real DPI and an embedded sRGB ICC profile so colour reproduces faithfully.' },
+        { name: 'EXR · Radiance HDR (floating-point)', desc: 'High-dynamic-range masters written from a tool’s own high-precision float pixels — OpenEXR for film/VFX grading, Radiance <code>.hdr</code> for lighting and 360° environment maps — keeping the unbounded linear light intact rather than clipping to 0–255.' },
+      ] },
+      { icon: ICONS.layers, title: 'Layered', features: [
+        { name: 'Photoshop (PSD)', desc: 'Write a layered <code>.psd</code> — each design layer kept as a real Photoshop layer with its blend mode, not a flattened picture — so it opens editable in Photoshop, Affinity or GIMP. Built on the engine’s own PSD writer (<code>host.layers</code>), entirely on-device.' },
       ] },
       { icon: ICONS.printer, title: 'Print', features: [
         { name: 'PDF · Print PDF (CMYK) · CMYK TIFF', desc: 'True page sizes and DeviceCMYK output for the press — see Print production below.' },
@@ -189,6 +193,9 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'MP4 · WebM · GIF · APNG · Animated WebP', desc: 'Animated tools record to video (the picker shows what your browser can encode), or to GIF, lossless animated PNG, and colour-plus-alpha animated WebP — all of which work everywhere.' },
         { name: 'Animated SVG', desc: 'A self-contained vector animation — stacks vector snapshots with embedded CSS keyframes, so it scales to any size with no codec and loops in a browser tab or an <code>&lt;img&gt;</code>.' },
       ] },
+      { icon: ICONS.film, title: 'Audio', features: [
+        { name: 'MP3 · M4A · WAV · Opus', desc: 'Recording and audio tools (the Voice Recorder, Audiogram and Sequence Studio) export their soundtrack on its own — compact MP3, M4A or Opus, or full-quality lossless WAV — encoded on your device.' },
+      ] },
       { icon: ICONS.doc, title: 'Documents & data', features: [
         { name: 'PowerPoint (PPTX)', desc: 'Multi-page and layout tools export an editable deck — each page decomposed into native text boxes, real shapes, and extractable images and vectors (logos embedded as real SVG). Built to hand a colleague content they can edit and reuse, not a flat screenshot.' },
         { name: 'HTML · MD · TXT', desc: 'HTML pastes formatted into mail clients; Markdown and plain text for content.' },
@@ -196,6 +203,9 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       ] },
       { icon: ICONS.zip, title: 'Bundles', features: [
         { name: 'ZIP', desc: 'Bundle several formats of one design into a single download — optionally password-locked (ZipCrypto or AES-256), with any PDF inside individually locked too.' },
+      ] },
+      { icon: ICONS.swatch, title: 'Design tokens & palettes', features: [
+        { name: 'DTCG · ASE · GPL · CSS variables', desc: 'Export your brand palette as W3C design tokens (DTCG JSON), an Adobe Swatch Exchange (.ase) for Photoshop / Illustrator / InDesign, a GIMP · Inkscape · Krita .gpl, or ready-to-paste CSS custom properties — so the exact brand colours drop into any tool or codebase, no eyedropper.' },
       ] },
     ],
   },
@@ -210,6 +220,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       ] },
       { icon: ICONS.vector, title: 'Design files', features: [
         { name: 'Figma · Penpot · Illustrator · InDesign · PDF', desc: 'Layout Studio imports a native Figma <code>.fig</code>, a Penpot export, an Illustrator <code>.ai</code> or any <code>.pdf</code>, and an InDesign <code>.idml</code> — each parsed in the browser into editable boxes. Text stays text, shapes stay shapes, complex art flattens faithfully.' },
+        { name: 'Photoshop (PSD · PSB) · GIMP (XCF)', desc: 'Layered Photoshop and GIMP files open with their layers intact — each layer becomes an editable box — read on-device by the engine’s own PSD/XCF parsers, big PSB documents included.' },
         { name: 'Any SVG is the wide door', desc: 'Almost every design app can export SVG, so an SVG export becomes an editable, brand-conformed layout — the universal way in.' },
       ] },
       { icon: ICONS.doc, title: 'Data & animation', features: [
@@ -269,6 +280,9 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       ] },
       { icon: ICONS.bot, title: 'AI agents', features: [
         { name: 'Cheap & deterministic', desc: 'A parameterised URL is a few tokens and always renders the same press-quality result locally — no prompt drift, no stochastic surprises in production.' },
+      ] },
+      { icon: ICONS.image, title: 'On-device AI & media', features: [
+        { name: 'Runs on your machine, never a server', desc: 'The AI touches are local: <strong>image upscaling</strong> (ONNX / WebGPU) and <strong>background removal</strong> (alpha matte), a bundled <strong>text-to-speech</strong> voice (Kokoro) that returns audio with word timings for captions, and <strong>audio reactivity</strong> that reads a finished clip into a per-frame track to drive motion. No prompt, no upload — and an AI-generated or AI-enhanced result records that in its Content Credential (an IPTC digital-source-type), so the provenance is never laundered away.' },
       ] },
       { icon: ICONS.mcp, title: 'MCP server (add-on)', features: [
         { name: 'Native agent endpoint', desc: 'An optional <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> server that any MCP client — an agent runtime, an IDE, a script — connects to: discover a tool, fill its declared inputs, and get back a finished file plus an editable link. Tools sync as data, so it needs no app update.' },
@@ -377,7 +391,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Manifest + template + hooks', desc: 'A tool is a manifest, a template and optional hooks; inputs are declared, not inferred. Non-developers can author the template; hooks are the escape hatch for real logic.' },
       ] },
       { icon: ICONS.bridge, title: 'Capability bridge', features: [
-        { name: 'One tool, every shell', desc: 'Tools call a versioned <code>host.*</code> API — profile, assets, state, clipboard, export and text-to-path, plus optional capability-gated extras (design tokens, PDF tools, page capture, network and tool composition) — and never touch the DOM, filesystem or network directly, which is why one tool runs unchanged in browser, Tauri and CLI.' },
+        { name: 'One tool, every shell', desc: 'Tools call a versioned <code>host.*</code> API — profile, assets, state, clipboard, export and text-to-path, plus optional capability-gated extras (design tokens, PDF tools, page capture, network, tool composition, layered PSD write, exact vector geometry, perceptual colour, on-device image codecs, camera/mic capture, speech, upscale and background-removal) — and never touch the DOM, filesystem or network directly, which is why one tool runs unchanged in browser, Tauri and CLI.' },
       ] },
       { icon: ICONS.cube, title: 'Tool composition', features: [
         { name: 'Tools compose tools', desc: 'A tool can embed another tool’s rendered output as an image — declared in the manifest (<code>composes</code>) and placed with <code>{{asset …}}</code>. It renders through the same engine path, so the embed is pixel-identical, and recursion is depth- and cycle-guarded. One tool reuses another instead of copying its code.' },

@@ -747,7 +747,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           <div class="dash-bento">
             <div class="plat-stats">
               <span class="plat-stat" data-tool-count${toolCount ? '' : ' hidden'}><strong>${escape(String(toolCount || ''))}</strong>${t('tools')}</span>
-              <span class="plat-stat"><strong>30</strong>${t('export formats')}</span>
+              <span class="plat-stat"><strong>40</strong>${t('export formats')}</span>
               <span class="plat-stat"><strong>6</strong>${t('surfaces')}</span>
               <span class="plat-stat" data-asset-stat hidden><strong data-asset-stat-n></strong>${t('brand assets')}</span>
             </div>
