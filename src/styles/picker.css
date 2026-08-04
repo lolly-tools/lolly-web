@@ -848,7 +848,8 @@
 .asset-picker-webcam,
 .asset-picker-screencap,
 .asset-picker-scriptaudio,
-.asset-picker-upscale {
+.asset-picker-upscale,
+.asset-picker-matte {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -865,10 +866,12 @@
 .asset-picker-webcam:hover,
 .asset-picker-screencap:hover,
 .asset-picker-scriptaudio:hover,
+.asset-picker-matte:hover,
 .asset-picker-upscale:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
 .asset-picker-webcam svg,
 .asset-picker-screencap svg,
 .asset-picker-scriptaudio svg,
+.asset-picker-matte svg,
 .asset-picker-upscale svg { display: block; }
 
 /* "Screenshot this page" card (pasted non-Lolly URL): the page URL, muted and
@@ -1205,7 +1208,8 @@
 /* Pinned bottom-left: the top corners are taken (Gen-AI pill top-left, delete
    top-right on user cards) and the format badge owns bottom-right. Hover/focus
    revealed, matching the delete button's behaviour. */
-.asset-picker-card-upscale {
+.asset-picker-card-upscale,
+.asset-picker-card-matte {
   position: absolute;
   left: 6px;
   bottom: 6px;
@@ -1223,11 +1227,18 @@
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
+/* When both are present, the cut-out sits to the right of Upscale so they don't
+   stack. A card with only one shows it at the left edge. */
+.asset-picker-card-upscale ~ .asset-picker-card-matte { left: 33px; }
 .asset-picker-card:hover .asset-picker-card-upscale,
-.asset-picker-card-upscale:focus-visible { opacity: 1; }
-.asset-picker-card-upscale:hover {
+.asset-picker-card:hover .asset-picker-card-matte,
+.asset-picker-card-upscale:focus-visible,
+.asset-picker-card-matte:focus-visible { opacity: 1; }
+.asset-picker-card-upscale:hover,
+.asset-picker-card-matte:hover {
   color: hsl(var(--primary));
   background: hsl(var(--accent));
 }
-.asset-picker-card-upscale svg { display: block; }
+.asset-picker-card-upscale svg,
+.asset-picker-card-matte svg { display: block; }
 }

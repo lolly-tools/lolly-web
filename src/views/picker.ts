@@ -261,6 +261,10 @@ let modalEl: HTMLDivElement | null = null;
 // module-level and can't see render()'s closure, and the picker is a singleton
 // (one modalEl), so a shared flag is safe.
 let upscaleEnabled = false;
+// True when the on-device background remover (host.matte) is present AND at least
+// one model is STAGED — models() is empty until a model's licence + weights are
+// verified, so the affordance stays hidden rather than opening a dead dialog.
+let matteEnabled = false;
 
 /**
  * Clicking an image slot that already holds a live Lolly render doesn't jump
@@ -364,6 +368,9 @@ async function render(
   // Feature-detected on the bridge, not capability-gated.
   const canUpscale = showUserAssets && (opts.type === 'raster' || opts.type === undefined)
     && host.upscale?.isAvailable() === true;
+  // Background removal — same slot gate as upscale; hidden until a model is staged.
+  const canMatte = showUserAssets && (opts.type === 'raster' || opts.type === undefined)
+    && host.matte?.isAvailable() === true && (host.matte.models().length > 0);
 
   // The per-card "Upscale" affordance (a hover-revealed button on RASTER cards —
   // library assets AND the user's own uploads) is a distinct entry point from the
@@ -371,6 +378,7 @@ async function render(
   // without re-uploading it. Gated purely on the on-device upscaler being present;
   // the per-ref raster check lives in the module-level card renderers (upscaleButton).
   upscaleEnabled = host.upscale?.isAvailable() === true;
+  matteEnabled = host.matte?.isAvailable() === true && (host.matte.models().length > 0);
 
   // A pasted https URL that is NOT a Lolly link can still become an image where the
   // shell can capture pages (extension installed / Tauri) — see showUrlFallback.
@@ -522,6 +530,7 @@ async function render(
           ${canScreencap ? `<button type="button" class="asset-picker-screencap">${icon('monitor', { size: 14 })} ${t('Capture screen')}</button>` : ''}
           ${canScriptAudio ? `<button type="button" class="asset-picker-scriptaudio">${icon('mic', { size: 14 })} ${t('Script audio')}</button>` : ''}
           ${canUpscale ? `<button type="button" class="asset-picker-upscale">${icon('aiSpark', { size: 14 })} ${t('Upscale')}</button>` : ''}
+          ${canMatte ? `<button type="button" class="asset-picker-matte">${icon('scissors', { size: 14 })} ${t('Remove background')}</button>` : ''}
         </footer>
       ` : ''}
     </div>
@@ -863,6 +872,28 @@ async function render(
       }
       return;
     }
+    // Remove-background card affordance — the exact mirror of the upscale one: take
+    // the ref the user already has as the source, cut it out on-device, treat the
+    // returned cutout like a normal pick. Must return before the pick branch below.
+    const cut = (e.target as HTMLElement).closest<HTMLElement>('[data-matte-id]');
+    if (cut) {
+      e.preventDefault();
+      const id = cut.dataset.matteId!;
+      const known = candidateById.get(id) ?? userAssets.find(a => a.id === id);
+      const sourceName = (known?.meta?.name as string | undefined) ?? id;
+      try {
+        const ref = await host.assets.get(id);
+        const { openMatteDialog } = await import('./matte-dialog.ts');
+        const cutout = await openMatteDialog(host, { source: ref, sourceName });
+        if (!cutout) return;
+        if (collect) { collectToast(await collect.onAsset(cutout)); return; }
+        close(cutout);
+      } catch (err) {
+        host.log('error', 'Failed to remove background', { id, error: String(err) });
+        announce(t('Couldn’t open background removal for this image.'), { assertive: true });
+      }
+      return;
+    }
     // Collect mode: a tool tile's "+ Add" quick-adds a default session (no editor). Must
     // beat the [data-tool-id] primary it sits inside.
     const quick = (e.target as HTMLElement).closest<HTMLElement>('[data-quickadd-tool]');
@@ -1107,6 +1138,17 @@ async function render(
   root.querySelector('.asset-picker-upscale')?.addEventListener('click', async () => {
     const { openUpscaleDialog } = await import('./upscale-dialog.ts');
     const ref = await openUpscaleDialog(host);
+    if (!ref) return;
+    if (collect) { collectToast(await collect.onAsset(ref)); return; }
+    close(ref);
+  });
+
+  // "Remove background": choose a raster image, cut the subject out on-device
+  // (host.matte), save the cutout as a user raster asset. Lazy chunk
+  // (views/matte-dialog.ts) so the model UI costs nothing until asked for.
+  root.querySelector('.asset-picker-matte')?.addEventListener('click', async () => {
+    const { openMatteDialog } = await import('./matte-dialog.ts');
+    const ref = await openMatteDialog(host);
     if (!ref) return;
     if (collect) { collectToast(await collect.onAsset(ref)); return; }
     close(ref);
@@ -1458,11 +1500,13 @@ async function render(
           ? audioThumb(ref, 'asset-picker-thumb')
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
     const upBtn = upscaleButton(ref, name);
+    const cutBtn = matteButton(ref, name);
     const inner = `${thumb}
         <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`;
     // A raster folder image splits into wrapper + pick button (like a user card) so the
-    // Upscale sibling is valid HTML; everything else stays the single plain pick button.
-    if (!upBtn) {
+    // Upscale / Remove-background siblings are valid HTML; everything else stays the
+    // single plain pick button.
+    if (!upBtn && !cutBtn) {
       return `
       <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}" title="${escapeHtml(name)}">
         ${inner}
@@ -1475,6 +1519,7 @@ async function render(
           ${inner}
         </button>
         ${upBtn}
+        ${cutBtn}
         ${formatBadge(ref)}
       </div>`;
   }
@@ -2268,6 +2313,14 @@ function upscaleButton(ref: AssetRef, name: string): string {
   return `<button type="button" class="asset-picker-card-upscale" data-upscale-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Upscale'))}" aria-label="${escapeHtml(tRaw('Upscale {name}', { name }))}">${icon('aiSpark', { size: 14 })}</button>`;
 }
 
+// The hover/focus-revealed "Remove background" affordance — same rules as
+// upscaleButton (a sibling, still-raster only, hidden for animated rasters whose
+// per-frame alpha a single cut-out can't represent), gated on a staged matte model.
+function matteButton(ref: AssetRef, name: string): string {
+  if (!matteEnabled || ref.type !== 'raster' || ref.meta?.animated) return '';
+  return `<button type="button" class="asset-picker-card-matte" data-matte-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Remove background'))}" aria-label="${escapeHtml(tRaw('Remove background from {name}', { name }))}">${icon('scissors', { size: 14 })}</button>`;
+}
+
 function card(ref: AssetRef): string {
   const isPlaceholder = ref.meta?._placeholder;
   const name = ref.meta?.name ?? ref.id;
@@ -2286,13 +2339,14 @@ function card(ref: AssetRef): string {
           ? audioThumb(ref, 'asset-picker-thumb')
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
   const upBtn = upscaleButton(ref, String(name));
+  const cutBtn = matteButton(ref, String(name));
   const inner = `${thumb}
       <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
       <span class="asset-picker-id">${escapeHtml(ref.id)}</span>`;
   // A raster library card splits into wrapper + pick button (mirroring the user card)
-  // so the Upscale sibling is valid HTML; everything non-raster stays the exact single
-  // plain pick button it was before.
-  if (!upBtn) {
+  // so the Upscale / Remove-background siblings are valid HTML; everything non-raster
+  // stays the exact single plain pick button it was before.
+  if (!upBtn && !cutBtn) {
     return `
     <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}">
       ${inner}
@@ -2306,6 +2360,7 @@ function card(ref: AssetRef): string {
         ${inner}
       </button>
       ${upBtn}
+      ${cutBtn}
       ${formatBadge(ref)}
     </div>
   `;
@@ -2426,6 +2481,7 @@ function userCard(ref: AssetRef): string {
       </button>
       <button type="button" class="asset-picker-card-delete" data-delete-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Delete'))}" aria-label="${escapeHtml(tRaw('Delete {name}', { name: String(name) }))}">×</button>
       ${upscaleButton(ref, String(name))}
+      ${matteButton(ref, String(name))}
       ${formatBadge(ref)}
     </div>
   `;
