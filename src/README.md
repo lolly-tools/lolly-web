@@ -5,21 +5,21 @@ This file exists so you can find the code for a feature without reading all of i
 The counts below are GENERATED — `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
 
 <!-- web-src-dirs:start -->
-Roughly 214,000 lines of TypeScript, tests included, and 29,000 lines of CSS.
+Roughly 215,000 lines of TypeScript, tests included, and 29,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 58 files, 64,041 lines | 36 files, 17,990 lines | none |
+| `views/` | 59 files, 64,522 lines | 36 files, 17,990 lines | none |
 | `lib/` | 172 files, 41,130 lines | 74 files, 15,309 lines | 7 files, 1,060 lines |
 | `bridge/` | 66 files, 28,749 lines | 45 files, 11,736 lines | none |
 | `components/` | 31 files, 12,076 lines | 9 files, 2,343 lines | none |
 | `pro/` | 20 files, 7,359 lines | 10 files, 1,576 lines | 2 files, 1,194 lines |
-| `org/` | 6 files, 1,528 lines | 5 files, 1,017 lines | none |
+| `org/` | 6 files, 1,528 lines | 5 files, 1,038 lines | none |
 | `catalog/` | 2 files, 649 lines | none | none |
 | `ext/` | 2 files, 136 lines | 1 file, 86 lines | none |
-| `styles/` | none | 1 file, 151 lines | 54 files, 26,448 lines |
+| `styles/` | none | 1 file, 151 lines | 55 files, 26,661 lines |
 
-Plus 35 `.ts`/`.js` files at the top level of `src/`, 8,502 lines all told, of which 10 are tests and 3 are ambient declarations. `main.ts` is 1,133 of that.
+Plus 35 `.ts`/`.js` files at the top level of `src/`, 8,507 lines all told, of which 10 are tests and 3 are ambient declarations. `main.ts` is 1,133 of that.
 <!-- web-src-dirs:end -->
 
 ## How do I find a feature
@@ -62,7 +62,7 @@ Do not be ambushed by these. The largest source files, by line count:
 | 4,929 | `views/timeline-panel.ts` | yes |
 | 3,626 | `views/catalog.ts` | partial — the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 3,455 | `views/tool.ts` | partial — the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
-| 3,267 | `views/picker.ts` | partial — the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
+| 3,323 | `views/picker.ts` | partial — the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
 | 2,912 | `views/color-lab.ts` | yes |
 | 2,824 | `views/tool-actions.ts` | yes |
 | 2,780 | `views/profile.ts` | none |
