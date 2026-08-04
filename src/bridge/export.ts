@@ -136,6 +136,7 @@ export interface ExportOpts {
   c2paInputs?: Record<string, string>;   // scalar-input digest → tools.lolly.export assertion (runtime-supplied)
   c2paCapture?: { camera?: boolean; microphone?: boolean; screen?: boolean }; // sensor/screen origin → created step = digitalCapture/screenCapture (runtime-supplied)
   c2paTextAdded?: { sample?: string };   // text over an opened asset → a c2pa.edited "Added text" step (runtime-supplied)
+  c2paAiUpscale?: { model: string; version: string }; // AI-upscaled essence → created = compositeWithTrainedAlgorithmicMedia + a model-naming edit step (runtime-supplied)
   colorProfile?: string;
   thumbnail?: boolean;
   audio?: ExportAudio;
@@ -152,7 +153,7 @@ export interface ExportOpts {
    *  Opt-in (heavy neural encode + a fetched ~tens-of-MB model), unlike the
    *  default-on pure-JS `imprint`. A no-op when the encoder model isn't on-device
    *  (scripts/convert-trustmark-encoder-onnx.py). Raster-only (png/jpg/webp/avif/
-   *  tiff) — see lib/trustmark-embed.ts and plans/durable-content-credentials.md. */
+   *  tiff) — see lib/trustmark-embed.ts and plans/28-durable-content-credentials.md. */
   durable?: boolean;
   /** Reserved id carried by the durable mark (0 until the CAI id scheme lands). */
   durableId?: number;
@@ -176,7 +177,7 @@ export interface ExportOpts {
    *  over an 8-bit canvas render is padding). First shipped consumer: the 16-bit
    *  HDR PNG path (export-hdr-png.ts, via deepHdrPng below), which honours a
    *  depth=8 opt-out and earns its bits from the float view transform.
-   *  See plans/deeprichpixels.md §10. */
+   *  See plans/61-deeprichpixels.md §10. */
   depth?: 8 | 16 | 'float' | 'auto';
   /** INTERNAL, per-format-render mutable sink (created in renderFormat, never
    *  URL-serialized). Carries the imprint request down to imprintEmbedCanvas and
@@ -201,7 +202,7 @@ export interface ExportOpts {
    *  sequence: png/jpg/webp/svg come back as one ZIP of `<filename>-01.<ext>`
    *  members, pdf as ONE document of N pages. Ignored by every non-still format
    *  and by any node that is not a [data-sequence] stage. See bridge/
-   *  sequence-cuts.ts and plans/fable-timeline-editing.md §4.6. */
+   *  sequence-cuts.ts and plans/51-fable-timeline-editing.md §4.6. */
   cuts?: number;
   onProgress?: (done: number, total: number) => void;
   fps?: number;
@@ -843,7 +844,7 @@ export function imprintEmbedCanvas(canvas: HTMLCanvasElement, imprint: ImprintSt
 // (pixels untouched) when opts.durable is off, or the encoder model isn't
 // installed / the encode faults. Container chokepoints (PDF/PPTX raster) stay
 // imprint-only for now — folding an async neural pass into the SYNC
-// imprintEmbedCanvas is future work (see plans/durable-content-credentials.md).
+// imprintEmbedCanvas is future work (see plans/28-durable-content-credentials.md).
 async function durableEmbedCanvas(canvas: HTMLCanvasElement, opts: ExportOpts): Promise<void> {
   if (!opts.durable) return;
   try {
@@ -885,7 +886,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       const canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
       // HDR PNG goes DEEP: the same `hdr=` request routes through the engine's
       // float view transform and its own 16-bit PNG writer instead of the 8-bit
-      // canvas transform + chunk splice (plans/deeprichpixels.md §10 item 2 —
+      // canvas transform + chunk splice (plans/61-deeprichpixels.md §10 item 2 —
       // 8-bit PQ is the banding defect). Metadata, pixel marks and C2PA
       // compatibility all carry over; see bridge/export-hdr-png.ts. Returns null
       // if anything goes wrong, and the legacy 8-bit path below still runs.
@@ -895,7 +896,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       }
       // HDR JPEG goes GAIN MAP: the same `hdr=` request now writes an ISO
       // 21496-1 / Ultra HDR gain-map JPEG — a real SDR base image with the HDR
-      // appended as a gain map (plans/deeprichpixels.md §4.2, §6 B2). That is the
+      // appended as a gain map (plans/61-deeprichpixels.md §4.2, §6 B2). That is the
       // only HDR still output that renders as HDR in Chromium/Safari/Android and
       // degrades to a perfect ordinary JPEG everywhere else, which is what the
       // legacy PQ-tagged JPEG below never did. `depth=8` opts out to that legacy
@@ -1614,7 +1615,7 @@ async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boo
 // SVG synthesised from an HTML layout via renderSvgFromHtml — walk it into the
 // engine IR (svgDomToIr), and serialize to bytes (emitEmf). Device RGB only;
 // gradients/images/alpha are flattened to solids upstream. See
-// plans/emf-support.md. The text-as-paths guarantee is enforced in svgDomToIr,
+// plans/63-emf-support.md. The text-as-paths guarantee is enforced in svgDomToIr,
 // which throws on any run it can't vectorise rather than dropping it.
 async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   let svgEl: Element | null = node.tagName?.toLowerCase() === 'svg' ? node : (node.querySelector?.('svg') ?? null);
@@ -4842,6 +4843,10 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       // The runtime only sets c2paTextAdded when text sits over an opened asset,
       // so passing it through here keeps the "text is a real edit" gate intact.
       ...(opts.c2paTextAdded ? { textAdded: true, textSample: opts.c2paTextAdded.sample } : {}),
+      // The runtime sets c2paAiUpscale when the render's essence is an on-device
+      // AI-upscaled asset — created → compositeWithTrainedAlgorithmicMedia + a step
+      // naming the model. Honest AI disclosure, surfaced on /verify automatically.
+      ...(opts.c2paAiUpscale ? { aiUpscale: opts.c2paAiUpscale } : {}),
     });
     return await signAndEmbedC2pa(blob, format, {
       title: opts.meta?.tool,

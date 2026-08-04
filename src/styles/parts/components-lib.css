@@ -34,7 +34,7 @@
 .cl-jump a:hover { border-color: hsl(var(--ring) / .6); color: hsl(var(--foreground)); }
 
 /* "Still open" panel — the audit is executed; this is the short list of what
-   remains (full per-recommendation history: plans/component-audit.md). */
+   remains (full per-recommendation history: plans/76-component-audit.md). */
 .cl-recs {
   margin: 0 0 2.4rem; padding: 1.1rem 1.2rem; border-radius: var(--radius);
   border: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .35);

@@ -5,8 +5,14 @@
  * Lolly stores only strictly-necessary, first-party data on the device — the
  * theme preference, a few UI prefs, an offline catalog cache, local-only vanity
  * counters (metrics.js — never transmitted), and the user's own tool documents
- * (IndexedDB via host.state). No cookies, no tracking, no third parties, nothing
- * sent anywhere. Under the ePrivacy Directive (Art. 5(3)) storage that is
+ * (IndexedDB via host.state). No cookies, no tracking, no analytics. Nothing
+ * leaves the device unless the user starts a feature that needs the internet:
+ * adding a Google Font in the brand editor (one consented fetch to Google's
+ * font servers, then kept on-device) or playing the opt-in net-radio (SomaFM).
+ * Both are disclosed with specifics in docs/privacy.md — keep that list and
+ * this comment in sync with the code (SUSE assessment 2026-08, P1: an absolute
+ * "nothing sent anywhere" claim is broader than the code supports).
+ * Under the ePrivacy Directive (Art. 5(3)) storage that is
  * strictly necessary for the service the user asked for needs no consent — only
  * transparency. So this is a dismissible *notice*, not an accept/reject gate:
  * there is nothing non-essential to refuse.

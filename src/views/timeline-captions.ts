@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * timeline-captions.ts — the pure maths behind the timeline panel's "Generate
- * subtitles" action (plans/tts-stt-programme.md §5).
+ * subtitles" action (plans/41-tts-stt-programme.md §5).
  *
  * Word timings arrive from one of two sources — a TTS asset's own `meta.tts`
  * block (exact by construction, see script-audio.ts's buildTtsRecord) or an

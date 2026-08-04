@@ -111,7 +111,7 @@ import type { ClientGroup, ClientGroupKey } from '../lib/device-info.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 
 /** The host surface this view needs — only the brand palette, and optionally. */
 export interface ColorLabHost {
@@ -833,7 +833,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
           reseedPicker();
           paintCharts('full');
           syncUrl();
-          announce(t('Colour set to {c}', { c: desc.srgbHex }));
+          announce(tRaw('Colour set to {c}', { c: desc.srgbHex }));
         },
         onPick: () => {},
         onAdd: (seed) => setOklch(seed),
@@ -851,7 +851,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
           onInput: (v) => setOklch({ ...desc.oklch, [ch]: v }, { silent: true, live: true }),
           onChange: (v) => {
             setOklch({ ...desc.oklch, [ch]: v });
-            announce(t('Colour set to {c}', { c: desc.srgbHex }));
+            announce(tRaw('Colour set to {c}', { c: desc.srgbHex }));
           },
         }));
       }
@@ -1168,15 +1168,15 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const note = $('[data-lab-solid-note]');
     if (note) {
       const base = m.inside
-        ? t('{deg}° · drag to turn', { deg: String(Math.round(((solidView.yaw % 360) + 360) % 360)) })
-        : t('Outside {g} — the marker sits off the surface', { g: limitTitle(limit) });
+        ? tRaw('{deg}° · drag to turn', { deg: String(Math.round(((solidView.yaw % 360) + 360) % 360)) })
+        : tRaw('Outside {g} — the marker sits off the surface', { g: limitTitle(limit) });
       // Unlabelled white lines over a coloured surface read as decoration. One
       // clause, only when they are actually drawn, naming them in the order they
       // are keyed everywhere else on the page.
       const refs = [...new Set(wires.map(q => q.wire))]
         .map(g => (g === 'p3' ? t('Display-P3') : t('sRGB')));
       note.textContent = refs.length
-        ? `${base} · ${t('white lines: {g}', { g: refs.join(' + ') })}`
+        ? `${base} · ${tRaw('white lines: {g}', { g: refs.join(' + ') })}`
         : base;
     }
   }
@@ -1430,28 +1430,28 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     if (!cloud) { cloudStats.hidden = true; cloudStats.textContent = ''; return; }
     const pct = (v: number): string => `${(v * 100).toFixed(v >= 0.1 ? 0 : 1)}%`;
     const bits: string[] = [
-      t('{n} colours', { n: `${cloud.uniqueCapped ? '>' : ''}${cloud.unique.toLocaleString()}` }),
+      tRaw('{n} colours', { n: `${cloud.uniqueCapped ? '>' : ''}${cloud.unique.toLocaleString()}` }),
     ];
     // Only the gamuts that are actually reached. Listing "0% Rec.2020" on every
     // photograph is noise, and the absence is already told by the shell the cloud
     // sits inside.
     for (const [g, label] of [['p3', 'Display-P3'], ['rec2020', 'Rec.2020']] as const) {
       const share = cloud.coverage[g];
-      if (share > 0.0005) bits.push(t('{p} beyond sRGB, in {g}', { p: pct(share), g: t(label) }));
+      if (share > 0.0005) bits.push(tRaw('{p} beyond sRGB, in {g}', { p: pct(share), g: t(label) }));
     }
-    if (cloud.clipped > 0.01) bits.push(t('{p} already clipped', { p: pct(cloud.clipped) }));
-    if (cloud.dominantHue) bits.push(t('mostly {h}°', { h: String(Math.round(cloud.dominantHue.h)) }));
+    if (cloud.clipped > 0.01) bits.push(tRaw('{p} already clipped', { p: pct(cloud.clipped) }));
+    if (cloud.dominantHue) bits.push(tRaw('mostly {h}°', { h: String(Math.round(cloud.dominantHue.h)) }));
     // Depth honesty, same class as the profile caveat below: the canvas read is
     // 8-bit, so a deeper source was flattened before any figure above was counted.
     if (cloud.sourceBits != null && cloud.sourceBits > 8) {
-      bits.push(t('{n}-bit source, read at 8-bit', { n: String(cloud.sourceBits) }));
+      bits.push(tRaw('{n}-bit source, read at 8-bit', { n: String(cloud.sourceBits) }));
     }
     // The honesty clause, and it goes LAST so it reads as a caveat on the numbers
     // rather than as the headline. An untagged file is sRGB by convention only,
     // and every figure above rests on that.
     bits.push(cloud.assumedSpace
-      ? t('no profile — read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') })
-      : t('read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') }));
+      ? tRaw('no profile — read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') })
+      : tRaw('read as {s}', { s: cloud.space === 'display-p3' ? t('Display-P3') : t('sRGB') }));
     cloudStats.textContent = `${name} · ${bits.join(' · ')}`;
     cloudStats.hidden = false;
   }
@@ -1770,7 +1770,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     // it's about a quarter of that, and the sharp repaint lands on release.
     paintCharts(opts.live ? 'draft' : 'full');
     scheduleSolid();
-    if (!opts.silent) announce(t('{c} — {g}', { c: desc.srgbHex, g: GAMUT_TITLE[desc.gamut] }));
+    if (!opts.silent) announce(tRaw('{c} — {g}', { c: desc.srgbHex, g: GAMUT_TITLE[desc.gamut] }));
     if (!opts.live) syncUrl();
   }
 
@@ -1859,8 +1859,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // <code> can take neither hover nor focus from a finger. The delegated keydown
       // below completes the bargain — announcing a button and then ignoring Enter
       // would be worse than the tooltip being hidden.
-      primary.dataset.tip = t('Copy {v}', { v: shown });
-      primary.setAttribute('aria-label', t('Copy {v}', { v: shown }));
+      primary.dataset.tip = tRaw('Copy {v}', { v: shown });
+      primary.setAttribute('aria-label', tRaw('Copy {v}', { v: shown }));
       primary.setAttribute('role', 'button');
       primary.tabIndex = 0;
       primary.removeAttribute('title');
@@ -1897,8 +1897,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // `title` on a <code> is an affordance no touch or keyboard user can reach.
       alts.innerHTML = want.map(([space, css]) =>
         `<li class="lab-sw-alt"><span class="lab-sw-alt-space">${escape(space)}</span>`
-        + `<code data-lab-copy="${escape(css)}" data-tip="${escape(t('Copy {v}', { v: css }))}"`
-        + ` role="button" tabindex="0" aria-label="${escape(t('Copy {v}', { v: css }))}">${escape(css)}</code></li>`,
+        + `<code data-lab-copy="${escape(css)}" data-tip="${escape(tRaw('Copy {v}', { v: css }))}"`
+        + ` role="button" tabindex="0" aria-label="${escape(tRaw('Copy {v}', { v: css }))}">${escape(css)}</code></li>`,
       ).join('');
     }
 
@@ -1909,7 +1909,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       announcedOut = true;
       showGamutToast(t(
         'Outside sRGB. The swatches on this page ask your browser for the real colour, so a wide-gamut display shows it and a narrower one falls back to <strong>{hex}</strong>. The charts are drawn in your display’s own space, so they reach exactly as far as it does.',
-        { hex: escape(desc.srgbHex.toUpperCase()) },
+        { hex: desc.srgbHex.toUpperCase() },
       ));
     }
 
@@ -1926,8 +1926,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     head.querySelector('[data-lab-headroom-val]')!.textContent =
       `${over ? '' : '+'}${desc.headroom.toFixed(3)}`;
     head.querySelector('[data-lab-headroom-note]')!.textContent = over
-      ? t('beyond sRGB’s ceiling of {max} at this lightness and hue — reach a wider gamut to keep it', { max: desc.ceiling.srgb.toFixed(3) })
-      : t('of chroma still available within sRGB at this lightness and hue (ceiling {max})', { max: desc.ceiling.srgb.toFixed(3) });
+      ? tRaw('beyond sRGB’s ceiling of {max} at this lightness and hue — reach a wider gamut to keep it', { max: desc.ceiling.srgb.toFixed(3) })
+      : tRaw('of chroma still available within sRGB at this lightness and hue (ceiling {max})', { max: desc.ceiling.srgb.toFixed(3) });
 
     const ceils = $('[data-lab-ceilings]')!;
     // A ceiling row per comparison target — the three display gamuts, and the
@@ -1987,14 +1987,14 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       const wcagWinner = v.against === '#ffffff' ? 'white' : 'black';
       const best = apcaWinner === 'white' ? white : black;
       floor.textContent = best
-        ? t('Best pairing: {ink} at Lc {lc} — {use}. WCAG says {ratio}:1, {level} for body text.', {
+        ? tRaw('Best pairing: {ink} at Lc {lc} — {use}. WCAG says {ratio}:1, {level} for body text.', {
           ink: t(apcaWinner),
           lc: best.abs.toFixed(1),
           use: t(best.label),
           ratio: v.ratio.toFixed(2),
           level: v.level === 'fail' ? t('below AA') : v.level,
         }) + (apcaWinner === wcagWinner ? ''
-          : ` ${t('The two disagree here — WCAG prefers {other}.', { other: t(wcagWinner) })}`)
+          : ` ${tRaw('The two disagree here — WCAG prefers {other}.', { other: t(wcagWinner) })}`)
         : '';
     }
   }
@@ -2177,7 +2177,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       ? iccRoundTripDeltaE(ap.profile, ap.intent, desc.oklch.l, desc.oklch.c, desc.oklch.h)
       : null;
     const fit = fits ? '' : `<span tabindex="0" data-tip="${escape(shift != null
-      ? t('Round-trips {de} ΔE away — past the {tol} tolerance.', { de: shift.toFixed(1), tol: ICC_GAMUT_DELTA_E.toFixed(1) })
+      ? tRaw('Round-trips {de} ΔE away — past the {tol} tolerance.', { de: shift.toFixed(1), tol: ICC_GAMUT_DELTA_E.toFixed(1) })
       : t('Outside this profile’s gamut.'))}">${escape(t('outside'))}</span>`;
     return `
       <tr${fits ? '' : ' class="is-inexact"'}>
@@ -2206,17 +2206,17 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       : hex.toUpperCase();
     const oklchStr = o ? formatOklch(o) : hex;
     const aria = action === 'copy'
-      ? t('Copy {v}', { v: oklchStr })
-      : t('Use oklch({v})', { v: label });
+      ? tRaw('Copy {v}', { v: oklchStr })
+      : tRaw('Use oklch({v})', { v: label });
     // Each line carries its OWN value to copy, so the notation you click is the
     // notation you get.
     return `<button type="button" class="lab-step" data-lab-step="${escape(hex)}"
       style="background:${escape(hex)};color:${escape(ink)}"
       aria-label="${escape(aria)}">
       <span class="lab-step-oklch" data-lab-copy="${escape(oklchStr)}"
-        title="${escape(t('Copy {v}', { v: oklchStr }))}">${escape(label)}</span>
+        title="${escape(tRaw('Copy {v}', { v: oklchStr }))}">${escape(label)}</span>
       <span class="lab-step-hex" data-lab-copy="${escape(hex.toUpperCase())}"
-        title="${escape(t('Copy {v}', { v: hex.toUpperCase() }))}">${escape(hex.toUpperCase())}</span>
+        title="${escape(tRaw('Copy {v}', { v: hex.toUpperCase() }))}">${escape(hex.toUpperCase())}</span>
     </button>`;
   }
 
@@ -2301,7 +2301,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   /** Put a value on the clipboard and confirm it on the element that was clicked. */
   function copyValue(value: string, on: HTMLElement): void {
     void Promise.resolve(navigator.clipboard?.writeText(value)).then(() => {
-      announce(t('Copied {v}', { v: value }));
+      announce(tRaw('Copied {v}', { v: value }));
       on.classList.add('is-copied');
       setTimeout(() => on.classList.remove('is-copied'), 1200);
     }).catch(() => announce(t('Copy failed')));
@@ -2360,7 +2360,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         // --sw carries the hex; --sw-real the authored token value, which the CSS
         // layers on top so a wide-gamut brand colour shows as itself.
         return `<button type="button" class="lab-brand-sw" data-lab-brand-pick="${escape(String(c.value))}"
-          style="--sw:${escape(hex)};--sw-real:${escape(String(c.value))}" title="${escape(`${name} ${hex}`)}" aria-label="${escape(t('Inspect {name}', { name }))}"></button>`;
+          style="--sw:${escape(hex)};--sw-real:${escape(String(c.value))}" title="${escape(`${name} ${hex}`)}" aria-label="${escape(tRaw('Inspect {name}', { name }))}"></button>`;
       }).join('');
       mount.addEventListener('click', (e) => {
         const b = (e.target as HTMLElement).closest<HTMLElement>('[data-lab-brand-pick]');
@@ -2567,7 +2567,7 @@ function shellHtml(): string {
 
   const popBtn = (label: string): string =>
     `<button type="button" class="lab-pop-btn" data-lab-pop
-      aria-label="${escape(t('Pop out {p}', { p: label }))}"
+      aria-label="${escape(tRaw('Pop out {p}', { p: label }))}"
       ${/* Short, because this tooltip is a pseudo-element that cannot be flipped
             back inside the viewport: at the right edge of a phone the longer text
             ran off screen. The full description lives on the aria-label. */''}
@@ -2588,7 +2588,7 @@ function shellHtml(): string {
         <input type="number" class="lab-chart-num" data-lab-num="${plane}"
           min="${r.min}" max="${r.max}" step="${ch === 'h' ? 0.01 : ch === 'l' ? 0.001 : 0.0001}"
           aria-label="${escape(PANEL_TITLE[plane])}">
-        ${popBtn(t('{p} chart', { p: PANEL_TITLE[plane] }))}
+        ${popBtn(tRaw('{p} chart', { p: PANEL_TITLE[plane] }))}
       </div>
       <div data-lab-chart="${plane}"></div>
       ${/* The axis this plane is sliced along, as a broken track: the solid runs
@@ -2697,7 +2697,7 @@ function shellHtml(): string {
               <button type="button" class="view-seg-btn" data-val="landscape" aria-pressed="true">${escape(t('Landscape'))}</button>
               <button type="button" class="view-seg-btn" data-val="lab" aria-pressed="false">${escape(t('Lab axes'))}</button>
             </div>
-            ${/* The second way in (plans/color-spaces.md §11.5): a colour, or an
+            ${/* The second way in (plans/60-color-spaces.md §11.5): a colour, or an
                   image. It sits on the solid rather than up in step 1 because the
                   result appears HERE — the cloud is drawn in this figure, and an
                   affordance three sections away from its own effect reads as an
@@ -2868,7 +2868,7 @@ function shellHtml(): string {
                 Hidden for a matrix/TRC or gray profile: those are decided by their
                 device cube, not by the round trip (iccRoundTripDecides), so the
                 sentence would state a rule the verdict above it does not follow. */''}
-          <p class="lab-card-note" data-lab-press-note hidden>${escape(t(
+          <p class="lab-card-note" data-lab-press-note hidden>${escape(tRaw(
             'In gamut is decided by a round trip within ΔE {tol} — a colour can pass and still shift visibly.',
             { tol: ICC_GAMUT_DELTA_E.toFixed(1) },
           ))}</p>

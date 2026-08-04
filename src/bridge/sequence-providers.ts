@@ -12,7 +12,7 @@
  * WHY THE INTERFACES ARE SHAPED LIKE THIS
  *
  * `FrameProvider` is DRAW-AND-RELEASE, not "give me an image source". The spike
- * (plans/fable-timeline-phase-3.md §0.0 rule 3) established that mediabunny's
+ * (plans/54-fable-timeline-phase-3.md §0.0 rule 3) established that mediabunny's
  * `VideoSample` *is* the draw wrapper: `sample.draw(ctx, dx, dy, dw, dh)` applies
  * the container's rotation metadata into the destination rect for us, while
  * `toCanvasImageSource()` may be auto-closed in the next microtask and

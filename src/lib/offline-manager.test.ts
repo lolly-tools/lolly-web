@@ -198,7 +198,7 @@ describe('offline-manager: docsFileList', () => {
   });
 
   // Narration must never silently fatten "Available offline: Docs"
-  // (plans/docs-audio-listen.md §7) — the group is excluded for every locale.
+  // (plans/40-docs-audio-listen.md §7) — the group is excluded for every locale.
   test('the audio group never rides along in the docs part', () => {
     for (const lang of ['en', 'fr', 'xx']) {
       assert.ok(!docsFileList(manifest, lang).some(f => f.url.includes('/audio/')),

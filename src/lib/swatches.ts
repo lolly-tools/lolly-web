@@ -17,7 +17,7 @@
  * own thing too — it's geometry (positioned on a hue/lightness disc), not a tile.
  */
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import type { PaletteEntry } from '../palette.ts';
 
 export const isTransparent = (hex: string): boolean => !hex || hex.toLowerCase() === 'transparent';
@@ -136,8 +136,8 @@ export interface SwatchTileOptions {
 export function tileLabel(name: string, hex: string, locked: boolean): string {
   const hexPart = hex || t('unset');
   return locked
-    ? t('{name} — {hex} (print colour locked)', { name, hex: hexPart })
-    : t('{name} — {hex}', { name, hex: hexPart });
+    ? tRaw('{name} — {hex} (print colour locked)', { name, hex: hexPart })
+    : tRaw('{name} — {hex}', { name, hex: hexPart });
 }
 
 export function swatchTile(entry: SwatchTileEntry, opts: SwatchTileOptions = {}): string {

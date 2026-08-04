@@ -27,7 +27,7 @@ import type { PageText, HiddenTextFinding } from '@lolly/engine';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
@@ -197,7 +197,7 @@ function hiddenMarkup(hidden: HiddenTextFinding[]): string {
         <span aria-hidden="true">${icon('eye', { size: 20 })}</span>
         ${t('Text is hidden behind shapes in this document')}
       </h2>
-      <p class="pdfx-hidden-lede">${escape(t('{words} in {runs} are covered by opaque shapes on {pages}. They are still in the file, and any PDF reader can pull them back out, including this one below. If these were meant to be redacted, drawing boxes over them did not remove them.', {
+      <p class="pdfx-hidden-lede">${escape(tRaw('{words} in {runs} are covered by opaque shapes on {pages}. They are still in the file, and any PDF reader can pull them back out, including this one below. If these were meant to be redacted, drawing boxes over them did not remove them.', {
         words: nWords(words), runs: nPlaces(hidden.length), pages: nPages(pages),
       }))}</p>
       <ul class="pdfx-hidden-list">${rows}</ul>
@@ -275,7 +275,7 @@ function vectorsMarkup(x: Extracted): string {
           <span class="pdfx-asset-name">${escape(`${v.width}×${v.height} pt`)}</span>
           <span class="pdfx-asset-sub">${escape(t('{n} shapes · page {p}', { n: v.shapes, p: v.page + 1 }))}</span>
           <span class="pdfx-swatches">${swatches}</span>
-          <span class="pdfx-asset-why">${escape(t('Detected by {reason}', { reason: v.reason }))}</span>
+          <span class="pdfx-asset-why">${escape(tRaw('Detected by {reason}', { reason: v.reason }))}</span>
         </figcaption>
         <div class="pdfx-asset-actions">
           <button type="button" class="btn btn--ghost" data-save-vector="${i}">${t('Download SVG')}</button>
@@ -619,7 +619,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       return;
     }
     out.hidden = false;
-    out.innerHTML = `<p class="pdfx-busy">${t('Reading {name}…', { name: escape(file.name) })}</p>`;
+    out.innerHTML = `<p class="pdfx-busy">${t('Reading {name}…', { name: file.name })}</p>`;
 
     let handle: PdfHandle;
     try {

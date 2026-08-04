@@ -203,6 +203,7 @@ export function openFolderOverlay(host: OverlayHost, opts: FolderOverlayOpts = {
           <h3 class="folder-exports-title">${t('Recent exports')}</h3>
           <div class="folder-exports-rail">
             ${recentExports.map(x => `
+              ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — exportReopenHref() builds a fixed '#/tool/<id>' hash route */ ''}
               <a class="folder-export-tile" href="${escape(x.href)}" data-open-export
                  title="${escape(x.caption)} · ${escape(new Date(x.at).toLocaleDateString())}">
                 <img src="${escape(x.thumb)}" alt="${escape(x.caption)}" loading="lazy">

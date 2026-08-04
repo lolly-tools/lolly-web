@@ -10,7 +10,7 @@
  * on-device privacy utilities (their output is the user's OWN file and must never be
  * stamped with provenance — a validated invariant) and for a tool that explicitly
  * opts out with render.c2pa:false. It moved there when the CLI adopted the same
- * default (plans/cli-ga-contract.md §12 O2, 2026-08-01) — one implementation, so a
+ * default (plans/73-cli-ga-contract.md §12 O2, 2026-08-01) — one implementation, so a
  * file made in the app and the same file made from the terminal cannot disagree
  * about whether it is signed.
  *

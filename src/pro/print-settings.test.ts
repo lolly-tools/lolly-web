@@ -9,7 +9,7 @@
  *   - `snapshotFromState` / `rowsFromSnapshot` (pro/sessions.ts) — the persistence
  *     channel, run level AND per row;
  *   - `rowFromBatchRow` (pro/folder-rows.ts) — a saved batch flattened into a
- *     folder export, which used to drop all three (plans/preflight-and-cost.md §7).
+ *     folder export, which used to drop all three (plans/65-preflight-and-cost.md §7).
  *
  * The empty string is deliberately tested as ABSENT, not as "explicitly off": `''`
  * is exactly what the single-tool export panel writes for these fields when its

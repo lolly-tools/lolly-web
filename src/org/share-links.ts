@@ -23,7 +23,7 @@
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import type { ShareSectionContext } from '../lib/share-sections.ts';
 import type { OrgConfig } from './index.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 
@@ -149,7 +149,7 @@ export function buildInstanceShareSection(ctx: ShareSectionContext, config: OrgC
   section.style.cssText = 'margin-top:.9rem;padding-top:.8rem;border-top:1px solid hsl(var(--border))';
 
   const heading = instanceName
-    ? t('On {name}', { name: instanceName })
+    ? tRaw('On {name}', { name: instanceName })
     : t('On this instance');
   section.innerHTML = `<h3 style="margin:0 0 .5rem;font-size:.82rem;font-weight:650;letter-spacing:.02em;text-transform:uppercase;color:hsl(var(--muted-foreground))">${escape(heading)}</h3>`;
 

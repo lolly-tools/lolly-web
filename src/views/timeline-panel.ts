@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * timeline-panel.ts — the docked timeline editor for a `boxes` block that carries the
- * phase-1 time model (plans/fable-timeline-phase-2.md §2).
+ * phase-1 time model (plans/53-fable-timeline-phase-2.md §2).
  *
  * Three hard rules shape everything below, and every one of them exists because the
  * alternative has already bitten this codebase:
@@ -38,7 +38,7 @@
  * zooming, scrolling, the playhead — is style writes against a cached `pxPerSec`.
  */
 
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { icon, type IconName } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -3152,7 +3152,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const j = indexOfId(next, cfg, g.id);
       if (j >= 0) {
         const now = span(next[j]!, durationSec()).dur;
-        announce(t('{name}: {dur}, trimmed {delta}', {
+        announce(tRaw('{name}: {dur}, trimmed {delta}', {
           name: labelFor(g.id), dur: fmtDur(now), delta: fmtDelta(now - g.dur0),
         }));
       }
@@ -3617,7 +3617,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (timingSig(next) !== timingSig(boxes)) write(next);
     const j = indexOfId(next, cfg, id);
     const now = j >= 0 ? span(next[j]!, durationSec()).dur : before;
-    const said = t('{name}: {dur}, trimmed {delta}', {
+    const said = tRaw('{name}: {dur}, trimmed {delta}', {
       name: labelFor(id), dur: fmtDur(now), delta: fmtDelta(now - before),
     });
     announce(lead ? `${lead} ${said}` : said);
@@ -4185,7 +4185,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
   }
 
-  // ── generated subtitles (plans/tts-stt-programme.md §5) ─────────────────────
+  // ── generated subtitles (plans/41-tts-stt-programme.md §5) ─────────────────────
   //
   // Timing-source ladder, best first: the asset's own `meta.tts.words` (a TTS
   // clip aligns itself — exact by construction, no download, no wait), else

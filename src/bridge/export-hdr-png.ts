@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * HDR PNG at 16 bits per channel — the first "invisible upgrade" of
- * plans/deeprichpixels.md §10 item 2.
+ * plans/61-deeprichpixels.md §10 item 2.
  *
  * Before this module, `?hdr=1&format=png` ran the canvas through the engine's
  * legacy byte path (`hdrBoostToPQ`: 8-bit in, 8-bit PQ code values out) and then
@@ -96,7 +96,7 @@ import type { ExportMeta } from '@lolly-tools/core/host-v1';
  * scanline above its own threshold, so the memory argument is gone: a 4K 16-bit
  * master compresses in a few hundred KB of working memory. This is now a plain
  * sanity bound on the single buffer we return -- 1 GiB of filtered bytes, matching
- * packPng's own default. See plans/deeprichpixels.md Phase B3.
+ * packPng's own default. See plans/61-deeprichpixels.md Phase B3.
  */
 export const HDR_PNG_DEFLATE_CAP = 1024 * 1024 * 1024;
 
@@ -191,7 +191,7 @@ export async function encodeHdrPng16(rgba: Uint8ClampedArray, o: HdrPng16Opts): 
   if (filtered > cap) {
     // Past the compressor's single-shot ceiling a stored IDAT would ship a
     // ~60 MB 4K file. Until the slab-fed deflater lands (deflate.ts TODO,
-    // plans/deeprichpixels.md §9b) refuse instead: the caller falls back to
+    // plans/61-deeprichpixels.md §9b) refuse instead: the caller falls back to
     // the legacy 8-bit PQ path, so an existing link never silently balloons.
     throw new Error(`png: ${width}x${height} at 16 bits is ${(filtered / (1024 * 1024)).toFixed(1)} MiB of scanlines, past the deep-PNG size ceiling`);
   }

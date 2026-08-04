@@ -12,7 +12,7 @@
  * count a batch row will actually produce, and importing `bridge/export.ts` for a
  * number would drag the whole DOM-bound export bridge into a headless pre-pass.
  * A second literal `2` is how preflight ends up stamping `bound: 'exact'` on a
- * count that is four times too small (`plans/preflight-and-cost.md` §6).
+ * count that is four times too small (`plans/65-preflight-and-cost.md` §6).
  */
 export const RASTER_DEFAULT_SCALE = 2;
 

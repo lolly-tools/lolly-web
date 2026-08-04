@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * HDR JPEG as an ISO 21496-1 gain-map file — Phase B2 of
- * plans/deeprichpixels.md (§4.2, §6 B, §10 item 2), and the sibling of
+ * plans/61-deeprichpixels.md (§4.2, §6 B, §10 item 2), and the sibling of
  * `export-hdr-png.ts`.
  *
  * Before this module, `?hdr=1&format=jpeg` ran the canvas through the engine's

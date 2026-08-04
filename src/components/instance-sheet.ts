@@ -32,7 +32,7 @@
  * behind that sentence yet.
  */
 import '../styles/parts/instance-sheet.css';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape, NAV_EVENTS } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
@@ -164,13 +164,13 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
           </button>
         </div>
         <p class="note note--warning">${t('Tools from a connected instance run with the same trust as bundled ones — connect only to instances you trust.')}</p>
-        ${current ? `<p class="modal-msg">${t('Currently connected to {base}.', { base: escape(current) })}</p>` : ''}
+        ${current ? `<p class="modal-msg">${t('Currently connected to {base}.', { base: current })}</p>` : ''}
       `;
     }
 
     function renderConnect(s: Extract<Step, { kind: 'connect' }>): string {
       const probe = s.probed
-        ? `<p class="instance-probe instance-probe--ok">${t('✓ Found {n} tools at {base}.', { n: s.probed.toolCount, base: escape(s.probed.base) })}</p>`
+        ? `<p class="instance-probe instance-probe--ok">${t('✓ Found {n} tools at {base}.', { n: s.probed.toolCount, base: s.probed.base })}</p>`
         : '';
       const err = s.error ? `<p class="instance-probe instance-probe--err">${escape(s.error)}</p>` : '';
       return `
@@ -226,7 +226,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
           { host: host as unknown as Parameters<typeof importBackup>[0]['host'], storage: localStorage },
           bytes,
         );
-        const line = t('Imported {sessions} and {images}', {
+        const line = tRaw('Imported {sessions} and {images}', {
           sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
           images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
         });
@@ -284,7 +284,7 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
             await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]);
           } catch { /* offline — sync falls back to cache; the instance is still set */ }
           window.dispatchEvent(new Event('lolly:remount'));
-          announce(t('Connected to {base}.', { base }));
+          announce(tRaw('Connected to {base}.', { base }));
           goImportStep();
         })();
         return;

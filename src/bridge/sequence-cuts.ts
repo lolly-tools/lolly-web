@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * sequence-cuts.ts — the CONTACT SHEET: N stills off one timed composition
- * (Fable timeline, phase 2.5 / plans/fable-timeline-editing.md §4.6).
+ * (Fable timeline, phase 2.5 / plans/51-fable-timeline-editing.md §4.6).
  *
  * This is the STILL sibling of sequence-render.ts. Where that module decodes,
  * composites and muxes to produce motion, this one does none of those things: it

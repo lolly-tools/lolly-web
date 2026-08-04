@@ -22,7 +22,7 @@
  * dynamic import of ./pro so the Projects chunk stays light and /pro stays removable.
  */
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { createFolderStore, childFolders, folderPath, descendantFolderIds } from '../folders.ts';
@@ -387,7 +387,7 @@ export async function mountProjects(
     const titleName = folderId == null ? t('Projects')
       : folderId === UNCAT ? t('Uncategorised')
       : (folders.find(f => f.id === folderId)?.name || t('Projects'));
-    document.title = t('{name} — Lolly', { name: titleName });
+    document.title = tRaw('{name} — Lolly', { name: titleName });
     featuredHandle?.destroy(); featuredHandle = null;  // stop the prior ribbon's rAF loop + listeners before its DOM is wiped
     searchCache = null;   // recompute matches once for this render (sort/data may have changed); the two callers below then share it
     pruneSelection();     // forget refs that vanished since the last render
@@ -440,7 +440,7 @@ export async function mountProjects(
     const isUncat = id === UNCAT;
     const folder = isUncat ? null : folders.find(f => f.id === id);
     if (!isUncat && !folder) {
-      return shell(t('Projects'), 'projects', `<p class="projects-empty">${t('That folder no longer exists. {link}.', { link: `<a href="#/p">${t('Back to Projects')}</a>` })}</p>`, { inFolder: true });
+      return shell(t('Projects'), 'projects', `<p class="projects-empty">${tRaw('That folder no longer exists. {link}.', { link: `<a href="#/p">${t('Back to Projects')}</a>` })}</p>`, { inFolder: true });
     }
     const subfolders = isUncat ? [] : sortFolders(childFolders(folders, id));
     const sessions = sortSessions(isUncat ? uncategorised() : sessionsInFolder(folder));
@@ -493,8 +493,8 @@ export async function mountProjects(
 
     // Content first (sub-folders, then sessions); create tiles LAST. No "+ New folder"
     // inside the synthetic Uncategorised bucket (it isn't a real folder to nest under).
-    const createFolder = isUncat ? '' : createTile('folder', FOLDER_PLUS_ICON, t('New folder'), t('Group inside {title}', { title }));
-    const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), isUncat ? t('New saved session') : t('Add to {title}', { title }));
+    const createFolder = isUncat ? '' : createTile('folder', FOLDER_PLUS_ICON, t('New folder'), tRaw('Group inside {title}', { title }));
+    const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), isUncat ? t('New saved session') : tRaw('Add to {title}', { title }));
     // Image items in this folder (never in Uncategorised — an image needs a folder to
     // live in), resolved to AssetRefs so their tiles render. Kept in store order after
     // the sessions.
@@ -560,15 +560,15 @@ export async function mountProjects(
       : folderId === UNCAT ? t('Uncategorised')
       : `“${folders.find(f => f.id === folderId)?.name ?? t('this folder')}”`;
     if (!total) {
-      return `<p class="projects-search-status" role="status" aria-live="polite">${t('No matches for “{query}” in {scope}', { query: escape(query), scope: escape(scope) })}</p>
-        <p class="projects-empty">${t('Nothing here matches “{query}”. Try a different search, or {button}.', { query: escape(query), button: `<button type="button" class="projects-linkbtn" data-search-clear>${t('clear the search')}</button>` })}</p>`;
+      return `<p class="projects-search-status" role="status" aria-live="polite">${t('No matches for “{query}” in {scope}', { query, scope })}</p>
+        <p class="projects-empty">${tRaw('Nothing here matches “{query}”. Try a different search, or {button}.', { query: escape(query), button: `<button type="button" class="projects-linkbtn" data-search-clear>${t('clear the search')}</button>` })}</p>`;
     }
     // When the match set is capped, name the true total and that only a slice is shown so a
     // broad query never silently looks "complete".
     const countText = capped
       ? t('{total} results — showing the first {shown}, refine to narrow', { total: total.toLocaleString(), shown })
       : (total === 1 ? t('1 result') : t('{n} results', { n: total }));
-    const status = `<p class="projects-search-status" role="status" aria-live="polite">${t('{count} for “{query}” in {scope}', { count: countText, query: escape(query), scope: escape(scope) })}</p>`;
+    const status = `<p class="projects-search-status" role="status" aria-live="polite">${tRaw('{count} for “{query}” in {scope}', { count: countText, query: escape(query), scope: escape(scope) })}</p>`;
     const gridClass = `folder-grid projects-grid projects-search-grid${viewMode === 'list' ? ' projects-list' : ''}`;
     const tiles = [...mf.map(folderResultTile), ...ms.map(sessionResultTile)].join('');
     return `${status}<div class="${gridClass}">${tiles}</div>`;
@@ -602,7 +602,7 @@ export async function mountProjects(
   function locationChip(targetId: string | null, text: string): string {
     const inner = `${FOLDER_ICON}<span>${escape(text)}</span>`;
     return targetId
-      ? `<button type="button" class="projects-result-path" data-open-folder-nav="${escape(targetId)}" title="${escape(t('Open {name}', { name: text }))}">${inner}</button>`
+      ? `<button type="button" class="projects-result-path" data-open-folder-nav="${escape(targetId)}" title="${escape(tRaw('Open {name}', { name: text }))}">${inner}</button>`
       : `<span class="projects-result-path projects-result-path--static">${inner}</span>`;
   }
 
@@ -658,7 +658,7 @@ export async function mountProjects(
     const scopeName = folderId == null ? t('all projects')
       : folderId === UNCAT ? t('Uncategorised')
       : (folders.find(f => f.id === folderId)?.name || t('this folder'));
-    const placeholder = folderId == null ? t('Search all projects…') : t('Search {scope}…', { scope: scopeName });
+    const placeholder = folderId == null ? t('Search all projects…') : tRaw('Search {scope}…', { scope: scopeName });
     const proEnabled = flagEnabled(profile, PRO_FLAG.id);
     return `
       ${footerNav({
@@ -1282,7 +1282,7 @@ export async function mountProjects(
         </div>
         <div class="movepicker-foot">
           <button type="button" class="btn movepicker-cancel">${t('Cancel')}</button>
-          <button type="button" class="btn projects-render movepicker-confirm"${canDropHere ? '' : ' disabled'}>${t('Move to {name}', { name: escape(curName) })}</button>
+          <button type="button" class="btn projects-render movepicker-confirm"${canDropHere ? '' : ' disabled'}>${t('Move to {name}', { name: curName })}</button>
         </div>`;
     };
 
@@ -1673,9 +1673,9 @@ export async function mountProjects(
     if (subCount) parts.push(subCount === 1 ? t('1 sub-folder') : t('{n} sub-folders', { n: subCount }));
     if (n) parts.push(n === 1 ? t('1 item (saved sessions and images, including previews)') : t('{n} items (saved sessions and images, including previews)', { n }));
     const ok = await confirmDialog({
-      title: t('Delete “{name}”?', { name: folder.name }),
+      title: tRaw('Delete “{name}”?', { name: folder.name }),
       message: parts.length
-        ? t('This permanently deletes the folder, {parts}. This cannot be undone.', { parts: parts.join(t(' and ')) })
+        ? tRaw('This permanently deletes the folder, {parts}. This cannot be undone.', { parts: parts.join(t(' and ')) })
         : t('This permanently deletes the folder. This cannot be undone.'),
       confirmLabel: t('Delete folder'),
     });
@@ -1689,7 +1689,7 @@ export async function mountProjects(
       } catch (err) { host.log?.('warn', 'projects: folder item delete failed', { ref: it.ref, error: String(err) }); }
     }
     await store.removeSubtree(id);
-    announce(t('Folder “{name}” deleted', { name: folder.name }));
+    announce(tRaw('Folder “{name}” deleted', { name: folder.name }));
     if (!mounted) return;
     // If we were viewing the deleted folder (or one now-deleted beneath it), climb to its
     // parent (or root); otherwise just re-render in place.
@@ -1927,7 +1927,7 @@ export async function mountProjects(
     if (totalImages) bits.push(totalImages === 1 ? t('1 image') : t('{n} images', { n: totalImages }));
     const ok = await confirmDialog({
       title: selected.size === 1 ? t('Delete 1 selected item?') : t('Delete {n} selected items?', { n: selected.size }),
-      message: t('This permanently deletes {list}, including previews. This cannot be undone.', { list: bits.join(', ') }),
+      message: tRaw('This permanently deletes {list}, including previews. This cannot be undone.', { list: bits.join(', ') }),
       confirmLabel: t('Delete'),
     });
     if (!ok || !mounted) return;

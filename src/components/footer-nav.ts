@@ -91,8 +91,10 @@ function navItem(o: { href: string; nativeClass: string; variant?: string; style
     // `.gallery-nav-link` (their `.gallery-footer > .btn` display/flex rules would
     // fight the jelly host box). `size="sm"` gives compact padding; the visible
     // .gallery-nav-label span keeps its class so the mobile label-hide still works.
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation — footerNav()'s four literal routes ('#/pro', '#/d', '#/verify', docsHref('index') → '/info/…')
     return `<jelly-button class="gallery-nav-jelly" size="sm"${o.variant ? ` variant="${o.variant}"` : ''}${o.style ?? ''} data-href="${escape(o.href)}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</jelly-button>`;
   }
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation — same four literal footerNav() routes as the jelly branch above
   return `<a href="${escape(o.href)}" class="${o.nativeClass}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</a>`;
 }
 

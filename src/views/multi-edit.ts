@@ -38,7 +38,7 @@ import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { syncInputs } from './tool-inputs.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { mountProgressToast } from '../components/progress-toast.ts';
@@ -104,7 +104,7 @@ const num = (v: unknown): number | undefined => {
 
 export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, params: string): Promise<void> {
   // Titles the tab AND labels this view for the next view's back pill (lib/back-nav.ts).
-  document.title = t('{name} — Lolly', { name: t('Multi-edit') });
+  document.title = tRaw('{name} — Lolly', { name: t('Multi-edit') });
   const slots = (new URLSearchParams(params).get('s') ?? '')
     .split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
 
@@ -196,7 +196,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     const h = m.tool.manifest.render?.height ?? 600;
     return `
       <figure class="me-cell" data-me-cell="${i}" tabindex="0" role="button"
-        aria-label="${escape(t('Show the inputs for {label}', { label: m.label }))}">
+        aria-label="${escape(tRaw('Show the inputs for {label}', { label: m.label }))}">
         <div class="me-stage" style="aspect-ratio:${w} / ${h}">
           ${m.thumb ? `<img class="me-thumb" data-me-thumb="${i}" src="${escape(m.thumb)}" alt="" aria-hidden="true">` : ''}
           <div class="me-scale" data-me-scale="${i}" style="width:${w}px;height:${h}px">

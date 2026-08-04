@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * bridge/export-hdr-png.ts — HDR PNG at 16 bits per channel
- * (plans/deeprichpixels.md §10 item 2, Phase B1 wiring).
+ * (plans/61-deeprichpixels.md §10 item 2, Phase B1 wiring).
  *
  * The seam under test is deliberately DOM-free — `Uint8ClampedArray` in, PNG
  * bytes out — so the whole HDR raster path is driven here with no canvas and no

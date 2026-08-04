@@ -143,6 +143,18 @@ export async function parseDesignFile(
   }
   const buf = new Uint8Array(await file.arrayBuffer());
 
+  // Layered bitmaps (Photoshop PSD/PSB, GIMP XCF): each layer becomes an image box
+  // at its exact document offset. The parse + per-layer asset storage live in
+  // psd-import.ts (its own lazy chunk, like the PDF path below).
+  if ((buf.length >= 4 && buf[0] === 0x38 && buf[1] === 0x42 && buf[2] === 0x50 && buf[3] === 0x53)
+    || (buf.length >= 9 && String.fromCharCode(...buf.subarray(0, 9)) === 'gimp xcf ')) {
+    const { parseLayeredAsDesign } = await import('./psd-import.ts');
+    return await parseLayeredAsDesign(file, {
+      host: host as unknown as Parameters<typeof parseLayeredAsDesign>[1]['host'],
+      warn,
+    }) as unknown as DesignImportResult;
+  }
+
   // PDF / Adobe Illustrator: a modern .ai saved with PDF compatibility (the default) IS a
   // PDF, so both route to the PDF interpreter. The heavy pdf-lib parser is its own lazy chunk.
   if (isPdf(buf)) {

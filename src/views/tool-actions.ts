@@ -16,7 +16,7 @@ import type {
 } from '@lolly/engine';
 import type { MoneyContext } from '@lolly-tools/core';
 import { escape } from '../utils.js';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
@@ -91,7 +91,7 @@ const isC2paFmt = (f: string | undefined): boolean => !!f && (C2PA_FORMATS.inclu
 // Zip carries the flag through to its bundled raster + container members.
 const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
 // Durable (neural TrustMark) embed is RASTER-ONLY — no pdf/pptx container path yet
-// (export.ts durableEmbedCanvas; see plans/durable-content-credentials.md).
+// (export.ts durableEmbedCanvas; see plans/28-durable-content-credentials.md).
 const isDurableFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
 // HDR (Rec.2100 PQ) raster export. PNG (cICP) + JPEG (PQ ICC) + AVIF (native nclx
 // colr) + TIFF (PQ ICC tag, archival). WebP is excluded on purpose — it has no
@@ -1282,7 +1282,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   }
 
   // The depth fact — what the chosen format WILL carry beyond an ordinary 8-bit
-  // image, stated and not offered (plans/deeprichpixels.md §10 item 3). Nothing is
+  // image, stated and not offered (plans/61-deeprichpixels.md §10 item 3). Nothing is
   // rendered unless there is something true to say, so this runs wherever either
   // input to that truth changes: the format, and the HDR toggle. `?depth=` has no
   // panel control by design — it rides the link, so exportDefaults is its only
@@ -1788,7 +1788,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // by construction: a manifest-sourced size shows as the pixel canvas it is.
     const sizeText = manifestSize
       ? `${manifest.render.width * canvasScale} × ${manifest.render.height * canvasScale} px`
-      : (unit === 'px' ? `${w} × ${h} px` : t('{w} × {h} {unit} at {dpi} DPI', { w: String(w), h: String(h), unit, dpi }));
+      : (unit === 'px' ? `${w} × ${h} px` : tRaw('{w} × {h} {unit} at {dpi} DPI', { w: String(w), h: String(h), unit, dpi }));
     const report = preflight(job);
     applyPreflight(el, preflightView(report, {
       formatLabel: fmt ? fmtLabel(fmt) : '',

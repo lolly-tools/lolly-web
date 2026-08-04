@@ -14,7 +14,7 @@ import { validateFontFile } from '../lib/font-utils.ts';
 import { setPrimaryFont, setMonoFont } from '../user-fonts.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { announce } from '../a11y.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 
 export interface FontsManagerOptions {
   host: HostV1;
@@ -104,7 +104,7 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
 
     if (!validFiles.length) {
       fail(rejected.length
-        ? t("Couldn't add {file}", { file: rejected[0]! })
+        ? tRaw("Couldn't add {file}", { file: rejected[0]! })
         : t('No font files to add'));
       return;
     }
@@ -117,13 +117,13 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
       try {
         const result = await installFontAsset(host, file);
         if (result) {
-          announce(t('{family} added', { family: result.family }));
+          announce(tRaw('{family} added', { family: result.family }));
           onFontInstalled?.(result.family);
         } else {
-          fail(t("Couldn't read the font in {file}", { file: file.name }));
+          fail(tRaw("Couldn't read the font in {file}", { file: file.name }));
         }
       } catch (e) {
-        fail(t("Couldn't add {file}: {error}", { file: file.name, error: errText(e) }));
+        fail(tRaw("Couldn't add {file}: {error}", { file: file.name, error: errText(e) }));
       }
     }
 
@@ -132,7 +132,7 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
       await refreshFontRegistry(host);
       await refreshFontList();
     } catch (e) {
-      fail(t("Couldn't refresh your fonts: {error}", { error: errText(e) }));
+      fail(tRaw("Couldn't refresh your fonts: {error}", { error: errText(e) }));
     }
 
     fileInput.disabled = false;
@@ -144,7 +144,7 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       handleFiles(input.files).catch((err) => {
-        fail(t("Couldn't add those fonts: {error}", { error: errText(err) }));
+        fail(tRaw("Couldn't add those fonts: {error}", { error: errText(err) }));
       });
     }
   });
@@ -196,9 +196,9 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
           try {
             await setPrimaryFont(host as unknown as Parameters<typeof setPrimaryFont>[0], font.family);
             onFontInstalled?.(font.family);
-            announce(t('{family} is now your primary font', { family: font.family }));
+            announce(tRaw('{family} is now your primary font', { family: font.family }));
           } catch (e) {
-            fail(t("Couldn't set {family} as your primary font: {error}", { family: font.family, error: errText(e) }));
+            fail(tRaw("Couldn't set {family} as your primary font: {error}", { family: font.family, error: errText(e) }));
           }
         }
       });
@@ -212,9 +212,9 @@ export async function mountFontsManager(container: HTMLElement, opts: FontsManag
           try {
             await setMonoFont(host as unknown as Parameters<typeof setMonoFont>[0], font.family);
             onFontInstalled?.(font.family);
-            announce(t('{family} now serves code & data', { family: font.family }));
+            announce(tRaw('{family} now serves code & data', { family: font.family }));
           } catch (e) {
-            fail(t("Couldn't set {family} for code & data: {error}", { family: font.family, error: errText(e) }));
+            fail(tRaw("Couldn't set {family} for code & data: {error}", { family: font.family, error: errText(e) }));
           }
         }
       });

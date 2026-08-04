@@ -25,7 +25,7 @@ import { setTheme } from '../lib/set-theme.ts';
 import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import type { A11yPrefs } from '../lib/a11y-prefs.ts';
-import { currentLang, switchLang, t, docsHref } from '../i18n.ts';
+import { currentLang, switchLang, t, tRaw, docsHref } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -62,6 +62,7 @@ import type { OfflinePartId, PrecacheManifest, InfoManifest, DownloadProgress, P
 import { toolSupport } from '../capabilities.ts';
 import { derivedMediaSize, resetScrubCache } from '../lib/clip-proxy.ts';
 import { getInstanceBase, setInstanceBase } from '../lib/instance.ts';
+import { isTauriShell } from '../lib/instance-choice.ts';
 import { openInstanceSheet } from '../components/instance-sheet.ts';
 // Generic per-field display policy (empty/no-op unless a deployment's control
 // plane has populated it via src/org/) + the admin-console affordance seam.
@@ -298,6 +299,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // Instance-admin affordance — null unless the org session's role is admin/owner
   // (so it never renders on a plain deployment).
   const adminHref = orgAdminHref();
+  // Changing the instance base is a DESKTOP capability, not a browser one. A
+  // remote base makes every catalogue, tool, asset and org request cross-origin,
+  // and the shell's Content-Security-Policy allows a fixed host list that cannot
+  // contain an origin the user types at runtime — so in a browser those fetches
+  // are refused and the feature fails with a console-only error. Tauri routes
+  // cross-origin traffic through tauri-plugin-http and serves no CSP, so it works
+  // there. Offering a control that cannot work is worse than not offering it, so
+  // the browser shows the current source read-only and says where to go instead.
+  // Matches lib/instance-choice.ts's own gate on the first-run sheet.
+  const canChangeInstance = isTauriShell();
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
   // across reloads).
   const headshotRef = profile.headshot?.id ? await host.assets.get(profile.headshot!.id).catch(() => null) : null;
@@ -594,11 +605,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="store-manage--row">
           <span class="store-manage-name">${escape(instanceBase || t('Bundled with this app'))}</span>
           <span style="display:flex;gap:8px">
+            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — orgAdminHref() returns the '/admin' literal or null; no control-plane value reaches it */ ''}
             ${adminHref ? `<a class="btn" id="instance-console-link" href="${escape(adminHref)}">${t('Instance console')}</a>` : ''}
-            <button type="button" class="btn" id="instance-change-btn">${t('Change')}</button>
-            <button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Disconnect')}</button>
+            ${canChangeInstance ? `<button type="button" class="btn" id="instance-change-btn">${t('Change')}</button>` : ''}
+            ${canChangeInstance ? `<button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Disconnect')}</button>` : ''}
           </span>
         </div>
+        ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app — a browser blocks a page from loading tools and assets across origins.')}</p>`}
       </section>
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
@@ -1135,7 +1148,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       emptyThumbContent: SESS_PLACEHOLDER_ICON,
       emptyThumbClass: 'is-placeholder',
       selectClass: 'store-sess-check',
-      selectLabel: t('Select {name}', { name: label }),
+      selectLabel: tRaw('Select {name}', { name: label }),
       metaClass: 'store-sess-meta',
       titleClass: 'store-sess-label',
       title: label,
@@ -1146,7 +1159,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       sizeBytes: bytes,
       deleteAttr: `data-del-session="${escape(s.slot)}"`,
       deleteClass: 'store-sess-del',
-      deleteLabel: t('Delete {name}', { name: label }),
+      deleteLabel: tRaw('Delete {name}', { name: label }),
     });
   }
   function sessionRowsHtml(m: StorageModel, sort: string) {
@@ -1335,7 +1348,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         if (m.hasEstimate && m.quota) {
           const used = m.usage! / m.quota;
           const phrase = used < 0.5 ? t('lots of room left') : used < 0.8 ? t('plenty of room left') : used < 0.95 ? t('getting full') : t('almost full');
-          headroom.textContent = t('Using {pct} of your {quota} device budget · {phrase}', { pct: fmtPct(m.usage!, m.quota), quota: fmtBytes(m.quota), phrase });
+          headroom.textContent = tRaw('Using {pct} of your {quota} device budget · {phrase}', { pct: fmtPct(m.usage!, m.quota), quota: fmtBytes(m.quota), phrase });
           headroom.hidden = false;
         } else headroom.hidden = true;
       }
@@ -1352,7 +1365,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         if (!seg) continue;
         seg.style.flexGrow = String(Math.max(0, bytes));
         seg.hidden = !avail || bytes <= 0;
-        seg.setAttribute('aria-label', t('{label}, {size} — manage', { label, size: fmtBytes(bytes) }));
+        seg.setAttribute('aria-label', tRaw('{label}, {size} — manage', { label, size: fmtBytes(bytes) }));
         seg.title = `${label} — ${fmtBytes(bytes)}`;
       }
       const otherSeg = bar?.querySelector<HTMLElement>('.seg--other');
@@ -1453,8 +1466,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const ok = await confirmDialog({
         title: t('Delete this session?'),
         message: bytes
-          ? t('"{name}" will be permanently removed from this device, freeing about {size}. This cannot be undone.', { name: label, size: fmtBytes(bytes) })
-          : t('"{name}" will be permanently removed from this device. This cannot be undone.', { name: label }),
+          ? tRaw('"{name}" will be permanently removed from this device, freeing about {size}. This cannot be undone.', { name: label, size: fmtBytes(bytes) })
+          : tRaw('"{name}" will be permanently removed from this device. This cannot be undone.', { name: label }),
         confirmLabel: t('Delete'),
       });
       if (!ok) return;
@@ -1634,7 +1647,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <p>${t('This removes your profile, all saved sessions, your uploaded images, and the asset cache. Cannot be undone.')}</p>
         <label class="clear-confirm">
           <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word })}</span>
-          <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
+          <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(tRaw('Type {word} to confirm', { word }))}">
         </label>
         <div class="clear-dialog-actions">
           <button class="btn btn-danger" data-scope="all" data-sfx="byebye" disabled>${t('Clear everything')}</button>
@@ -1703,7 +1716,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         // BackupHost type isn't exported from data-transfer.
         const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
         saveBlob(blob, filename);
-        announce(t('Exported {sessions} and {images}', {
+        announce(tRaw('Exported {sessions} and {images}', {
           sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
           images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
         }));
@@ -1725,8 +1738,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <h3 id="hoard-dialog-title">${t('Export everything — and render it all?')}</h3>
         <p>${t('Downloads a full <strong>backup</strong> of your data, then a <strong>rendered archive</strong> — every saved session output to its file, in folders that mirror your Projects. Nothing is deleted. A big library makes a big zip and can take a while.')}</p>
         <label class="clear-confirm">
-          <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word: escape(word) })}</span>
-          <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(t('Type {word} to confirm', { word }))}">
+          <span class="clear-confirm-prompt">${t('Type <strong>{word}</strong> to confirm', { word })}</span>
+          <input type="text" class="clear-confirm-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="${escape(tRaw('Type {word} to confirm', { word }))}">
         </label>
         <div class="clear-dialog-actions">
           <button class="btn btn-go" data-scope="go" disabled>${t('Hoard it all 📦')}</button>
@@ -1768,7 +1781,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         const n = count === 1 ? t('1 creation is a video or animation') : t('{n} of your creations are videos or animations', { n: count });
         const content = `
           <h3 id="keepactive-title">${t('Keep this tab active?')}</h3>
-          <p>${t('{n}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render — switch away and they pause. Include them?', { n: escape(n) })}</p>
+          <p>${t('{n}. Those record in <strong>real time</strong>, so this browser tab must stay open and in front the whole time they render — switch away and they pause. Include them?', { n })}</p>
           <div class="clear-dialog-actions">
             <button class="btn btn-go" data-choice="include">${t("I'm willing to keep this tab active")}</button>
             <button class="btn" data-choice="skip">${t('Skip videos for now')}</button>
@@ -1809,13 +1822,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           const { blob, filename, summary } = await exportBackup({ host: host as unknown as Parameters<typeof exportBackup>[0]['host'], storage: localStorage });
           saveBlob(blob, filename);
           mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Saved your data backup.</strong> Now rendering every creation…')}</p>`;
-          announce(t('Data backup saved: {sessions}, {images}', {
+          announce(tRaw('Data backup saved: {sessions}, {images}', {
             sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
             images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
           }));
         } catch (err) {
           host.log?.('error', 'Data export failed', { error: String(err) });
-          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('The data backup failed ({error}). Continuing to the render…', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
+          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('The data backup failed ({error}). Continuing to the render…', { error: String((err as { message?: unknown })?.message ?? err) })}</p>`;
         }
 
         // 2) Render EVERYTHING into one nested zip mirroring the Projects tree: loose
@@ -1855,7 +1868,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             mount.innerHTML = `<p class="pro-progress-msg">${t('<strong>Backup saved.</strong> Render cancelled — nothing else was downloaded.')}</p>`;
           }
         } catch (err) {
-          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('Render failed: {error}', { error: escape(String((err as { message?: unknown })?.message ?? err)) })}</p>`;
+          mount.innerHTML = `<p class="pro-progress-msg pro-log-err">${t('Render failed: {error}', { error: String((err as { message?: unknown })?.message ?? err) })}</p>`;
           host.log?.('error', 'Render-everything failed', { error: String(err) });
         }
       }, {
@@ -1890,7 +1903,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         // Failed restores are surfaced separately (and assertively) — a silently-dropped
         // image would be lost for good once the user discards the source backup.
         const failNote = summary.failedAssets ? ` · ${summary.failedAssets === 1 ? t('1 image couldn’t be restored (storage full?)') : t('{n} images couldn’t be restored (storage full?)', { n: summary.failedAssets })}` : '';
-        announce(t('Imported {sessions} and {images}', {
+        announce(tRaw('Imported {sessions} and {images}', {
           sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
           images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
         }) + skipNote + failNote, summary.failedAssets ? { assertive: true } : undefined);
@@ -1937,7 +1950,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <span class="odl-row-icon" aria-hidden="true">${tl.icon ?? ''}</span>
           <span class="odl-row-name">${escape(name)}</span>
           <span class="odl-row-size">${rec ? fmtBytes(rec.bytes) : ''}</span>
-          <button type="button" class="odl-pin${rec ? ' is-pinned' : ''}" data-odl="${escape(tl.id)}" aria-pressed="${rec ? 'true' : 'false'}" title="${escape(rec ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(rec ? t('Remove {name} from offline', { name }) : t('Keep {name} available offline', { name }))}">
+          <button type="button" class="odl-pin${rec ? ' is-pinned' : ''}" data-odl="${escape(tl.id)}" aria-pressed="${rec ? 'true' : 'false'}" title="${escape(rec ? t('Available offline') : t('Keep available offline'))}" aria-label="${escape(rec ? tRaw('Remove {name} from offline', { name }) : tRaw('Keep {name} available offline', { name }))}">
             <span class="pin-layer pin-dl" aria-hidden="true">${icon('download')}</span>
             <span class="pin-layer pin-ring" aria-hidden="true">${icon('ring')}</span>
             <span class="pin-layer pin-done" aria-hidden="true">${icon('circleCheck')}</span>
@@ -2044,7 +2057,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         btn.classList.toggle('is-pinned', !!rec);
         btn.setAttribute('aria-pressed', String(!!rec));
         btn.title = rec ? t('Available offline') : t('Keep available offline');
-        btn.setAttribute('aria-label', rec ? t('Remove {name} from offline', { name }) : t('Keep {name} available offline', { name }));
+        btn.setAttribute('aria-label', rec ? tRaw('Remove {name} from offline', { name }) : tRaw('Keep {name} available offline', { name }));
       }
       updateTotals();
     };
@@ -2089,13 +2102,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           await unpinTool(id);
           pins = await pinRecords();
           syncRow(id);
-          announce(t('{name} removed from offline', { name }));
+          announce(tRaw('{name} removed from offline', { name }));
         } finally { btn.classList.remove('is-busy'); }
       } else {
         const ok = await download(id, btn);
         announce(ok
-          ? t('{name} is available offline', { name })
-          : t('Couldn’t save {name} for offline — check your connection', { name }), { assertive: !ok });
+          ? tRaw('{name} is available offline', { name })
+          : tRaw('Couldn’t save {name} for offline — check your connection', { name }), { assertive: !ok });
       }
       await refreshCounter(); // the Storage meter's pins slice moved
     });
@@ -2269,11 +2282,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (pct === null) {
         progTrack.removeAttribute('aria-valuenow');
         progFill.style.width = '100%';
-        progText.textContent = t('{label} — {loaded} so far…', { label, loaded: fmtBytes(p.loaded) });
+        progText.textContent = tRaw('{label} — {loaded} so far…', { label, loaded: fmtBytes(p.loaded) });
       } else {
         progTrack.setAttribute('aria-valuenow', String(pct));
         progFill.style.width = `${pct}%`;
-        progText.textContent = t('{label} — {loaded} of {total}', { label, loaded: fmtBytes(p.loaded), total: fmtBytes(p.total ?? 0) });
+        progText.textContent = tRaw('{label} — {loaded} of {total}', { label, loaded: fmtBytes(p.loaded), total: fmtBytes(p.total ?? 0) });
       }
     };
 
@@ -2368,7 +2381,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const id = rm.dataset.partRm as OfflinePartId;
       const sure = await confirmDialog({
         title: t('Remove this offline download?'),
-        message: t('{name} is removed from this device. You can download it again any time you are online.', { name: partLabel(id) }),
+        message: tRaw('{name} is removed from this device. You can download it again any time you are online.', { name: partLabel(id) }),
         confirmLabel: t('Remove'),
         danger: true,
       });
@@ -2482,6 +2495,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     ];
     return `
       <p class="identity-blurb">${t('Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device.')} <a href="${docsHref('content-credentials-identity')}" target="_blank" rel="noopener">${t('How it works')}</a></p>
+      <p class="identity-blurb identity-permanence">${t('Know before you enrol: your email address is written into every file you export while enrolled. It stays in every copy you share and cannot be removed later, even after the certificate expires.')}</p>
       <label class="identity-days-row">${t('Verified for')}
         <select class="identity-days-select" aria-label="${escape(t('Certificate lifetime'))}">
           <option value="7">${t('7 days')}</option>
@@ -2503,10 +2517,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   function renderIdentityStatus(s: IdentityStatus) {
     const provider = PROVIDER_LABELS[s.identity?.provider as string] ?? s.identity?.provider ?? '';
     const when = s.notAfter ? new Date(s.notAfter).toLocaleDateString() : '';
-    const life = s.expired ? (when ? t('expired {date}', { date: when }) : t('expired')) : (when ? t('renews {date}', { date: when }) : '');
+    const life = s.expired ? (when ? tRaw('expired {date}', { date: when }) : t('expired')) : (when ? tRaw('renews {date}', { date: when }) : '');
     return `
       <div class="identity-status${s.expired ? ' is-expired' : ''}">
-        <p class="identity-signing">${t('Signing as <strong>{email}</strong>', { email: escape(s.identity?.email ?? '') })}${provider ? ` <span class="identity-via">${t('via {provider}', { provider: escape(provider) })}</span>` : ''}</p>
+        <p class="identity-signing">${t('Signing as <strong>{email}</strong>', { email: s.identity?.email ?? '' })}${provider ? ` <span class="identity-via">${t('via {provider}', { provider })}</span>` : ''}</p>
         ${life ? `<p class="identity-life">${escape(life)}</p>` : ''}
         <div class="identity-actions">
           <button type="button" class="btn" data-identity-act="renew">${t('Renew')}</button>
@@ -2550,7 +2564,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     try {
       const s = await host.identity!.enroll(provider, { days });
       await paintIdentity();
-      announce(t('Enrolled as {who}', { who: s?.identity?.email ?? t('your account') }));
+      announce(tRaw('Enrolled as {who}', { who: s?.identity?.email ?? t('your account') }));
     } catch (err) {
       body.querySelectorAll('button').forEach(b => { b.disabled = false; });
       btn.textContent = label;
@@ -2642,10 +2656,10 @@ function userImageThumb(ref: AssetRef) {
       : `<img class="userimg-thumb${isVector ? ' is-vector' : ''}" src="${escape(ref.url)}" alt="${escape(name)}" loading="lazy">`;
   return `
     <div class="userimg-item" data-userimg="${escape(ref.id)}">
-      <button type="button" class="userimg-view" data-view-userimg="${escape(ref.id)}" title="${escape(name)}" aria-label="${escape(t('View {name}', { name }))}">
+      <button type="button" class="userimg-view" data-view-userimg="${escape(ref.id)}" title="${escape(name)}" aria-label="${escape(tRaw('View {name}', { name }))}">
         ${media}
       </button>
-      <button type="button" class="userimg-delete" data-delete-userimg="${escape(ref.id)}" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete {name}', { name }))}">&#x2715;</button>
+      <button type="button" class="userimg-delete" data-delete-userimg="${escape(ref.id)}" title="${escape(t('Delete'))}" aria-label="${escape(tRaw('Delete {name}', { name }))}">&#x2715;</button>
     </div>
   `;
 }

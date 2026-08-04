@@ -70,6 +70,19 @@ test('an action message renders one dismissible bar above the app', async () => 
   assert.ok(bar!.querySelector('a.org-banner-cta'), 'CTA link present');
 });
 
+test('a javascript: CTA url is dropped, not rendered as a clickable anchor', async () => {
+  _resetBannerForTests();
+  fetchLog = [];
+  inbox = [{ id: 'm9', kind: 'notice', severity: 'action', title: 'Action required', dismissible: true, cta: { label: 'Review', url: 'javascript:fetch("/steal")' } }];
+  await mountOrgBanner();
+
+  const bar = document.getElementById('org-banner');
+  assert.ok(bar, 'banner still rendered');
+  assert.equal(bar!.querySelector('a.org-banner-cta'), null, 'no CTA anchor for an unsafe scheme');
+  assert.doesNotMatch(bar!.innerHTML, /javascript:/);
+  bar!.remove();
+});
+
 test('dismiss ACKs the message and removes the bar', async () => {
   _resetBannerForTests();
   fetchLog = [];

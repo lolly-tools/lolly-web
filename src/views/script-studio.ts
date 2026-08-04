@@ -32,7 +32,7 @@ import { audioTransportHtml, wireAudioTransport, type AudioTransport } from '../
 import { fmtBytes } from '../lib/format.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
@@ -77,7 +77,7 @@ export function formatListenEstimate(seconds: number): string {
 const auditionUrls = new Map<string, Promise<string>>();
 
 export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHost): Promise<void> {
-  document.title = t('{name} — Lolly', { name: t('Script audio') });
+  document.title = tRaw('{name} — Lolly', { name: t('Script audio') });
   const speech = host.speech;
 
   // A deep link onto a shell without the speech bridge: say so, plainly.
@@ -164,7 +164,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   // The generate shortcut, named in the platform's own words (textContent — no
   // markup, so no sink).
   const isMac = /Mac|iP(hone|ad|od)/.test(navigator.platform);
-  kbdEl.textContent = t('{keys} generates', { keys: isMac ? '⌘ Enter' : 'Ctrl Enter' });
+  kbdEl.textContent = tRaw('{keys} generates', { keys: isMac ? '⌘ Enter' : 'Ctrl Enter' });
 
   let transport: AudioTransport | null = null;
   let abort: AbortController | null = null;
@@ -247,7 +247,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   const auditionUrlFor = (voiceId: string, voiceName: string): Promise<string> => {
     let p = auditionUrls.get(voiceId);
     if (!p) {
-      p = speech.synthesize(t("Hi, I'm {name}", { name: voiceName }), {
+      p = speech.synthesize(tRaw("Hi, I'm {name}", { name: voiceName }), {
         voice: voiceId || undefined,
         onProgress: paintProgress,
       }).then((res) =>
@@ -358,7 +358,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
       // Quota errors carry a user-ready message (code set); prefix only the rest.
       showStatus((e as { code?: unknown }).code
         ? (e as Error).message
-        : t("Couldn't save the audio: {message}", { message: (e as Error).message }), true);
+        : tRaw("Couldn't save the audio: {message}", { message: (e as Error).message }), true);
     } finally {
       if (viewEl.isConnected) saveBtn.disabled = false;
     }

@@ -22,7 +22,7 @@ import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { getExportPolicy } from '../lib/export-policy.ts';
 import type { ApprovalRequestContext } from '../lib/approval-request.ts';
 import { mountModal } from '../components/modal.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 
@@ -234,7 +234,7 @@ export function openApprovalDialog(ctx: ApprovalRequestContext): void {
     }
     approvers = reply.approvers;
     if (reply.stepName) {
-      stepEl.textContent = t('Step: {name}', { name: reply.stepName });
+      stepEl.textContent = tRaw('Step: {name}', { name: reply.stepName });
       stepEl.hidden = false;
     }
     renderList();

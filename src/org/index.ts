@@ -41,8 +41,8 @@ import { registerSessionSource } from '../lib/session-source.ts';
 import { setInjectedTools } from '../lib/injected-tools.ts';
 import { parseToolUrl } from '@lolly/engine';
 import { createInstanceSessionSource } from './session-source.ts';
-import { t } from '../i18n.ts';
-import { escape } from '../utils.ts';
+import { t, tRaw } from '../i18n.ts';
+import { escape, safeHref } from '../utils.ts';
 
 // ── Contract types (the server product's documented shapes) ───────────────────
 
@@ -311,7 +311,7 @@ function applyProfilePolicy(config: OrgConfig | null): void {
   if (!spec) { setFieldPolicies({}); return; }
   const instanceName = config!.instance?.name || '';
   const managedNote = instanceName
-    ? t('Managed by {name}', { name: instanceName })
+    ? tRaw('Managed by {name}', { name: instanceName })
     : t('Managed by your organisation');
   const out: Record<string, FieldPolicy> = {};
   for (const [field, s] of Object.entries(spec)) {
@@ -394,7 +394,7 @@ export function applyOrgToolPolicies(toolId: string): void {
   if (!spec) return;
   const instanceName = orgConfigState!.instance?.name || '';
   const managedNote = instanceName
-    ? t('Managed by {name}', { name: instanceName })
+    ? tRaw('Managed by {name}', { name: instanceName })
     : t('Managed by your organisation');
   const out: Record<string, InputPolicy> = {};
   for (const inp of spec.inputs ?? []) {
@@ -469,17 +469,37 @@ function renderGate(auth: AuthConfig, instanceName?: string): boolean {
   const view = document.getElementById('view');
   if (!view) return false;
   if (!auth.loginPath) return false; // gated but no way in — misconfigured; let boot proceed
-  const name = instanceName ? escape(instanceName) : '';
-  const heading = name
-    ? t('Sign in to {name}', { name })
+  // loginPath comes from the control plane's /api/auth/config, and instancePath
+  // passes a non-http(s) value straight through when there is no instance base —
+  // so a javascript: loginPath would otherwise reach an href. Same guard, same
+  // reasoning as banner.ts/chrome.ts: escaping is not scheme validation.
+  //
+  // A rejected href must NOT abandon the gate. Returning false here would mean
+  // "no gate was rendered", and the caller then lets boot proceed — turning a
+  // hostile loginPath into an authentication BYPASS on a gated instance, which is
+  // far worse than the XSS the guard exists to stop. So the gate still renders and
+  // still blocks; only the button is dropped, exactly as chrome.ts drops a link
+  // and keeps its text.
+  const href = loginUrl(auth.loginPath);
+  const linkSafe = safeHref(href);
+  // t() HTML-escapes interpolated params (see i18n.ts), so the instance name is
+  // safe in this innerHTML sink. Do NOT switch this to tRaw without escaping it.
+  const heading = instanceName
+    ? t('Sign in to {name}', { name: instanceName })
     : t('Sign in to continue');
   document.title = `${t('Sign in')} — Lolly`;
+  // Built here rather than inline so the suppression can sit on the sink's own
+  // line — semgrep honours nosemgrep only there or on the line directly above,
+  // and inside a template literal a JS comment would be emitted as page text.
+  const action = linkSafe
+    ? `<a class="btn btn--primary" href="${escape(href)}" style="display:inline-flex;align-items:center;justify-content:center;min-width:9rem">${t('Sign in')}</a>` // nosemgrep: lolly-href-escape-is-not-scheme-validation — reached only when safeHref(href) passed; an unsafe loginPath drops the anchor and states why
+    : `<p style="margin:0;color:hsl(var(--muted-foreground));font-size:.9rem">${t('This instance did not supply a usable sign-in link. Ask whoever runs it to check its configuration.')}</p>`;
   view.innerHTML = `
     <section class="org-gate" aria-label="${escape(t('Sign in'))}" style="min-height:70vh;display:flex;align-items:center;justify-content:center;padding:40px 20px">
       <div class="org-gate-card" style="width:100%;max-width:26rem;text-align:center;background:hsl(var(--card));color:hsl(var(--card-foreground));border:1px solid hsl(var(--border));border-radius:var(--radius);padding:2rem 1.75rem;box-shadow:0 26px 60px -30px hsl(var(--foreground) / .35)">
         <h1 style="margin:0 0 .5rem;font-size:1.4rem;font-weight:750;letter-spacing:-.01em">${heading}</h1>
         <p style="margin:0 0 1.5rem;color:hsl(var(--muted-foreground));font-size:.95rem;line-height:1.55">${t('This Lolly instance asks you to sign in before you continue.')}</p>
-        <a class="btn btn--primary" href="${escape(loginUrl(auth.loginPath))}" style="display:inline-flex;align-items:center;justify-content:center;min-width:9rem">${t('Sign in')}</a>
+        ${action}
       </div>
     </section>`;
   return true;

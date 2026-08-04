@@ -97,7 +97,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { escape } from '../utils.ts';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
 import {
@@ -2183,8 +2183,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
                   warn: (m: string) => { status.textContent = `${imported} ${m}`; },
                 });
                 status.textContent = `${imported} ${filed.saved === 1
-                  ? t('Saved 1 template in “{folder}”.', { folder: filed.folderName })
-                  : t('Saved {n} templates in “{folder}”.', { n: filed.saved, folder: filed.folderName })}`;
+                  ? tRaw('Saved 1 template in “{folder}”.', { folder: filed.folderName })
+                  : tRaw('Saved {n} templates in “{folder}”.', { n: filed.saved, folder: filed.folderName })}`;
               } else {
                 status.textContent = `${imported} ${t('No components could be saved as templates.')}`;
               }
@@ -2493,7 +2493,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // The model is the engine's gradient spec (a string on the box's `grad` field), and
   // the CSS comes from `gradientSpecToCss` — the SAME call the tool's hooks make, so
   // what the handles show and what the export writes cannot drift. The stops are
-  // interpolated in OKLab and baked to sRGB by the engine (plans/color-spaces.md §10),
+  // interpolated in OKLab and baked to sRGB by the engine (plans/60-color-spaces.md §10),
   // which is what keeps a two-colour gradient from going muddy through the middle.
   //
   // Colour picking deliberately reuses the ctx bar's Fill field: in gradient mode it
@@ -3403,7 +3403,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const authorRow = p.querySelector<HTMLElement>('[data-prov="author"]');
       const contactRow = p.querySelector<HTMLElement>('[data-prov="contact"]');
       const note = p.querySelector<HTMLElement>('[data-prov="note"]');
-      const editLink = prov.editHref ? ` <a href="${escapeHtml(prov.editHref)}">${t('Edit details')}</a>` : '';
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation — editHref's only caller passes the literal '#/profile?focus=use-details' (views/tool.ts)
+    const editLink = prov.editHref ? ` <a href="${escapeHtml(prov.editHref)}">${t('Edit details')}</a>` : '';
       const paint = (optedIn: boolean, author: string, contact: string): void => {
         if (optin) optin.checked = optedIn;
         if (authorRow) { authorRow.hidden = !(optedIn && author); authorRow.querySelector('b')!.textContent = author; }
@@ -3412,8 +3413,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           note.innerHTML = optedIn
             ? (author || contact
                 ? t('Baked into your PNG, PDF & SVG file metadata.')
-                : t('No name on file yet —{action} to be credited.', { action: editLink || ` ${t('add your details in your profile')}` }))
-            : t('Your name &amp; contact stay off your files.{link}', { link: editLink });
+                : tRaw('No name on file yet —{action} to be credited.', { action: editLink || ` ${t('add your details in your profile')}` }))
+            : tRaw('Your name &amp; contact stay off your files.{link}', { link: editLink });
         }
       };
       prov.get().then(({ optedIn, author, contact }) => {
@@ -3506,7 +3507,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   ];
   function posGridHtml(field: string, cur: string): string {
     return `<div class="fc-seg fc-posgrid" data-seg="${field}">` +
-      POS9.map(([v, lbl]) => `<button type="button" class="fc-seg-btn fc-pos-btn${cur === v ? ' is-on' : ''}" data-v="${v}" title="${escape(t(lbl))}" aria-label="${escape(t('Anchor image {pos}', { pos: t(lbl).toLowerCase() }))}"><i></i></button>`).join('') +
+      POS9.map(([v, lbl]) => `<button type="button" class="fc-seg-btn fc-pos-btn${cur === v ? ' is-on' : ''}" data-v="${v}" title="${escape(t(lbl))}" aria-label="${escape(tRaw('Anchor image {pos}', { pos: t(lbl).toLowerCase() }))}"><i></i></button>`).join('') +
       '</div>';
   }
   function wireSegs(panel: HTMLElement, onSet: (field: string | undefined, v: string | undefined) => void = (field, v) => setField(field, v)): void {
@@ -3980,7 +3981,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (penDraft) { penDraft = { ...penDraft, kind: to }; penWarm = null; }
     if (mode !== 'pen') setMode('pen');
     else renderChrome();
-    announce(t('Spline type: {name}', { name: penKindLabels()[to] || to }));
+    announce(tRaw('Spline type: {name}', { name: penKindLabels()[to] || to }));
   }
 
   const penScale = (): number => metrics().scale || 1;
@@ -6804,7 +6805,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         el.tabIndex = 0;
         el.setAttribute('role', 'button');
         const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
-        el.setAttribute('aria-label', txt ? t('Card: {text}', { text: txt }) : t('Card'));
+        el.setAttribute('aria-label', txt ? tRaw('Card: {text}', { text: txt }) : t('Card'));
       }
       const on = selection.has(id);
       if ((el.getAttribute('aria-pressed') === 'true') !== on) el.setAttribute('aria-pressed', on ? 'true' : 'false');

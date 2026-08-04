@@ -11,7 +11,7 @@
  * common-primitive families, then per-view — from the specimen data in
  * components-data.ts (originally generated from the component-audit workflow;
  * hand-maintained since the refactor landed; the written analysis + per-rec
- * shipped status is plans/component-audit.md). Each specimen is shown live where
+ * shipped status is plans/76-component-audit.md). Each specimen is shown live where
  * the component is a pure render function, as a static markup sample where it's
  * only CSS, and as a labelled source snippet where it needs the host bridge to run.
  *
@@ -277,13 +277,13 @@ export async function mountComponents(viewEl: HTMLElement, _host: HostV1): Promi
     ${backPillHtml({ class: 'home-full cl-back' })}
     <header class="cl-head">
       <h1 class="cl-title">${escape(t('Component library'))}</h1>
-      <p class="cl-sub">${escape(t('Live samples of the shell’s components — common primitives first, then by view. Full inventory and unification notes: plans/component-audit.md.'))}</p>
+      <p class="cl-sub">${escape(t('Live samples of the shell’s components — common primitives first, then by view. Full inventory and unification notes: plans/76-component-audit.md.'))}</p>
       <nav class="cl-jump" aria-label="${escape(t('Jump to section'))}">${jump}</nav>
     </header>
 
     <section class="cl-recs" aria-label="${escape(t('Still open'))}">
       <h2>${escape(t('Still open'))}</h2>
-      <p class="cl-recs-lede">${escape(t('The 2026-07 component audit is executed — the primitives below are what it produced. Per-recommendation history and each deliberate exception: plans/component-audit.md. Not yet done:'))}</p>
+      <p class="cl-recs-lede">${escape(t('The 2026-07 component audit is executed — the primitives below are what it produced. Per-recommendation history and each deliberate exception: plans/76-component-audit.md. Not yet done:'))}</p>
       <ul class="cl-open">
         <li>Button-name fragmentation: <code>.pro-btn</code> vs bare <code>.btn</code> vs <code>.save-btn</code>/<code>.render-pill-save</code>/<code>.pro-sess-save</code> — frozen by the buttons.css attrition policy (no new members; a family migrates to <code>.btn</code> only when its view is rewritten wholesale).</li>
         <li>projects.ts's view-options (filter) popover is still hand-rolled — only the context menus moved to <code>mountBodyPopover</code>.</li>

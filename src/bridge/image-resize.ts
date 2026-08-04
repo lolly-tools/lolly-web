@@ -16,7 +16,7 @@
  * editing/export surface downstream. That crush is reported rather than
  * hidden: the ingest funnel (views/picker.ts storeUserUpload) sniffs the
  * source's declared depth first via depthHint() in lib/image-sample.ts and
- * tells the user when it exceeds 8 (plans/deeprichpixels.md Phase A).
+ * tells the user when it exceeds 8 (plans/61-deeprichpixels.md Phase A).
  *
  * Only computeResize() is pure. downscaleRaster() touches browser APIs
  * (createImageBitmap, canvas) and must run in a DOM context.

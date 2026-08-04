@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Byte-exact golden tests for the FULL web renderer outputs — plan step 1 of
- * plans/maintainability-2026-07-29.md: pin renderSvg / renderEmf / renderEps /
+ * plans/archive/maintainability-2026-07-29.md: pin renderSvg / renderEmf / renderEps /
  * renderDxf (export.ts's renderFormatDispatch entry points) as exact snapshots
  * BEFORE decomposing export.ts, so the split can be proven byte-neutral.
  *

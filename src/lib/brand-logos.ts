@@ -22,7 +22,7 @@
 
 import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 
 /** Every logo asset id starts here (fixed namespace, like USER_FONT_PREFIX). */
 export const USER_LOGO_PREFIX = 'user/logo/';
@@ -249,7 +249,7 @@ export async function installLogo(
     // An identity named after a matrix slot would shadow that slot's token
     // (asset.logo.<key> can't be a token AND a group).
     if (isCanonicalVariant(identity)) {
-      throw new Error(t('“{identity}” is a variant name — pick a different name for the identity.', { identity }));
+      throw new Error(tRaw('“{identity}” is a variant name — pick a different name for the identity.', { identity }));
     }
   }
   if (!ACCEPT.test(file.type)) throw new Error(t('Use a PNG, JPEG, SVG or WebP image.'));
@@ -261,10 +261,10 @@ export async function installLogo(
     const cur = logoGroupOf(await userDoc(host))?.[identity !== LOGO_DEFAULT_IDENTITY ? identity : variant];
     if (isRec(cur)) {
       if (identity !== LOGO_DEFAULT_IDENTITY && '$value' in cur) {
-        throw new Error(t('“{identity}” is already a mark’s name — pick a different name for the identity.', { identity }));
+        throw new Error(tRaw('“{identity}” is already a mark’s name — pick a different name for the identity.', { identity }));
       }
       if (identity === LOGO_DEFAULT_IDENTITY && !('$value' in cur) && !isCanonicalVariant(variant)) {
-        throw new Error(t('“{variant}” is already a logo’s name — pick a different name for the mark.', { variant }));
+        throw new Error(tRaw('“{variant}” is already a logo’s name — pick a different name for the mark.', { variant }));
       }
     }
   }

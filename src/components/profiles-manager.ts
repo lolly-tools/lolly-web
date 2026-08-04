@@ -20,7 +20,7 @@
  * - **Display** (`mntr`): a screen. The ICC publishes an sRGB v2 profile under terms
  *   that plainly allow it, so this section has one preset of its own; everything else
  *   here is a file the reader brought. Apple's `Display P3.icc` is NOT redistributable
- *   and Elle Stone's set is CC-BY-SA, so neither is offered (plans/color-spaces.md §11.8).
+ *   and Elle Stone's set is CC-BY-SA, so neither is offered (plans/60-color-spaces.md §11.8).
  * - **Other**: `scnr`, `spac`, `nmcl` — a class that characterises neither a press nor a
  *   screen. A scanner profile describes what a device can SEE, and a `spac` conversion
  *   profile (the ICC's own sRGB v4 preference is one) describes a transform, not a
@@ -85,7 +85,7 @@ import { originContradicted } from '../lib/press-profile-embed.ts';
 import { icon } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 
 export interface ProfilesPanelOpts {
   host: ColorProfilesHost;
@@ -194,7 +194,7 @@ export function groupFor(e: Pick<ProfileEntry, 'deviceClass' | 'colourSpace'>): 
  * quotes the provider verbatim. Nothing is mirrored — the bytes go from the ICC to the
  * reader's device, so Lolly is never the redistributor.
  *
- * What is deliberately absent, from the licence read in plans/color-spaces.md §11.8:
+ * What is deliberately absent, from the licence read in plans/60-color-spaces.md §11.8:
  * Apple's `Display P3.icc` ("Copyright Apple Inc., 2022" — not redistributable, and P3
  * is already a built-in gamut modelled from matrices), and Elle Stone's CC-BY-SA set,
  * which would be this repo's first copyleft asset and needs a decision, not a commit.
@@ -261,7 +261,7 @@ function rowHtml(e: ProfileEntry, active: ProfilesPanelOpts['active'], group: Pr
   const intents = INTENTS.map((i) => {
     const can = e.intents.includes(i);
     const name = intentName(i);
-    const tip = can ? '' : ` data-tip="${escape(t('No {i} table in this file', { i: name.toLowerCase() }))}"`;
+    const tip = can ? '' : ` data-tip="${escape(tRaw('No {i} table in this file', { i: name.toLowerCase() }))}"`;
     return `<button type="button" class="view-seg-btn" data-lab-intent="${i}"
       aria-pressed="${live === i}"${can ? '' : ' aria-disabled="true"'}${tip}
       >${escape(name)}</button>`;
@@ -274,10 +274,10 @@ function rowHtml(e: ProfileEntry, active: ProfilesPanelOpts['active'], group: Pr
           <span class="labp-row-meta">${escape(meta)}</span>
         </div>
         <button type="button" class="labp-remove" data-labp-remove
-          aria-label="${escape(t('Remove {name}', { name: e.description || e.name }))}">${escape(t('Remove'))}</button>
+          aria-label="${escape(tRaw('Remove {name}', { name: e.description || e.name }))}">${escape(t('Remove'))}</button>
       </div>
       <div class="view-seg labp-intents" role="group"
-        aria-label="${escape(t('Rendering intent for {name}', { name: e.description || e.name }))}">${intents}</div>
+        aria-label="${escape(tRaw('Rendering intent for {name}', { name: e.description || e.name }))}">${intents}</div>
     </li>`;
 }
 
@@ -445,23 +445,23 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
         // refusal — a condition with no profile still exports exactly as it did.
         const state = found ? 'loaded' : src ? 'fetch' : 'declare';
         const note = found
-          ? t('Loaded — {name}', { name: found.description || found.name })
+          ? tRaw('Loaded — {name}', { name: found.description || found.name })
           : src
             // The row names the FILE it will fetch, not the condition, because those are
             // not always the same thing: an export declares CGATS TR 001 for SWOP and the
             // registry's profile is built from TR003. Saying which file it is getting is
             // how the reader can tell.
             ? (sourceIsExact(c)
-              ? t('Get {file} — free from the ICC registry', { file: src.name })
-              : t('Get {file} — free from the ICC registry, built from {data}', { file: src.name, data: src.charData ?? '' }))
+              ? tRaw('Get {file} — free from the ICC registry', { file: src.name })
+              : tRaw('Get {file} — free from the ICC registry, built from {data}', { file: src.name, data: src.charData ?? '' }))
           : c.files.length
-            ? t('Exports can declare it. Look for {file} on this device.', { file: c.files[0]! })
+            ? tRaw('Exports can declare it. Look for {file} on this device.', { file: c.files[0]! })
             : t('Exports can declare it. Load its profile to compare against it.');
         const label = found
-          ? t('Compare against {name}', { name: c.info })
+          ? tRaw('Compare against {name}', { name: c.info })
           : src
-            ? t('Get the profile for {name}', { name: c.info })
-            : t('Choose the profile for {name}', { name: c.info });
+            ? tRaw('Get the profile for {name}', { name: c.info })
+            : tRaw('Choose the profile for {name}', { name: c.info });
         return presetRowHtml({
           attr: 'data-labp-cond', id: c.id, identifier: c.identifier, name: c.info,
           note, label, state,
@@ -486,11 +486,11 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
           identifier: d.identifier,
           name: d.info,
           note: found
-            ? t('Loaded — {name}', { name: found.description || found.name })
-            : t('Get {file} — free from the ICC registry', { file: d.source.name }),
+            ? tRaw('Loaded — {name}', { name: found.description || found.name })
+            : tRaw('Get {file} — free from the ICC registry', { file: d.source.name }),
           label: found
-            ? t('Compare against {name}', { name: d.info })
-            : t('Get the profile for {name}', { name: d.info }),
+            ? tRaw('Compare against {name}', { name: d.info })
+            : tRaw('Get the profile for {name}', { name: d.info }),
           state: found ? 'loaded' : 'fetch',
         });
       }).join('');
@@ -560,13 +560,13 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
       const note = row?.querySelector<HTMLElement>('[data-labp-cond-note]');
       const was = note?.textContent ?? '';
       row?.setAttribute('data-busy', '');
-      if (note) note.textContent = t('Fetching {file}…', { file: src.name });
+      if (note) note.textContent = tRaw('Fetching {file}…', { file: src.name });
       const bytes = await fetchPressProfile(src);
       row?.removeAttribute('data-busy');
       if (note) note.textContent = was;
       if (!bytes) {
         say(files.length
-          ? t('Couldn’t fetch it. Look for {file} on this device.', { file: files[0]! })
+          ? tRaw('Couldn’t fetch it. Look for {file} on this device.', { file: files[0]! })
           : t('Couldn’t fetch it — add the file yourself.'));
         return null;
       }
@@ -610,7 +610,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
 
     /** No source to fetch: open the picker and name the file worth looking for. */
     function wantFile(c: PressCondition): void {
-      if (c.files.length) say(t('Look for {file} in {where}', { file: c.files.join(t(' or ')), where: locationHint() }));
+      if (c.files.length) say(tRaw('Look for {file} in {where}', { file: c.files.join(t(' or ')), where: locationHint() }));
       file.click();
     }
 
@@ -672,7 +672,7 @@ export function openProfilesPanel(opts: ProfilesPanelOpts): Promise<void> {
       if (btn?.getAttribute('aria-disabled') === 'true') {
         // Focusable on purpose (see rowHtml), so this is reachable by touch and keyboard
         // rather than being a button that silently does nothing.
-        say(t('No {i} table in this file', { i: intentName(intent).toLowerCase() }));
+        say(tRaw('No {i} table in this file', { i: intentName(intent).toLowerCase() }));
         return;
       }
       void Promise.resolve(opts.onActivate(digest, intent)).then((ok) => {

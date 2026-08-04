@@ -9,7 +9,7 @@
  * parser. They USED to be a `rgba?(int,int,int)` regex commented "always
  * rgb/rgba from getComputedStyle" — false since browsers began serialising
  * non-legacy colours in their own space, which silently dropped the paint of
- * anything wearing `oklch()` / `color-mix(in oklab, …)` (plans/color-spaces.md §4).
+ * anything wearing `oklch()` / `color-mix(in oklab, …)` (plans/60-color-spaces.md §4).
  */
 import { parseCssLength, cornerRadii, uniformRadius, parseColorToSrgb8 } from "@lolly/engine";
 import type { CornerRadii, CornerPair } from "../../../../engine/src/css-box.ts";

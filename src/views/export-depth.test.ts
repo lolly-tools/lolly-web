@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * views/export-depth.ts — the export panel's pro-format grouping and depth fact
- * (plans/deeprichpixels.md §10 item 3).
+ * (plans/61-deeprichpixels.md §10 item 3).
  *
  * Run directly:  node --test shells/web/src/views/export-depth.test.ts
  *

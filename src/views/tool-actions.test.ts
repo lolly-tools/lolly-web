@@ -307,7 +307,7 @@ test('a box ticked before the tool became a sequence cannot leave opts.live set'
   assert.equal(h.exports()[0]!.opts.duration, 7, 'and it still renders the timeline length');
 });
 
-// ── 5. "Frames" — the contact sheet (plans/fable-timeline-editing.md §4.6) ────
+// ── 5. "Frames" — the contact sheet (plans/51-fable-timeline-editing.md §4.6) ────
 // A still export of a sequence renders the playhead frame. `cuts=N` instead samples
 // N stills at equal midpoint intervals across the timeline — a zip for raster/SVG,
 // N pages for PDF. The control belongs to timed compositions on still formats ONLY,

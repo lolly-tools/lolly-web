@@ -12,7 +12,7 @@
  * caller can paint immediately and the counts fade in when they land.
  *
  * Icon path data lives in lib/icons.ts (the shared registry — see
- * plans/component-audit.md recommendation 5); 'palette', 'filmStrip' (lottie),
+ * plans/76-component-audit.md recommendation 5); 'palette', 'filmStrip' (lottie),
  * 'shapes' (vector) and 'grid' (categoryOther) are deduped there against
  * lib/category-icons.ts's near-identical glyphs.
  */

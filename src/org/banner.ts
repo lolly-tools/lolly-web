@@ -19,7 +19,7 @@
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { mountModal } from '../components/modal.ts';
 import { t } from '../i18n.ts';
-import { escape } from '../utils.ts';
+import { escape, safeHref } from '../utils.ts';
 
 export type Severity = 'info' | 'action' | 'blocking';
 
@@ -54,9 +54,12 @@ function ack(id: string): void {
     .catch(() => { /* best-effort — the message is already gone from the UI */ });
 }
 
-/** A CTA link (if the message carries one), styled as a small shell button. */
+/** A CTA link (if the message carries one), styled as a small shell button.
+ *  A javascript:/data: url from a compromised control plane is dropped, never
+ *  rendered as an anchor — same guard as chrome.ts's link rendering. */
 function ctaHtml(m: InboxMessage): string {
-  if (!m.cta?.url || !m.cta.label) return '';
+  if (!m.cta?.url || !m.cta.label || !safeHref(m.cta.url)) return '';
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in the guard above
   return `<a class="btn btn--sm org-banner-cta" href="${escape(m.cta.url)}">${escape(m.cta.label)}</a>`;
 }
 

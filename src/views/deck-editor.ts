@@ -6,7 +6,7 @@
  * doc-editor.ts / free-canvas.ts) so it SURVIVES the canvas's full-innerHTML repaint on
  * every model commit — the canvas is rebuilt each paint, the overlay is not. The 'deck'
  * layout is NOT chromeless: the input sidebar stays, and this overlay ADDS on-canvas
- * editing on top of it. See plans/slides-live-editor.md.
+ * editing on top of it. See plans/50-slides-live-editor.md.
  *
  * Shipped here:
  *   • a bottom FILMSTRIP (pagination) — one thumbnail per slide, click to make it the

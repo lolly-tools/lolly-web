@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Specimen data for the browsable component library (#/components). Originally
-// GENERATED from plans/component-audit.md's pre-refactor inventory; a multi-wave
+// GENERATED from plans/76-component-audit.md's pre-refactor inventory; a multi-wave
 // refactor has since executed the audit's 13 recommendations (see that file's
 // per-recommendation status lines), so this is now HAND-MAINTAINED from here —
 // it tracks the shipped primitive layer (buttons.css, chips.css, lib/seg.ts,

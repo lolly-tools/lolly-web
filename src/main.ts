@@ -582,7 +582,7 @@ async function boot(): Promise<void> {
     // bridge's renderSvgFromHtml — the path every tool export takes) over an
     // arbitrary page subtree, with NO print-to-PDF in between. Exists so the
     // vector-render audit can measure walker-vs-print on the same fixtures; see
-    // plans/svg-snapshot-without-print.md. Measurement surface only — the docs
+    // plans/69-svg-snapshot-without-print.md. Measurement surface only — the docs
     // pipeline still goes through __lollyVectorShot.
     (window as unknown as { __lollyWalkerShot?: (sel?: string) => Promise<unknown> }).__lollyWalkerShot =
       async (sel = 'body', o: Record<string, unknown> = {}) => {

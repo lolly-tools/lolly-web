@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The cost panel — "Cost, worked out from your rate card"
- * (plans/preflight-and-cost.md §6, Phases 4/5).
+ * (plans/65-preflight-and-cost.md §6, Phases 4/5).
  *
  * The engine owns the ARITHMETIC (`engine/src/rate-card.ts` `computeCost`, integer
  * minor units, no formatting); `@lolly-tools/core` owns the CURRENCY formatter and

@@ -2,7 +2,7 @@
 /**
  * /valid must not accuse our OWN HDR export of hiding data.
  *
- * plans/deeprichpixels.md left this as a follow-up: an `hdr=1` gain-map JPEG is
+ * plans/61-deeprichpixels.md left this as a follow-up: an `hdr=1` gain-map JPEG is
  * one image plus a second rendition past EOI, declared by a CIPA DC-007 MPF
  * index. The view used to decide "is this trailer legitimate?" by string-
  * comparing the sniffed `kind` against the literal 'video (motion photo)', so a

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Characterization tests for the `<path>` EMISSION inside renderSvgFromHtml
- * (export.ts) — the seam plans/maintainability-2026-07-29.md item 1 names as the
+ * (export.ts) — the seam plans/archive/maintainability-2026-07-29.md item 1 names as the
  * largest untested surface in the repo, and the blocker on decomposing the
  * biggest file.
  *

@@ -847,7 +847,8 @@
 .asset-picker-footer { display: flex; align-items: center; gap: 10px; }
 .asset-picker-webcam,
 .asset-picker-screencap,
-.asset-picker-scriptaudio {
+.asset-picker-scriptaudio,
+.asset-picker-upscale {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -863,10 +864,12 @@
 }
 .asset-picker-webcam:hover,
 .asset-picker-screencap:hover,
-.asset-picker-scriptaudio:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
+.asset-picker-scriptaudio:hover,
+.asset-picker-upscale:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
 .asset-picker-webcam svg,
 .asset-picker-screencap svg,
-.asset-picker-scriptaudio svg { display: block; }
+.asset-picker-scriptaudio svg,
+.asset-picker-upscale svg { display: block; }
 
 /* "Screenshot this page" card (pasted non-Lolly URL): the page URL, muted and
    wrappable; the inline error drops the empty-state's tall centring. */
@@ -1193,4 +1196,38 @@
   color: hsl(var(--destructive));
   background: hsl(var(--accent));
 }
+
+/* Per-card "Upscale" affordance. A raster library card adopts the same wrapper +
+   pick-button split as a user card (padding moves onto the pick button so it fills
+   the card and its focus ring traces the whole box) so this sibling button is valid
+   HTML rather than a nested one. */
+.asset-picker-card-actionable { padding: 0; }
+/* Pinned bottom-left: the top corners are taken (Gen-AI pill top-left, delete
+   top-right on user cards) and the format badge owns bottom-right. Hover/focus
+   revealed, matching the delete button's behaviour. */
+.asset-picker-card-upscale {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: hsl(var(--background) / 0.85);
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.asset-picker-card:hover .asset-picker-card-upscale,
+.asset-picker-card-upscale:focus-visible { opacity: 1; }
+.asset-picker-card-upscale:hover {
+  color: hsl(var(--primary));
+  background: hsl(var(--accent));
+}
+.asset-picker-card-upscale svg { display: block; }
 }

@@ -9,7 +9,7 @@
  * a couple of synonym aliases ('stock'→photos, 'type'→fonts, 'lottie'→animations)
  * so a caller using either name resolves. This is a thin category→icon-name map;
  * the path data itself lives in lib/icons.ts (the shared registry — see
- * plans/component-audit.md recommendation 5), which is where 'palette' and
+ * plans/76-component-audit.md recommendation 5), which is where 'palette' and
  * 'filmStrip' are deduped against lib/catalog-summary.ts's near-identical
  * glyphs. Deliberately SEPARATE from that file's own map, which is a different
  * taxonomy (tool categories + asset TYPES like vector/raster) — merging would

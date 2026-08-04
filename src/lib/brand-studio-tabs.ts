@@ -24,7 +24,7 @@ import { mountUploadDropzone } from './upload-dropzone.ts';
 import type { PickerHost } from '../views/picker.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
 import { mountColorField } from '../components/color-field.ts';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
@@ -77,13 +77,13 @@ function tokenValueEditor(tok: StudioToken): string {
   switch (tok.kind) {
     case 'opacity': {
       const v = typeof tok.raw === 'number' ? tok.raw : 1;
-      return `<input type="range" class="field-range be-tok-range" min="0" max="1" step="0.01" value="${v}" data-tok-input="opacity" data-tok-path="${p}" aria-label="${escape(t('{name} opacity', { name: tok.name }))}">
+      return `<input type="range" class="field-range be-tok-range" min="0" max="1" step="0.01" value="${v}" data-tok-input="opacity" data-tok-path="${p}" aria-label="${escape(tRaw('{name} opacity', { name: tok.name }))}">
         <output class="be-tok-out" data-tok-out>${escape(formatStudioValue(tok))}</output>`;
     }
     case 'rotation':
     case 'number': {
       const v = typeof tok.raw === 'number' ? tok.raw : 0;
-      return `<input type="number" class="be-tok-num" value="${v}" step="${tok.kind === 'rotation' ? 15 : 'any'}" data-tok-input="${tok.kind}" data-tok-path="${p}" aria-label="${escape(t('{name} value', { name: tok.name }))}">${tok.kind === 'rotation' ? '<span class="be-tok-unit">°</span>' : ''}`;
+      return `<input type="number" class="be-tok-num" value="${v}" step="${tok.kind === 'rotation' ? 15 : 'any'}" data-tok-input="${tok.kind}" data-tok-path="${p}" aria-label="${escape(tRaw('{name} value', { name: tok.name }))}">${tok.kind === 'rotation' ? '<span class="be-tok-unit">°</span>' : ''}`;
     }
     case 'shadow': {
       const raw = (tok.raw ?? {}) as Record<string, unknown>;
@@ -95,12 +95,12 @@ function tokenValueEditor(tok: StudioToken): string {
       const f = (k: string): string => escape(String(raw[k] ?? (k === 'color' ? '#00000040' : '0px')));
       return `<span class="be-tok-shadow-chip" style="box-shadow:${escape(formatStudioValue(tok))}" aria-hidden="true"></span>
         ${(['offsetX', 'offsetY', 'blur', 'spread'] as const).map(k =>
-          `<label class="be-tok-shadow-in"><span>${k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread')}</span><input type="text" value="${f(k)}" data-tok-input="shadow" data-tok-field="${k}" data-tok-path="${p}" size="5" aria-label="${escape(t('{name} {field}', { name: tok.name, field: k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread') }))}"></label>`).join('')}
-        <span class="be-tok-shadow-cf" data-shadow-cf data-tok-path="${p}" aria-label="${escape(t('{name} colour', { name: tok.name }))}"></span>
+          `<label class="be-tok-shadow-in"><span>${k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread')}</span><input type="text" value="${f(k)}" data-tok-input="shadow" data-tok-field="${k}" data-tok-path="${p}" size="5" aria-label="${escape(tRaw('{name} {field}', { name: tok.name, field: k === 'offsetX' ? t('x') : k === 'offsetY' ? t('y') : k === 'blur' ? t('blur') : t('spread') }))}"></label>`).join('')}
+        <span class="be-tok-shadow-cf" data-shadow-cf data-tok-path="${p}" aria-label="${escape(tRaw('{name} colour', { name: tok.name }))}"></span>
         <input type="hidden" data-tok-input="shadow" data-tok-field="color" data-tok-path="${p}" value="${f('color')}">`;
     }
     default: // the dimension kinds: spacing / sizing / stroke
-      return `<input type="text" class="be-tok-dim" value="${escape(String(tok.raw ?? ''))}" data-tok-input="dimension" data-tok-path="${p}" size="7" inputmode="decimal" aria-label="${escape(t('{name} value', { name: tok.name }))}" placeholder="8px">`;
+      return `<input type="text" class="be-tok-dim" value="${escape(String(tok.raw ?? ''))}" data-tok-input="dimension" data-tok-path="${p}" size="7" inputmode="decimal" aria-label="${escape(tRaw('{name} value', { name: tok.name }))}" placeholder="8px">`;
   }
 }
 
@@ -172,7 +172,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
           <div class="be-tok-row" data-tok-row data-tok-path="${pathAttr(tok)}">
             <span class="be-tok-name" title="${escape(tok.key)}">${escape(tok.name)}</span>
             <span class="be-tok-editor">${tokenValueEditor(tok)}</span>
-            <button type="button" class="be-tok-del" data-tok-del="${pathAttr(tok)}" aria-label="${escape(t('Delete {name}', { name: tok.name }))}">&#x2715;</button>
+            <button type="button" class="be-tok-del" data-tok-del="${pathAttr(tok)}" aria-label="${escape(tRaw('Delete {name}', { name: tok.name }))}">&#x2715;</button>
           </div>`).join('')}
       </div>`).join('');
     wireShadowFields();
@@ -224,7 +224,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
     const del = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-tok-del]'); if (!del) return;
     const path = pathFrom(del.dataset.tokDel ?? '');
     const tok = listStudioTokens(ctx.doc()).find(x => x.path.join('␟') === path.join('␟'));
-    const ok = await confirmDialog({ title: t('Delete {name}?', { name: tok?.name ?? t('this token') }), message: t('Anything reading it falls back to its own default.'), confirmLabel: t('Delete') });
+    const ok = await confirmDialog({ title: tRaw('Delete {name}?', { name: tok?.name ?? t('this token') }), message: t('Anything reading it falls back to its own default.'), confirmLabel: t('Delete') });
     if (!ok) return;
     if (deleteStudioToken(ctx.doc(), path)) { render(); ctx.persist(true); ctx.notify(); }
   });
@@ -240,7 +240,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
     showErr('');
     if (nameInput) nameInput.value = '';
     render(); ctx.persist(true); ctx.notify(); playSfx('click');
-    announce(t('{name} added', { name }));
+    announce(tRaw('{name} added', { name }));
     // Land focus on the fresh row's first control so the value is one keystroke away.
     list.querySelector<HTMLElement>(`[data-tok-row][data-tok-path="${pathAttr({ path } as StudioToken)}"] input`)?.focus();
   });
@@ -318,11 +318,11 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     const p = pathAttr(tok);
     const isRef = isAlias(s.color);
     const swName = isRef ? ctx.paletteSwatches().find(w => w.ref === s.color)?.label ?? s.color : s.color;
-    const label = t('{name} stop {n} — {swatch}', { name: tok.name, n: i + 1, swatch: swName });
+    const label = tRaw('{name} stop {n} — {swatch}', { name: tok.name, n: i + 1, swatch: swName });
     return `<span class="be-grad-stopwrap">
         <button type="button" class="be-grad-stop-chip${isRef ? ' is-ref' : ''}" data-grad-stop="${i}" data-grad-path="${p}"
           style="--sw:${escape(stopCss(s))}" title="${escape(swName)}" aria-label="${escape(label)}" aria-haspopup="dialog"></button>
-        ${removable ? `<button type="button" class="be-grad-stopdel" data-grad-stopdel="${i}" data-grad-path="${p}" aria-label="${escape(t('Remove {label}', { label }))}">&#x2715;</button>` : ''}
+        ${removable ? `<button type="button" class="be-grad-stopdel" data-grad-stopdel="${i}" data-grad-path="${p}" aria-label="${escape(tRaw('Remove {label}', { label }))}">&#x2715;</button>` : ''}
       </span>`;
   };
   const rowHtml = (tok: StudioToken): string => {
@@ -336,12 +336,12 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
           <span class="be-grad-name">${escape(tok.name)}</span>
           <span class="be-grad-stops">
             ${stops.map((s, i) => stopChipHtml(tok, s, i, removable)).join('')}
-            ${stops.length < GRAD_STOPS_MAX ? `<button type="button" class="be-grad-addstop" data-grad-addstop="${p}" aria-label="${escape(t('Add a stop to {name}', { name: tok.name }))}">+</button>` : ''}
-            <label class="be-grad-nstops"><input type="number" min="${GRAD_STOPS_MIN}" max="${GRAD_STOPS_MAX}" step="1" value="${stops.length}" data-grad-nstops data-grad-path="${p}" aria-label="${escape(t('{name} stop count', { name: tok.name }))}">${t('stops')}</label>
-            <label class="be-grad-angle"><input type="number" value="${tok.angle ?? 180}" step="15" data-grad-angle data-grad-path="${p}" aria-label="${escape(t('{name} angle', { name: tok.name }))}">°</label>
+            ${stops.length < GRAD_STOPS_MAX ? `<button type="button" class="be-grad-addstop" data-grad-addstop="${p}" aria-label="${escape(tRaw('Add a stop to {name}', { name: tok.name }))}">+</button>` : ''}
+            <label class="be-grad-nstops"><input type="number" min="${GRAD_STOPS_MIN}" max="${GRAD_STOPS_MAX}" step="1" value="${stops.length}" data-grad-nstops data-grad-path="${p}" aria-label="${escape(tRaw('{name} stop count', { name: tok.name }))}">${t('stops')}</label>
+            <label class="be-grad-angle"><input type="number" value="${tok.angle ?? 180}" step="15" data-grad-angle data-grad-path="${p}" aria-label="${escape(tRaw('{name} angle', { name: tok.name }))}">°</label>
           </span>
         </span>
-        <button type="button" class="be-tok-del" data-grad-del="${p}" aria-label="${escape(t('Delete {name}', { name: tok.name }))}">&#x2715;</button>
+        <button type="button" class="be-tok-del" data-grad-del="${p}" aria-label="${escape(tRaw('Delete {name}', { name: tok.name }))}">&#x2715;</button>
       </div>`;
   };
 
@@ -527,7 +527,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     }
     const del = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-grad-del]'); if (!del) return;
     const tok = tokenAt(del.dataset.gradDel ?? '');
-    const ok = await confirmDialog({ title: t('Delete {name}?', { name: tok?.name ?? t('this gradient') }), message: t('It’s removed from your brand tokens.'), confirmLabel: t('Delete') });
+    const ok = await confirmDialog({ title: tRaw('Delete {name}?', { name: tok?.name ?? t('this gradient') }), message: t('It’s removed from your brand tokens.'), confirmLabel: t('Delete') });
     if (!ok || !tok) return;
     if (deleteStudioToken(ctx.doc(), tok.path)) { render(); ctx.persist(true); ctx.notify(); }
   });
@@ -575,7 +575,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     if (!path) { showErr(t("Couldn't add a gradient.")); return; }
     showErr('');
     render(); ctx.persist(true); ctx.notify(); playSfx('click');
-    announce(t('{name} added', { name: gradName }));
+    announce(tRaw('{name} added', { name: gradName }));
   });
 
   return {
@@ -614,7 +614,7 @@ export interface CataloguePanelCtx { host: HostV1; notify: () => void }
 
 export function mountCataloguePanel(mount: HTMLElement, ctx: CataloguePanelCtx): StudioPanelHandle {
   mount.innerHTML = `
-    ${panelHead(t('Catalogue'), t("The files your brand keeps — drop them here and they land in your {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` }))}
+    ${panelHead(t('Catalogue'), tRaw("The files your brand keeps — drop them here and they land in your {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` }))}
     <div data-be-cat-dropzone></div>
     <div class="be-cat-groups" data-be-cat-groups aria-live="polite"></div>`;
 

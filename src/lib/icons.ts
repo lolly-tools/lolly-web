@@ -7,7 +7,7 @@
  * hand-inlined as a per-file `<svg>` const in category-icons.ts, catalog-summary.ts,
  * valid.ts, projects.ts, folder-tiles.ts, gallery.ts, profile.ts, footer-nav.ts,
  * featured-row.ts, sound-toggle.ts and neuro-dock.ts — see
- * plans/component-audit.md recommendation 5. Several were byte-for-byte
+ * plans/76-component-audit.md recommendation 5. Several were byte-for-byte
  * duplicates under different names (the icons noted "merged, was X" below);
  * those are collapsed onto one canonical name here. Genuinely different Lucide
  * glyphs that merely *look* similar (e.g. a plain shield vs. a shield with a

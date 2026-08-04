@@ -376,6 +376,7 @@ describe('precache.json grouping (vite.config.js)', () => {
     '/models/kokoro/onnx/model_quantized.onnx',
     '/models/kokoro/voices/af_heart.bin',
     '/models/whisper/onnx/encoder_model_quantized.onnx',
+    '/models/upscale/realesr-general-x4v3.onnx',
   ];
 
   test('groups route each path to the bucket the SW actually serves it from', async () => {
@@ -398,6 +399,8 @@ describe('precache.json grouping (vite.config.js)', () => {
       '/models/kokoro/voices/af_heart.bin',
       '/models/whisper/onnx/encoder_model_quantized.onnx',
     ], 'the speech group is the kokoro + whisper model sets — nothing else');
+    assert.deepEqual(names(groups.upscale), ['/models/upscale/realesr-general-x4v3.onnx'],
+      'the upscale group is the AI-upscaler models only (host.upscale) — SW-bypassed like the others');
   });
 
   test('release-versioned binaries are exempt from content hashing', async () => {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * clip-proxy.ts — import-time scrub proxies for uploaded video clips
- * (Fable timeline, phase 4 Track A of plans/fable-timeline-phase-4.md).
+ * (Fable timeline, phase 4 Track A of plans/55-fable-timeline-phase-4.md).
  *
  * THE PROBLEM. Scrubbing a timeline is a random-access seek per pointer move,
  * and a seek costs "decode every frame from the previous keyframe". A phone

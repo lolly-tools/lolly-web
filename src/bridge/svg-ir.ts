@@ -8,7 +8,7 @@
  * stroke) but emits IR prims instead of jsPDF calls — and, critically, ALWAYS
  * outlines <text> to vector paths via host.text.toPath (the "always text-as-paths"
  * rule). A <text> run that can't be vectorized throws, so EMF never ships a
- * partially-textless file. See plans/emf-support.md.
+ * partially-textless file. See plans/63-emf-support.md.
  *
  * Every shape (rect/circle/ellipse/line/polygon/polyline) is expressed as an SVG
  * `d` string and run through the shared engine tokenizer (parseSvgPath), so there

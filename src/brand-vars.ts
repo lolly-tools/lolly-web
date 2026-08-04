@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Brand semantic CSS variables — the web half of the brand token contract
- * (plans/brand-token-contract.md §3/§5).
+ * (plans/archive/brand-token-contract.md §3/§5).
  *
  * applyBrandVars(el, host) resolves the seven `color.semantic.*` slots from the
  * active brand tokens (host.tokens) and mirrors them onto the tool-canvas root
