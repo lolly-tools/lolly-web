@@ -86,6 +86,8 @@ import type { TimelinePanel } from './timeline-panel.ts';
 // Type-only: the ghost layer is a lazy chunk that only an editor with onion skin turned
 // ON ever fetches, so its runtime import lives inside onionFrom's dynamic `import()`.
 import type { OnionPaintState, OnionSkinHandle } from './onion-skin.ts';
+import type { MatteHost, MatteSource } from './matte-dialog.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
 import { takePendingDesignImport } from '../lib/drop-router.ts';
 // The boot-path slice of user-fonts (NOT ../user-fonts.ts, which would drag the
@@ -542,6 +544,8 @@ const SVG = {
   resetColor: '<line x1="6" y1="6" x2="18" y2="6"/><line x1="12" y1="6" x2="12" y2="18"/><line x1="4.5" y1="20" x2="19.5" y2="4"/>',
   // Bulleted list — three dotted rows (a list, not a lone bullet).
   bulletList: '<circle cx="4.5" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.5" fill="currentColor" stroke="none"/><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/>',
+  // Scissors — cut the subject out (host.matte "Remove background").
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
 };
 
 function icon(paths: string): string {
@@ -2306,6 +2310,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         run: () => runVectorOp((ops, id) => simplifyBoxes(ops, SIMPLIFY_TOL, { cfg: vectorCfg, id }), { each: true }),
       });
     }
+    // ── remove background ──────────────────────────────────────────────────────
+    // Present for any tool with an image field (somewhere to store the cutout)
+    // once the on-device matte capability has a STAGED model — otherwise absent,
+    // like the timeline/vector sections. Acts on ONE selected image box and, like
+    // Ungroup / the vector ops, disables rather than hides so the menu keeps a
+    // constant height between right-clicks.
+    const matteApi = (host as unknown as HostV1).matte;
+    if (cfg.imageField && matteApi?.isAvailable() === true && matteApi.models().length > 0) {
+      const rows = getBoxes();
+      const idxs = selIndices(rows);
+      const one = idxs.length === 1 ? rows[idxs[0]!]! : null;
+      const img = one ? (one[cfg.imageField] as { id?: string; url?: string } | undefined) : undefined;
+      items.push({ sep: true });
+      items.push({
+        label: t('Remove background'), icon: icon(SVG.scissors),
+        run: () => void removeBackgroundOnSelection(),
+        disabled: !(img?.id || img?.url),
+      });
+    }
     lastMenuAt = { x: clientX, y: clientY };
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
@@ -3676,6 +3699,31 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const sel = new Set(selIndices(boxes));
       commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [cfg.imageField]: ref } : b)));
     } catch { /* user cancelled */ }
+  }
+
+  // Cut the background out of the single selected image box on-device (host.matte)
+  // and drop the cutout back over the selection — the exact tail of pickImage, so
+  // the result is an ordinary image ref with alpha, its original preserved as a
+  // C2PA ingredient. Lazy chunk (matte-dialog.ts) like askLollyIntent above.
+  async function removeBackgroundOnSelection(): Promise<void> {
+    if (!cfg.imageField) return;
+    const boxes0 = getBoxes();
+    const idxs = selIndices(boxes0);
+    if (idxs.length !== 1) return;
+    const box = boxes0[idxs[0]!]!;
+    const cur = box[cfg.imageField] as { id?: string; url?: string; meta?: { name?: string } } | undefined;
+    if (!cur || (!cur.id && !cur.url)) return; // no image to cut out
+    try {
+      const { openMatteDialog } = await import('./matte-dialog.ts');
+      const cutout = await openMatteDialog(host as unknown as MatteHost, {
+        source: cur as unknown as MatteSource,
+        sourceName: cur.meta?.name,
+      });
+      if (!cutout) return;
+      const boxes = getBoxes();
+      const sel = new Set(selIndices(boxes));
+      commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [cfg.imageField]: cutout } : b)));
+    } catch { /* cancelled or unavailable */ }
   }
 
   // ── grouping + clip/mask ──────────────────────────────────────────────────────
