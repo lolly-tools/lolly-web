@@ -46,7 +46,15 @@ const { initOrg, _resetOrgForTests } = await import('./index.ts');
 const { getInjectedTools, _clearInjectedToolsForTests } = await import('../lib/injected-tools.ts');
 const { _resetChromeForTests } = await import('./chrome.ts');
 
-function reset(): void {
+/**
+ * Reset between tests. ASYNC on purpose: a previous test's lazy chrome mount can
+ * still be in flight, and if it lands after this clear it appears inside the NEXT
+ * test — which is how "an un-wired slot renders nothing" started failing in CI the
+ * moment the earlier tests began mounting reliably. Drain first, then clear, so
+ * each test starts from a genuinely quiet DOM.
+ */
+async function reset(): Promise<void> {
+  for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
   _resetOrgForTests();
   _clearInjectedToolsForTests();
   _resetChromeForTests();
@@ -92,7 +100,7 @@ const settle = async (until?: () => unknown, timeoutMs = 3000): Promise<void> =>
 };
 
 test('member injectables populate the tool registry + render a chrome banner', async () => {
-  reset();
+  await reset();
   member(cfg([
     { id: 't1', kind: 'tool', title: 'Event Badge', toolId: 'event-badge', source: 'catalog' },
     { id: 'c1', kind: 'chrome', title: 'Welcome', slot: 'banner', tone: 'info', text: 'Welcome to Acme', link: { label: 'Docs', href: '#/docs' } },
@@ -110,7 +118,7 @@ test('member injectables populate the tool registry + render a chrome banner', a
 });
 
 test('a url-source tool resolves to its served id + URL-mode query (opens preconfigured)', async () => {
-  reset();
+  await reset();
   member(cfg([
     { id: 'u1', kind: 'tool', title: 'SUSE QR', toolId: 'qr-code', source: 'url', ref: 'https://acme.example/#/tool/qr-code?url=https%3A%2F%2Fsuse.com' },
   ]));
@@ -122,7 +130,7 @@ test('a url-source tool resolves to its served id + URL-mode query (opens precon
 });
 
 test('a url-source tool with an unresolvable link is dropped (fail closed, no dead card)', async () => {
-  reset();
+  await reset();
   member(cfg([
     { id: 'u2', kind: 'tool', title: 'Broken', toolId: 'x', source: 'url', ref: 'not a url' },
     { id: 'u3', kind: 'tool', title: 'No ref', toolId: 'y', source: 'url' },
@@ -133,7 +141,7 @@ test('a url-source tool with an unresolvable link is dropped (fail closed, no de
 });
 
 test('flag / resource / unknown kinds are ignored (they ride other seams)', async () => {
-  reset();
+  await reset();
   member(cfg([
     { id: 'f', kind: 'flag', title: 'x' },
     { id: 'r', kind: 'resource', title: 'y' },
@@ -146,7 +154,7 @@ test('flag / resource / unknown kinds are ignored (they ride other seams)', asyn
 });
 
 test('a dismissed chrome banner does not reappear', async () => {
-  reset();
+  await reset();
   const one = () => member(cfg([{ id: 'c1', kind: 'chrome', title: 'N', slot: 'banner', text: 'Notice', tone: 'warn' }]));
   one();
   await initOrg();
@@ -166,7 +174,7 @@ test('a dismissed chrome banner does not reappear', async () => {
 });
 
 test('an un-wired slot (nav/panel) renders nothing but is not an error', async () => {
-  reset();
+  await reset();
   member(cfg([{ id: 'n1', kind: 'chrome', title: 'Nav', slot: 'nav', text: 'Later' }]));
   await initOrg();
   await settle();
@@ -176,7 +184,7 @@ test('an un-wired slot (nav/panel) renders nothing but is not an error', async (
 
 // ── hardening (adversarial review) ──────────────────────────────────────────────
 test('a malformed (non-array) injectables value never breaks the member branch', async () => {
-  reset();
+  await reset();
   // A wrong TYPE must not throw and abort initOrg after policies are half-applied.
   member({ instance: { name: 'Acme' }, inboxUnread: 0, injectables: { nope: true } });
   const state = await initOrg();
@@ -187,7 +195,7 @@ test('a malformed (non-array) injectables value never breaks the member branch',
 });
 
 test('a javascript: link href is dropped, not rendered as a clickable anchor', async () => {
-  reset();
+  await reset();
   member(cfg([{ id: 'x', kind: 'chrome', title: 'X', slot: 'banner', text: 'Notice', link: { label: 'Run', href: 'javascript:fetch("/steal")' } }]));
   await initOrg();
   await settle(banner);
@@ -199,7 +207,7 @@ test('a javascript: link href is dropped, not rendered as a clickable anchor', a
 });
 
 test('duplicate injected tool ids collapse to one registry entry (no dup card)', async () => {
-  reset();
+  await reset();
   member(cfg([
     { id: 'a', kind: 'tool', title: 'One', toolId: 'dupe', source: 'catalog' },
     { id: 'b', kind: 'tool', title: 'Two', toolId: 'dupe', source: 'catalog' },
@@ -211,7 +219,7 @@ test('duplicate injected tool ids collapse to one registry entry (no dup card)',
 
 // ── Dormancy — the byte-identical guarantee ─────────────────────────────────────
 test('injectables seam is a dormant no-op with no control plane', async () => {
-  reset(); // router = 404 → no control plane
+  await reset(); // router = 404 → no control plane
   await initOrg();
   await settle();
   assert.equal(getInjectedTools().length, 0);
@@ -219,7 +227,7 @@ test('injectables seam is a dormant no-op with no control plane', async () => {
 });
 
 test('a member with no injectables field stays byte-identical', async () => {
-  reset();
+  await reset();
   member({ instance: { name: 'Acme' }, inboxUnread: 0 }); // no injectables key at all
   await initOrg();
   await settle();
