@@ -462,3 +462,61 @@ test('a LIVE take bypasses exportUnscaled entirely — the shutter would be film
   assert.equal(h.unscaled().some(o => o.formats.includes('webm')), false,
     'the live take must not run inside exportUnscaled at all');
 });
+
+// ── the pro float formats (exr/hdr) open only for a deep-capable tool ─────────
+// A tool that owns a float-compose exportStill hook and has host.codec can
+// originate exr/hdr on-device (runtime.export routes those to exportStill before
+// the 8-bit DOM path) — so the format picker opens the Pro <optgroup> for it even
+// though the generic Node float rasteriser (proFormatSupport) is absent on the web.
+
+/** Mount just the export bar and return the format <select>'s option values. */
+function formatOptionValues(opts: {
+  formats: string[];
+  hooks?: Record<string, boolean>;
+  codec?: boolean;
+}): string[] {
+  const doc = dom.window.document;
+  doc.body.innerHTML = '';
+  const panel = doc.createElement('div');
+  const canvas = doc.createElement('div');
+  doc.body.append(panel, canvas);
+  const manifest = {
+    id: 'bitmap-studio', name: 'Bitmap Studio', version: '1.0.0', inputs: [],
+    ...(opts.hooks ? { hooks: opts.hooks } : {}),
+    render: { width: 1080, height: 1080, formats: opts.formats },
+  };
+  const runtime = {
+    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    export: async () => new dom.window.Blob(['x']),
+  };
+  const host: Record<string, unknown> = {
+    assets: { query: async () => [] }, state: { save: async () => {} },
+    export: { download: async () => {} },
+  };
+  if (opts.codec) host.codec = { exr: async () => new Uint8Array() };
+  renderActions(
+    panel as never, manifest as never, runtime as never, canvas, host as never,
+    () => {}, (async (fn: () => unknown) => fn()) as never, {},
+  );
+  return [...panel.querySelectorAll('[data-action="format"] option')]
+    .map(o => (o as HTMLOptionElement).value);
+}
+
+test('exr/hdr are hidden for a plain tool (no exportStill hook)', () => {
+  // Two ordinary survivors so a <select> renders (a single format needs no dropdown).
+  const vals = formatOptionValues({ formats: ['png', 'jpg', 'exr', 'hdr'], codec: true });
+  assert.deepEqual(vals, ['png', 'jpg'], 'a tool with no float master must not offer the float formats');
+});
+
+test('exr/hdr are hidden when the shell has no host.codec, even with the hook', () => {
+  const vals = formatOptionValues({ formats: ['png', 'jpg', 'exr', 'hdr'], hooks: { exportStill: true }, codec: false });
+  assert.ok(!vals.includes('exr') && !vals.includes('hdr'), 'no float producer → no float options');
+});
+
+test('exr/hdr open for a tool with exportStill + host.codec (Bitmap Studio on the web)', () => {
+  const vals = formatOptionValues({ formats: ['png', 'exr', 'hdr'], hooks: { exportStill: true }, codec: true });
+  assert.ok(vals.includes('exr'), 'EXR is offered');
+  assert.ok(vals.includes('hdr'), 'Radiance HDR is offered');
+  assert.ok(vals.includes('png'), 'ordinary formats are unaffected');
+});

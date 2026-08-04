@@ -37,6 +37,7 @@ import { vizSupported } from '../lib/viz-support.ts';
 import { KOKORO_MODEL_BYTES } from '../lib/speech-kokoro.ts';
 import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
 import { stagedUpscaleModels, UPSCALE_MODEL_BYTES } from '../lib/upscale-models.ts';
+import { stagedMatteModels, MATTE_MODEL_BYTES } from '../lib/matte-models.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
 import { openDB } from './db.ts';
 
@@ -333,6 +334,29 @@ export async function createBridge(): Promise<WebHost> {
     cached: async (id) => (await loadUpscale()).cached(id),
     canRun: async (src, o) => (await loadUpscale()).canRun(src, o),
     run: async (f, o) => (await loadUpscale()).run(f, o),
+  };
+
+  // On-device background removal (v1.103). Same lazy-facade shape as upscale:
+  // bridge/matte.ts owns a Worker whose chunk drags onnxruntime-web + the
+  // letterbox/compose runner, off the boot budget (only a Remove-Background
+  // affordance ever calls it). Sync methods answered here; models() offers only
+  // STAGED (licence-verified) weights, so today it is EMPTY until a model is
+  // verified — isAvailable() still reports the capability so a tool can show the
+  // affordance and the dialog explains the pending download.
+  let matteApi: { backend(): 'webgpu' | 'wasm' | null } | null = null;
+  const loadMatte = memo(async () => {
+    const api = (await import('./matte.ts')).createMatteAPI();
+    matteApi = api;
+    return api;
+  });
+  host.matte = {
+    isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
+    backend: () => matteApi?.backend() ?? null,
+    models: () => stagedMatteModels(),
+    modelBytes: (id) => MATTE_MODEL_BYTES[id],
+    cached: async (id) => (await loadMatte()).cached(id),
+    canRun: async (src, o) => (await loadMatte()).canRun(src, o),
+    run: async (f, o) => (await loadMatte()).run(f, o),
   };
 
   // Fresh-manifest Content Credentials for redacted derivatives (v1.85) — no

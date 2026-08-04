@@ -31,7 +31,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -168,6 +168,14 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // is intentionally NOT in REQUIRED_STORES (its absence must never escalate
         // into a data-wipe) and is out of the portable backup.
         db.createObjectStore('upscale-models');
+      }
+      if (oldVersion < 12) {
+        // On-device background-removal model weights (host.matte, engine 1.103),
+        // keyed by filename — the SAME fetch-once/IndexedDB-forever cache the shared
+        // ORT fetcher writes (createModelFetcher store:'matte-models'). Pure and
+        // re-downloadable exactly like 'upscale-models', so likewise NOT in
+        // REQUIRED_STORES and out of the portable backup.
+        db.createObjectStore('matte-models');
       }
     },
     blocking() {
