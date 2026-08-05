@@ -54,6 +54,59 @@ import { mountAudioThumbs } from './picker.ts';
 import { asRow, type BlockRow } from './tool-types.ts';
 import type { WebToolHost, PanelEl, EmbedDescribe, FlatpickrHost } from './tool.ts';
 
+// ── Per-slot media affordances (opt-in fit/match/preview) ────────────────────
+// Write the export-size channel the export bar owns — the same [data-action]
+// inputs the filter-* auto-fit scripts and the manual Width/Height fields drive,
+// so "snap the canvas to this image" flows through the one size pipeline.
+function setExportSize(w: number, h: number): void {
+  const set = (action: string, val: string): void => {
+    const inp = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-action="${action}"]`);
+    if (!inp) return;
+    inp.value = val;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  set('export-unit', 'px');
+  set('export-width', String(Math.max(1, Math.round(w))));
+  set('export-height', String(Math.max(1, Math.round(h))));
+}
+// Set the motion export length (the video-duration input the export bar owns). It
+// lives in #tool-actions whether or not the export popup is open, so this reaches it.
+function setExportDuration(sec: number): void {
+  const inp = document.querySelector<HTMLInputElement>('[data-action="video-duration"]');
+  if (!inp) return;
+  inp.value = String(Math.max(0.1, Math.round(sec * 10) / 10));
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  inp.dispatchEvent(new Event('change', { bubbles: true }));
+}
+// One in-tool sound preview at a time. Plays the placed clip via a DETACHED <audio>
+// (a video URL plays its audio track too) so a person can hear a bed/clip while
+// editing — the audiogram no longer needs an export to be heard. Exported so the
+// tool view can stop it on navigation, like the export popup's own audition.
+let slotPreview: { audio: HTMLAudioElement; btn: HTMLElement } | null = null;
+export function stopSlotPreview(): void {
+  if (!slotPreview) return;
+  const { audio, btn } = slotPreview;
+  slotPreview = null;
+  try { audio.pause(); audio.src = ''; } catch { /* detached */ }
+  btn.classList.remove('is-playing');
+  btn.textContent = '▶ Preview';
+}
+function toggleSlotPreview(btn: HTMLElement): void {
+  if (slotPreview && slotPreview.btn === btn) { stopSlotPreview(); return; }
+  stopSlotPreview();
+  const url = btn.dataset.mediaUrl;
+  if (!url) return;
+  const audio = new Audio(url);
+  audio.addEventListener('ended', stopSlotPreview);
+  audio.addEventListener('error', stopSlotPreview);
+  audio.play().then(() => {
+    btn.classList.add('is-playing');
+    btn.textContent = '⏸ Stop';
+    slotPreview = { audio, btn };
+  }).catch(() => { /* autoplay blocked or an undecodable container — leave the label */ });
+}
+
 /** The two-step block-remove button arms itself with these expandos. */
 interface ConfirmButton extends HTMLElement { _armed?: boolean; _disarm?: (() => void) | null; }
 /** A block drag handle flags the click that trails a drag. */
@@ -756,6 +809,30 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       runtime.setInput(clearId, null);
       onDirty?.(clearId);
     });
+  });
+
+  // A re-render orphans the slot buttons but a detached <audio> keeps playing — stop
+  // any in-tool preview on every (re)bind so it never outlives its slot.
+  stopSlotPreview();
+  // Opt-in "fit canvas to the placed image/video" — writes the export-size channel
+  // (the same [data-action="export-*"] inputs the filter-* auto-fit scripts and the
+  // manual Width/Height fields drive).
+  el.querySelectorAll<HTMLElement>('[data-fit-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const w = Number(btn.dataset.fitW), h = Number(btn.dataset.fitH);
+      if (w > 0 && h > 0) setExportSize(w, h);
+    });
+  });
+  // Opt-in "match export length to the placed clip's duration".
+  el.querySelectorAll<HTMLElement>('[data-matchdur-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ms = Number(btn.dataset.durMs);
+      if (ms > 0) setExportDuration(ms / 1000);
+    });
+  });
+  // In-tool sound preview: play/pause the placed clip via a detached <audio>.
+  el.querySelectorAll<HTMLElement>('[data-preview-id]').forEach(btn => {
+    btn.addEventListener('click', () => toggleSlotPreview(btn));
   });
 
   // icon-toggle: one button that CYCLES its select's options (see the schema's
@@ -1812,6 +1889,24 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // Re-bake appear only when the source URL (meta.bakedFrom) survived baking.
       const bakedName = metaRow.baked === true ? (metaRow.name ?? 'a Lolly tool') : null;
       const canRebake = bakedName !== null && typeof metaRow.bakedFrom === 'string';
+      // Opt-in per-slot affordances (NOT automatic): fit the canvas to a placed
+      // image/video's pixel size, match the export length to an audio/video clip, and
+      // PREVIEW the sound in-tool. Ingest already stamps ref.meta.{width,height,
+      // durationMs} (picker.ts), so no re-probe. They reuse existing channels — the
+      // export size/length inputs and a detached <audio> — see the handlers below.
+      const sW = Number(metaRow.width), sH = Number(metaRow.height), sDur = Number(metaRow.durationMs);
+      const at = input.assetType;
+      const isImgSlot = at === 'raster' || at === 'image' || at === 'vector';
+      const isVidSlot = at === 'video' || v?.type === 'video';
+      const isAudSlot = at === 'audio' || v?.type === 'audio';
+      const slotBtns: string[] = [];
+      if (hasValue && (isImgSlot || isVidSlot) && sW > 0 && sH > 0)
+        slotBtns.push(`<button type="button" class="slot-act" data-fit-id="${id}" data-fit-w="${sW}" data-fit-h="${sH}" title="Set the canvas to ${sW}×${sH}px">⤡ ${isVidSlot ? 'Match size' : 'Fit canvas'}</button>`);
+      if (hasValue && (isVidSlot || isAudSlot) && sDur > 0)
+        slotBtns.push(`<button type="button" class="slot-act" data-matchdur-id="${id}" data-dur-ms="${sDur}" title="Set the export length to ${(sDur / 1000).toFixed(1)}s">⏱ Match length</button>`);
+      if (hasValue && (isVidSlot || isAudSlot) && v?.url)
+        slotBtns.push(`<button type="button" class="slot-act slot-play" data-preview-id="${id}" data-media-url="${escape(v.url)}" aria-label="Preview the sound">▶ Preview</button>`);
+      const slotActions = slotBtns.length ? `<div class="slot-actions">${slotBtns.join('')}</div>` : '';
       // A Lolly-backed slot reads differently at a glance (is-lolly: brand-tinted
       // border + a ✦ spark on the trigger) so "this image is live, not a file"
       // is visible before clicking — the click then offers edit-or-replace.
@@ -1819,7 +1914,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         ${thumb}
         <button type="button" class="asset-picker-trigger" data-input-id="${id}">${fromTool ? '<span class="asset-lolly-spark" aria-hidden="true">&#10022;</span> ' : ''}${escape(currentLabel)}</button>
         ${hasValue ? `<button type="button" class="asset-clear" data-clear-id="${id}" aria-label="Clear selection">&#x2715;</button>` : ''}
-      </div>${fromTool ? `<div class="asset-from-tool">
+      </div>${slotActions}${fromTool ? `<div class="asset-from-tool">
         <span class="asset-from-tool-label"><span class="asset-from-tool-spark" aria-hidden="true">&#10022;</span> from <strong>${escape(fromTool)}</strong></span>
         <button type="button" class="asset-edit" data-edit-id="${id}">Edit</button>
       </div>` : ''}${bakedName ? `<div class="asset-from-tool asset-from-tool--baked">

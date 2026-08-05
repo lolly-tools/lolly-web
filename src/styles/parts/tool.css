@@ -2097,6 +2097,29 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .asset-from-tool-label strong { color: hsl(var(--foreground)); font-weight: 600; }
 .asset-from-tool-spark { color: hsl(var(--primary)); }
 
+/* Opt-in per-slot media affordances: Fit canvas / Match length / Preview sound. */
+.slot-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.slot-act {
+  font-size: calc(11px * var(--a11y-fs));
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--muted) / 0.45);
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.slot-act:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.slot-act:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+.slot-play.is-playing {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
+}
+
 /* Baked (frozen) provenance row — the inert sibling of the live ✦ badge: a
    "❄ baked from <tool>" line whose Edit/Re-bake buttons appear only when the
    source URL (meta.bakedFrom) survived baking. Muted, not brand-tinted: this

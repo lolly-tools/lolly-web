@@ -83,7 +83,7 @@ import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
 import { isTextEditingTarget } from '../lib/typing-target.ts';
 import {
   syncInputs, openEmbedEditor, scrollToControl, focusSidebarBlock,
-  fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging, asStr,
+  fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging, asStr, stopSlotPreview,
 } from './tool-inputs.ts';
 import {
   renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt,
@@ -177,6 +177,10 @@ export interface ExportDefaults {
   /** Pixel-watermark setting from ?imprint= — on by default (like c2pa) for
    *  raster exports; false only for an explicit `imprint=0`/`off` link. */
   imprint?: boolean;
+  /** Generator-metadata toggle from ?meta=off — strips the source-attribution field
+   *  from formats with no C2PA container (EPS/DXF/EMF; EXR/Radiance via the primitive).
+   *  On by default; false only for an explicit opt-out. */
+  metadata?: boolean;
   /** Opt-in durable Content Credential (neural TrustMark embed) from ?durable=1.
    *  OFF by default — a heavier per-export neural encode + one-time model fetch.
    *  Raster formats only. */
@@ -447,7 +451,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
+  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
   // Reached via a link when the boot URL carried ANY tool configuration — a share,
@@ -1455,6 +1459,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     runtime.stopMeter?.(); runtime.cancelRecording?.(); // release the mic / abort any take
     (stageEl as (HTMLElement & { _recordCleanup?: () => void }) | null)?._recordCleanup?.(); // viewfinder + timers
     actionsApi?.stopAudioPreview?.(); // a detached <audio> keeps playing — stop it on navigation
+    stopSlotPreview();                // and the sidebar slot's own sound preview (also a detached <audio>)
     actionsApi?.dispose?.();          // unsubscribe the cost-authoring registry listener + tear down its extension
     lottieModule?.destroyLottiePlayers(); // else animationManager ticks detached trees
     videoModule?.destroyVideoPlayers();   // drop remembered <video> positions
@@ -1574,6 +1579,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // explicit `imprint=0`/`off` as false rather than collapsing it to
     // undefined (`false || undefined` would silently re-default it to on).
     imprint:  urlImprint === false ? false : urlImprint === true ? true : undefined,
+    // Generator-metadata strip from ?meta=off — on by default; preserve an explicit
+    // opt-out as false (the vector writers drop their source field when false).
+    metadata: urlMetadata === false ? false : undefined,
     // Durable credential from ?durable=1 — opt-in, OFF by default (performance: a
     // neural encode + a one-time model fetch), so it's simply true/undefined.
     durable:  urlDurable || undefined,
