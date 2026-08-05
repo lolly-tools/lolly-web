@@ -13,13 +13,13 @@
 
 import {
   parseDimension, isPhysical, toPixels, toPoints, toCssPx, toCssLength, CSS_DPI,
-  iccProfileBytes, rgbToCmyk, cmykCondition, computePrintGeometry, emitEmf, emitEps, emitDxf, packApng, packWebpAnim,
+  iccProfileBytes, rgbToCmyk, cmykCondition, computePrintGeometry, emitEmf, emitWmf, emitEps, emitDxf, packApng, packWebpAnim,
   parseCssLength, cornerRadii, uniformRadius, insetCorners, roundedRectPath, parseBoxShadow, parseTextShadow, gaussianShadowBands, gaussianShadowRings,
   parseCssMatrix, matAboutPivot, isAxisAlignedMat, matToSvg, type Mat2D,
   parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
   splitCssArgs, parseGradientAngle, parseGradientStop, expandGradientStops,
   parseColor, interpolateColor, colorToSrgb8,
-  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, ENGINE_VERSION,
+  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, encodeBmp, gzip, ENGINE_VERSION,
   buildExportMeta,
   embedWatermark, canCarryWatermark, LOSSLESS_STRENGTH,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
@@ -595,12 +595,18 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       return await renderCmykTiff(node, opts);
     case 'tiff':
       return await renderTiff(node, opts);
+    case 'bmp':
+      return await renderBmp(node, opts);
     case 'svg':
       return await renderSvg(node, opts);
+    case 'svgz':
+      return await renderSvgz(node, opts);
     case 'svg-anim':
       return await renderSvgAnim(node, opts);
     case 'emf':
       return await renderEmf(node, opts);
+    case 'wmf':
+      return await renderWmf(node, opts);
     case 'dxf':
       return await renderDxf(node, opts);
     case 'eps':
@@ -1040,6 +1046,36 @@ async function renderTiff(node: Element, opts: ExportOpts): Promise<Blob> {
     ...(hdrOn ? { icc: pqBt2020IccProfile() } : {}),
   });
   return new Blob([tiff as BlobPart], { type: 'image/tiff' });
+}
+
+// BMP is the raster escape hatch — the uncompressed Windows Bitmap a legacy
+// Windows / embedded / clipboard consumer accepts when it can't read a PNG. Same
+// dom-to-image → imprint → getImageData path as renderTiff, but encodeBmp takes the
+// straight RGBA directly and auto-picks 24-bit BGR (opaque) or 32-bit BGRA (any
+// translucency), so alpha is preserved rather than flattened. Uncompressed BI_RGB is
+// lossless, so the Imprint is a straight round-trip of what embedWatermark wrote (the
+// gentle LOSSLESS_STRENGTH, as with TIFF). BMP has no wide-gamut profile and no
+// metadata box, so HDR is not offered and C2PA cannot ride it — the in-pixel Imprint
+// is the only provenance the format holds.
+async function renderBmp(node: Element, opts: ExportOpts): Promise<Blob> {
+  const lib = await getDomToImage();
+  const d = exportDims(node, opts);
+  const dtoOpts = rasterStyle(d, opts);
+  const restore = await swapBlobUrls(node);
+  let canvas: HTMLCanvasElement;
+  try {
+    const raw = await lib.toCanvas(node, dtoOpts);
+    canvas = normalizeCanvas(raw, dtoOpts.width, dtoOpts.height);
+  } finally {
+    restore();
+  }
+  if (opts.imprint) imprintCanvas(canvas, LOSSLESS_STRENGTH);
+  await durableEmbedCanvas(canvas, opts);
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  const rgba = ctx.getImageData(0, 0, W, H).data;       // sRGB, straight (un-premultiplied)
+  const bmp = encodeBmp(new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength), W, H);
+  return new Blob([bmp as BlobPart], { type: 'image/bmp' });
 }
 
 // Straight (un-premultiplied) RGBA → packed RGB, compositing any transparency onto
@@ -1622,6 +1658,16 @@ async function outlineSvgTextRuns(liveSvg: Element, clone: Element, outline: boo
 // gradients/images/alpha are flattened to solids upstream. See
 // plans/63-emf-support.md. The text-as-paths guarantee is enforced in svgDomToIr,
 // which throws on any run it can't vectorise rather than dropping it.
+// SVGZ is literally gzip(SVG): the same renderSvg output (text-as-paths, frosted
+// panels, provenance <metadata> all identical), compressed ~60-70% smaller. Every
+// vector editor and any Content-Encoding-aware consumer reads it back transparently,
+// and the engine's gunzip recovers byte-identical SVG on import.
+async function renderSvgz(node: Element, opts: ExportOpts = {}): Promise<Blob> {
+  const svgBlob = await renderSvg(node, opts);
+  const bytes = new Uint8Array(await svgBlob.arrayBuffer());
+  return new Blob([gzip(bytes) as BlobPart], { type: 'image/svg+xml' });
+}
+
 async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   let svgEl: Element | null = node.tagName?.toLowerCase() === 'svg' ? node : (node.querySelector?.('svg') ?? null);
   if (!svgEl) {
@@ -1637,6 +1683,27 @@ async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   });
   const bytes = emitEmf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, attribution: opts.metadata !== false });
   return new Blob([bytes as BlobPart], { type: 'image/emf' });
+}
+
+// WMF is the 16-bit ancestor of EMF — a sixth sink on the exact same outlined-SVG →
+// engine IR (svgDomToIr) vector pipeline, wired identically to renderEmf. The safest
+// vector paste for legacy Office / clip-art pipelines. `attribution` is accepted for
+// call-site symmetry but is inert: WMF has no comment record to carry a source URL.
+async function renderWmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
+  let svgEl: Element | null = node.tagName?.toLowerCase() === 'svg' ? node : (node.querySelector?.('svg') ?? null);
+  if (!svgEl) {
+    const svgBlob = await renderSvgFromHtml(node, { ...opts, convertPaths: true, noBoxShadow: true });
+    const xml = await svgBlob.text();
+    svgEl = new DOMParser().parseFromString(xml, 'image/svg+xml').documentElement;
+  }
+  const ir = await svgDomToIr(svgEl, {
+    host: _host,
+    getComputedStyle: (el: Element) => window.getComputedStyle(el),
+    background: opts.background,
+    label: 'WMF',
+  });
+  const bytes = emitWmf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, attribution: opts.metadata !== false });
+  return new Blob([bytes as BlobPart], { type: 'image/wmf' });
 }
 
 // EPS is a fourth sink on the SVG vector pipeline (alongside SVG, PDF, and EMF):

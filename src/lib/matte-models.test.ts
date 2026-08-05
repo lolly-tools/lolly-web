@@ -3,9 +3,10 @@
  * host.matte catalogue (lib/matte-models.ts) — the honesty gates.
  *
  * The one property that MUST hold: nothing is offered until its licence + weights
- * are verified. Every model ships staged-off; the picker must therefore offer
- * nothing today, and a model may only appear once MATTE_STAGED flips (in the same
- * change that lands its verified pin). This test is the tripwire on that gate.
+ * are verified. A model may only appear once MATTE_STAGED flips (in the same change
+ * that lands its verified pin). This test is the tripwire on that gate — it pins the
+ * exact staged set, so a NEW flip fails here until whoever flipped it re-affirms the
+ * verification by updating this test in the same change.
  *
  * Run: node --test shells/web/src/lib/matte-models.test.ts
  */
@@ -35,12 +36,20 @@ test('the default model is a real catalogue entry', () => {
   assert.ok(matteModel(MATTE_DEFAULT_MODEL), 'default resolves in the full catalogue');
 });
 
-test('HONESTY GATE: no model is offered until its licence + pin are verified', () => {
+test('HONESTY GATE: exactly the verified models are offered', () => {
   // When you stage a model, you are asserting you have re-read its LICENSE and
   // verified its ONNX (see scripts/fetch-matte-models.ts gate list). Flipping a
-  // flag here without that verification is exactly the mistake this guards.
-  assert.deepEqual(stagedMatteModels(), [],
-    'every matte model must be staged-off until verified; if this fails, a model was staged — confirm the licence + pin were actually verified, then update this test in the SAME change');
+  // flag without that verification is exactly the mistake this guards.
+  //
+  // Staged roster as of 2026-08-05: u2netp (fast) + birefnet-lite (default) + modnet
+  // (portraits). Each has a real sha256/byte-verified pin (fetch-matte-models.ts), its
+  // ONNX graph inspected in onnxruntime (tensor shape/dtype, per-model normalization +
+  // activation confirmed), and a permissive licence (Apache-2.0 ×2, MIT — MPL-compatible).
+  // Matte runs WASM-only, so no WebGPU gate applies. If this fails, a staged flag changed
+  // — re-affirm the licence + pin were actually verified, then update this list in the
+  // SAME change.
+  assert.deepEqual(stagedMatteModels().map(m => m.id).sort(), ['birefnet-lite', 'modnet', 'u2netp'],
+    'the staged set must match the verified models');
 });
 
 test('matteModel round-trips even an unstaged (withheld) id', () => {

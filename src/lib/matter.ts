@@ -35,17 +35,21 @@ const fetchModelBytes = createModelFetcher({
   store: MATTE_MODEL_STORE, dir: MATTE_MODEL_DIR, version: MATTE_MODEL_CACHE_VERSION, dbg,
 });
 
-// ─── backend probe (mirrors upscaler.ts) ─────────────────────────────────────
+// ─── backend probe ───────────────────────────────────────────────────────────
+//
+// Matte is WASM-ONLY, unlike the upscaler. ort-web's WebGPU (JSEP) kernels throw
+// "using ceil() in shape computation is not yet supported for MaxPool" at run() on
+// these saliency/segmentation nets — AFTER a clean create, so a create-time EP
+// fallback can't catch it (see loadSession). Rather than per-model EP juggling the
+// whole roster runs on the CPU/WASM kernels (which handle it, verified in
+// onnxruntime-node). So we never claim webgpu: the reported backend and the EP the
+// session actually runs on stay in sync, and the meter never promises a GPU path
+// that would fail at inference.
 
 let backendProbed: 'webgpu' | 'wasm' | null | undefined;
-let webgpuFailed = false;
 
 export async function probeBackend(): Promise<'webgpu' | 'wasm' | null> {
   if (backendProbed !== undefined) return backendProbed;
-  try {
-    const gpu = (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-    if (!webgpuFailed && gpu && await gpu.requestAdapter()) { backendProbed = 'webgpu'; return backendProbed; }
-  } catch { /* no WebGPU */ }
   backendProbed = typeof WebAssembly !== 'undefined' ? 'wasm' : null;
   return backendProbed;
 }
@@ -83,23 +87,21 @@ function loadSession(fileName: string, onDownload?: (p: FetchProgress) => void):
     const bytes = await fetchModelBytes(fileName, false, onDownload);
     if (!bytes) return null;
     const ort: OrtModule = await loadOrt();
-    const wantGpu = (await probeBackend()) === 'webgpu';
-    const providers = wantGpu ? ['webgpu', 'wasm'] : ['wasm'];
-    const create = (eps: string[]): Promise<InferenceSession> => serializeSessionCreate(() =>
-      ort.InferenceSession.create(new Uint8Array(bytes), {
-        executionProviders: eps as never,
-        // GPU-resident output tensors read back empty; force CPU (upscaler's lesson).
-        preferredOutputLocation: 'cpu' as never,
-      }));
+    await probeBackend();
+    // WASM only — deliberately. The roster's MaxPool ceil_mode isn't supported by
+    // ort-web's WebGPU kernels and throws at run() (AFTER a clean create, so an
+    // EP fallback at create time can't catch it — this is exactly the bug that made
+    // both models fail with the ceil()/MaxPool error). The CPU/WASM kernels handle
+    // ceil_mode correctly (verified on the real graphs in onnxruntime-node). If a
+    // future model exports ceil-free, reintroduce webgpu per-model, not roster-wide.
     try {
-      return await create(providers);
+      return await serializeSessionCreate(() =>
+        ort.InferenceSession.create(new Uint8Array(bytes), {
+          executionProviders: ['wasm'] as never,
+          // GPU-resident output tensors read back empty; force CPU (upscaler's lesson).
+          preferredOutputLocation: 'cpu' as never,
+        }));
     } catch (e) {
-      // A WebGPU create failure downgrades permanently and retries once on wasm.
-      if (wantGpu) {
-        webgpuFailed = true; backendProbed = 'wasm';
-        try { return await create(['wasm']); }
-        catch (e2) { dbg('session', { file: fileName, error: String(e2) }); return null; }
-      }
       dbg('session', { file: fileName, error: String(e) });
       return null;
     }

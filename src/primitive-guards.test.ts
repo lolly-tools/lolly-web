@@ -690,7 +690,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // already be detached) and falls back to a fresh list. Reviewed — both interpolate
   // one value, the caught message, through this module's esc().
   'pro/run-overlay.ts': 9,
-  'views/catalog.ts': 8,
+  // 10 as of 2026-08-05: +2 for inline crop mode (enterInlineCrop) — the crop-box
+  // overlay `work.innerHTML` and the `cropActions` row. Reviewed: the box/handle
+  // markup is static; every interpolated value is escape()d (the image src, the
+  // format radio value/label, and the Format/Cancel/Download crop t() strings).
+  'views/catalog.ts': 10,
   'views/color-lab.ts': 18,
   'views/components-data.ts': 1,
   'views/components.ts': 7,

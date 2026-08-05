@@ -761,7 +761,7 @@ button.cat-download { font: inherit; cursor: pointer; }
 /* fill (background/color) is aliased in parts/buttons.css's .btn--primary list */
 .cat-act-fav.is-fav { border-color: hsl(var(--primary)); }
 .cat-act-fav.is-fav svg { fill: currentColor; }
-.cat-act-danger { color: hsl(var(--destructive, 0 70% 50%)); }
+.cat-act-danger { background-color: hsl(var(--destructive, 0 70% 50%)); }
 .cat-act-share.is-copied { color: hsl(var(--primary)); }
 
 /* ── Content Credentials (details) ── the checker for any inspectable asset, plus the
@@ -876,6 +876,31 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-crop-e[data-h="s"] { bottom: -6px; left: 8px; right: 8px; height: 12px; cursor: ns-resize; }
 .cat-crop-e[data-h="w"] { left: -6px; top: 8px; bottom: 8px; width: 12px; cursor: ew-resize; }
 .cat-crop-e[data-h="e"] { right: -6px; top: 8px; bottom: 8px; width: 12px; cursor: ew-resize; }
+
+/* ── Inline crop mode (details modal) ── the same crop-box interaction, overlaid on the OPEN
+   details preview rather than a separate dialog (openDetails → enterInlineCrop). It reuses
+   every .cat-crop-* rule above, so the only new rules swap the preview/action chrome. */
+/* While cropping: the zoom stage + its control bar step aside for the crop work, and the
+   normal action row is replaced by the crop action row in the body. */
+.cat-details-preview.is-cropping .cat-zoom-stage,
+.cat-details-preview.is-cropping .cat-stage-bar,
+/* The prev/next arrows sit absolutely on the preview's edges — hide them while
+   cropping so they can't cover the box's e/w handles or silently page away. */
+.cat-details-preview.is-cropping .cat-details-nav { display: none; }
+.cat-details.is-cropping .cat-details-actions { display: none; }
+/* The work centres in the preview (its grid place-items:center); the viewport carries its
+   own rounded corners, so the wrapper's dialog margin is dropped. */
+.cat-crop-work.cat-crop-inline { margin: 0; }
+/* Float the crop HUD over the (dark) viewport, not below it in the preview flow — its white
+   controls need the dark backing to stay legible, and there's no card behind it here. */
+.cat-crop-inline .cat-zoom-hud {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  z-index: 3; padding: 2px 6px; border-radius: 999px; background: hsl(0 0% 0% / .55);
+}
+/* The crop action row that stands in for .cat-details-actions in the body. */
+.cat-crop-actions { display: flex; flex-direction: column; gap: 12px; }
+.cat-crop-actions .cat-dl-section { margin-bottom: 0; }
+.cat-crop-actions .cat-dl-actions { margin-top: 0; }
 
 @media (max-width: 640px) {
   .catalog { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) 12px calc(5.5rem + env(safe-area-inset-bottom)); }

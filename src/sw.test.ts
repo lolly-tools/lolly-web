@@ -377,7 +377,7 @@ describe('precache.json grouping (vite.config.js)', () => {
     '/models/kokoro/voices/af_heart.bin',
     '/models/whisper/onnx/encoder_model_quantized.onnx',
     '/models/upscale/realesr-general-x4v3.onnx',
-    '/models/matte/isnet-general-use.onnx',
+    '/models/matte/birefnet-lite.onnx',
   ];
 
   test('groups route each path to the bucket the SW actually serves it from', async () => {
@@ -402,7 +402,7 @@ describe('precache.json grouping (vite.config.js)', () => {
     ], 'the speech group is the kokoro + whisper model sets — nothing else');
     assert.deepEqual(names(groups.upscale), ['/models/upscale/realesr-general-x4v3.onnx'],
       'the upscale group is the AI-upscaler models only (host.upscale) — SW-bypassed like the others');
-    assert.deepEqual(names(groups.matte), ['/models/matte/isnet-general-use.onnx'],
+    assert.deepEqual(names(groups.matte), ['/models/matte/birefnet-lite.onnx'],
       'the matte group is the background-removal models only (host.matte) — SW-bypassed like the others');
   });
 

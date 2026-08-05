@@ -19,12 +19,12 @@
  * goes silent.
  *
  * The tensor descriptors (MATTE_MODEL_SPEC) are NOT decoration: normalization
- * genuinely DIFFERS per model (IS-Net uses mean 0.5 / std 1.0; the others use
- * ImageNet), and the output activation differs too (min-max for the saliency
- * nets, sigmoid for BiRefNet's logit head). A wrong mean/std or activation does
- * not crash — it silently degrades the matte. Every value here is provisional
- * (research-sourced) and MUST be confirmed against the real ONNX graph before a
- * model is staged (see the human-verification gates in the fetch script header).
+ * genuinely DIFFERS per model (MODNet uses mean 0.5 / std 0.5; u2netp/BiRefNet use
+ * ImageNet), and the output activation differs too (min-max for the bounded heads,
+ * sigmoid for BiRefNet's logit head). A wrong mean/std or activation does not
+ * crash — it silently degrades the matte. Every value here MUST be confirmed
+ * against the real ONNX graph before a model is staged (see the human-verification
+ * gates in the fetch script header).
  */
 
 import type { MatteModelId, MatteModelInfo } from '@lolly-tools/core/host-v1';
@@ -44,12 +44,13 @@ export const MATTE_MODEL_CACHE_VERSION = 1;
 /** The weights file for each selectable model. */
 export const MATTE_MODEL_FILES: Record<MatteModelId, string> = {
   'u2netp': 'u2netp.onnx',
-  'isnet-general': 'isnet-general-use.onnx',
   'birefnet-lite': 'birefnet-lite.onnx',
+  'modnet': 'modnet.onnx',
 };
 
-/** The general model is the default when `opts.model` is omitted. */
-export const MATTE_DEFAULT_MODEL: MatteModelId = 'isnet-general';
+/** The default when `opts.model` is omitted: BiRefNet-lite — the transformer that
+ *  handles dark / low-contrast subjects the fast saliency net can't. */
+export const MATTE_DEFAULT_MODEL: MatteModelId = 'birefnet-lite';
 
 // ── The catalogue ────────────────────────────────────────────────────────────
 //
@@ -60,36 +61,38 @@ export const MATTE_DEFAULT_MODEL: MatteModelId = 'isnet-general';
 // RESEARCH-SOURCED and LOW CONFIDENCE — the fetch script records the real byte
 // length from the downloaded file and this must be reconciled before staging.
 
+// Order here IS the picker order (models() filters to the staged set, preserving it):
+// fast preview → the general default → the portrait specialist.
 export const MATTE_MODELS: MatteModelInfo[] = [
   {
     id: 'u2netp',
     name: 'U²-Net lite (fast)',
     tier: 'fast',
-    approxBytes: 5 * 1024 * 1024,
+    approxBytes: 4_574_861,   // exact vendored size (verified 2026-08-05)
     license: 'Apache-2.0',
     attribution: 'U²-Net © 2020 Xuebin Qin et al. (Apache-2.0)',
     version: 'u2netp',
     note: 'Tiny and instant — soft edges. Good for a quick preview.',
   },
   {
-    id: 'isnet-general',
-    name: 'IS-Net general',
-    tier: 'default',
-    approxBytes: 172 * 1024 * 1024,
-    license: 'Apache-2.0',
-    attribution: 'DIS / IS-Net © 2022 Xuebin Qin et al. (Apache-2.0)',
-    version: 'general-use',
-    note: 'Clean general-purpose cutouts at 1024px. The default.',
-  },
-  {
     id: 'birefnet-lite',
-    name: 'BiRefNet lite (pro edges)',
-    tier: 'pro',
-    approxBytes: 115 * 1024 * 1024,
+    name: 'BiRefNet lite',
+    tier: 'default',
+    approxBytes: 114_538_221,   // exact vendored size (fp16, verified 2026-08-05)
     license: 'MIT',
     attribution: 'BiRefNet © 2024 Peng Zheng et al. (MIT)',
     version: 'lite',
-    note: 'Best hair and fine detail — heavier.',
+    note: 'Best all-round — a transformer that copes with dark and low-contrast backgrounds. The default.',
+  },
+  {
+    id: 'modnet',
+    name: 'MODNet (portraits)',
+    tier: 'pro',
+    approxBytes: 25_888_640,   // exact vendored size (verified 2026-08-05)
+    license: 'Apache-2.0',
+    attribution: 'MODNet © 2020 Zhanghan Ke et al. (Apache-2.0)',
+    version: 'modnet',
+    note: 'Tuned for people — soft hair and edges. Small and fast; weaker on non-portrait subjects.',
   },
 ];
 
@@ -131,11 +134,13 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
     std: IMAGENET_STD,
     activation: 'minmax',
   },
-  'isnet-general': {
-    // The footgun: IS-Net general normalises to −0.5..+0.5, NOT ImageNet.
-    inputSize: [1024, 1024],
+  'modnet': {
+    // MODNet: [-1,1] normalization (mean 0.5 / std 0.5), a bounded alpha head → minmax.
+    // The ONNX takes a DYNAMIC H×W; 512² is its training resolution (a multiple of 32).
+    // All confirmed against the real graph (onnxruntime, 2026-08-05).
+    inputSize: [512, 512],
     mean: [0.5, 0.5, 0.5],
-    std: [1, 1, 1],
+    std: [0.5, 0.5, 0.5],
     activation: 'minmax',
   },
   'birefnet-lite': {
@@ -155,11 +160,16 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
 // licensing is high-stakes and ships to every device, so the default is WITHHELD:
 // flip a flag here in the SAME change that lands the verified pin.
 
-/** True where the model's weights have a real, licence-verified pin. */
+/** True where the model's weights have a real, licence-verified pin. Every staged
+ *  model below has: a real sha256+byte-verified pin (fetch-matte-models.ts), its ONNX
+ *  graph inspected in onnxruntime (input/output shape+dtype, and the per-model
+ *  normalization + activation in MATTE_MODEL_SPEC CONFIRMED against the real graph),
+ *  a permissive licence (Apache-2.0/MIT, MPL-compatible), and a clean run on the
+ *  CPU/WASM path — matte is WASM-only, so no WebGPU gate applies. */
 export const MATTE_STAGED: Record<MatteModelId, boolean> = {
-  'u2netp': false,          // pending: verify Apache-2.0 provenance of the community ONNX + real pin
-  'isnet-general': false,   // pending: verify DIS Apache-2.0 covers weights + real pin (fp16 must be produced)
-  'birefnet-lite': false,   // pending: verify MIT + onnx-community tag + WebGPU op support (ort #21968)
+  'u2netp': true,          // fast preview (saliency, minmax)
+  'birefnet-lite': true,   // DEFAULT — transformer, fixes dark/low-contrast (logit → sigmoid)
+  'modnet': true,          // portrait specialist — soft hair ([-1,1] norm, bounded alpha → minmax)
 };
 
 /** The models actually runnable in this build — what the picker should OFFER.

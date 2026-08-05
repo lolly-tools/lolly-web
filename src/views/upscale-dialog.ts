@@ -25,6 +25,7 @@ import { icon } from '../lib/icons.ts';
 import { UPSCALE_DENOISE_STAGED } from '../lib/upscale-models.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
+import { extractC2paStore, prepareC2paIngredientFromStore, COMPOSITE_SOURCE_TYPE } from '@lolly/engine';
 import type {
   AssetRef, HostV1, UpscaleFrame, UpscaleModelId, UpscaleProgress,
 } from '@lolly-tools/core/host-v1';
@@ -67,6 +68,40 @@ export interface UpscaleDialogOpts {
 
 /** The general (WDN-pair) model is the only one that takes a denoise strength. */
 const GENERAL_MODEL: UpscaleModelId = 'realesr-general-x4v3';
+const XPLUS_MODEL: UpscaleModelId = 'realesrgan-x4plus';
+const FACE_MODEL: UpscaleModelId = 'gfpgan-v1.4';
+
+/** An intent the picker offers ("what are you upscaling?"), which routes to the best
+ *  engine so the user never picks a model by name. `model` is the ONNX engine (absent
+ *  for an algorithmic intent); `hqModel` is an optional "higher quality" swap;
+ *  `algorithm: 'nearest'` is a local, no-download path (pixel art). */
+interface UpscaleIntent {
+  value: string;
+  label: string;
+  model?: UpscaleModelId;
+  hqModel?: UpscaleModelId;
+  algorithm?: 'nearest';
+  note?: string;
+}
+
+/** Nearest-neighbour integer scale via canvas — the crisp, no-download, no-blur path
+ *  for pixel art (a neural upscaler would smooth away the hard edges). Pure: source
+ *  frame → a scale×-larger frame, imageSmoothingEnabled off so pixels stay square. */
+function pixelNearest(frame: UpscaleFrame, scale: number): UpscaleFrame {
+  const src = document.createElement('canvas');
+  src.width = frame.width; src.height = frame.height;
+  const sctx = src.getContext('2d');
+  if (!sctx) throw new Error('no 2d context');
+  sctx.putImageData(new ImageData(new Uint8ClampedArray(frame.data), frame.width, frame.height), 0, 0);
+  const outW = frame.width * scale, outH = frame.height * scale;
+  const out = document.createElement('canvas');
+  out.width = outW; out.height = outH;
+  const octx = out.getContext('2d');
+  if (!octx) throw new Error('no 2d context');
+  octx.imageSmoothingEnabled = false;
+  octx.drawImage(src, 0, 0, outW, outH);
+  return { width: outW, height: outH, data: octx.getImageData(0, 0, outW, outH).data };
+}
 
 /** Resolve any source shape to a blob + a best-effort display name. */
 async function sourceToBlob(source: UpscaleSource, fallbackName?: string): Promise<{ blob: Blob; name: string }> {
@@ -85,9 +120,13 @@ async function sourceToBlob(source: UpscaleSource, fallbackName?: string): Promi
 }
 
 /** Decode a source to a straight-alpha RGBA frame via a canvas — exactly what the
- *  `host.upscale.run` contract wants (and what `getImageData` yields). */
-export async function sourceToFrame(source: UpscaleSource, fallbackName?: string): Promise<{ frame: UpscaleFrame; name: string }> {
+ *  `host.upscale.run` contract wants (and what `getImageData` yields). Also returns
+ *  the source's original bytes, kept so the save step can carry the source's own
+ *  Content Credential forward as an ingredient (an AI image upscaled stays declared
+ *  as one) rather than erasing it. */
+export async function sourceToFrame(source: UpscaleSource, fallbackName?: string): Promise<{ frame: UpscaleFrame; name: string; bytes: Uint8Array }> {
   const { blob, name } = await sourceToBlob(source, fallbackName);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   const bitmap = await createImageBitmap(blob);
   try {
     const canvas = document.createElement('canvas');
@@ -97,7 +136,7 @@ export async function sourceToFrame(source: UpscaleSource, fallbackName?: string
     if (!ctx) throw new Error('no 2d context');
     ctx.drawImage(bitmap, 0, 0);
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return { frame: { width: img.width, height: img.height, data: img.data }, name };
+    return { frame: { width: img.width, height: img.height, data: img.data }, name, bytes };
   } finally {
     bitmap.close();
   }
@@ -143,15 +182,28 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
   return new Promise((resolve) => {
     let trap: FocusTrap | undefined;
     let abort: AbortController | null = null;
-    // The decoded source frame + its name, once a source is loaded.
+    // The decoded source frame + its name, once a source is loaded. srcBytes is the
+    // source's original file bytes, kept for the Content Credential scan at save.
     let srcFrame: UpscaleFrame | null = null;
     let srcName = '';
+    let srcBytes: Uint8Array | null = null;
     // The active feasibility answer, so Run only fires when the device can cope.
     let feasible = false;
 
-    const modelOptions = models.map(m =>
-      `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
-    const defaultModel = models.some(m => m.id === GENERAL_MODEL) ? GENERAL_MODEL : models[0]!.id;
+    // The intent roster — built from the STAGED models, so an intent whose engine
+    // isn't vendored simply doesn't appear. Pixel art is always offered (it's a local
+    // algorithm, no model). Illustration rides the general model until a dedicated
+    // line-art model is staged, with a note that says so.
+    const has = (id: UpscaleModelId): boolean => models.some(m => m.id === id);
+    const intents: UpscaleIntent[] = [];
+    if (has(GENERAL_MODEL)) intents.push({ value: 'photo', label: t('Photo'), model: GENERAL_MODEL, ...(has(XPLUS_MODEL) ? { hqModel: XPLUS_MODEL } : {}) });
+    if (has(GENERAL_MODEL)) intents.push({ value: 'illustration', label: t('Illustration'), model: GENERAL_MODEL, note: t('Using the general model for now — a line-art model is on the way.') });
+    intents.push({ value: 'pixel', label: t('Pixel art'), algorithm: 'nearest' });
+    if (has(GENERAL_MODEL)) intents.push({ value: 'text', label: t('Text'), model: GENERAL_MODEL });
+    if (has(FACE_MODEL)) intents.push({ value: 'face', label: t('Face'), model: FACE_MODEL });
+    const intentOptions = intents.map(i =>
+      `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
+    const defaultIntent = intents[0]!.value;
 
     const overlay = document.createElement('div');
     overlay.className = 'upscale-overlay';
@@ -170,21 +222,32 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
           <div class="upscale-source" data-source aria-live="polite" hidden></div>
           <div class="upscale-controls" data-controls hidden>
             <label class="upscale-field">
-              <span class="upscale-field-label">
-                ${t('Model')}
-                <span class="upscale-info" data-info hidden tabindex="0" role="img"></span>
-              </span>
-              <select class="field-select" data-model>${modelOptions}</select>
+              <span class="upscale-field-label">${t('What are you upscaling?')}</span>
+              <select class="field-select" data-intent>${intentOptions}</select>
             </label>
-            <label class="upscale-field">
+            <label class="upscale-field" data-edge-field>
               <span class="upscale-field-label">${t('Target longest edge (px)')}</span>
               <input type="number" class="field-input" data-edge min="16" step="16" inputmode="numeric" />
+            </label>
+            <label class="upscale-field" data-pixel-field hidden>
+              <span class="upscale-field-label">${t('Scale')}</span>
+              <select class="field-select" data-pixel-scale>
+                <option value="2">2×</option>
+                <option value="3">3×</option>
+                <option value="4" selected>4×</option>
+              </select>
+            </label>
+            <label class="upscale-field upscale-check" data-hq-field hidden>
+              <input type="checkbox" class="upscale-checkbox" data-hq />
+              <span class="upscale-field-label">${t('Higher quality (slower, larger download)')}</span>
             </label>
             <label class="upscale-field" data-denoise-field>
               <span class="upscale-field-label">${t('Denoise')} <span data-denoise-out>0.30</span></span>
               <input type="range" class="upscale-range" data-denoise min="0" max="1" step="0.05" value="0.3" />
             </label>
           </div>
+          <p class="upscale-note" data-note role="note" hidden></p>
+          <p class="upscale-warning" data-warning role="note" hidden></p>
           <p class="upscale-consent" data-consent hidden></p>
           <div class="upscale-feasibility" data-feasibility role="alert" hidden></div>
           <div class="upscale-progress" data-progress role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="${escapeHtml(t('Upscaling'))}" hidden>
@@ -203,8 +266,14 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const fileInput  = overlay.querySelector<HTMLInputElement>('[data-file]')!;
     const sourceEl   = overlay.querySelector<HTMLElement>('[data-source]')!;
     const controlsEl = overlay.querySelector<HTMLElement>('[data-controls]')!;
-    const modelSel   = overlay.querySelector<HTMLSelectElement>('[data-model]')!;
-    const infoEl     = overlay.querySelector<HTMLElement>('[data-info]')!;
+    const intentSel  = overlay.querySelector<HTMLSelectElement>('[data-intent]')!;
+    const edgeField  = overlay.querySelector<HTMLElement>('[data-edge-field]')!;
+    const pixelField = overlay.querySelector<HTMLElement>('[data-pixel-field]')!;
+    const pixelScaleSel = overlay.querySelector<HTMLSelectElement>('[data-pixel-scale]')!;
+    const hqField    = overlay.querySelector<HTMLElement>('[data-hq-field]')!;
+    const hqCheck    = overlay.querySelector<HTMLInputElement>('[data-hq]')!;
+    const noteEl     = overlay.querySelector<HTMLElement>('[data-note]')!;
+    const warningEl  = overlay.querySelector<HTMLElement>('[data-warning]')!;
     const edgeInput  = overlay.querySelector<HTMLInputElement>('[data-edge]')!;
     const denoiseField = overlay.querySelector<HTMLElement>('[data-denoise-field]')!;
     const denoiseInput = overlay.querySelector<HTMLInputElement>('[data-denoise]')!;
@@ -217,7 +286,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const runBtn     = overlay.querySelector<HTMLButtonElement>('[data-run]')!;
     const opener     = document.activeElement;
 
-    modelSel.value = defaultModel;
+    intentSel.value = defaultIntent;
 
     const cleanup = (): void => {
       abort?.abort();
@@ -250,22 +319,44 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const hideStatus = (): void => { statusEl.hidden = true; statusEl.classList.remove('upscale-error'); };
 
     const modelOf = (id: UpscaleModelId) => models.find(m => m.id === id) ?? models[0]!;
-    const currentModel = (): UpscaleModelId => (modelSel.value || defaultModel) as UpscaleModelId;
+    const currentIntent = (): UpscaleIntent => intents.find(i => i.value === intentSel.value) ?? intents[0]!;
+    // The engine an intent resolves to: its `hqModel` when the "higher quality" box is
+    // ticked, else its `model`. Algorithmic intents (pixel art) have no model — they
+    // never reach the ONNX path — so this falls back to the general model only to keep
+    // the type total; the run handler branches on `currentIntent().algorithm` first.
+    const currentModel = (): UpscaleModelId => {
+      const it = currentIntent();
+      if (it.hqModel && hqCheck.checked) return it.hqModel;
+      return it.model ?? GENERAL_MODEL;
+    };
 
-    // The info-icon carries the selected model's warning VERBATIM (GFPGAN's
-    // "warning can invent face details") — a face restorer can synthesise detail
-    // that was never in the source, so the shell must say so.
+    // Show only the controls the active intent uses: the target-edge input for model
+    // intents, the integer-scale select for pixel art, the "higher quality" box only
+    // where an intent offers one, and the note where it has one.
+    const paintControls = (): void => {
+      const it = currentIntent();
+      const isPixel = it.algorithm === 'nearest';
+      edgeField.hidden = isPixel;
+      pixelField.hidden = !isPixel;
+      hqField.hidden = !it.hqModel;
+      if (!it.hqModel) hqCheck.checked = false;
+      noteEl.hidden = !it.note;
+      if (it.note) noteEl.textContent = it.note;
+    };
+
+    // A face restorer (GFPGAN) can synthesise detail that was never in the source,
+    // so the shell must SAY SO — visibly, not behind a hover tooltip (invisible on
+    // touch and clipped by the dialog's rounded overflow). When a warned model is
+    // selected, its warning shows as an inline banner with a ⚠ glyph; the (i) icon
+    // sits inside it for recognisability.
     const paintWarning = (): void => {
       const warn = modelOf(currentModel()).warning;
       if (warn) {
-        infoEl.hidden = false;
-        infoEl.innerHTML = icon('info', { size: 14 });
-        infoEl.setAttribute('data-tip', warn);
-        infoEl.setAttribute('aria-label', warn);
+        warningEl.hidden = false;
+        warningEl.innerHTML = `${icon('info', { size: 14 })}<span>${escapeHtml(warn)}</span>`;
       } else {
-        infoEl.hidden = true;
-        infoEl.removeAttribute('data-tip');
-        infoEl.removeAttribute('aria-label');
+        warningEl.hidden = true;
+        warningEl.innerHTML = '';
       }
     };
 
@@ -273,7 +364,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     // actually vendored — a placeholder-pinned WDN would make the slider a dead
     // control that silently changes nothing, so hide it until the weights are real.
     const paintDenoise = (): void => {
-      const on = currentModel() === GENERAL_MODEL && UPSCALE_DENOISE_STAGED;
+      const on = !currentIntent().algorithm && currentModel() === GENERAL_MODEL && UPSCALE_DENOISE_STAGED;
       denoiseField.hidden = !on;
       denoiseInput.disabled = !on;
     };
@@ -283,6 +374,11 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     // the weights download once, then everything runs on-device. cached() never
     // downloads; an unknown cache state skips the line rather than blocking.
     const paintConsent = async (): Promise<void> => {
+      if (currentIntent().algorithm) {
+        consentEl.hidden = false;
+        consentEl.textContent = t('No download — this runs instantly on-device.');
+        return;
+      }
       const id = currentModel();
       try {
         if (await upscale.cached(id)) {
@@ -314,6 +410,8 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     let checkSeq = 0;
     const recheck = async (): Promise<void> => {
       if (!srcFrame) { feasible = false; runBtn.disabled = true; return; }
+      // Pixel art is a local canvas scale — no model to fit in memory, always runnable.
+      if (currentIntent().algorithm) { feasible = true; feasEl.hidden = true; feasEl.innerHTML = ''; runBtn.disabled = false; return; }
       const seq = ++checkSeq;
       runBtn.disabled = true;
       const o = readOpts();
@@ -348,24 +446,28 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
           feasEl.appendChild(document.createTextNode(' '));
           feasEl.appendChild(btn);
         }
-        if (res.suggestedModel && res.suggestedModel !== o.model) {
-          const info = modelOf(res.suggestedModel);
+        // The only model-swap the intent UI exposes is the "higher quality" lever, so
+        // if THAT is what's too heavy, offer to drop back to standard rather than name
+        // a model. Other suggestedModel hints are folded into the edge lever above.
+        if (res.suggestedModel && res.suggestedModel !== o.model && hqCheck.checked && currentIntent().model === res.suggestedModel) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'upscale-suggest';
-          btn.textContent = tRaw('Try {name}', { name: info.name });
-          btn.addEventListener('click', () => { modelSel.value = res.suggestedModel!; onModelChange(); });
+          btn.textContent = t('Use standard quality');
+          btn.addEventListener('click', () => { hqCheck.checked = false; onIntentChange(); });
           feasEl.appendChild(document.createTextNode(' '));
           feasEl.appendChild(btn);
         }
       }
     };
 
-    const onModelChange = (): void => {
-      const info = modelOf(currentModel());
-      // Re-seed the target edge to the model's native ceiling for the new scale.
-      if (srcFrame) {
-        const native = Math.max(srcFrame.width, srcFrame.height) * info.scale;
+    const onIntentChange = (): void => {
+      paintControls();
+      const it = currentIntent();
+      // Re-seed the target edge to the engine's native ceiling for the new scale
+      // (model intents only — pixel art uses the integer-scale select instead).
+      if (!it.algorithm && srcFrame) {
+        const native = Math.max(srcFrame.width, srcFrame.height) * modelOf(currentModel()).scale;
         edgeInput.max = String(native);
         if (Number(edgeInput.value) > native) edgeInput.value = String(native);
       }
@@ -374,15 +476,18 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
       void paintConsent();
       void recheck();
     };
-    modelSel.addEventListener('change', onModelChange);
+    intentSel.addEventListener('change', onIntentChange);
+    hqCheck.addEventListener('change', onIntentChange);
+    pixelScaleSel.addEventListener('change', () => void recheck());
     edgeInput.addEventListener('change', () => void recheck());
     denoiseInput.addEventListener('change', () => void recheck());
 
     // Adopt a decoded source: fill the summary, seed the target edge, reveal the
     // controls, and run the first feasibility check.
-    const adoptFrame = (frame: UpscaleFrame, name: string): void => {
+    const adoptFrame = (frame: UpscaleFrame, name: string, bytes: Uint8Array): void => {
       srcFrame = frame;
       srcName = name;
+      srcBytes = bytes;
       chooseEl.hidden = true;
       sourceEl.hidden = false;
       const info = modelOf(currentModel());
@@ -391,6 +496,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
       edgeInput.max = String(native);
       edgeInput.value = String(native);
       controlsEl.hidden = false;
+      paintControls();
       paintWarning();
       paintDenoise();
       void paintConsent();
@@ -400,9 +506,9 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const loadSource = async (source: UpscaleSource, fallbackName?: string): Promise<void> => {
       hideStatus();
       try {
-        const { frame, name } = await sourceToFrame(source, fallbackName);
+        const { frame, name, bytes } = await sourceToFrame(source, fallbackName);
         if (!overlay.isConnected) return;
-        adoptFrame(frame, name);
+        adoptFrame(frame, name, bytes);
       } catch (e) {
         if (!overlay.isConnected) return;
         host.log('error', 'Upscale source decode failed', { error: String(e) });
@@ -458,7 +564,6 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
       hideStatus();
       runBtn.disabled = true;
       progressEl.hidden = false;
-      const o = readOpts();
       abort = new AbortController();
       const paint = (p: UpscaleProgress): void => {
         // Both phases feed the one bar: download (loaded/total) and inference
@@ -477,17 +582,71 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
                     : t('Upscaling…'));
       };
       try {
-        // run() TRANSFERS (neuters) the frame's buffer to the worker, so hand it a
-        // FRESH COPY each time and keep srcFrame intact — otherwise a second Run
-        // after a failed first attempt would post a detached, empty buffer and fail.
-        const runFrame = { width: srcFrame.width, height: srcFrame.height, data: new Uint8ClampedArray(srcFrame.data) };
-        const out = await upscale.run(runFrame, { ...o, signal: abort.signal, onProgress: paint });
+        const it = currentIntent();
+        let out: UpscaleFrame;
+        // How to disclose THIS transform in the saved copy's credential, and whether
+        // it counts as a Gen-AI edit. The two paths differ in kind, so their provenance
+        // does too — this is the whole reason pixel art is a separate branch.
+        let editAction: { action: string; digitalSourceType?: string; description: string };
+        let ai = false;
+        let aiUpscaleMeta: { model: UpscaleModelId; version: string } | undefined;
+
+        if (it.algorithm === 'nearest') {
+          // Pixel art: a LOCAL, deterministic nearest-neighbour integer scale. No model
+          // invents anything, so it is disclosed as a plain edit — NEVER a genAI
+          // credential or the Gen-AI pill (that would over-claim on a lossless resize).
+          const scale = Math.max(2, Math.round(Number(pixelScaleSel.value) || 4));
+          progressEl.classList.add('upscale-progress-indeterminate');
+          fillEl.style.width = '100%';
+          progressEl.setAttribute('aria-valuenow', '0');
+          showStatus(t('Scaling…'));
+          out = pixelNearest(srcFrame, scale);
+          editAction = { action: 'c2pa.edited', description: `Scaled ${scale}× (nearest-neighbour, pixel art)` };
+        } else {
+          // Model path: run() TRANSFERS (neuters) the frame's buffer to the worker, so
+          // hand it a FRESH COPY and keep srcFrame intact — otherwise a retry after a
+          // failed run would post a detached, empty buffer and fail.
+          const o = readOpts();
+          const runFrame = { width: srcFrame.width, height: srcFrame.height, data: new Uint8ClampedArray(srcFrame.data) };
+          out = await upscale.run(runFrame, { ...o, signal: abort.signal, onProgress: paint });
+          const info = modelOf(o.model);
+          // A super-resolver INVENTS high-frequency detail from a trained model, so the
+          // honest IPTC digitalSourceType is compositeWithTrainedAlgorithmicMedia (a
+          // real image with model-inferred pixels), which aiKind reads back as 'partial'.
+          editAction = {
+            action: 'c2pa.edited',
+            digitalSourceType: COMPOSITE_SOURCE_TYPE,
+            description: `Upscaled ${info.scale}× with ${info.name} ${info.version} (on-device)`,
+          };
+          ai = true;
+          aiUpscaleMeta = { model: o.model, version: info.version };
+        }
         if (!overlay.isConnected) return;
         showStatus(t('Saving…'));
-        const blob = await frameToPngBlob(out);
+        const rawBlob = await frameToPngBlob(out);
         const now = Date.now();
         const { id, name } = upscaleAssetIds(opts.sourceName ?? srcName, now);
-        const info = modelOf(o.model);
+
+        // Stamp the copy's own bytes so its embedded Content Credential discloses the
+        // transform (not only the catalog listing). The source's own credential (e.g.
+        // an AI image's) is preserved as an ingredient rather than erased. Never throws
+        // (stampDerivedC2pa is try/catch internally); a failed re-sign still ships.
+        let blob = rawBlob;
+        try {
+          const { stampDerivedC2pa } = await import('../bridge/export.ts');
+          const ex = srcBytes ? extractC2paStore(srcBytes) : null;
+          const ingredient = ex ? prepareC2paIngredientFromStore(ex.store, ex.format) : null;
+          blob = await stampDerivedC2pa(host, rawBlob, 'png', {
+            title: srcName,
+            tool: 'Upscale',
+            actions: [editAction],
+            ...(ingredient ? { ingredients: [ingredient] } : {}),
+            dimensions: `${out.width}×${out.height}`,
+          });
+        } catch (e) {
+          host.log('warn', 'Upscale provenance stamp failed', { error: String(e) });
+        }
+
         const record: UpscaleAssetRecordInput = {
           id,
           type: 'raster',
@@ -496,14 +655,15 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
           width: out.width,
           height: out.height,
           version: '1.0.0',
-          // Surfaces the Gen AI pill (bridge/assets.ts).
-          aiGenerated: 'partial',
+          // Gen-AI pill (bridge/assets.ts) only for the model path; the embedded
+          // credential above carries the same disclosure into the file's own bytes.
+          ...(ai ? { aiGenerated: 'partial' as const } : {}),
           meta: {
             name,
             bytes: blob.size,
             // The C2PA composite-disclosure signal the engine runtime reads
             // (ExportOpts.c2paAiUpscale): "AI-upscaled with <model> <version>".
-            aiUpscale: { model: o.model, version: info.version },
+            ...(aiUpscaleMeta ? { aiUpscale: aiUpscaleMeta } : {}),
           },
         };
         await host.assets._uploadUserAsset(record);
@@ -524,7 +684,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
         }
       } finally {
         abort = null;
-        if (overlay.isConnected) { runBtn.disabled = !feasible; progressEl.hidden = true; }
+        if (overlay.isConnected) { runBtn.disabled = !feasible; progressEl.hidden = true; progressEl.classList.remove('upscale-progress-indeterminate'); }
       }
     });
 

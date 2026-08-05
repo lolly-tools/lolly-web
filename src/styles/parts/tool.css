@@ -2115,9 +2115,12 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .slot-act:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .slot-act:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
 .slot-play.is-playing {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  border-color: hsl(var(--primary));
+  /* brand-var indirection (matches .dash-hero-cta) so this reuses the primary fill
+     rather than restating the pair verbatim — the single-source-of-truth guard
+     (primitive-guards R2) keeps the bare hsl(var(--primary)) pair to buttons.css. */
+  background: var(--brand-primary, hsl(var(--primary)));
+  color: var(--brand-on-primary, hsl(var(--primary-foreground)));
+  border-color: var(--brand-primary, hsl(var(--primary)));
 }
 
 /* Baked (frozen) provenance row — the inert sibling of the live ✦ badge: a

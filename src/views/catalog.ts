@@ -96,7 +96,7 @@ import { listUserFonts, familyFromTokenValue } from '../user-fonts.ts';
 import {
   restyleIconTheme, buildThemedAssetId, parseThemedAssetId, treatmentFilterSvg,
   buildTreatedAssetId, parseTreatedAssetId, wrapRasterWithTreatment,
-  prepareC2paIngredient, prepareC2paIngredientFromStore, DIGITAL_SOURCE_TYPE, C2PA_FORMATS,
+  prepareC2paIngredient, prepareC2paIngredientFromStore, DIGITAL_SOURCE_TYPE, GENERATED_SOURCE_TYPE, COMPOSITE_SOURCE_TYPE, C2PA_FORMATS,
   extractC2paStore, attachC2paStore, verifyC2pa,
 } from '@lolly/engine';
 import { setPendingVerify } from '../lib/verify-handoff.ts';
@@ -322,6 +322,11 @@ const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 
 const isVerifiableAsset = (ref: AssetRef): boolean =>
   VERIFIABLE_FORMATS.has(String(ref.format ?? '').toLowerCase());
 
+// True while the details modal is in inline-crop mode: the crop box owns the preview stage,
+// so attachZoom's wheel/drag must stand down (and restore on exit). Module-level because
+// attachZoom lives here, outside the view closure that flips it — one modal is open at a time.
+let cropModeActive = false;
+
 /**
  * Pan/zoom the details-modal preview so a user can inspect an asset closely. Zoom *sizes*
  * the media element (`.cat-thumb`) — explicit width/height in px — rather than CSS-scaling
@@ -436,13 +441,14 @@ function attachZoom(dlg: HTMLDialogElement): void {
     pctAriaLabel: t('Reset zoom'), pctTitle: t('Reset zoom'),
   }) : null;
   stage.addEventListener('wheel', (e) => {
+    if (cropModeActive) return;   // inline crop owns the stage
     e.preventDefault();
     const [ox, oy] = offsetFrom(e);
     zoomTo(s * (e.deltaY < 0 ? 1.15 : 1 / 1.15), ox, oy);
   }, { passive: false });
   let dragging = false, lastX = 0, lastY = 0;
   stage.addEventListener('pointerdown', (e) => {
-    if (s <= MIN) return;
+    if (cropModeActive || s <= MIN) return;
     dragging = true; lastX = e.clientX; lastY = e.clientY;
     stage.classList.add('is-panning');
     try { stage.setPointerCapture(e.pointerId); } catch { /* not supported */ }
@@ -462,6 +468,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
   stage.addEventListener('pointerup', endDrag);
   stage.addEventListener('pointercancel', endDrag);
   stage.addEventListener('dblclick', (e) => {
+    if (cropModeActive) return;
     const [ox, oy] = offsetFrom(e);
     zoomTo(s > MIN ? MIN : 2.5, ox, oy);
   });
@@ -538,8 +545,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let dlModal: ModalHandle<void> | null = null;
   let detailsDialog: HTMLDialogElement | null = null;   // the asset details modal, if open
   let detailsModal: ModalHandle<void> | null = null;
-  let cropDialog: HTMLDialogElement | null = null;      // the crop dialog, if open
-  let cropModal: ModalHandle<void> | null = null;
   // The active brand's palette (host.tokens, cached) — set once in reload() before
   // the first render; swatchesSectionHtml() reads this closure var synchronously.
   let palette: readonly PaletteEntry[] = PALETTE;
@@ -1619,6 +1624,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // Free a zzfxm→WAV preview blob (only the one we minted; user-upload URLs are managed).
         const wav = modal.el.querySelector<HTMLAudioElement>('[data-audio-preview]')?.dataset.wavBlob;
         if (wav) URL.revokeObjectURL(wav);
+        cropModeActive = false;   // clear the attachZoom pause if the modal closed mid-crop (backdrop/paging)
         detailsDialog = null;
         detailsModal = null;
       },
@@ -1680,6 +1686,95 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ensureTreatmentDefs();
       const img = dlg.querySelector<HTMLImageElement>('.cat-thumb');
       if (img) img.style.filter = `url(#${TREATMENT_FILTER_PREFIX}${dTreatment})`;
+    }
+
+    // Inline crop mode: the Crop action overlays the shared crop box on THIS open preview
+    // rather than spawning the standalone crop dialog. Same source prep (prepCropSource),
+    // same crop-box interaction (wireCropBox) and same signed downloadCrop — Cancel/Escape or
+    // a completed download returns to the detail view (this same modal, same asset), never
+    // reopening or reloading it. `inlineCrop` holds the exit fn while cropping (null otherwise),
+    // which the keydown/close handlers read to know a crop is in progress.
+    let inlineCrop: (() => void) | null = null;
+    // Synchronous in-flight guard: `inlineCrop` isn't assigned until AFTER the async
+    // prepCropSource below, so a fast double-click could pass an `if (inlineCrop)`
+    // check twice and build two overlays. This flag is set/cleared around the only
+    // await; everything after it is synchronous through `inlineCrop = exit`.
+    let cropEntering = false;
+    async function enterInlineCrop(): Promise<void> {
+      if (inlineCrop || cropEntering) return;   // already cropping, or mid-entry
+      const modifier = isThemable(ref) ? dTheme : dTreatment;
+      cropEntering = true;
+      const src = await prepCropSource(ref, modifier);
+      cropEntering = false;
+      if (detailsDialog !== dlg) return;   // modal paged/closed during the fetch — abandon
+      if (!src) { closeDetails(); await directDownload(ref); return; }   // not fetchable/SVG → just save it
+      const preview = dlg.querySelector<HTMLElement>('.cat-details-preview');
+      const actions = dlg.querySelector<HTMLElement>('.cat-details-actions');
+      if (!preview || !actions) return;
+      const { vector, svgText, origSvg, theme, treatment, rasterSrc, aspect } = src;
+      const fmts: [string, string][] = vector ? [['svg', 'SVG'], ['png', 'PNG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP']];
+
+      cropModeActive = true;   // pause attachZoom's wheel/drag while the crop box owns the stage
+      preview.classList.add('is-cropping');
+      dlg.classList.add('is-cropping');
+
+      // Same crop-box markup the dialog builds; textContent-free, so no untrusted interpolation.
+      const handles = ['n', 'e', 's', 'w'].map(h => `<span class="cat-crop-e" data-h="${h}"></span>`).join('')
+        + ['nw', 'ne', 'sw', 'se'].map(h => `<span class="cat-crop-h" data-h="${h}"></span>`).join('');
+      const work = document.createElement('div');
+      work.className = 'cat-crop-work cat-crop-inline';
+      work.innerHTML = `
+        <div class="cat-crop-viewport">
+          <div class="cat-crop-stage">
+            <img class="cat-crop-img" alt="" src="${escape(vector ? svgTextToDataUrl(svgText!) : rasterSrc)}">
+            <div class="cat-crop-box">${handles}</div>
+          </div>
+        </div>
+        <div class="cat-zoom-hud"></div>`;
+      preview.appendChild(work);
+
+      const cropActions = document.createElement('div');
+      cropActions.className = 'cat-crop-actions';
+      cropActions.innerHTML = `
+        <div class="cat-dl-section">
+          <span class="cat-dl-label">${escape(t('Format'))}</span>
+          <div class="cat-dl-fmt cat-crop-fmt" role="radiogroup" aria-label="${escape(t('Format'))}">${fmts.map(([v, l], i) =>
+            `<label class="field-toggle"><input type="radio" class="field-radio" name="cat-crop-fmt" value="${escape(v)}"${i === 0 ? ' checked' : ''}> ${escape(l)}</label>`).join('')}</div>
+        </div>
+        <div class="cat-dl-actions">
+          <button type="button" class="btn cat-crop-cancel">${escape(t('Cancel'))}</button>
+          <button type="button" class="btn cat-crop-go modal-primary">${escape(t('Download crop'))}</button>
+        </div>`;
+      actions.after(cropActions);
+
+      const viewport = work.querySelector<HTMLElement>('.cat-crop-viewport')!;
+      const stage = work.querySelector<HTMLElement>('.cat-crop-stage')!;
+      const imgEl = work.querySelector<HTMLImageElement>('.cat-crop-img')!;
+      const boxEl = work.querySelector<HTMLElement>('.cat-crop-box')!;
+      const hudEl = work.querySelector<HTMLElement>('.cat-zoom-hud');
+      const crop = wireCropBox({ viewport, stage, imgEl, boxEl, hudEl, vector, aspect });
+      const fmt = (): string => cropActions.querySelector<HTMLInputElement>('input[name="cat-crop-fmt"]:checked')?.value ?? (vector ? 'svg' : 'png');
+
+      const exit = (): void => {
+        if (inlineCrop !== exit) return;   // idempotent
+        inlineCrop = null;
+        cropModeActive = false;
+        work.remove();
+        cropActions.remove();
+        preview.classList.remove('is-cropping');
+        dlg.classList.remove('is-cropping');
+      };
+      inlineCrop = exit;
+
+      cropActions.addEventListener('click', async (e) => {
+        const tgt = e.target as HTMLElement;
+        if (tgt.closest('.cat-crop-cancel')) { exit(); return; }
+        if (tgt.closest('.cat-crop-go')) {
+          try { await downloadCrop(ref, vector, svgText, imgEl, crop.getFrac(), fmt(), { theme, treatment, origSvg }); }
+          catch (err) { host.log?.('error', 'Catalog crop failed', { id: ref.id, error: String(err) }); }
+          exit();   // back to the detail view after a successful (or failed) download
+        }
+      });
     }
 
     dlg.addEventListener('click', async (e) => {
@@ -1766,6 +1861,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         setTimeout(() => { if (s) s.textContent = t('Copy link'); btn?.classList.remove('is-copied'); }, 1200);
         return;
       }
+      // Crop stays IN this detail modal — an inline mode over the current preview, not a
+      // separate dialog — so it must be handled before the closeDetails() below.
+      if (act === 'crop') { await enterInlineCrop(); return; }
       // The remaining actions leave this asset's detail context, so close first.
       closeDetails();
       if (act === 'download') {
@@ -1773,7 +1871,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         else if (treatable) await openPhotoDownloadDialog(ref, dTreatment);
         else await directDownload(ref);
       }
-      else if (act === 'crop') await openCropDialog(ref, isThemable(ref) ? dTheme : dTreatment);
       else if (act === 'upscale' || act === 'matte') {
         // Enlarge / cut-out THIS asset on-device, save the result as a user asset, then
         // show it. The dialogs carry the source's Content Credential forward as an
@@ -1797,6 +1894,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     });
     // ← / → page through assets (lightbox style), like the on-screen prev/next buttons.
     dlg.addEventListener('keydown', (e) => {
+      // In crop mode Escape backs out of the crop, not the whole modal: preventDefault
+      // suppresses the native <dialog> close request (the close-watcher only fires when the
+      // Escape keydown wasn't cancelled), and paging is disabled so it can't tear down the crop.
+      if (inlineCrop) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inlineCrop(); }
+        return;
+      }
       if (e.key === 'ArrowLeft' && nav.prev) { e.preventDefault(); openDetails(nav.prev, dTheme, dTreatment); }
       else if (e.key === 'ArrowRight' && nav.next) { e.preventDefault(); openDetails(nav.next, dTheme, dTreatment); }
     });
@@ -2679,9 +2783,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // gesture, so this never lands on the gallery/boot path.
         const { stampDerivedC2pa } = await import('../bridge/export.ts');
         const ingredients = await sourceIngredients(ref, o.sourceBytes);
+        // A genAI-flagged source must NOT read as human-made after a crop / recolour /
+        // treatment / resize. When it carries a full credential the AI origin rides in as
+        // an ingredient (collectActionChain walks ingredient manifests, so the flag
+        // survives); but when the AI-ness was authored/detected onto meta with no
+        // embeddable manifest there is no ingredient to carry it, and a plain
+        // c2pa.created would silently drop the flag. So the created claim asserts the
+        // right source type: 'full' → trainedAlgorithmicMedia, 'partial' → composite.
+        const aiKind = assetAiKind(ref);
+        const aiSourceType = aiKind === 'full' ? GENERATED_SOURCE_TYPE
+          : aiKind === 'partial' ? COMPOSITE_SOURCE_TYPE
+          : DIGITAL_SOURCE_TYPE;
         const actions: C2paActionInput[] = ingredients
           ? o.edits
-          : [{ action: 'c2pa.created', digitalSourceType: DIGITAL_SOURCE_TYPE }, ...o.edits];
+          : [{ action: 'c2pa.created', digitalSourceType: aiSourceType }, ...o.edits];
         out = await stampDerivedC2pa(host, blob, format, {
           title: String(ref.meta?.name ?? ref.id),
           actions,
@@ -2729,97 +2844,64 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     dlModal?.close(); // nulls dlDialog/dlModal in its onClose
   }
 
-  function closeCropDialog(): void {
-    cropModal?.close(); // nulls cropDialog/cropModal in its onClose
+  // The crop SOURCE the inline crop mode works from.
+  interface CropSource {
+    vector: boolean;
+    svgText: string | null;   // working SVG (may be recoloured)
+    origSvg: string | null;   // pre-recolour source — the credential ingredient
+    theme: IconTheme | null;
+    treatment: PhotoTreatment | null;
+    rasterSrc: string;        // crop source for raster — a treatment bakes it into a wrapper
+    aspect: number;           // provisional for raster; the real value is read from naturalWidth on load
   }
-
-  // Crop-before-download: a dialog with the asset fitted into an aspect-matched stage and
-  // a drag/resize crop box over it. The box is the ONLY way to change dimensions (there is
-  // no width/height resize anywhere else) — you frame the region and download just that.
-  // The stage matches the asset's aspect so the image fills it with no letterbox, which
-  // makes the crop a straight fraction of the asset: box/stage → fraction → asset pixels
-  // (raster, canvas-crop) or a narrowed viewBox (vector, stays vector). For pixel-precise
-  // framing the stage zooms (same HUD/wheel controls as the details inspector) inside a
-  // fixed clipping viewport — the box scales with the stage, so the fraction math never
-  // changes — and the box's edges are draggable along their full length, not just at the
-  // corner handles.
-  async function openCropDialog(ref: AssetRef, modifier?: string | null): Promise<void> {
+  // Fetch + prepare the crop source, baking a themable icon's colours or a raster photo's
+  // treatment into it (`modifier` is a theme id for themable icons, a treatment id for
+  // rasters) so the cropped-out region carries the look and the credential records it.
+  // Returns null when a vector asset isn't fetchable/parseable as SVG — the caller should
+  // fall back to a plain direct download. Used by enterInlineCrop.
+  async function prepCropSource(ref: AssetRef, modifier: string | null): Promise<CropSource | null> {
     const vector = isVector(ref);
     let svgText: string | null = null;
-    let origSvg: string | null = null;   // pre-recolour source — the credential ingredient
-    let theme: IconTheme | null = null;        // baked into the crop source, recorded in the credential
+    let origSvg: string | null = null;
+    let theme: IconTheme | null = null;
     let treatment: PhotoTreatment | null = null;
-    let rasterSrc = ref.url;   // crop source for raster — a treatment bakes it into a wrapper
-    let aspect = 1;   // provisional for raster; set from naturalWidth on load
+    let rasterSrc = ref.url;
+    let aspect = 1;
     if (vector) {
       try { const r = await fetch(ref.url); svgText = await r.text(); if (!/<svg[\s>]/i.test(svgText)) throw new Error('not svg'); }
-      catch { await directDownload(ref); return; }   // not fetchable/SVG → just save it
+      catch { return null; }
       origSvg = svgText;
-      // For a themable icon `modifier` is a theme id — bake it into the crop source.
       if (isThemable(ref) && modifier && modifier !== ORIGINAL_THEME) {
-        const t = iconThemes.find(x => x.id === modifier);
-        const out = t && restyleIconTheme(svgText, t);
-        if (out && out !== svgText) { svgText = stripC2paManifest(out); theme = t ?? null; }
+        const th = iconThemes.find(x => x.id === modifier);
+        const out = th && restyleIconTheme(svgText, th);
+        if (out && out !== svgText) { svgText = stripC2paManifest(out); theme = th ?? null; }
       }
       aspect = svgAspect(svgText);
     } else if (modifier && ref.type === 'raster' && photoTreatments.length) {
-      // For a raster photo `modifier` is a treatment id — bake it into the crop source so the
-      // cropped-out region carries the wash (the wrapper's pixel size = the photo's, so the
-      // canvas-cut in downloadCrop is unchanged).
+      // The wrapper's pixel size = the photo's, so downloadCrop's canvas cut is unchanged.
       const wrap = await treatedWrapperSvg(ref, modifier).catch(() => null);
       if (wrap) {
         rasterSrc = svgTextToDataUrl(wrap.svg); aspect = wrap.w / wrap.h;
         treatment = photoTreatments.find(x => x.id === modifier) ?? null;
       }
     }
-    if (!mounted) return;
-    closeCropDialog();
+    return { vector, svgText, origSvg, theme, treatment, rasterSrc, aspect };
+  }
 
-    const name = String(ref.meta?.name ?? ref.id);
-    const fmts: [string, string][] = vector ? [['svg', 'SVG'], ['png', 'PNG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP']];
-    const content = `
-      <h2 class="cat-dl-title">${t('Crop {name}', { name })}</h2>
-      <div class="cat-crop-work">
-        <div class="cat-crop-viewport">
-          <div class="cat-crop-stage">
-            <img class="cat-crop-img" alt="" src="${escape(vector ? svgTextToDataUrl(svgText!) : rasterSrc)}">
-            <div class="cat-crop-box">
-              <span class="cat-crop-e" data-h="n"></span>
-              <span class="cat-crop-e" data-h="e"></span>
-              <span class="cat-crop-e" data-h="s"></span>
-              <span class="cat-crop-e" data-h="w"></span>
-              <span class="cat-crop-h" data-h="nw"></span>
-              <span class="cat-crop-h" data-h="ne"></span>
-              <span class="cat-crop-h" data-h="sw"></span>
-              <span class="cat-crop-h" data-h="se"></span>
-            </div>
-          </div>
-        </div>
-        <div class="cat-zoom-hud"></div>
-      </div>
-      <div class="cat-dl-section">
-        <span class="cat-dl-label">${t('Format')}</span>
-        <div class="cat-dl-fmt cat-crop-fmt" role="radiogroup" aria-label="${escape(t('Format'))}">${fmts.map(([v, l], i) =>
-          `<label class="field-toggle"><input type="radio" class="field-radio" name="cat-crop-fmt" value="${v}"${i === 0 ? ' checked' : ''}> ${l}</label>`).join('')}</div>
-      </div>
-      <div class="cat-dl-actions">
-        <button type="button" class="btn cat-crop-cancel">${t('Cancel')}</button>
-        <button type="button" class="btn cat-crop-go modal-primary">${t('Download crop')}</button>
-      </div>`;
-    // mountModal opens (showModal) synchronously on mount — BEFORE the measurements below,
-    // since a closed <dialog> is display:none and would read clientWidth 0.
-    const modal = mountModal(content, {
-      className: 'cat-crop',
-      onClose: () => { cropDialog = null; cropModal = null; },
-    });
-    const dlg = modal.el;
-    cropDialog = dlg;
-    cropModal = modal;
-
-    const viewport = dlg.querySelector<HTMLElement>('.cat-crop-viewport')!;
-    const stage = dlg.querySelector<HTMLElement>('.cat-crop-stage')!;
-    const imgEl = dlg.querySelector<HTMLImageElement>('.cat-crop-img')!;
-    const boxEl = dlg.querySelector<HTMLElement>('.cat-crop-box')!;
+  // The crop-box interaction core, shared VERBATIM by the crop dialog and the inline crop
+  // mode: aspect-fit stage sizing, a default centred box, wheel/HUD zoom (the stage grows
+  // image + box together inside a fixed clipping viewport, so the box stays the same fraction
+  // of the stage and the crop math never changes), and pointer drag/resize/pan. Pan is the
+  // viewport's scroll position (overflow:hidden still scrolls from JS); the cursor point is
+  // held fixed on wheel zoom, like the details inspector. The box's edges are draggable along
+  // their full length, not just at the corner handles. The caller reads the framed region as
+  // a fraction of the asset via getFrac().
+  function wireCropBox(els: {
+    viewport: HTMLElement; stage: HTMLElement; imgEl: HTMLImageElement;
+    boxEl: HTMLElement; hudEl: HTMLElement | null; vector: boolean; aspect: number;
+  }): { getFrac(): { fx: number; fy: number; fw: number; fh: number } } {
+    const { viewport, stage, imgEl, boxEl, hudEl, vector } = els;
+    let aspect = els.aspect;
     let bx = 0, by = 0, bw = 0, bh = 0;    // crop box in stage px
     let fitW = 0, fitH = 0, zoom = 1;      // stage = fit × zoom, clipped by the fixed viewport
     const ZMAX = 16;                       // 100%…1600%, same range as the details inspector
@@ -2851,10 +2933,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     else if (imgEl.complete && imgEl.naturalWidth) { aspect = imgEl.naturalWidth / imgEl.naturalHeight; initGeom(); }
     else imgEl.addEventListener('load', () => { aspect = imgEl.naturalWidth / imgEl.naturalHeight || 1; initGeom(); }, { once: true });
 
-    // Zoom grows the stage (image AND box together) inside the fixed viewport, so the
-    // box stays the same fraction of the stage and the crop math below never changes.
-    // Pan is the viewport's scroll position (overflow:hidden still scrolls from JS).
-    // The cursor point is held fixed on wheel zoom, like the details inspector.
     const setZoom = (next: number, fx?: number, fy?: number): void => {
       const z2 = Math.min(ZMAX, Math.max(1, next));
       if (z2 === zoom) return;
@@ -2871,8 +2949,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       hud?.setReadout(`${Math.round(zoom * 100)}%`);
       viewport.classList.toggle('is-zoomed', zoom > 1.001);
     };
-    const cropHudEl = dlg.querySelector<HTMLElement>('.cat-zoom-hud');
-    const hud = cropHudEl ? mountZoomHud(cropHudEl, {
+    const hud = hudEl ? mountZoomHud(hudEl, {
       ariaLabel: t('Zoom'),
       classes: { btn: 'cat-zoom-btn', pct: 'cat-zoom-pct' },
       initialReadout: '100%',
@@ -2933,20 +3010,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     stage.addEventListener('pointerup', endDrag);
     stage.addEventListener('pointercancel', endDrag);
 
-    const fmt = (): string => dlg.querySelector<HTMLInputElement>('input[name="cat-crop-fmt"]:checked')?.value ?? (vector ? 'svg' : 'png');
-    dlg.addEventListener('click', async (e) => {
-      const t = e.target as HTMLElement;
-      if (t.closest('.cat-crop-cancel')) { closeCropDialog(); return; }
-      if (t.closest('.cat-crop-go')) {
+    return {
+      getFrac() {
         const sw = stage.clientWidth || 1, sh = stage.clientHeight || 1;
-        const frac = { fx: bx / sw, fy: by / sh, fw: bw / sw, fh: bh / sh };
-        try { await downloadCrop(ref, vector, svgText, imgEl, frac, fmt(), { theme, treatment, origSvg }); }
-        catch (err) { host.log?.('error', 'Catalog crop failed', { id: ref.id, error: String(err) }); }
-        closeCropDialog();
-      }
-    });
+        return { fx: bx / sw, fy: by / sh, fw: bw / sw, fh: bh / sh };
+      },
+    };
   }
 
+  // Crop-before-download: a dialog with the asset fitted into an aspect-matched stage and
+  // a drag/resize crop box over it. The box is the ONLY way to change dimensions (there is
+  // no width/height resize anywhere else) — you frame the region and download just that.
+  // The stage matches the asset's aspect so the image fills it with no letterbox, which
+  // makes the crop a straight fraction of the asset: box/stage → fraction → asset pixels
+  // (raster, canvas-crop) or a narrowed viewBox (vector, stays vector). The interaction core
+  // and the source prep are shared with the inline crop mode — see wireCropBox /
+  // prepCropSource — so the two paths never drift. The details modal's Crop action now enters
+  // the inline mode instead of this standalone dialog; the dialog is kept intact (it drives
+  // its own crop-box the same way) so a future non-details caller can still reach it.
   // Render the framed region. Vector → a narrowed viewBox (SVG stays vector; PNG rasterises
   // that sub-viewBox). Raster → a canvas cut of the source at natural resolution. Every
   // output is a modified copy, so it goes out signed (downloadSigned): the crop — plus any
@@ -2958,7 +3039,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     baked: { theme?: IconTheme | null; treatment?: PhotoTreatment | null; origSvg?: string | null } = {},
   ): Promise<void> {
     const { fx, fy, fw, fh } = frac;
-    // Steps for what the crop SOURCE already carries (openCropDialog baked these in).
+    // Steps for what the crop SOURCE already carries (prepCropSource baked these in).
     const bakedEdits: C2paActionInput[] = [];
     const detail: Record<string, string> = {};
     if (baked.theme) {
@@ -3597,7 +3678,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     closeViewOpts();
     closeDetails();
     closeDownloadDialog();
-    closeCropDialog();
     closeConfirmDialogs();
   };
 

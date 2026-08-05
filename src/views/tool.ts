@@ -2644,7 +2644,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // are imprinted as they're composited in (a pure-vector page marks nothing).
         // Only an explicit `imprint=0`/`off` link suppresses it (see url-mode.ts
         // parseImprint; list mirrors tool-actions.ts's isImprintFmt).
-        if (urlImprint !== false && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(fmt)) expOpts.imprint = true;
+        if (urlImprint !== false && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'bmp', 'pdf', 'pdf-cmyk', 'pptx'].includes(fmt)) expOpts.imprint = true;
         // Opt-in durable Content Credential (?durable=1): a neural TrustMark mark
         // carrying Lolly's id. Raster-only (no container rasters yet) and a no-op
         // until the encoder model is on-device. See plans/28-durable-content-credentials.md.
