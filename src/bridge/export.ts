@@ -142,6 +142,9 @@ export interface ExportOpts {
   audio?: ExportAudio;
   c2pa?: boolean;
   c2paDays?: number | string;
+  /** Generator-metadata toggle (URL `meta`, default-on). false ⇒ strip the source
+   *  attribution field from formats with no C2PA container (EPS/DXF/EMF/EXR/Radiance). */
+  metadata?: boolean;
   /** Embed the Lolly pixel watermark into raster exports (png/jpg/webp/avif/tiff).
    *  On by default, like C2PA; explicit opt-out via `imprint=0` in the URL. A
    *  durable, imperceptible mark that survives what strips the C2PA credential —
@@ -1632,7 +1635,7 @@ async function renderEmf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
     getComputedStyle: (el: Element) => window.getComputedStyle(el),
     background: opts.background,
   });
-  const bytes = emitEmf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi });
+  const bytes = emitEmf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, attribution: opts.metadata !== false });
   return new Blob([bytes as BlobPart], { type: 'image/emf' });
 }
 
@@ -1665,6 +1668,7 @@ async function renderEps(node: Element, opts: ExportOpts = {}, cmyk = false): Pr
   const text = emitEps(ir, {
     width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, cmyk,
     meta: opts.meta as { title?: string } | undefined,
+    attribution: opts.metadata !== false,
     ...(cmyk ? { cmykPalette: buildCmykPaletteMap(opts.palette ?? []) } : {}),
   });
   return new Blob([text], { type: 'application/postscript' });
@@ -1690,7 +1694,7 @@ async function renderDxf(node: Element, opts: ExportOpts = {}): Promise<Blob> {
     background: opts.background,
     label: 'DXF',
   });
-  const { text, droppedImages } = emitDxf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi });
+  const { text, droppedImages } = emitDxf(ir, { width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, attribution: opts.metadata !== false });
   if (droppedImages > 0) {
     _host?.log?.('warn', `dxf: dropped ${droppedImages} rasterised region${droppedImages > 1 ? 's' : ''} (DXF is line-art only — use SVG/PDF to keep photographic or filtered content).`);
   }
