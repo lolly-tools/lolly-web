@@ -26,6 +26,7 @@ import {
   buildEncryptDictValues, encryptObjectBytes, preparePassword,
   buildEncryptedZip, crc32,
   buildPptxParts, EMU_PER_PX,
+  writeDocx, writeOdt,
   hdrBoostToPQ, pqBt2020IccProfile, HDR_PQ_CICP,
 } from '@lolly/engine';
 import type { HdrBoostOptions } from '@lolly/engine';
@@ -62,13 +63,14 @@ import { chromePaintsOverLive, countToolMutations, createStaticChromeGuard, stat
 export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from '../../../../engine/src/pptx.ts';
-import type { HostV1, ExportMeta, IngredientCredential } from '@lolly-tools/core/host-v1';
+import type { HostV1, ExportMeta, IngredientCredential, C2paSignOpts } from '@lolly-tools/core/host-v1';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
 import type { PrintGeometry, LabelSlot } from '../../../../engine/src/print-marks.ts';
 import type { Dimension } from '../../../../engine/src/units.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
 import { n2, parseCssColor, parseCssColorFull, rgbaCss, parseCssLen, resolveRadii, objectPositionFractions } from "./export-css.ts";
 import { renderPptx } from "./export-pptx.ts";
+import { domToDocBlocks } from "./doc-blocks.ts";
 // Stage-1 split: DOM-free byte-stampers and vector-PDF helpers extracted
 // verbatim to sibling modules, imported back so no call site changes.
 import {
@@ -81,7 +83,7 @@ import {
   pdfGradientSpec, fillPdfShading,
   pdfRoundedRect, withPdfAlpha, withPdfClipRect, withPdfRoundedClip, pdfApplyClip,
   withPdfRotation, withPdfMatrix, drawSvgPathToPdf, applyTextTransform, borderDashArray,
-  buildCmykPaletteMap, assignSpotResourceNames, cmykKey, paletteHitKey, substitutePdfRgb,
+  buildCmykPaletteMap, assignSpotResourceNames, cmykKey, paletteHitKey, substitutePdfRgb, OVERPRINT_GS_DEFS,
   svgLen, preserveAspectRatioAlign, parseSvgColor,
 } from './export-pdf-vector.ts';
 import type { BrandPaletteEntry, PaletteHit } from './export-pdf-vector.ts';
@@ -198,6 +200,12 @@ export interface ExportOpts {
   bleedMarks?: boolean;
   colorBars?: boolean;
   provenance?: boolean;
+  /** Colour-bar style: 'rgb-swatches' (brand colours as single RGB cells) for RGB
+   *  output — RGB PDF / SVG / EPS; 'cmyk-verify' (the RGB+CMYK press pairs) for the
+   *  CMYK formats. Omitted ⇒ the engine default 'cmyk-verify'. */
+  barStyle?: 'cmyk-verify' | 'rgb-swatches';
+  /** Corner radius (pt) for colour-bar cells, from the brand `--radius`. */
+  barRadiusPt?: number;
   dataText?: string;
   dataMime?: string;
   icoSizes?: number[];
@@ -450,7 +458,57 @@ export function createExportAPI(host: WebHost) {
       }
       await this.download(out, name);
     },
+
+    // Apply Lolly's durable RASTER marks to finished image bytes — the transform-
+    // path counterpart to render()'s automatic marking, for a tool that stamps an
+    // existing file (Embed, Imprint & Track). Embeds the pixel Imprint always, plus
+    // the imperceptible neural durable mark when asked, then re-encodes to the same
+    // raster format. Non-raster / undecodable / too-small → returned unchanged.
+    // Never throws — losing the file to a watermark hiccup is worse than no mark.
+    async imprint(bytes: Uint8Array, format: string, opts: { durable?: boolean } = {}): Promise<Uint8Array> {
+      return imprintRasterBytes(bytes, format, opts);
+    },
   };
+}
+
+// The formats the pixel Imprint / durable mark can ride (canvas-encodable rasters).
+const IMPRINTABLE_RASTER = new Set(['png', 'jpg', 'jpeg', 'webp']);
+
+/**
+ * Decode raster bytes → canvas, embed the pixel Imprint (+ optional durable neural
+ * mark), re-encode to the same format. Raster-only and best-effort: anything the
+ * browser can't decode, a non-raster format, or a sub-8px image returns the input
+ * bytes unchanged. Backs host.export.imprint.
+ */
+async function imprintRasterBytes(bytes: Uint8Array, format: string, opts: { durable?: boolean }): Promise<Uint8Array> {
+  const f = String(format || '').toLowerCase();
+  if (!IMPRINTABLE_RASTER.has(f)) return bytes;
+  try {
+    const mime = f === 'png' ? 'image/png' : f === 'webp' ? 'image/webp' : 'image/jpeg';
+    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
+    if (bmp.width < 8 || bmp.height < 8) { bmp.close?.(); return bytes; }
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width; canvas.height = bmp.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) { bmp.close?.(); return bytes; }
+    ctx.drawImage(bmp, 0, 0);
+    bmp.close?.();
+    // Pixel Imprint — lossless-strength for png (no quantization to fight).
+    imprintCanvas(canvas, f === 'png' ? LOSSLESS_STRENGTH : undefined);
+    // Optional imperceptible neural durable mark (best-effort; never fatal).
+    if (opts.durable) {
+      try {
+        const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const { embedLollyDurable } = await import('../lib/trustmark-embed.ts');
+        const marked = await embedLollyDurable(id.data, canvas.width, canvas.height, {});
+        if (marked) { id.data.set(marked); ctx.putImageData(id, 0, 0); }
+      } catch { /* durable pass failed — keep the pixel Imprint */ }
+    }
+    const outBlob = await new Promise<Blob | null>((res) =>
+      canvas.toBlob((b) => res(b), mime, f === 'jpeg' || f === 'jpg' ? 0.92 : undefined));
+    if (!outBlob) return bytes;
+    return new Uint8Array(await outBlob.arrayBuffer());
+  } catch { return bytes; }
 }
 
 // Dispatch one format → Blob. Split out from the watermark wrapper above so the
@@ -680,6 +738,21 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       return await renderZip(node, opts);
     case 'pptx':
       return await renderPptx(node, opts);
+    case 'docx': {
+      // Editable Word document — headings + paragraphs read off the rendered node,
+      // NOT a rasterised page. The office MIME (not application/zip) keeps the .docx
+      // extension in extFor. Lossy vs PDF by design (see doc-blocks.ts).
+      const { blocks, title } = domToDocBlocks(node);
+      return new Blob([writeDocx({ title, blocks }) as BlobPart], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+    }
+    case 'odt': {
+      const { blocks, title } = domToDocBlocks(node);
+      return new Blob([writeOdt({ title, blocks }) as BlobPart], {
+        type: 'application/vnd.oasis.opendocument.text',
+      });
+    }
     // A [data-sequence] stage is checked FIRST for every motion format — a timed
     // composition is the most specific thing a render target can be. `opts.live`
     // still wins for webm/mp4, exactly as it does over the record/top-tail sniffs:
@@ -1557,7 +1630,16 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   // EMF/EPS/DXF deliberately stay off it — svg-ir drops every non-drop-shadow
   // filter, so the reconstruction would degrade there to a SHARP backdrop clone,
   // which is worse than the raster hatch.
-  if (!isSvgRooted(node)) return renderSvgFromHtml(node, { backdropBlur: true, ...opts });
+  // Print geometry (bleed + marks + colour bar), when requested. Null → every branch
+  // below produces its EXACT current output (byte-identical). Non-null → the artwork
+  // is wrapped in a media-sized outer <svg> with the marks (wrapArtworkSvgWithMarks).
+  const geo = printGeometry(node, opts);
+  if (!isSvgRooted(node)) {
+    const inner = await renderSvgFromHtml(node, { backdropBlur: true, ...opts });
+    if (!geo) return inner;
+    const artworkEl = new DOMParser().parseFromString(await inner.text(), 'image/svg+xml').documentElement;
+    return wrapArtworkSvgWithMarks(artworkEl, geo, opts);
+  }
   const svg = node.tagName?.toLowerCase() === 'svg' ? node : node.querySelector('svg');
   const clone = svg!.cloneNode(true) as Element;
   stripCommentNodes(clone);
@@ -1585,7 +1667,101 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
     clone.setAttribute('height', toCssLength(d.h));
   }
   await inlineBlobUrlsInEl(clone);
-  const xml = injectSvgMeta(new XMLSerializer().serializeToString(clone), opts.meta);
+  if (!geo) {
+    const xml = injectSvgMeta(new XMLSerializer().serializeToString(clone), opts.meta);
+    return new Blob(['<?xml version="1.0" standalone="no"?>\n' + xml], { type: 'image/svg+xml' });
+  }
+  // The nested artwork needs a viewBox for the scale into the bleed box. Only touched
+  // on the geometry path, so the plain-SVG output above stays byte-identical.
+  if (!clone.getAttribute('viewBox')) {
+    const ow = svg!.getBoundingClientRect();
+    const vbw = ow.width || d.node.w, vbh = ow.height || d.node.h;
+    if (vbw > 0 && vbh > 0) clone.setAttribute('viewBox', `0 0 ${vbw} ${vbh}`);
+  }
+  return wrapArtworkSvgWithMarks(clone, geo, opts);
+}
+
+// Wrap an artwork <svg> in a media-sized outer <svg> and append the print marks:
+// crop/bleed/registration lines + rings, the brand colour bar, and provenance text —
+// all from the same computePrintGeometry the PDF path uses. Points → CSS px (96/72)
+// so the coordinates match the artwork's CSS-px space; SVG is top-left origin like
+// the engine points, so there is no y-flip. The trim/bleed/media boxes are also
+// carried as documentary data-*-box attributes (no renderer honours them; the marks
+// themselves are the trim/bleed declaration on SVG).
+async function wrapArtworkSvgWithMarks(artworkEl: Element, geo: PrintGeometry, opts: ExportOpts): Promise<Blob> {
+  const NS = 'http://www.w3.org/2000/svg';
+  const PT2CSS = CSS_DPI / 72;   // 96/72
+  const num = (v: number): string => { const r = Math.round(v * 1000) / 1000; return String(Object.is(r, -0) ? 0 : r); };
+  const P = (v: number): string => num(v * PT2CSS);
+  const rgbStr = (t: readonly number[]): string => `rgb(${Math.round((t[0] ?? 0) * 255)},${Math.round((t[1] ?? 0) * 255)},${Math.round((t[2] ?? 0) * 255)})`;
+  const boxAttr = (b: { x: number; y: number; w: number; h: number }): string => `${num(b.x)} ${num(b.y)} ${num(b.w)} ${num(b.h)}`;
+
+  if (!artworkEl.getAttribute('viewBox')) {
+    const w = parseFloat(artworkEl.getAttribute('width') || '') || 0;
+    const h = parseFloat(artworkEl.getAttribute('height') || '') || 0;
+    if (w > 0 && h > 0) artworkEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  }
+  // Nest the artwork into the bleed box (fill it — scale-to-cover, matching the PDF).
+  const bleed = geo.boxes.bleed;
+  artworkEl.setAttribute('x', P(bleed.x));
+  artworkEl.setAttribute('y', P(bleed.y));
+  artworkEl.setAttribute('width', P(bleed.w));
+  artworkEl.setAttribute('height', P(bleed.h));
+  artworkEl.setAttribute('preserveAspectRatio', 'none');
+
+  const outer = document.createElementNS(NS, 'svg');
+  outer.setAttribute('xmlns', NS);
+  outer.setAttribute('width', `${num(geo.page.w)}pt`);
+  outer.setAttribute('height', `${num(geo.page.h)}pt`);
+  outer.setAttribute('viewBox', `0 0 ${P(geo.page.w)} ${P(geo.page.h)}`);
+  outer.setAttribute('data-media-box', boxAttr(geo.boxes.media));
+  outer.setAttribute('data-bleed-box', boxAttr(geo.boxes.bleed));
+  outer.setAttribute('data-trim-box', boxAttr(geo.boxes.trim));
+  outer.appendChild(artworkEl);
+
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 'print-marks');
+  const sw = P(geo.strokeWeight);
+  for (const ln of geo.primitives.lines) {
+    const el = document.createElementNS(NS, 'line');
+    el.setAttribute('x1', P(ln.x1)); el.setAttribute('y1', P(ln.y1));
+    el.setAttribute('x2', P(ln.x2)); el.setAttribute('y2', P(ln.y2));
+    el.setAttribute('stroke', '#000'); el.setAttribute('stroke-width', sw);
+    g.appendChild(el);
+  }
+  for (const c of geo.primitives.circles) {
+    const el = document.createElementNS(NS, 'circle');
+    el.setAttribute('cx', P(c.cx)); el.setAttribute('cy', P(c.cy)); el.setAttribute('r', P(c.r));
+    el.setAttribute('fill', 'none'); el.setAttribute('stroke', '#000'); el.setAttribute('stroke-width', sw);
+    g.appendChild(el);
+  }
+  for (const b of geo.primitives.bars) {
+    const el = document.createElementNS(NS, 'rect');
+    el.setAttribute('x', P(b.x)); el.setAttribute('y', P(b.y));
+    el.setAttribute('width', P(b.w)); el.setAttribute('height', P(b.h));
+    const r = Math.min(b.r ?? 0, b.w / 2, b.h / 2);
+    if (r > 0) el.setAttribute('rx', P(r));
+    el.setAttribute('fill', rgbStr(b.rgb));   // SVG output is RGB
+    g.appendChild(el);
+  }
+  const labels = provenanceLabels(opts.meta);
+  for (const l of geo.primitives.labels) {
+    const str = labels?.[l.slot];
+    if (!str) continue;
+    const el = document.createElementNS(NS, 'text');
+    el.setAttribute('x', P(l.x)); el.setAttribute('y', P(l.y));
+    el.setAttribute('font-size', P(l.size));
+    el.setAttribute('fill', '#595959');
+    el.setAttribute('font-family', 'Helvetica,Arial,sans-serif');
+    if (l.align === 'right') el.setAttribute('text-anchor', 'end');
+    // Engine rotation 90 = read-up; SVG positive rotate is clockwise, so negate.
+    if (l.rotation) el.setAttribute('transform', `rotate(-90 ${P(l.x)} ${P(l.y)})`);
+    el.textContent = str;
+    g.appendChild(el);
+  }
+  outer.appendChild(g);
+
+  const xml = injectSvgMeta(new XMLSerializer().serializeToString(outer), opts.meta);
   return new Blob(['<?xml version="1.0" standalone="no"?>\n' + xml], { type: 'image/svg+xml' });
 }
 
@@ -1772,11 +1948,15 @@ async function renderEps(node: Element, opts: ExportOpts = {}, cmyk = false): Pr
     background: opts.background,
     label: 'EPS',
   });
+  // Print geometry (bleed + marks + colour bar), when requested — same source as the
+  // PDF path. Null when neither is set, so a plain EPS export is byte-identical.
+  const geo = printGeometry(node, opts);
   const text = emitEps(ir, {
     width: opts.width, height: opts.height, unit: opts.unit, dpi: opts.dpi, cmyk,
     meta: opts.meta as { title?: string } | undefined,
     attribution: opts.metadata !== false,
     ...(cmyk ? { cmykPalette: buildCmykPaletteMap(opts.palette ?? []) } : {}),
+    ...(geo ? { geometry: geo, markSpace: cmyk ? 'cmyk' as const : 'rgb' as const } : {}),
   });
   return new Blob([text], { type: 'application/postscript' });
 }
@@ -3483,9 +3663,9 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // dpi-aware off the export dpi (>=2x the box, so a print export keeps resolution);
           // when `opts.rasterDpi` is set the asset instead embeds at that DPI with a 1x
           // floor, so a walker SVG can shed a heavy photo's unseen pixels (ExportOpts.rasterDpi).
-          const rDpi = (opts.rasterDpi as number) > 0 ? (opts.rasterDpi as number) : d.dpi;
-          const rFloor = (opts.rasterDpi as number) > 0 ? 1 : 2;
-          const dataUrl = await downscaleRasterForBox(el, dataUrlF, Math.max(w, h), rDpi, rFloor);
+          const rOptIn = (opts.rasterDpi as number) > 0;
+          const rDpi = rOptIn ? (opts.rasterDpi as number) : d.dpi;
+          const dataUrl = await downscaleRasterForBox(el, dataUrlF, Math.max(w, h), rDpi, rOptIn ? 1 : 2, rOptIn ? 'auto' : 'png');
           const rMin = Math.min(
             parseCssLen(style.borderTopLeftRadius,     w),
             parseCssLen(style.borderTopRightRadius,    w),
@@ -4638,11 +4818,12 @@ function buildDropShadowFilterEl(NS: string, shadows: { dx: number; dy: number; 
   return filt;
 }
 
-// Resolve the print-marks geometry for a PDF export, or null when no bleed and
-// no marks are requested (the legacy "page == trim, art fills it" path). The
-// geometry (page boxes + mark primitives, in points, top-left origin) is the
-// engine's single source of truth — see engine/src/print-marks.js.
-function printGeometry(node: Element, opts: ExportOpts, paletteSource: BrandPaletteEntry[] | undefined = opts.palette): PrintGeometry | null {
+// Resolve the print-marks geometry for a trim box already in points — the size-only
+// core, shared by the single-page path (below) and the per-page multi-page path
+// (renderMultiPagePdf). Null when no bleed and no marks are requested (the legacy
+// "page == trim, art fills it" path). The null gate reads ONLY opts, so geo-ness is
+// uniform across every page of a given export — only the numeric values scale.
+function printGeometryForSize(trimWpt: number, trimHpt: number, opts: ExportOpts, paletteSource: BrandPaletteEntry[] | undefined): PrintGeometry | null {
   const bleedDim = parseDimension(opts.bleed);
   const bleedPt = bleedDim ? toPoints(bleedDim) : 0;
   const marks = {
@@ -4654,13 +4835,17 @@ function printGeometry(node: Element, opts: ExportOpts, paletteSource: BrandPale
   };
   const anyMark = marks.crop || marks.registration || marks.bleed || marks.colorBars || marks.provenance;
   if (bleedPt <= 0 && !anyMark) return null;
-  const d = exportDims(node, opts);
-  // Brand swatches drive the verification half of the colour bar (RGB reference
-  // beside CMYK substitution). The CMYK PDF passes only the inks that actually
-  // substituted (see renderCmykPdf); the plain RGB PDF has no palette and gets
-  // the generic process/overprint/tint bar.
+  // Brand swatches drive the colour bar (RGB swatches for RGB output, RGB-beside-CMYK
+  // pairs for CMYK). The plain RGB PDF with no palette gets the generic process bar.
   const palette = marks.colorBars ? brandSwatchPalette(paletteSource) : [];
-  return computePrintGeometry({ trimWpt: toPoints(d.w), trimHpt: toPoints(d.h), bleedPt, marks, palette });
+  return computePrintGeometry({ trimWpt, trimHpt, bleedPt, marks, palette, barStyle: opts.barStyle, barRadiusPt: opts.barRadiusPt });
+}
+
+// The whole-export geometry (the node's own box). One marks-building path only —
+// see engine/src/print-marks.ts for the geometry, the single source of truth.
+function printGeometry(node: Element, opts: ExportOpts, paletteSource: BrandPaletteEntry[] | undefined = opts.palette): PrintGeometry | null {
+  const d = exportDims(node, opts);
+  return printGeometryForSize(toPoints(d.w), toPoints(d.h), opts, paletteSource);
 }
 
 
@@ -5086,29 +5271,63 @@ export async function stampDerivedC2pa(host: HostV1, blob: Blob, format: string,
 }
 
 /**
- * Content Credentials for a REDACTED derivative — the host.c2pa.sign contract
- * (engine v1.85). Signs a FRESH manifest with NO ingredients and no ingredient
- * thumbnails: an ingredient manifest box can carry a pixel-accurate thumbnail
- * of the un-redacted original, so the output is signed as a new work and the
- * tool's UI says so. The action history is honest about that: a created step,
- * a c2pa.redacted step (labelled by `o.description` when given), and the
- * closing render/encode for the format. Unlike stampDerivedC2pa this THROWS on
- * an unstampable format or a signing failure — the signature is an explicit
- * user opt-in, so silently shipping unsigned bytes would misreport what the
- * user asked for.
+ * The `host.c2pa.sign` contract (engine v1.85, widened v1.104). Signs a FRESH
+ * manifest into finished bytes and returns them. Two honest modes, chosen by
+ * `o` (see C2paSignOpts):
+ *
+ *  • `'redacted'` (default when no author/rights/ingredients given) — a derivative
+ *    with content removed. NO ingredients (an ingredient box can carry a thumbnail
+ *    of the un-redacted original), so it signs as a new work: c2pa.created + a
+ *    c2pa.redacted step + the closing render/encode. The original redact path.
+ *
+ *  • `'imported'` (default when author/rights/ingredients ARE given) — the any-media
+ *    authorship path. The essence was authored elsewhere and is preserved byte-for-
+ *    byte; Lolly only splices in a manifest asserting the artist's author/©/licence.
+ *    So it must NOT claim c2pa.created or a render/convert step. When `o.ingredients`
+ *    carry manifests already inside the file (a document-level PDF manifest, a signed
+ *    raster element, a signed video track) the engine prepends a c2pa.opened per
+ *    ingredient and the claim reads as an edit of prior work — the nested credential
+ *    survives and is referenced, never orphaned. Explicit author/rights override the
+ *    profile; absent, they fall back to the opted-in profile identity.
+ *
+ * Unlike stampDerivedC2pa this THROWS on an unstampable format or a signing
+ * failure — the signature is an explicit user opt-in, so silently shipping
+ * unsigned bytes would misreport what the user asked for.
  */
-export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: string, o: { description?: string } = {}): Promise<Uint8Array> {
-  const meta = await buildExportMeta(host, { name: 'Redact' });
-  const actions = exportActionSteps(format, {});
-  // The redaction sits between creation and the closing render/encode step.
-  actions.splice(1, 0, { action: 'c2pa.redacted', description: o.description || 'Covered content removed and the file rebuilt' });
+export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: string, o: C2paSignOpts = {}): Promise<Uint8Array> {
+  const imported = o.action === 'imported'
+    || (o.action == null && (o.author != null || o.rights != null || (o.ingredients?.length ?? 0) > 0));
+  const meta = await buildExportMeta(host, { name: imported ? 'Embed, Imprint & Track' : 'Redact' });
+
+  // Explicit artist-asserted credentials win over the profile identity; when the
+  // caller passes neither, the opted-in profile still supplies author/rights.
+  const author = o.author != null
+    ? (typeof o.author === 'string' ? (o.author.trim() ? { name: o.author.trim() } : undefined) : o.author)
+    : c2paAuthor(meta);
+  const rights = o.rights != null ? (o.rights.trim() || undefined) : c2paRights(meta);
+
+  let actions: C2paActionInput[];
+  if (imported) {
+    // The essence is preserved, not rendered — no c2pa.created and no convert step.
+    // The engine prepends a c2pa.opened per preserved ingredient (o.ingredients),
+    // so here we only describe the metadata/authorship edit (and the imprint, if the
+    // caller stamped one into the raster before signing).
+    actions = [{ action: 'c2pa.metadata', description: o.description || 'Author, copyright and licence embedded' }];
+    if (o.imprinted) actions.push({ action: 'c2pa.edited', description: 'Embedded a durable Lolly pixel watermark' });
+  } else {
+    actions = exportActionSteps(format, {});
+    // The redaction sits between creation and the closing render/encode step.
+    actions.splice(1, 0, { action: 'c2pa.redacted', description: o.description || 'Covered content removed and the file rebuilt' });
+  }
+
   const stamped = await signAndEmbedC2pa(new Blob([bytes as BlobPart]), format, {
-    title: meta.tool,
+    title: o.title || meta.tool,
     software: meta.software,
     environment: c2paEnvironment(format, { meta } as ExportOpts),
-    author: c2paAuthor(meta),
-    rights: c2paRights(meta),
+    author,
+    rights,
     actions,
+    ...(o.ingredients?.length ? { ingredients: o.ingredients } : {}),
   }, host as WebHost);
   return new Uint8Array(await stamped.arrayBuffer());
 }
@@ -5187,36 +5406,57 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
   };
   const orientOf = (w: number, h: number) => (w >= h ? 'landscape' : 'portrait');
 
-  // Lock on open via jsPDF's standard security handler (user = owner password;
-  // printing-only permissions). undefined is a no-op (unencrypted).
-  const encryption = opts.password
+  // Per-page print geometry. The null gate in printGeometryForSize reads only opts,
+  // so geo-ness is UNIFORM across pages — hasGeo decides encryption + finishing up
+  // front, and only the numeric box/mark values scale with each page's own size.
+  const bleedPtCheck = (() => { const b = parseDimension(opts.bleed); return b ? toPoints(b) : 0; })();
+  const hasGeo = bleedPtCheck > 0 || Boolean(opts.cropMarks) || Boolean(opts.registrationMarks) || Boolean(opts.bleedMarks) || Boolean(opts.colorBars) || Boolean(opts.provenance);
+  // Lock on open via jsPDF's standard security handler. jsPDF RC4 and the pdf-lib
+  // marks pass are mutually exclusive, so encrypt ONLY when there is no geometry
+  // (mirrors renderArtworkPdf). undefined is a no-op (unencrypted).
+  const encryption = (opts.password && !hasGeo)
     ? { userPassword: opts.password, ownerPassword: opts.password, userPermissions: ['print'] }
     : undefined;
+  const geos: (PrintGeometry | null)[] = [];
   prepare?.(0);
   const first = sizeOf(pageEls[0]!);
-  const pdf = new jsPDF({ unit: 'pt', format: [first.w, first.h], orientation: orientOf(first.w, first.h), encryption });
+  const g0 = printGeometryForSize(first.w, first.h, opts, opts.palette);
+  geos.push(g0);
+  const p0w = g0 ? g0.page.w : first.w;
+  const p0h = g0 ? g0.page.h : first.h;
+  const pdf = new jsPDF({ unit: 'pt', format: [p0w, p0h], orientation: orientOf(p0w, p0h), encryption });
   applyPdfMeta(pdf, opts.meta);
 
   for (let i = 0; i < pageEls.length; i++) {
     const el = pageEls[i]!;
     if (i > 0) prepare?.(i);
-    const { w, h } = i === 0 ? first : sizeOf(el);
-    if (i > 0) pdf.addPage([w, h], orientOf(w, h));
+    const size = i === 0 ? first : sizeOf(el);
+    const g = i === 0 ? g0 : printGeometryForSize(size.w, size.h, opts, opts.palette);
+    if (i > 0) geos.push(g);
+    const pageW = g ? g.page.w : size.w;
+    const pageH = g ? g.page.h : size.h;
+    if (i > 0) pdf.addPage([pageW, pageH], orientOf(pageW, pageH));
+    // The artwork (trim-size element) is drawn into the bleed box, so it scales up to
+    // cover the bleed — exactly the single-page renderArtworkPdf behaviour, per page.
+    const art = g ? g.artwork : { x: 0, y: 0, w: size.w, h: size.h };
     // An SVG-rooted page walks as vectors (mirrors renderArtworkPdf); otherwise the
     // HTML page walks via drawHtmlVectors. Common case here is HTML page boxes.
     const svgRoot = el.tagName?.toLowerCase() === 'svg' ? el
       : isSvgRooted(el) ? el.querySelector('svg') : null;
-    if (svgRoot) await drawSvgVectorsInRegion(pdf, svgRoot, 0, 0, w, h, new Set(), opts._imprintSink);
-    else await drawHtmlVectors(pdf, el, 0, 0, w, h, convert, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink);
+    if (svgRoot) await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink);
+    else await drawHtmlVectors(pdf, el, art.x, art.y, art.w, art.h, convert, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink);
   }
   const blob = pdf.output('blob');
-  if (opts.password) {
+  if (opts.password && !hasGeo) {
     // jsPDF encryption and pdf-lib post-processing are mutually exclusive — a
     // locked multi-page document ships without the PDF/X-4 finishing pass.
     _host?.log?.('info', 'pdf: password-locked export — skipping PDF/X finishing (pdf-lib cannot rewrite an encrypted document)');
     return blob;
   }
-  return await finishPdfX(blob, opts, { intentKind: 'srgb' });
+  // Per-page marks + boxes ride the pdf-lib finishing pass (each page's own geo).
+  return await finishPdfX(blob, opts, hasGeo
+    ? { intentKind: 'srgb', geos, space: 'rgb', labels: provenanceLabels(opts.meta) }
+    : { intentKind: 'srgb' });
 }
 
 // The PDF/X pass logs a withheld conformance claim through the live host, and
@@ -5242,8 +5482,8 @@ async function embeddedProfile(colorProfile: string | undefined): Promise<EmbedR
 // Never fed an encrypted blob — pdf-lib can't reopen jsPDF's RC4 output.
 async function finishPdfX(
   blobOrBytes: Blob | Uint8Array, opts: ExportOpts,
-  { intentKind = 'srgb', geo = null, space = 'rgb', labels = null }:
-    { intentKind?: string | null; geo?: PrintGeometry | null; space?: string; labels?: LabelsRecord | null } = {},
+  { intentKind = 'srgb', geo = null, geos = null, space = 'rgb', labels = null }:
+    { intentKind?: string | null; geo?: PrintGeometry | null; geos?: (PrintGeometry | null)[] | null; space?: string; labels?: LabelsRecord | null } = {},
 ): Promise<Blob> {
   const { PDFDocument } = await import('pdf-lib') as any;
   const bytes = blobOrBytes instanceof Uint8Array
@@ -5252,10 +5492,18 @@ async function finishPdfX(
   // updateMetadata:false — pdf-lib would otherwise stamp itself as Producer on
   // load; applyPdfX writes the document's real dates/producer below.
   const pdfDoc = await PDFDocument.load(bytes, { updateMetadata: false });
-  if (geo) {
-    const page = pdfDoc.getPage(0);
-    setPageBoxes(page, geo);
-    await drawPrintMarks(page, geo, { space, labels });
+  // Marks + boxes per page. The single-page caller passes one `geo` (page 0); the
+  // multi-page caller passes `geos` (one per page, any entry may be null). Each
+  // setPageBoxes/drawPrintMarks reads its own geo, so the loop is per-page-safe.
+  const perPage = geos ?? (geo ? [geo] : null);
+  if (perPage) {
+    const pages = pdfDoc.getPages();
+    for (let i = 0; i < pages.length; i++) {
+      const g = perPage[i];
+      if (!g) continue;
+      setPageBoxes(pages[i], g);
+      await drawPrintMarks(pages[i], g, { space, labels });
+    }
   }
   await applyPdfX(pdfDoc, opts, intentKind, { log: pdfxLog });
   // The C2PA embedder only parses a classic xref table; pdf-lib's default save
@@ -5321,6 +5569,17 @@ async function drawPrintMarks(page: any, geo: PrintGeometry, { space = 'rgb', la
   for (const b of geo.primitives.bars) {
     const ink = b.ink === 'page' || !b.ink ? space : b.ink;
     const fill = ink === 'cmyk' ? cmyk(...b.cmyk) : rgb(...b.rgb);
+    const r = Math.max(0, Math.min(b.r ?? 0, b.w / 2, b.h / 2));
+    if (r > 0) {
+      // Rounded cell (brand --radius). pdf-lib drawSvgPath draws the path y-DOWN from
+      // its origin, so anchor at the cell's TOP edge (fy(b.y)). Any surprise falls
+      // back to a square rect rather than dropping the cell.
+      try {
+        const rad: CornerRadii = { topLeft: [r, r], topRight: [r, r], bottomRight: [r, r], bottomLeft: [r, r] };
+        page.drawSvgPath(roundedRectPath(0, 0, b.w, b.h, rad), { x: b.x, y: fy(b.y), color: fill, borderWidth: 0 });
+        continue;
+      } catch { /* fall through to a square cell */ }
+    }
     page.drawRectangle({ x: b.x, y: fy(b.y + b.h), width: b.w, height: b.h, color: fill });
   }
   // Provenance text — only the engine's anchors that the caller supplied a string
@@ -6973,7 +7232,18 @@ async function bakeImageFilter(imgEl: any, dataUrl: string, filterStr: string | 
 // `floor` is the minimum device-px-per-CSS-px the cap allows (default 2: never soften a
 // tool export below 2x its box). The docs walker opts down to 1 via `rasterDpi`, so a
 // continuous-tone asset can be embedded at exactly its rendered box — see ExportOpts.rasterDpi.
-async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: number, dpi: number, floor = 2): Promise<string> {
+// `embed` picks the re-encode format for the downscaled bytes:
+//   'png'  (default) — lossless. Tool exports and UI previews, where a lossy pass on a
+//          flat gradient/logo would show, and the source may carry alpha.
+//   'auto' — opt-in (rasterDpi walker path): a FULLY-OPAQUE asset (a photo) re-encodes as
+//          lossy WebP, ~5-10x smaller than PNG with no visible loss at box resolution;
+//          anything with even one transparent pixel (icons, logos, cutouts) stays PNG so
+//          its edges and transparency are preserved. WebP falls back to PNG where the
+//          encoder is absent. Provenance is untouched either way: a vector export declares
+//          its embedded assets through the C2PA ingredient chain (opts.ingredients), never
+//          through the pixel bytes, so re-encoding a genAI photo here does not drop its
+//          AI/credential detection from the exported file.
+async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: number, dpi: number, floor = 2, embed: 'png' | 'auto' = 'png'): Promise<string> {
   if (!(boxLongCss > 0) || dataUrl.startsWith('data:image/svg')) return dataUrl;
   try {
     let img: any = (imgEl && imgEl.naturalWidth > 0) ? imgEl : null;
@@ -6998,10 +7268,24 @@ async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: nu
     ctx.imageSmoothingEnabled = true;
     (ctx as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, dw, dh);
-    // PNG, not JPEG: the source may carry alpha and these are UI previews, not photos,
-    // where a lossy re-encode would show. A smooth gradient at ~700px is small in PNG.
+    if (embed === 'auto' && isCanvasOpaque(ctx, dw, dh)) {
+      const webp = canvas.toDataURL('image/webp', 0.85);
+      if (webp.startsWith('data:image/webp')) return webp; // else the encoder no-op'd → PNG
+    }
     return canvas.toDataURL('image/png');
   } catch { return dataUrl; }
+}
+
+// True when every pixel is fully opaque — the signal to prefer lossy WebP over PNG for an
+// inlined asset. A tainted canvas throws on read; treat that as "not provably opaque" so it
+// falls back to PNG rather than risking a wrong lossy encode. Scans alpha only (every 4th
+// byte); the boxes this runs on are small (a downscaled photo, tens of thousands of pixels).
+function isCanvasOpaque(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
+  try {
+    const d = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] !== 255) return false;
+    return true;
+  } catch { return false; }
 }
 
 // Clips an image to a circle via an offscreen canvas. Used for headshots that
@@ -7187,6 +7471,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
   const spotResourceNames = assignSpotResourceNames(paletteMap);
   const usedKeys = new Set<string>();   // brand palette keys actually hit during substitution
   const usedSpots = new Set<string>();  // spot names actually referenced by a content stream
+  const usedGs = new Set<string>();     // overprint/knockout ExtGStates actually emitted
 
   for (const [, obj] of pdfDoc.context.enumerateIndirectObjects()) {
     if (!(obj.contents instanceof Uint8Array)) continue;
@@ -7210,7 +7495,7 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
     const text = new TextDecoder('latin1').decode(raw);
     if (!/\brg\b|\bRG\b/.test(text)) continue;
 
-    const modified = substitutePdfRgb(text, paletteMap, spotResourceNames, usedKeys, usedSpots);
+    const modified = substitutePdfRgb(text, paletteMap, spotResourceNames, usedKeys, usedSpots, usedGs);
     if (modified === text) continue;
 
     const modBytes = Uint8Array.from(modified, c => c.charCodeAt(0));
@@ -7250,9 +7535,8 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
       // FINISH_MASK_CMYK 100%-K mask rather than the swatch's colour build, so a
       // RIP that drops the plate paints an unmistakable black mask instead of a
       // plausible gold/varnish colour. A RIP that honours the plate never reads
-      // it. Overprint is still NOT applied here or anywhere in this repo, so a
-      // finish knocks out the process artwork beneath it — that incompleteness
-      // is stated in the Info-dict note below, not papered over.
+      // it. The finish plate now OVERPRINTS (substitutePdfRgb selects GSfo/GSso for
+      // it), so it sits ON the process artwork rather than cutting a hole in it.
       const fn = pdfDoc.context.obj({ FunctionType: 2, Domain: [0, 1], C0: [0, 0, 0, 0], C1: spot.cmyk, N: 1 });
       const csArr = pdfDoc.context.obj(['Separation', spot.name, 'DeviceCMYK', pdfDoc.context.register(fn)]);
       csDict.set(PDFName.of(resourceName), pdfDoc.context.register(csArr));
@@ -7266,9 +7550,29 @@ async function renderCmykPdf(node: Element, opts: ExportOpts): Promise<Blob> {
       .filter(s => s?.finish && usedSpots.has(s.name))
       .map(s => `${s!.name} (${s!.finish})`);
     if (finishNote.length) {
-      const msg = `Finish plates, mask art at 100% K, NOT overprinted: ${[...new Set(finishNote)].join('; ')}`;
+      const msg = `Finish plates emitted as overprinting named /Separation plates (100% K process fallback): ${[...new Set(finishNote)].join('; ')}`;
       pdfDoc.setKeywords([...kw, msg]);
-      pdfxLog('warn', `pdf: ${msg}`);
+      pdfxLog('info', `pdf: ${msg}`);
+    }
+  }
+
+  // Overprint / knockout graphics states referenced by the substituted content: wire
+  // the /ExtGState dicts substitutePdfRgb named into page-0 /Resources, mirroring the
+  // /Separation ColorSpace wiring above. OPM 1 lives inside each overprint dict.
+  // PDF/X-4 permits overprint and OP/op/OPM, so applyPdfX below needs no change; the
+  // pdf-lib mark drawing wraps every op in q/Q, so registration/bars keep the default
+  // (knockout) state and never inherit content-stream overprint.
+  if (usedGs.size) {
+    const page = pdfDoc.getPage(0);
+    const resources = page.node.Resources() || pdfDoc.context.obj({});
+    page.node.set(PDFName.of('Resources'), resources);
+    const gsDict = resources.lookupMaybe(PDFName.of('ExtGState'), PDFDict) || pdfDoc.context.obj({});
+    resources.set(PDFName.of('ExtGState'), gsDict);
+    for (const name of usedGs) {
+      if (gsDict.get(PDFName.of(name))) continue;   // already wired
+      const def = OVERPRINT_GS_DEFS[name];
+      if (!def) continue;
+      gsDict.set(PDFName.of(name), pdfDoc.context.register(pdfDoc.context.obj({ Type: 'ExtGState', ...def })));
     }
   }
 

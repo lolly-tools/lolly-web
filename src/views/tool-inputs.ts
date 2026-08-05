@@ -684,6 +684,55 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     if (input?.control === 'file-picker') {
       const native  = control.querySelector<HTMLInputElement>('.file-native');
       const trigger = control.querySelector<HTMLButtonElement>('.file-trigger');
+      const multiple = control.dataset.multiple === '1';
+      const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
+      // Read a File into a FileRef, enforcing the size cap; null when rejected.
+      const toRef = async (file: File): Promise<InputFile | null> => {
+        if (file.size > cap) {
+          announce(`“${file.name}” is too large (max ${fmtBytes(cap)}).`, { assertive: true });
+          return null;
+        }
+        return await fileToRef(file);
+      };
+      const currentRefs = (): InputFile[] => {
+        const v = runtime.getModel().find(i => i.id === id)?.value;
+        return (Array.isArray(v) ? v : []).filter((r): r is InputFile => Boolean(r && typeof r === 'object' && (r as InputFile).__file));
+      };
+      if (multiple) {
+        // Batch: APPEND every accepted file to the array value; each row's × removes
+        // just that one (revoking its preview URL). Clearing releases every URL.
+        const addFiles = async (files: FileList | File[] | null | undefined): Promise<void> => {
+          const list = files ? Array.from(files) : [];
+          if (!list.length) return;
+          const added = (await Promise.all(list.map(toRef))).filter((r): r is InputFile => Boolean(r));
+          if (native) native.value = '';
+          if (!added.length) return;
+          runtime.setInput(id, [...currentRefs(), ...added]);
+          onDirty?.(id);
+        };
+        trigger?.addEventListener('click', () => native?.click());
+        native?.addEventListener('change', () => void addFiles(native.files));
+        control.addEventListener('click', (e) => {
+          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.file-clear[data-file-index]');
+          if (!btn) return;
+          const idx = Number(btn.dataset.fileIndex);
+          const refs = currentRefs();
+          const gone = refs[idx];
+          if (gone && asRow(gone).url) URL.revokeObjectURL(asRow(gone).url as string);
+          runtime.setInput(id, refs.filter((_, i) => i !== idx));
+          onDirty?.(id);
+        });
+        let dragDepthM = 0;
+        const setDragM = (on: boolean): void => { control.classList.toggle('is-dragover', on); };
+        control.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepthM++; setDragM(true); });
+        control.addEventListener('dragover', (e) => e.preventDefault());
+        control.addEventListener('dragleave', () => { if (--dragDepthM <= 0) { dragDepthM = 0; setDragM(false); } });
+        control.addEventListener('drop', (e) => {
+          e.preventDefault(); dragDepthM = 0; setDragM(false);
+          void addFiles(e.dataTransfer?.files);
+        });
+        return;
+      }
       const clearer = control.querySelector<HTMLButtonElement>('.file-clear');
       // Revoke the previous preview object URL so picking a new file doesn't leak.
       const revokePrev = () => {
@@ -695,13 +744,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         if (!file) return;
         // Manifest cap when declared, engine backstop otherwise — a pick is a
         // full read into memory, so it is never unbounded.
-        const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
-        if (file.size > cap) {
-          announce(`That file is too large (max ${fmtBytes(cap)}).`, { assertive: true });
-          if (native) native.value = '';
-          return;
-        }
-        const ref = await fileToRef(file);
+        const ref = await toRef(file);
+        if (native) native.value = '';
+        if (!ref) return;
         revokePrev();
         runtime.setInput(id, ref);
         onDirty?.(id);
@@ -1948,13 +1993,28 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // bytes live only in memory and are never uploaded or persisted. The native
       // <input type=file> is hidden behind a styled trigger; binding (renderInputs)
       // reads the File into a FileRef on change.
-      const ref = input.value && typeof input.value === 'object' && (input.value as InputFile).__file ? (input.value as InputFile) : null;
       const accept = Array.isArray(input.accept) ? input.accept.join(',') : '';
-      const meta = ref ? `${escape(ref.name)}${ref.size ? ` · ${fmtBytes(ref.size)}` : ''}` : '';
+      const chosenRow = (r: InputFile, idx?: number): string => {
+        const meta = `${escape(r.name)}${r.size ? ` · ${fmtBytes(r.size)}` : ''}`;
+        return `<div class="file-chosen"><span class="file-name" title="${escape(r.name)}">${meta}</span><button type="button" class="file-clear"${idx == null ? '' : ` data-file-index="${idx}"`} aria-label="Remove ${escape(r.name)}">&#x2715;</button></div>`;
+      };
+      if (input.multiple) {
+        // A batch input holds an ARRAY of FileRefs (empty when none). The trigger adds
+        // more; each chosen file lists with its own remove-×.
+        const refs = (Array.isArray(input.value) ? input.value : []).filter(
+          (v): v is InputFile => Boolean(v && typeof v === 'object' && (v as InputFile).__file),
+        );
+        return `<div class="file-picker" data-input-id="${id}" data-multiple="1">
+          <input type="file" class="file-native" ${accept ? `accept="${escape(accept)}"` : ''} multiple hidden>
+          <button type="button" class="file-trigger">${refs.length ? 'Add files…' : 'Choose files…'}</button>
+          ${refs.length ? `<div class="file-list">${refs.map((r, i) => chosenRow(r, i)).join('')}</div>` : ''}
+        </div>`;
+      }
+      const ref = input.value && typeof input.value === 'object' && (input.value as InputFile).__file ? (input.value as InputFile) : null;
       return `<div class="file-picker" data-input-id="${id}">
         <input type="file" class="file-native" ${accept ? `accept="${escape(accept)}"` : ''} hidden>
         <button type="button" class="file-trigger">${ref ? 'Replace file…' : 'Choose file…'}</button>
-        ${ref ? `<div class="file-chosen"><span class="file-name" title="${escape(ref.name)}">${meta}</span><button type="button" class="file-clear" aria-label="Remove file">&#x2715;</button></div>` : ''}
+        ${ref ? chosenRow(ref) : ''}
       </div>`;
     }
     case 'time-input':

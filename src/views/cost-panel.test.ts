@@ -69,12 +69,11 @@ test('a job with no priceable count renders nothing', () => {
   assert.equal(v.show, false);
 });
 
-test('rule 1: no card on this device shows the explanation and NO money', () => {
+test('rule 1: no card on this device hides the panel (no in-app card loading yet)', () => {
   const v = costView(null, ctx({ money: money({ hasCard: false }) }));
-  assert.equal(v.show, true);
+  assert.equal(v.show, false, 'nothing to load a card with → no clutter on every export');
   assert.equal(v.mode, 'no-card');
   assert.equal(v.total, undefined);
-  assert.ok(!CURRENCY.test(costBodyHtml(v)), 'no-card body must carry no figure');
 });
 
 // ─── the degrade: a link cannot render money ───────────────────────────────────

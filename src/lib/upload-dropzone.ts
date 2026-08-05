@@ -69,8 +69,11 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
     // office/OCF package that shares the PK magic is NOT expanded (kept as-is and
     // handled/errored by the normal path). Lazy chunk — the engine zip/tar readers
     // load only when an archive actually arrives.
-    const { expandArchiveFiles } = await import('./archive-ingest.ts');
-    const expanded = await expandArchiveFiles(files);
+    const { expandArchiveFiles, isIgnoredUploadName } = await import('./archive-ingest.ts');
+    // Drop a folder extracted from a macOS zip and its `._` AppleDouble stubs / .DS_Store
+    // ride along as real File drops (they never reach the archive exploder). Skip them here
+    // too, so the junk filter covers both the zip-explode and the dragged-folder paths.
+    const expanded = (await expandArchiveFiles(files)).filter((f) => !isIgnoredUploadName(f.name));
     if (textEl) textEl.textContent = expanded.length === 1 ? 'Adding…' : `Adding ${expanded.length} files…`;
     let stored = 0;
     for (const file of expanded) {

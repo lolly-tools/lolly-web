@@ -193,9 +193,13 @@ export function costView(working: CostWorking | null, ctx: CostPanelContext): Co
   // Not a costable job → nothing to say; do not clutter the export panel.
   if (!ctx.costable) return { show: false, heading, mode: 'no-card' };
 
-  // Rule 1 — no card on this device → count-only explanation, no money at all.
+  // Rule 1 — no card on this device → hide the panel entirely. There is no in-app way
+  // to load a rate card yet, so the count-only explanation was just clutter on every
+  // export. (noCardBody stays available for when card loading ships and this returns
+  // show:true again.)
   if (!ctx.money.hasCard) {
-    return { show: true, heading, mode: 'no-card', message: noCardBody() };
+    void noCardBody;
+    return { show: false, heading, mode: 'no-card' };
   }
 
   // The degrade gate. When money may not be shown, the working table is NEVER built:

@@ -12,6 +12,7 @@ import {
   readArchiveMembers,
   looksLikePlainArchiveName,
   expandArchiveFiles,
+  isIgnoredUploadName,
   ArchiveIngestError,
   MAX_ARCHIVE_MEMBERS,
 } from './archive-ingest.ts';
@@ -92,6 +93,35 @@ test('expandArchiveFiles keeps a broken/renamed archive as-is (byte guard refuse
   const out = await expandArchiveFiles([new File([xlsx as BlobPart], 'sneaky.zip')]);
   assert.equal(out.length, 1);
   assert.equal(out[0]!.name, 'sneaky.zip');
+});
+
+test('a macOS-made zip drops its __MACOSX/._ AppleDouble stubs and .DS_Store', () => {
+  // Finder / `zip` on macOS puts a `__MACOSX/` tree of `._name` resource-fork stubs
+  // beside every real file, plus a `.DS_Store`. Left in, each became its own blank
+  // "VECTOR .bin" upload — an `._foo.svg` matches the .svg name test but holds
+  // AppleDouble binary. Only the real files should survive the explode.
+  const zip = storeZip([
+    { name: 'hlc-color-atlas-01.svg', bytes: enc.encode('<svg viewBox="0 0 1 1"></svg>') },
+    { name: 'hlc-color-atlas-02.svg', bytes: enc.encode('<svg viewBox="0 0 1 1"></svg>') },
+    { name: '__MACOSX/._hlc-color-atlas-01.svg', bytes: enc.encode('\x00\x05\x16\x07 applefile') },
+    { name: '__MACOSX/._hlc-color-atlas-02.svg', bytes: enc.encode('\x00\x05\x16\x07 applefile') },
+    { name: '._hlc-color-atlas-01.svg', bytes: enc.encode('\x00\x05\x16\x07 applefile') },
+    { name: '.DS_Store', bytes: enc.encode('Bud1 junk') },
+  ]);
+  const members = readArchiveMembers(zip, 'Archive.zip');
+  assert.deepEqual(members.map((m) => m.name).sort(), ['hlc-color-atlas-01.svg', 'hlc-color-atlas-02.svg']);
+});
+
+test('isIgnoredUploadName flags OS bookkeeping, keeps real files', () => {
+  assert.equal(isIgnoredUploadName('__MACOSX/._art.svg'), true);
+  assert.equal(isIgnoredUploadName('._art.svg'), true);         // AppleDouble beside a real file
+  assert.equal(isIgnoredUploadName('folder/._art.svg'), true);  // nested AppleDouble
+  assert.equal(isIgnoredUploadName('.DS_Store'), true);
+  assert.equal(isIgnoredUploadName('sub/.DS_Store'), true);
+  assert.equal(isIgnoredUploadName('Thumbs.db'), true);
+  assert.equal(isIgnoredUploadName('art.svg'), false);
+  assert.equal(isIgnoredUploadName('_underscore.svg'), false);  // single underscore is a real name
+  assert.equal(isIgnoredUploadName('folder/photo.png'), false);
 });
 
 test('looksLikePlainArchiveName accepts archives, excludes design bundles', () => {

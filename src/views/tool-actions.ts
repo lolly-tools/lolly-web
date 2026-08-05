@@ -38,7 +38,7 @@ import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, audioSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
 import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
-import { preflightRowHtml, preflightView, applyPreflight } from './export-preflight.ts';
+import { preflightRowHtml, preflightView, applyPreflight, wirePreflight } from './export-preflight.ts';
 import { costPanelHtml, costView, applyCostPanel } from './cost-panel.ts';
 import type { CostAuthoringContext } from './cost-panel.ts';
 import { listRateCards, listCatalogRateCards, getRateCardBlob } from '../lib/rate-cards.ts';
@@ -69,7 +69,7 @@ import { jellyActive } from '../lib/jelly.ts';
 // Human-readable labels and file extensions for format identifiers that differ
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
 const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
-  emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
+  emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
   // Audio only. Opus ships in a WebM container, so the label says so rather than
   // leaving a download named .webm looking like a video.
   wav: 'WAV', mp3: 'MP3', m4a: 'M4A (AAC)', opus: 'Opus (WebM)' };
@@ -457,14 +457,17 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const cmykOptions = Object.entries(CMYK_CONDITIONS)
     .map(([key, c]) => `<option value="${escape(key)}" ${key === initProfile ? 'selected' : ''}>${escape((c as { info?: string }).info)}</option>`)
     .join('');
+  // The full explanation lives under the info icon (helpTip), not as a wall of body
+  // text — same affordance as the C2PA / Imprint rows.
+  const cmykTip = hasCmyk ? helpTip(
+    "Names the CMYK press standard your printer targets: the Print PDF's output intent, the Print TIFF's metadata (the pixels stay untagged DeviceCMYK). An Embed row carries a profile from this device inside the PDF, which is what PDF/X-4 conformance needs; the file then claims it unless something else in the export can't (RGB artwork, the credit-text stamp, a strong password)."
+  ) : null;
   const cmykRow = hasCmyk ? `
       <div class="section-card export-cmyk" data-cmyk-only style="display:${isCmykFmt(initialFmt) ? 'flex' : 'none'}">
-        <span class="cmyk-head">${ICON_DROP}<span>Color profile</span></span>
-        <select class="field-select" data-action="cmyk-profile" aria-label="CMYK press profile"
-                title="The CMYK press condition your printer targets — named in the Print PDF's output intent, recorded in the Print TIFF's metadata. An “Embed” row puts that profile inside the PDF.">
+        <span class="cmyk-head help-tip-host">${ICON_DROP}<span>Color profile</span>${cmykTip!.button}${cmykTip!.pop}</span>
+        <select class="field-select" data-action="cmyk-profile" aria-label="CMYK press profile">
           ${cmykOptions}
         </select>
-        <p class="cmyk-hint">Names the CMYK press standard your printer targets — the Print PDF's output intent, the Print TIFF's metadata (the pixels stay untagged DeviceCMYK). An <b>Embed</b> row carries a profile from this device inside the PDF, which is what PDF/X-4 conformance needs — the file then claims it unless something else in the export can't (RGB artwork, the <b>prov</b> credit text, a strong password).</p>
       </div>` : '';
 
   // Tier 2.6 — PDF password (standard "PDF" only). A non-empty value locks the
@@ -640,7 +643,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // per-page boxes (multi-page PDF) opt out via render.printMarks:false so the
   // card isn't shown promising marks the multi-page export path doesn't apply.
   const hasPrint     = (hasPdf || hasCmyk) && manifest.render.printMarks !== false;
-  const printInitOn  = Boolean(exportDefaults.bleed || exportDefaults.marks);
+  // Picking ANY print format (PDF, Print PDF, Print TIFF) opens the marks card with
+  // its full set — bleed, crop, registration, colour bars, and the provenance stamp
+  // in the margin — so the print controls are always right there, never hidden behind
+  // a collapsed toggle. Colour bars still default on only for the CMYK formats (below);
+  // an explicit link/save marks preference counts too. The master toggle can turn the
+  // whole lot off for a plain everyday PDF.
+  const printInitOn  = Boolean(exportDefaults.bleed || exportDefaults.marks) || isPrintFmt(initialFmt);
   const printInitMm  = exportDefaults.bleed ? (parseFloat(exportDefaults.bleed) || 3) : 3;
   // Colour bars default ON for the CMYK print formats (the press uses them as a
   // control strip), OFF for the RGB pdf. An explicit marks default (link/save) wins.
@@ -1235,6 +1244,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (bars) bars.checked = isCmykFmt(fmt);
   };
 
+  // The Print marks card opens for EVERY print format and closes for the rest,
+  // re-applied on every switch — until the user toggles the master or a link/save
+  // set marks explicitly, after which their choice is left alone. Without this the
+  // card is shown but collapsed behind an unchecked master, so picking a print format
+  // looks like the crop/bleed/colour-bar/provenance controls vanished.
+  let marksUserSet = Boolean(exportDefaults.bleed || exportDefaults.marks);
+  const syncPrintDefault = (fmt: string): void => {
+    if (marksUserSet) return;
+    const en = el.querySelector<HTMLInputElement>('[data-action="print-enable"]');
+    if (en) en.checked = isPrintFmt(fmt);   // refreshPrintUi (called next) reveals/hides the body
+  };
+
   // Show/hide timing params and format-specific controls when the format selector changes.
   if (formatEl) {
     formatEl.addEventListener('change', () => {
@@ -1259,6 +1280,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach(c => { c.style.display = isCmykFmt(fmt) ? 'flex' : 'none'; });
       el.querySelectorAll<HTMLElement>('[data-printmarks-only]').forEach(c => { c.style.display = isPrintFmt(fmt) ? 'flex' : 'none'; });
       syncBarsDefault(fmt);
+      syncPrintDefault(fmt);   // open the marks card for a CMYK press format, close it otherwise
       updateFidelityWarning();  // only SVG/HTML keep a frosted panel
       refreshPrintUi(); // owns [data-pdf-only] (password) visibility — see below
       refreshDepthFact();
@@ -1392,6 +1414,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // and none of them had a fidelity-warning equivalent to ride — so they take the
   // refresh explicitly, or the card would keep stating the previous bleed.
   el.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.addEventListener('change', () => {
+    marksUserSet = true;   // a manual toggle stops the per-format auto open/close
     refreshPrintUi(); refreshPreflight(); onUrlSync?.('bleed'); onUrlSync?.('marks');
   });
   el.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.addEventListener('input', () => { refreshPreflight(); onUrlSync?.('bleed'); });
@@ -1501,6 +1524,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // the document dismiss listener is dropped in mountTool's cleanup). Hover
   // reveal is pure CSS.
   wireHelpTips(el);
+  wirePreflight(el);   // the "Before you export" control opens its details modal
   linkHelpDescriptions(el);
 
   // Credential lifetime: the 7/30/90/365 select only makes sense for the
@@ -1639,7 +1663,21 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       bleedMarks:        el!.querySelector<HTMLInputElement>('[data-action="mark-bleed"]')?.checked ?? false,
       colorBars:         el!.querySelector<HTMLInputElement>('[data-action="mark-bars"]')?.checked ?? false,
       provenance:        el!.querySelector<HTMLInputElement>('[data-action="mark-prov"]')?.checked ?? false,
+      barRadiusPt:       brandBarRadiusPt(),
     };
+  }
+
+  // The brand/theme corner radius as PDF points, for rounding colour-bar cells to
+  // match the brand `--radius`. Reads the live token (px or rem) off the tool canvas
+  // — where the runtime brand block applies it — falling back to the document root,
+  // and converts px→pt (72/96). 0 (or an unparseable/none value) keeps sharp cells.
+  function brandBarRadiusPt(): number {
+    const src = el?.closest('.tool-layout')?.querySelector('#tool-canvas') ?? document.documentElement;
+    const raw = getComputedStyle(src).getPropertyValue('--radius').trim();
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    const px = /rem\s*$/.test(raw) ? n * 16 : n;   // rem→px (root 16px) or already px
+    return px * 0.75;                               // px→pt
   }
 
   // ── Preflight: "Before you export" ────────────────────────────────────────
@@ -1666,7 +1704,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     try {
       const colors = await host.tokens?.colors?.();
       if (!Array.isArray(colors) || colors.length === 0) return;   // stays 'not-resolved'
-      palette = { known: true, value: colors.map(s => ({ path: s.path, name: s.name, spot: s.spot ?? null })) };
+      palette = { known: true, value: colors.map(s => ({ path: s.path, name: s.name, spot: s.spot ?? null, cmyk: s.cmyk ?? undefined, hex: s.value })) };
       refreshPreflight();
     } catch { /* stays 'not-resolved' — never a fabricated empty palette */ }
   })();
@@ -1676,12 +1714,25 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (!canvasEl) return { known: false, why: 'needs-mount' };
     const durationS = seqDurationS();
     const boxes = canvasEl.querySelectorAll('[data-pdf-page]').length;
+    // Measure placed raster images for the per-image effective-DPI check. Pure/sync
+    // (getBoundingClientRect + naturalWidth) — stays on the refreshPreflight path,
+    // never a render. Only images with real intrinsic pixels + a rendered box.
+    const rect = canvasEl.getBoundingClientRect();
+    const rasterImages = [...canvasEl.querySelectorAll('img')].flatMap((el) => {
+      const nW = el.naturalWidth, nH = el.naturalHeight, b = el.getBoundingClientRect();
+      if (!(nW > 0) || !(nH > 0) || !(b.width > 0) || !(b.height > 0)) return [];
+      const label = el.getAttribute('alt') || el.getAttribute('aria-label')
+        || (el.currentSrc || el.src || '').split('/').pop()?.split('?')[0] || 'An image';
+      return [{ label, naturalW: nW, naturalH: nH, boxCssW: b.width, boxCssH: b.height }];
+    });
     return {
       known: true,
       value: {
         isSequence: Boolean(seqStageEl()),
         durationMs: durationS === null ? null : Math.round(durationS * 1000),
         pageBoxes: boxes > 0 ? boxes : null,
+        canvasCssW: rect.width > 0 ? rect.width : null,
+        rasterImages,
       },
     };
   }
@@ -2368,10 +2419,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...audioOpt,
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
         ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
-        ...(isPrintFmt(fmt) ? printOpts() : {}),
-        // Every CMYK export path (PDF, TIFF, EPS) does exact brand-swatch matching
-        // against this same live palette — see buildCmykPaletteMap in bridge/export.ts.
-        ...(isCmykFmt(fmt) || fmt === 'eps-cmyk' ? { palette: brandPalette } : {}),
+        ...(isPrintFmt(fmt) ? { ...printOpts(), barStyle: SEPARATING_FORMATS.has(fmt) ? 'cmyk-verify' as const : 'rgb-swatches' as const } : {}),
+        // The brand palette drives the colour bar for EVERY print format now, not just
+        // CMYK: the CMYK paths ALSO do exact brand-swatch matching against it (see
+        // buildCmykPaletteMap in bridge/export.ts), while the RGB paths (PDF/SVG/EPS)
+        // use it only to paint the brand colours as RGB swatches (barStyle above).
+        ...(isPrintFmt(fmt) ? { palette: brandPalette } : {}),
         ...(isCmykFmt(fmt) ? {
           colorProfile: el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || DEFAULT_CMYK_CONDITION,
         } : {}),

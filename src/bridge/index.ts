@@ -128,6 +128,7 @@ export async function createBridge(): Promise<WebHost> {
     render: async (node, format, opts) => (await loadExport()).render(node, format, opts),
     download: async (blob, filename) => (await loadExport()).download(blob, filename),
     file: async (blob, opts) => (await loadExport()).file(blob, opts),
+    imprint: async (bytes, format, opts) => (await loadExport()).imprint(bytes, format, opts),
   };
 
   // Lazy compose facade: compose renders CHILD tools through the same bridge, so it
@@ -234,6 +235,29 @@ export async function createBridge(): Promise<WebHost> {
     decode: async (input) => (await loadImages()).decode(input),
     resize: async (input, opts) => (await loadImages()).resize(input, opts),
     encode: async (input, opts) => (await loadImages()).encode(input, opts),
+  };
+
+  // Lazy raster facade (v1.105): decode/measure/encode for tool hooks doing
+  // their OWN canvas pixel work (the filter-* family, bitmap-studio, the logo
+  // composers, redact) — the bridge home for the canRaster()/loadImage() probes
+  // those hooks used to open-code against the DOM. Wraps the same codec glue as
+  // host.images, so it's lazy for the same reason. `canRaster()` is contractually
+  // SYNCHRONOUS (a hook branches on it before deciding what to render), so — like
+  // host.viz.isAvailable / host.audio.isAvailable — it is answered here from the
+  // same feature detection the module's own canRaster() makes, not behind the
+  // import. Distinct from host.images (bytes→bytes convert, no pixel access).
+  let rasterImpl: NonNullable<WebHost['raster']> | null = null;
+  const loadRaster = async (): Promise<NonNullable<WebHost['raster']>> => {
+    if (!rasterImpl) { const { createRasterAPI } = await import('./raster.ts'); rasterImpl = createRasterAPI(); }
+    return rasterImpl;
+  };
+  host.raster = {
+    canRaster: () => typeof createImageBitmap === 'function' &&
+      (typeof OffscreenCanvas === 'function' ||
+        (typeof document !== 'undefined' && !!document.createElement)),
+    measure: async (src) => (await loadRaster()).measure(src),
+    decode: async (src) => (await loadRaster()).decode(src),
+    encode: async (source, opts) => (await loadRaster()).encode(source, opts),
   };
 
   // Lazy audio facade (v1.71) — decode + per-frame analysis. Lazy for the same
@@ -359,14 +383,21 @@ export async function createBridge(): Promise<WebHost> {
     run: async (f, o) => (await loadMatte()).run(f, o),
   };
 
-  // Fresh-manifest Content Credentials for redacted derivatives (v1.85) — no
-  // ingredients, no ingredient thumbnails. A lazy facade for the same reason
-  // export is: the signer lives inside the 90 KB export bridge, and nothing
-  // reaches it before an explicit user opt-in.
+  // Content Credentials signing (v1.85; widened v1.104). A lazy facade for the
+  // same reason export is: the signer lives inside the 90 KB export bridge, and
+  // nothing reaches it before an explicit user opt-in. `readIngredients` reads the
+  // manifests a dropped file already carries (its own + SVG-nested rasters) so a
+  // fresh authorship claim preserves them rather than orphaning them.
   host.c2pa = {
     sign: async (bytes, format, opts) => {
       const { signFreshC2pa } = await import('./export.ts');
       return signFreshC2pa(host, bytes, format, opts);
+    },
+    readIngredients: async (bytes) => {
+      try {
+        const { collectIngredients } = await import('@lolly/engine');
+        return collectIngredients(bytes);
+      } catch { return []; }
     },
   };
 

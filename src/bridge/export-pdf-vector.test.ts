@@ -407,13 +407,14 @@ test('substitutePdfRgb: process lock → k/K operators; unmatched → generic co
   const spotNames = assignSpotResourceNames(map);
   const used = new Set<string>();
   const out = substitutePdfRgb('1 0 0 rg 1 0 0 RG', map, spotNames, used);
-  assert.equal(out, '0 1 1 0 k 0 1 1 0 K');
+  // Red carries CMY → knockout (GSfk fill, GSsk stroke), never overprint.
+  assert.equal(out, '/GSfk gs 0 1 1 0 k /GSsk gs 0 1 1 0 K');
   assert.deepEqual([...used], [cmykKey(1, 0, 0)]);
-  // A non-palette colour falls back to the engine's generic conversion.
+  // A non-palette colour falls back to the engine's generic conversion (also knockout).
   const [c, m, y, k] = rgbToCmyk(0.2, 0.4, 0.6);
   assert.equal(
     substitutePdfRgb('0.2 0.4 0.6 rg', map, spotNames),
-    `${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} k`,
+    `/GSfk gs ${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} k`,
   );
 });
 
@@ -426,7 +427,8 @@ test('substitutePdfRgb: spot lock switches to the /Separation colourspace at ful
   const jsPdfStream = '0.05 0.2 0.17 rg 0.05 0.2 0.17 RG';
   assert.equal(cmykKey(0.05, 0.2, 0.17), cmykKey(0x0C / 255, 0x32 / 255, 0x2C / 255), stream);
   const out = substitutePdfRgb(jsPdfStream, map, spotNames, undefined, usedSpots);
-  assert.equal(out, '/CS1 cs 1 scn /CS1 CS 1 SCN');
+  // An ordinary (non-finish) spot knocks out — GSfk fill, GSsk stroke.
+  assert.equal(out, '/GSfk gs /CS1 cs 1 scn /GSsk gs /CS1 CS 1 SCN');
   assert.deepEqual([...usedSpots], ['Pine']);
 });
 
@@ -520,15 +522,41 @@ test('brandSwatchPalette: a finish cell is the mask and names the finish', () =>
   assert.deepEqual(out[2]!.cmyk, rgbToCmyk(0xC9 / 255, 0xA2 / 255, 0x27 / 255));
 });
 
-test('substitutePdfRgb: a finish still switches to its /Separation, not a k operator', () => {
+test('substitutePdfRgb: a finish switches to its /Separation and OVERPRINTS', () => {
   // The mask build must not demote a finish to flat process ink in the PDF path —
-  // the named plate is the one thing a printer can actually act on.
+  // the named plate is the one thing a printer can actually act on — and a finish
+  // OVERPRINTS (GSfo fill / GSso stroke) so it sits on the artwork, not through it.
   const map = buildCmykPaletteMap([{ hex: '#0C322C', spot: { name: 'Emboss', finish: 'emboss' } }]);
   const spotNames = assignSpotResourceNames(map);
   const usedSpots = new Set<string>();
-  const out = substitutePdfRgb('0.05 0.2 0.17 rg 0.05 0.2 0.17 RG', map, spotNames, undefined, usedSpots);
-  assert.equal(out, '/CS1 cs 1 scn /CS1 CS 1 SCN');
+  const usedGs = new Set<string>();
+  const out = substitutePdfRgb('0.05 0.2 0.17 rg 0.05 0.2 0.17 RG', map, spotNames, undefined, usedSpots, usedGs);
+  assert.equal(out, '/GSfo gs /CS1 cs 1 scn /GSso gs /CS1 CS 1 SCN');
   assert.deepEqual([...usedSpots], ['Emboss']);
+  assert.deepEqual([...usedGs].sort(), ['GSfo', 'GSso']);
+});
+
+test('substitutePdfRgb: overprint policy — 100% K overprints, rich black + white knock out', () => {
+  const map = buildCmykPaletteMap([]);
+  const spotNames = assignSpotResourceNames(map);
+  // Solid black (0 0 0 rg → C=M=Y=0, K=1) OVERPRINTS: GSfo fill, GSso stroke.
+  const gs = new Set<string>();
+  assert.equal(substitutePdfRgb('0 0 0 rg 0 0 0 RG', map, spotNames, undefined, undefined, gs), '/GSfo gs 0 0 0 1 k /GSso gs 0 0 0 1 K');
+  assert.deepEqual([...gs].sort(), ['GSfo', 'GSso']);
+  // White / paper (all-zero build) KNOCKS OUT so it never vanishes.
+  assert.equal(substitutePdfRgb('1 1 1 rg', map, spotNames), '/GSfk gs 0 0 0 0 k');
+  // A rich black lock (carries CMY) KNOCKS OUT — overprinting it would double-print.
+  const rich = buildCmykPaletteMap([{ hex: '#0A0A0A', cmyk: [40, 30, 30, 100] }]);
+  const richOut = substitutePdfRgb('0.0392 0.0392 0.0392 rg', rich, assignSpotResourceNames(rich));
+  assert.match(richOut, /^\/GSfk gs /, richOut);
+});
+
+test('substitutePdfRgb: fill and stroke get independent overprint states', () => {
+  const map = buildCmykPaletteMap([]);
+  const spotNames = assignSpotResourceNames(map);
+  // Black fill (overprint) followed by white stroke (knockout): the stroke-knockout
+  // state must not touch the fill-overprint one.
+  assert.equal(substitutePdfRgb('0 0 0 rg 1 1 1 RG', map, spotNames), '/GSfo gs 0 0 0 1 k /GSsk gs 0 0 0 0 K');
 });
 
 // Contract test (same spirit as a11y-prefs-contract.test.ts): the finish fix is

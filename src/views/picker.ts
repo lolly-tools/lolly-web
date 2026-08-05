@@ -204,6 +204,7 @@ interface PickerOpts {
     | 'font'
     | 'profile'
     | 'ratecard'
+    | 'text'
     | 'image';
   namespace?: string;
   tags?: string[];
@@ -2530,15 +2531,45 @@ function normalizeSvg(svgText: string): { svg: string; width?: number; height?: 
 }
 
 async function sanitizeSvgFile(file: Blob): Promise<{ blob: Blob; width?: number; height?: number }> {
+  const SVG_MIME = 'image/svg+xml';
+  let text = '';
   try {
-    const clean = DOMPurify.sanitize(await file.text(), {
-      USE_PROFILES: { svg: true, svgFilters: true },
-    });
-    const { svg, width, height } = normalizeSvg(clean);
-    return { blob: new Blob([svg], { type: 'image/svg+xml' }), width, height };
-  } catch {
-    return { blob: file };
+    text = await file.text();
+    // Sanitise to a DOM NODE, then serialise with XMLSerializer — NOT DOMPurify's own
+    // string output. DOMPurify's default HTML serialiser turns a literal U+00A0
+    // (non-breaking space, common in a tool-exported licence/caption line) into the HTML
+    // named entity `&nbsp;`, which is undefined in XML; normalizeSvg's strict
+    // `image/svg+xml` re-parse below then fails ("Entity 'nbsp' not defined") and the
+    // whole SVG stores blank. XMLSerializer keeps U+00A0 a literal character, so the
+    // markup stays well-formed XML. (Switching DOMPurify's parser to
+    // application/xhtml+xml also avoids the entity, but its strict XML parse silently
+    // drops content from some real SVGs — measured: it blanked a clip-path-heavy colour
+    // atlas — so the DOM+XMLSerializer round-trip under the default HTML parser is the
+    // combination that renders every file.)
+    const dom = DOMPurify.sanitize(text, { USE_PROFILES: { svg: true, svgFilters: true }, RETURN_DOM: true }) as unknown as ParentNode;
+    const svgEl = dom.querySelector('svg');
+    const clean = svgEl ? new XMLSerializer().serializeToString(svgEl) : '';
+    // DOMPurify can strip a document that isn't a real SVG down to nothing; storing that
+    // empty result is a blank asset, so only take the sanitised output when it still has
+    // an <svg> root, otherwise fall through to the raw text below.
+    if (/<svg[\s>]/i.test(clean)) {
+      const { svg, width, height } = normalizeSvg(clean);
+      return { blob: new Blob([svg], { type: SVG_MIME }), width, height };
+    }
+  } catch { /* fall through */ }
+  // Fallback for a valid SVG that DOMPurify threw on or emptied: re-wrap the ORIGINAL
+  // text with the SVG mime so it still renders. The previous `return { blob: file }`
+  // kept the source blob's blank/octet-stream mime — and an <img>/object-URL refuses to
+  // render SVG bytes served as octet-stream, which left every such upload a broken image
+  // (only the ones DOMPurify passed cleanly showed up). Scripts in an SVG are inert under
+  // <img>, which is how assets render, so the un-sanitised fallback is no worse than the
+  // blob it replaces — it just renders.
+  const raw = text || await file.text().catch(() => '');
+  if (/<svg[\s>]/i.test(raw)) {
+    const { svg, width, height } = normalizeSvg(raw);
+    return { blob: new Blob([svg], { type: SVG_MIME }), width, height };
   }
+  return { blob: file }; // genuinely not an SVG — hand back the bytes untouched
 }
 
 /**
@@ -3011,6 +3042,12 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     // it scales crisply everywhere, and hands back the intrinsic aspect for metadata.
     const cleaned = await sanitizeSvgFile(file);
     blob = cleaned.blob;
+    // Every other branch sets `format`; this one must too. The default above is
+    // extFromMime(file.type), which returns 'bin' for a blank/octet-stream MIME — and an
+    // SVG dragged in (or exploded from a zip, or named .bin) routinely has no svg MIME,
+    // so it was stored as a "BIN" vector: the badge said BIN and renameExt produced a
+    // ".bin" filename, even though the bytes are a sanitised SVG (the id kept .svg).
+    format = 'svg';
     ({ width, height } = cleaned);
     // Fallback for an SVG with no viewBox/dimensions to derive from (left un-normalised).
     if (width == null || height == null) {

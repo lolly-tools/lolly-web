@@ -39,6 +39,7 @@ import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { preflightGoverned } from '../lib/preflight-policy.ts';
+import { mountModal, type ModalHandle } from '../components/modal.ts';
 import type { Count, Finding, PreflightReport } from '@lolly/engine';
 
 // ─── The view model (pure — this is the tested half) ────────────────────────
@@ -231,22 +232,28 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
 // ─── DOM ────────────────────────────────────────────────────────────────────
 
 /**
- * The card's static markup, assembled with the rest of the panel — or '' when
- * the deployment hasn't enabled the preflight surface (see setPreflightGoverned).
+ * The preflight CONTROL — a compact row that opens a modal with the full report,
+ * rather than an inline body. It reuses the `.section-card` box and the canonical
+ * `.section-card-head`/`.section-card-icon` anatomy; hidden until
+ * {@link applyPreflight} has something true to say.
  *
- * Real `<details>`/`<summary>`, reusing the shared `.section-card` box and the
- * canonical `.section-card-head`/`.section-card-icon` anatomy from
- * parts/disclosure.css. Hidden until {@link applyPreflight} has something true to
- * say, so the panel never shows a permanently empty header.
+ * Why a modal, not the old inline `<details>`: the report grew (trim/bleed
+ * geometry, plate counts, ink coverage, effective DPI, cost) past what reads well
+ * folded into the export panel. A one-line control with the verdict badge keeps the
+ * panel compact; "show all the details" is a click into a focused dialog. The
+ * control is a real `<button aria-haspopup="dialog">`; the modal's own Escape /
+ * backdrop / focus-trap come from {@link mountModal}. It is still a STATEMENT not a
+ * setting, still last in the panel, and still never gates Download.
  */
 export function preflightRowHtml(): string {
   // Deployment-governed, default off — see lib/preflight-policy.ts for why.
   if (!preflightGoverned()) return '';
   return `
-      <details class="section-card export-preflight" data-preflight-section style="display:none">
-        <summary class="section-card-head preflight-head">${icon('checklist', { className: 'section-card-icon' })}<span>${escape(t('Before you export'))}</span><span class="preflight-verdict" data-preflight-verdict></span></summary>
-        <div class="preflight-body" data-preflight-body></div>
-      </details>`;
+      <div class="section-card export-preflight" data-preflight-section style="display:none">
+        <button type="button" class="section-card-head preflight-head preflight-open" data-action="preflight-open" aria-haspopup="dialog">
+          ${icon('checklist', { className: 'section-card-icon' })}<span>${escape(t('Before you export'))}</span><span class="preflight-verdict" data-preflight-verdict></span>${icon('chevronRight', { className: 'preflight-chevron' })}
+        </button>
+      </div>`;
 }
 
 /** The body markup for `view`. Exported for the test; escaped throughout. */
@@ -260,25 +267,60 @@ export function preflightBodyHtml(view: PreflightView): string {
   return facts + rows;
 }
 
+// The current view + the open modal (if any), so a refresh keeps both the control's
+// verdict and an OPEN dialog live as the user edits the panel behind it.
+let currentView: PreflightView | null = null;
+let openModal: ModalHandle<void> | null = null;
+
+/** The modal's inner markup for `view` — a titled dialog wrapping the body. */
+function preflightModalHtml(view: PreflightView): string {
+  return `
+    <div class="preflight-modal-head" data-tone="${escape(view.tone)}">
+      ${icon('checklist', { className: 'section-card-icon' })}
+      <span class="preflight-modal-title">${escape(t('Before you export'))}</span>
+      <span class="preflight-verdict" data-preflight-verdict>${escape(view.verdict)}</span>
+      <button type="button" class="preflight-modal-close" data-preflight-close aria-label="${escape(t('Close'))}">&#x2715;</button>
+    </div>
+    <div class="preflight-modal-body" data-preflight-body>${preflightBodyHtml(view)}</div>`;
+}
+
+/** Open the details modal for the current view (no-op when there is nothing to show). */
+export function openPreflightModal(): void {
+  if (!currentView || !currentView.show || openModal) return;
+  const handle = mountModal<void>(preflightModalHtml(currentView), {
+    className: 'modal preflight-modal',
+    ariaLabel: t('Before you export'),
+    initialFocus: (el) => el.querySelector<HTMLElement>('[data-preflight-close]'),
+    onClose: () => { openModal = null; },
+  });
+  handle.el.querySelector('[data-preflight-close]')?.addEventListener('click', () => handle.close());
+  openModal = handle;
+}
+
+/** Wire the panel's preflight control to open the modal. Call once at mount. */
+export function wirePreflight(panel: Element | null | undefined): void {
+  panel?.querySelector('[data-action="preflight-open"]')?.addEventListener('click', () => openPreflightModal());
+}
+
 /**
- * Write `view` into the panel, or hide the card when there is nothing to say.
- *
- * Never opens the card, never moves focus, never touches the Download button.
- * The open/closed state the user chose is preserved across refreshes: only the
- * summary text and the body are rewritten.
+ * Update the control (show/hide + verdict + tone), and refresh an OPEN modal in
+ * place. Never opens the modal, never moves focus, never touches Download.
  */
 export function applyPreflight(panel: Element | null | undefined, view: PreflightView): void {
+  currentView = view;
   const card = panel?.querySelector<HTMLElement>('[data-preflight-section]');
-  if (!card) return;
-  if (!view.show) {
-    card.style.display = 'none';
-    card.removeAttribute('open');   // nothing to read; do not leave a stale body open
-    return;
+  if (card) {
+    card.style.display = view.show ? 'flex' : 'none';
+    if (view.show) {
+      card.dataset.tone = view.tone;
+      const verdictEl = card.querySelector<HTMLElement>('[data-preflight-verdict]');
+      if (verdictEl) verdictEl.textContent = view.verdict;
+    }
   }
-  card.style.display = 'flex';
-  card.dataset.tone = view.tone;
-  const verdictEl = card.querySelector<HTMLElement>('[data-preflight-verdict]');
-  if (verdictEl) verdictEl.textContent = view.verdict;
-  const body = card.querySelector<HTMLElement>('[data-preflight-body]');
-  if (body) body.innerHTML = preflightBodyHtml(view);
+  // If the dialog is open, keep it live as the user edits behind it; close it if the
+  // job stopped having anything to say.
+  if (openModal) {
+    if (!view.show) { openModal.close(); }
+    else { openModal.el.innerHTML = preflightModalHtml(view); openModal.el.querySelector('[data-preflight-close]')?.addEventListener('click', () => openModal?.close()); }
+  }
 }
