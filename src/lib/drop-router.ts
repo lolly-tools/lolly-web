@@ -361,6 +361,12 @@ function routeToConsumer(hash: string, alreadyThere: boolean): void {
  * preserve). Sequential on purpose: parallel decodes of a big drop spike memory.
  */
 async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerModule): Promise<void> {
+  // Drop a folder extracted from a macOS zip and its `._` AppleDouble stubs / .DS_Store
+  // arrive as ordinary File drops; skip them so they never become blank "BIN" assets.
+  // (The 'unpack' path's members are already filtered in readArchiveMembers; this also
+  // covers the direct 'library' multi-file drop.)
+  const { isIgnoredUploadName } = await import('./archive-ingest.ts');
+  files = files.filter((f) => !isIgnoredUploadName(f.name));
   let stored = 0;
   for (const file of files) {
     try {

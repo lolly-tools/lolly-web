@@ -216,6 +216,9 @@ const PATHS = {
   // ---- tool-actions.ts export bar ----
   // Lucide rotate-cw — the "Regenerate music" button on the video audio-track card.
   refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>',
+  // The export panel's "dock to the side" control (lib/export-panel-float.ts) —
+  // Lucide panel-left: a framed area with a rail down the left edge.
+  dock: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
 
   // ---- timeline panel (views/timeline-panel.ts) ----
   // These five replace the CSS-drawn `.tl-glyph` pseudo-element drawings that the

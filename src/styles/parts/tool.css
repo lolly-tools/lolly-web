@@ -176,6 +176,52 @@
   .tool-layout[data-sidebar="closed"] .export-overlay { display: none; }
 }
 
+/* ── Export panel: free-float tooling (desktop only) ──────────────────────────
+   The head buttons + resize grips exist in the DOM on every breakpoint but only
+   act ≥641px; on the mobile bottom sheet they stay hidden and the sheet keeps its
+   flick-to-dismiss. Behaviour lives in lib/export-panel-float.ts; it reuses the
+   same grip primitive as the neurospicy player (lib/panel-grips.ts). */
+.export-popup-tool { display: none; }
+.export-popup .panel-grip { display: none; }
+
+@media (min-width: 641px) {
+  /* The whole head is the drag handle (its buttons still click — the JS ignores
+     pointerdowns that land on a button). */
+  .export-popup-head { cursor: grab; touch-action: none; }
+  .export-popup.is-dragging .export-popup-head { cursor: grabbing; }
+  .export-popup-tools { display: inline-flex; align-items: center; gap: 2px; }
+  .export-popup-tool {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; background: none; cursor: pointer; padding: 4px;
+    border-radius: 6px; color: hsl(var(--muted-foreground));
+  }
+  .export-popup-tool:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+  .export-popup-tool svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
+
+  /* Lifted off the dock into an explicitly-placed, resizable floating window. The
+     box is driven by inline left/top/width/height; visibility follows .export-open
+     (the docked slide-up transform no longer applies). */
+  .export-popup.is-floating {
+    position: fixed;
+    right: auto; bottom: auto;
+    max-height: none;
+    transform: none;
+    border-radius: 12px;
+    z-index: 80;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .16s ease, visibility .16s ease;
+  }
+  .tool-layout.export-open .export-popup.is-floating {
+    opacity: 1; visibility: visible; pointer-events: auto;
+  }
+  .export-popup.is-floating .export-popup-body { flex: 1 1 auto; min-height: 0; }
+  .export-popup.is-maximized { border-radius: 0; }
+  .export-popup.is-dragging, .export-popup.is-resizing {
+    transition: none !important; user-select: none;
+  }
+  .export-popup.is-floating .panel-grip { display: block; }
+}
+
 .sidebar {
   flex-shrink: 0;
   position: relative;

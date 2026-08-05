@@ -712,16 +712,27 @@
 
    Nothing here animates, pulses or demands attention: severity is colour and
    wording only. There is no dismiss control, because nothing was demanded. */
-.export-preflight > summary {
-  list-style: none;
+/* The control is a button that opens the details modal (the report outgrew a folded
+   inline body). Full-width, transparent, reusing the .section-card-head anatomy. */
+.preflight-open {
+  width: 100%;
+  border: none;
+  background: none;
   cursor: pointer;
   gap: 7px;
+  font: inherit;
+  text-align: start;
 }
-.export-preflight > summary::-webkit-details-marker { display: none; }
-.export-preflight > summary:focus-visible {
+.preflight-open:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
   border-radius: calc(var(--radius) * 0.75);
+}
+.preflight-chevron {
+  width: calc(15px * var(--a11y-fs));
+  height: calc(15px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
 }
 /* The verdict rides the COLLAPSED summary, so "1 to fix" is legible without
    opening the card — which is what lets it stay collapsed by default and still
@@ -803,6 +814,47 @@
   border-color: hsl(var(--border) / 0.7);
   background: transparent;
   color: hsl(var(--muted-foreground));
+}
+
+/* The details modal (opened by .preflight-open via mountModal). A centred dialog;
+   its body reuses .preflight-fact / .preflight-finding from above verbatim. */
+.preflight-modal {
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  overflow: hidden;
+}
+.preflight-modal::backdrop { background: rgb(0 0 0 / 0.45); }
+.preflight-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid hsl(var(--border));
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.preflight-modal-title { color: hsl(var(--foreground)); }
+.preflight-modal-head[data-tone="fix"] .preflight-verdict {
+  color: color-mix(in oklab, hsl(var(--destructive)), hsl(var(--foreground)) 30%);
+}
+.preflight-modal-close {
+  margin-inline-start: 4px;
+  border: none; background: none; cursor: pointer;
+  font-size: calc(18px * var(--a11y-fs)); line-height: 1;
+  color: hsl(var(--muted-foreground)); padding: 2px 6px;
+}
+.preflight-modal-body {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 16px; overflow-y: auto;
+  max-height: calc(86vh - 56px);
 }
 
 /* Tier 3.6 — "Cost, worked out from your rate card" (views/cost-panel.ts). Sits

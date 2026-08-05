@@ -147,6 +147,13 @@ function matteAssetIds(sourceName: string, now: number): { id: string; name: str
  * before offering the affordance; this also bails (null) when no model is staged,
  * so a stale button can never strand the user in a dead dialog.
  */
+// The last matte model the user picked, remembered per device so the dialog reopens
+// on their choice (models differ in size, quality and download — a silent reset to
+// the default is exactly the accidental-wrong-model case this avoids).
+const MATTE_MODEL_KEY = 'lolly:matteModel';
+const readMatteModel = (): string => { try { return localStorage.getItem(MATTE_MODEL_KEY) || ''; } catch { return ''; } };
+const saveMatteModel = (id: string): void => { try { localStorage.setItem(MATTE_MODEL_KEY, id); } catch { /* private mode — no persistence, harmless */ } };
+
 export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Promise<AssetRef | null> {
   const matte = host.matte;
   if (!matte?.isAvailable()) return Promise.resolve(null);
@@ -164,10 +171,14 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
 
     const modelOptions = models.map(m =>
       `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
-    // Pre-select the canonical default (birefnet-lite) when it's staged, not just the
-    // first list entry — so the dialog opens on the recommended model, falling back to
-    // the first available if the default were ever withheld.
-    const defaultModel = models.find(m => m.id === MATTE_DEFAULT_MODEL)?.id ?? models[0]!.id;
+    // Open on the model the user LAST chose (persisted per device), so nobody
+    // accidentally re-downloads a different model or falls back to the fast one when
+    // they had picked a better one. Falls back to the canonical default (birefnet-lite)
+    // then the first staged entry when there is no prior choice (or it is no longer
+    // available). Only ever preselects a model that is actually in the offered list.
+    const defaultModel = models.find(m => m.id === readMatteModel())?.id
+      ?? models.find(m => m.id === MATTE_DEFAULT_MODEL)?.id
+      ?? models[0]!.id;
 
     const overlay = document.createElement('div');
     overlay.className = 'matte-overlay';
@@ -311,7 +322,7 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       }
     };
 
-    modelSel.addEventListener('change', () => { void paintConsent(); void recheck(); });
+    modelSel.addEventListener('change', () => { saveMatteModel(modelSel.value); void paintConsent(); void recheck(); });
     formatSel.addEventListener('change', paintFormatNote);
 
     const adoptFrame = (frame: MatteFrame, bytes: Uint8Array, name: string, format: string): void => {

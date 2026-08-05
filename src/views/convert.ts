@@ -3,20 +3,41 @@
  * #/convert — a verify-like on-device file converter. Drop a supported file, pick a
  * target format, convert in the browser (no upload), download. The engine codecs do
  * the work directly (a view CAN import the engine, unlike a tool hook): fonts via
- * sfntToWoff/woffToSfnt, SVG⇄SVGZ via gzip/gunzip, and raster⇄raster through a canvas.
+ * sfntToWoff/woffToSfnt, SVG⇄SVGZ via gzip/gunzip, and any image → the whole raster
+ * matrix by rasterising to a canvas and encoding it (png/jpeg/webp/avif via the
+ * browser; bmp/tiff via the engine writers; pdf via jsPDF; ico wraps a PNG).
  *
- * MVP scope: fonts (ttf/otf/woff), SVG⇄SVGZ, and raster (png/jpg/webp). The wider
- * matrix from plans/84 (bmp/ico/pdf/archives, catalog "Download as", provenance on the
- * output) is a follow-on — this is the surface + the two simplest engine-direct paths.
+ * Deliberately NOT via host.export.render: that path DOM-serialises an on-screen tool
+ * canvas and stalls on a detached node — and we already hold the pixels, so encoding
+ * them is both faster and reliable. Still a follow-on (plans/84): vector→vector
+ * transcoding (svg→eps/dxf), archives, catalog "Download as", provenance on the output.
  */
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer } from '@lolly/engine';
+import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff } from '@lolly/engine';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) — never re-fork it
 import '../styles/parts/platform.css';   // .platform-layout / .plat-header / .plat-title / .plat-sub
 import '../styles/parts/convert.css';    // async CSS chunk (lazy view — not on the landing)
 
-interface Target { id: string; label: string; ext: string; mime: string; }
+interface Target { id: string; label: string; ext: string; mime: string; render?: boolean; }
+
+// The raster matrix the shell export bridge (host.export.render) produces from a
+// rasterised source — the "amazing rendering engine" reused here so a converted file
+// reaches the whole matrix, not just its sibling container. Both an SVG and a raster
+// source rasterise to a <canvas> first (sourceToCanvas), then ride this path; the
+// engine owns the per-format encoders (png/jpg/webp/avif/tiff/bmp) plus the pdf/ico
+// wrappers. `render:true` routes the target through renderThroughEngine.
+const R = (id: string, label: string, ext: string, mime: string): Target => ({ id, label, ext, mime, render: true });
+const RASTER_OUT: Target[] = [
+  R('png', 'PNG (.png)', 'png', 'image/png'),
+  R('jpeg', 'JPEG (.jpg)', 'jpg', 'image/jpeg'),
+  R('webp', 'WebP (.webp)', 'webp', 'image/webp'),
+  R('avif', 'AVIF (.avif)', 'avif', 'image/avif'),
+  R('tiff', 'TIFF (.tiff)', 'tiff', 'image/tiff'),
+  R('bmp', 'BMP (.bmp)', 'bmp', 'image/bmp'),
+  R('pdf', 'PDF (.pdf)', 'pdf', 'application/pdf'),
+  R('ico', 'Icon (.ico)', 'ico', 'image/x-icon'),
+];
 
 /** The on-device targets each source kind can produce (the source format is filtered out by the caller). */
 function targetsFor(kind: string): Target[] {
@@ -27,14 +48,19 @@ function targetsFor(kind: string): Target[] {
         { id: 'otf', label: 'OpenType (.otf)', ext: 'otf', mime: 'font/otf' },
         { id: 'woff', label: 'Web font (.woff)', ext: 'woff', mime: 'font/woff' },
       ];
-    case 'svg': return [{ id: 'svgz', label: 'Compressed SVG (.svgz)', ext: 'svgz', mime: 'image/svg+xml' }];
-    case 'svgz': return [{ id: 'svg', label: 'SVG (.svg)', ext: 'svg', mime: 'image/svg+xml' }];
-    case 'raster':
+    // An SVG reaches its compressed sibling AND the whole raster matrix (the engine
+    // rasterises it at its intrinsic size). We do NOT offer vector→vector transcoding
+    // (svg→eps/dxf/emf/wmf): the engine's vector writers walk a rendered tool canvas,
+    // not arbitrary source SVG, so those would misconvert — a follow-on (plans/84).
+    case 'svg': case 'svgz':
       return [
-        { id: 'png', label: 'PNG (.png)', ext: 'png', mime: 'image/png' },
-        { id: 'jpg', label: 'JPEG (.jpg)', ext: 'jpg', mime: 'image/jpeg' },
-        { id: 'webp', label: 'WebP (.webp)', ext: 'webp', mime: 'image/webp' },
+        kind === 'svg'
+          ? { id: 'svgz', label: 'Compressed SVG (.svgz)', ext: 'svgz', mime: 'image/svg+xml' }
+          : { id: 'svg', label: 'SVG (.svg)', ext: 'svg', mime: 'image/svg+xml' },
+        ...RASTER_OUT,
       ];
+    // A raster can re-encode to any raster + wrap into PDF/ICO, but cannot become true vector.
+    case 'raster': return RASTER_OUT;
     default: return [];
   }
 }
@@ -50,31 +76,131 @@ function detectKind(bytes: Uint8Array, file: File): string {
 }
 
 async function convert(bytes: Uint8Array, kind: string, target: Target, file: File): Promise<Blob> {
+  // Fonts — a pure container swap (engine codecs), never a render.
   if (kind === 'ttf' || kind === 'otf' || kind === 'woff') {
     if (target.id === 'woff' && kind !== 'woff') return new Blob([sfntToWoff(bytes) as BlobPart], { type: target.mime });
     if ((target.id === 'ttf' || target.id === 'otf') && kind === 'woff') return new Blob([woffToSfnt(bytes) as BlobPart], { type: target.mime });
     return new Blob([bytes as BlobPart], { type: target.mime });   // sfnt passthrough (ttf⇄otf) / same container
   }
+  // SVG⇄SVGZ — exact-byte gzip, no render (keeps the credential + outlined text intact).
   if (kind === 'svg' && target.id === 'svgz') return new Blob([gzip(bytes) as BlobPart], { type: target.mime });
   if (kind === 'svgz' && target.id === 'svg') return new Blob([gunzip(bytes) as BlobPart], { type: target.mime });
-  if (kind === 'raster') {
-    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: file.type || 'image/png' }));
-    try {
-      const img = await new Promise<HTMLImageElement>((res, rej) => {
-        const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('Could not decode that image.')); im.src = url;
-      });
-      const cv = document.createElement('canvas');
-      cv.width = img.naturalWidth || 1; cv.height = img.naturalHeight || 1;
-      const ctx = cv.getContext('2d');
-      if (!ctx) throw new Error('Canvas is unavailable.');
-      if (target.id === 'jpg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); }  // JPEG has no alpha
-      ctx.drawImage(img, 0, 0);
-      const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, target.mime, 0.95));
-      if (!blob) throw new Error('Encoding failed.');
-      return blob;
-    } finally { URL.revokeObjectURL(url); }
-  }
+  // Everything else: rasterise the source to a canvas, then encode that canvas straight
+  // to the target with the engine's own codecs. We hold the pixels already, so there is
+  // no reason to DOM-serialise them back through the tool-export path (dom-to-image
+  // stalls on a detached node anyway) — this is faster and never hangs.
+  if (target.render) return encodeFromCanvas(await sourceToCanvas(kind, bytes, file), target);
   throw new Error('That conversion is not supported.');
+}
+
+/** Decode the source (SVG markup or a raster file) into a <canvas> at its intrinsic
+ *  size. A canvas is a node the export bridge rasterises reliably — passing a bare
+ *  <svg>/<img> root to dom-to-image can hang on its foreignObject image load. */
+async function sourceToCanvas(kind: string, bytes: Uint8Array, file: File): Promise<HTMLCanvasElement> {
+  const isSvg = kind === 'svg' || kind === 'svgz';
+  const raw = kind === 'svgz' ? gunzip(bytes) : bytes;
+  const mime = isSvg ? 'image/svg+xml' : (file.type || 'image/png');
+  // Intrinsic size — an SVG may lack width/height, so fall back to its viewBox, then a
+  // square default. A raster's natural size is authoritative.
+  let width = 512, height = 512;
+  if (isSvg) {
+    const svg = new DOMParser().parseFromString(new TextDecoder().decode(raw), 'image/svg+xml').documentElement;
+    const vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number).filter((n) => !Number.isNaN(n));
+    width  = parseFloat(svg.getAttribute('width')  || '') || (vb.length === 4 ? vb[2]! : 0) || 512;
+    height = parseFloat(svg.getAttribute('height') || '') || (vb.length === 4 ? vb[3]! : 0) || 512;
+  }
+  const objUrl = URL.createObjectURL(new Blob([raw as BlobPart], { type: mime }));
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('Could not decode that file.'));
+      im.src = objUrl;
+    });
+    if (!isSvg) { width = img.naturalWidth || width; height = img.naturalHeight || height; }
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = Math.max(1, Math.round(height));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get a canvas to render onto.');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(objUrl);
+  }
+}
+
+/** Encode a rasterised canvas straight to the target format. png/jpeg/webp/avif ride
+ *  the browser's own `canvas.toBlob`; bmp/tiff use the engine writers on the raw RGBA;
+ *  pdf wraps the image (jsPDF); ico wraps a ≤256px PNG. */
+async function encodeFromCanvas(canvas: HTMLCanvasElement, target: Target): Promise<Blob> {
+  switch (target.id) {
+    case 'png':  return canvasBlob(canvas, 'image/png');
+    case 'jpeg': return canvasBlob(canvas, 'image/jpeg', 0.92);
+    case 'webp': return canvasBlob(canvas, 'image/webp', 0.92);
+    case 'avif': return canvasBlob(canvas, 'image/avif', 0.6);
+    case 'bmp':  return new Blob([encodeBmp(rgbaOf(canvas), canvas.width, canvas.height) as BlobPart], { type: 'image/bmp' });
+    case 'tiff': return new Blob([packTiff(rgbaOf(canvas), { width: canvas.width, height: canvas.height, samplesPerPixel: 4, dpi: 96 }) as BlobPart], { type: 'image/tiff' });
+    case 'pdf':  return imageToPdf(canvas);
+    case 'ico':  return canvasToIco(canvas);
+    default:     throw new Error('That conversion is not supported.');
+  }
+}
+
+/** The canvas's interleaved top-down RGBA, as a plain Uint8Array the engine writers take. */
+function rgbaOf(canvas: HTMLCanvasElement): Uint8Array {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not read the rendered pixels.');
+  const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  return new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+}
+
+/** Promise wrapper over canvas.toBlob. When the browser can't encode the requested
+ *  type it doesn't return null — the HTML spec makes it silently fall back to PNG — so
+ *  we compare the RESULTING type and reject a mismatch rather than hand back a PNG
+ *  wearing an .avif name (e.g. AVIF encode on an engine that lacks it). */
+function canvasBlob(canvas: HTMLCanvasElement, mime: string, quality?: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b && b.size > 0 && b.type === mime)
+        ? resolve(b)
+        : reject(new Error(`This browser can’t encode ${mime.replace('image/', '').toUpperCase()}.`)),
+      mime, quality,
+    );
+  });
+}
+
+/** One image, one page, sized to the pixels (points). PNG so transparency survives. */
+async function imageToPdf(canvas: HTMLCanvasElement): Promise<Blob> {
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ unit: 'pt', format: [canvas.width, canvas.height], orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait' });
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pw, ph);
+  return doc.output('blob');
+}
+
+/** ICO wrapping a PNG payload (modern icons allow PNG), downscaled to ≤256px. */
+async function canvasToIco(canvas: HTMLCanvasElement): Promise<Blob> {
+  const long = Math.max(canvas.width, canvas.height);
+  const scale = Math.min(1, 256 / long);
+  const w = Math.max(1, Math.round(canvas.width * scale));
+  const h = Math.max(1, Math.round(canvas.height * scale));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d')?.drawImage(canvas, 0, 0, w, h);
+  const png = new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer());
+  const out = new Uint8Array(22 + png.length);
+  const dv = new DataView(out.buffer);
+  dv.setUint16(2, 1, true);              // type: icon
+  dv.setUint16(4, 1, true);              // one image
+  out[6] = w >= 256 ? 0 : w;             // width  (0 encodes 256)
+  out[7] = h >= 256 ? 0 : h;             // height
+  dv.setUint16(10, 1, true);             // colour planes
+  dv.setUint16(12, 32, true);            // bits per pixel
+  dv.setUint32(14, png.length, true);    // payload size
+  dv.setUint32(18, 22, true);            // payload offset
+  out.set(png, 22);
+  return new Blob([out as BlobPart], { type: 'image/x-icon' });
 }
 
 export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = ''): Promise<void> {

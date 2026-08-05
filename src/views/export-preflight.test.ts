@@ -9,8 +9,9 @@
  * ceiling must not become a bare fact row; a finding whose number is already a
  * fact must not be repeated; the engine's English must survive as a fallback for
  * every id the panel has no translated copy for; and no currency may appear).
- * The DOM writer is covered only for the two structural properties that matter:
- * it emits a real <details>/<summary>, and it never opens the card.
+ * The DOM writer is covered only for the structural properties that matter:
+ * it emits a real <button aria-haspopup="dialog"> (no browser-default hijack), and
+ * it stays hidden until there is something true to say.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -179,10 +180,13 @@ test('no view, for any job, contains a currency symbol or the word cost', () => 
 });
 
 test('a declared FINISH surfaces as an error the user can read, through the real rules', () => {
+  // cmyk-tiff has no /Separation plate, so a finish genuinely flattens into the
+  // process build and cannot overprint — still an error. (On pdf-cmyk the finish now
+  // overprints as its own named plate, so it is an info heads-up, tested in the engine.)
   const r = preflight({
     manifest: { id: 't', render: { width: 800, height: 600 } },
     settings: {
-      format: 'pdf-cmyk',
+      format: 'cmyk-tiff',
       size: { width: { value: 210, unit: 'mm' }, height: { value: 297, unit: 'mm' }, dpi: 300, declaredBy: 'url', unitDeclared: true },
       bleed: { known: true, value: { value: 3, unit: 'mm' } },
       marks: { known: true, value: { crop: true } },
@@ -193,33 +197,27 @@ test('a declared FINISH surfaces as an error the user can read, through the real
   });
   const v = preflightView(r, CTX);
   assert.equal(v.tone, 'fix');
-  const err = v.rows.find(x => x.id === 'print.finish-separates-as-ink');
+  const err = v.rows.find(x => x.id === 'print.finish-flattened-into-process');
   assert.ok(err, 'the finish finding reaches the panel');
   assert.equal(err!.tone, 'error');
   assert.match(err!.text, /Gold/);
 });
 
-test('the card is a real <details>, starts closed, and applyPreflight never opens it', () => {
+test('the control is a real <button> that opens a dialog, hidden until there is something to say', () => {
   const panel = document.createElement('div');
   panel.innerHTML = preflightRowHtml();
   const card = panel.querySelector('[data-preflight-section]') as HTMLElement;
-  assert.equal(card.tagName, 'DETAILS');
-  assert.equal(card.querySelector('summary')?.tagName, 'SUMMARY',
-    'a real <summary>, not a div role=button: no browser-default hijack');
-  assert.equal(card.hasAttribute('open'), false);
+  const btn = card.querySelector('[data-action="preflight-open"]') as HTMLElement;
+  assert.equal(btn.tagName, 'BUTTON', 'a real <button>, not a div role=button: no browser-default hijack');
+  assert.equal(btn.getAttribute('aria-haspopup'), 'dialog', 'it announces it opens a dialog');
   assert.equal(card.style.display, 'none', 'invisible until there is something true to say');
 
   applyPreflight(panel, preflightView(report([
     { id: 'print.no-bleed', severity: 'warn', message: 'No bleed.' },
   ]), CTX));
   assert.equal(card.style.display, 'flex');
-  assert.equal(card.hasAttribute('open'), false, 'collapsed by default even on a warning');
+  assert.equal(card.dataset.tone, 'fix', 'the verdict tone rides the collapsed control');
   assert.match(card.querySelector('[data-preflight-verdict]')!.textContent!, /to fix/);
-
-  // A user who opened it keeps it open across a refresh.
-  card.setAttribute('open', '');
-  applyPreflight(panel, preflightView(report([{ id: 'plates.process', severity: 'info', message: 'x' }]), CTX));
-  assert.equal(card.hasAttribute('open'), true);
 });
 
 test('the body uses tinted full-border findings, never a one-sided stripe or a dash', () => {

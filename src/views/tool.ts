@@ -53,6 +53,7 @@ import { createThemeToggle } from '../components/theme-toggle.ts';
 import { createSoundToggle } from '../components/sound-toggle.ts';
 import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
+import { wireExportPanelFloat } from '../lib/export-panel-float.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { createShutter } from '../lib/shutter.ts';
@@ -262,6 +263,11 @@ export interface RunExportOpts {
   bleedMarks?: boolean;
   colorBars?: boolean;
   provenance?: boolean;
+  /** Colour-bar style: 'rgb-swatches' (brand colours as single RGB cells) for RGB
+   *  output; 'cmyk-verify' (RGB+CMYK press pairs) for CMYK. See print-marks.ts. */
+  barStyle?: 'cmyk-verify' | 'rgb-swatches';
+  /** Colour-bar cell corner radius (pt), from the brand `--radius`. */
+  barRadiusPt?: number;
   dither?: boolean;
   fps?: number;
   wait?: number;
@@ -1445,12 +1451,25 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     exportPopup.addEventListener('touchend', popupEnd, { passive: true });
     exportPopup.addEventListener('touchcancel', popupEnd, { passive: true });
 
+    // Free-floating desktop behaviour: drag the head to move, grips to resize,
+    // maximise to full height, dock to snap back — persisted per device. A "free"
+    // layout (canvas/chromeless, no sidebar to dock under) opens floated. Mobile
+    // keeps its bottom-sheet + flick-dismiss; the module no-ops under 641px.
+    const exportHead = exportPopup.querySelector<HTMLElement>('.export-popup-head');
+    const floatTeardown = exportHead
+      ? wireExportPanelFloat({
+          overlay: exportOverlay, popup: exportPopup, head: exportHead,
+          isMobile: () => mqMobile.matches,
+          freeLayout: chromeless || !sidebarEl,
+        })
+      : null;
+
     placeActions();
     // ?options share-links land with the export panel already open (no focus grab).
     if (showExportPanel) openExport({ focus: false });
     const onBreakpoint = (): void => { placeActions(); applyModality(); };
     mqMobile.addEventListener('change', onBreakpoint);
-    exportTeardown = () => { mqMobile.removeEventListener('change', onBreakpoint); document.removeEventListener('keydown', onExportKey); };
+    exportTeardown = () => { mqMobile.removeEventListener('change', onBreakpoint); document.removeEventListener('keydown', onExportKey); floatTeardown?.(); };
   }
 
   // Cleanup: remove injected <style>, disconnect observer, tear down canvas nav + export.
@@ -2406,9 +2425,29 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       btn.classList.add('is-busy');
       btn.textContent = btn.dataset.busyLabel || t('Working…');
       try {
-        const { bytes, mime, filename } = await runtime.exportFile();
-        const blob = new Blob([bytes as BlobPart], { type: mime || 'application/octet-stream' });
-        await host.export.file(blob, { filename: filename || 'file' });
+        const res = await runtime.exportFile();
+        const items = Array.isArray(res) ? res : [res];
+        if (items.length === 1) {
+          const { bytes, mime, filename } = items[0]!;
+          const blob = new Blob([bytes as BlobPart], { type: mime || 'application/octet-stream' });
+          await host.export.file(blob, { filename: filename || 'file' });
+        } else {
+          // Batch (a `multiple` file input): fold every transformed file into ONE
+          // zip so the browser delivers a single download (STORED for the already-
+          // compressed media these tools emit). Names are disambiguated because
+          // storeZip rejects collisions.
+          const { storeZip } = await import('@lolly/engine');
+          const used = new Map<string, number>();
+          const entries = items.map((r, i) => {
+            let name = r.filename || `file-${i + 1}`;
+            const n = used.get(name) ?? 0;
+            used.set(name, n + 1);
+            if (n) { const dot = name.lastIndexOf('.'); name = dot > 0 ? `${name.slice(0, dot)}-${n + 1}${name.slice(dot)}` : `${name}-${n + 1}`; }
+            return { name, bytes: r.bytes instanceof Uint8Array ? r.bytes : new Uint8Array(r.bytes) };
+          });
+          const zip = storeZip(entries);
+          await host.export.file(new Blob([zip as BlobPart], { type: 'application/zip' }), { filename: 'embed-imprint-track.zip' });
+        }
         btn.classList.remove('is-busy');
         btn.textContent = btn.dataset.idleLabel!;
         delete btn.dataset.busy;
@@ -2881,33 +2920,49 @@ function setupCanvasFileDrop({ viewEl, contentEl, runtime, input, onDirty }: {
 }): void {
   const id = input.id;
   const accept = Array.isArray(input.accept) ? input.accept.join(',') : '';
+  const multiple = Boolean(input.multiple);
 
   const native = document.createElement('input');
   native.type = 'file';
+  if (multiple) native.multiple = true;
   if (accept) native.accept = accept;
   native.style.display = 'none';
   viewEl.appendChild(native);
 
+  const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
+  const withinCap = (file: File): boolean => {
+    if (file.size > cap) { announce(t('That file is too large (max {size}).', { size: fmtBytes(cap) }), { assertive: true }); return false; }
+    return true;
+  };
   const revokePrev = () => {
     const prev = runtime.getModel().find(i => i.id === id)?.value;
     const prevUrl = asRow(prev).url;
     if (prevUrl) URL.revokeObjectURL(prevUrl as string);
   };
-  const load = async (file: File | null | undefined) => {
-    if (!file) return;
-    // Manifest cap when declared, engine backstop otherwise (see tool-inputs.ts).
-    const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
-    if (file.size > cap) {
-      announce(t('That file is too large (max {size}).', { size: fmtBytes(cap) }), { assertive: true });
+  // A `multiple` file input APPENDS every accepted drop to its array; a single one
+  // replaces (revoking the previous preview URL). Shared by the picker + drop paths.
+  const load = async (files: FileList | File[] | null | undefined) => {
+    const list = files ? Array.from(files) : [];
+    if (!list.length) return;
+    if (multiple) {
+      const accepted = list.filter(withinCap);
+      const refs = await Promise.all(accepted.map(fileToRef));
+      if (!refs.length) return;
+      const cur = runtime.getModel().find(i => i.id === id)?.value;
+      const existing = Array.isArray(cur) ? cur : [];
+      runtime.setInput(id, [...existing, ...refs] as never);
+      onDirty?.(id);
       return;
     }
+    const file = list[0];
+    if (!file || !withinCap(file)) return;
     const ref = await fileToRef(file);
     revokePrev();
     runtime.setInput(id, ref);
     onDirty?.(id);
   };
 
-  native.addEventListener('change', () => { load(native.files && native.files[0]); native.value = ''; });
+  native.addEventListener('change', () => { load(native.files); native.value = ''; });
 
   // Click to pick: only an explicit [data-file-pick] affordance opens the picker (the
   // empty-state drop zone and the Replace button both carry it). We deliberately do
@@ -2940,7 +2995,8 @@ function setupCanvasFileDrop({ viewEl, contentEl, runtime, input, onDirty }: {
     e.preventDefault();
     depth = 0;
     setDrag(false);
-    load(e.dataTransfer?.files && e.dataTransfer.files[0]);
+    // A multiple input takes the whole drop; a single one takes the first file.
+    load(multiple ? e.dataTransfer?.files : (e.dataTransfer?.files && [e.dataTransfer.files[0]!]));
   });
 }
 

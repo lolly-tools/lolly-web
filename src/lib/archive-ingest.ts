@@ -32,6 +32,23 @@ export class ArchiveIngestError extends Error {}
 const isTarGzName = (name: string): boolean => /\.(tar\.gz|tgz)$/i.test(name);
 
 /**
+ * OS bookkeeping junk that rides along in an archive (or a dragged folder) but is not a
+ * user asset. A macOS-made zip carries a `__MACOSX/` tree of `._name` AppleDouble
+ * resource-fork stubs beside every real file, plus `.DS_Store`; Windows adds `Thumbs.db`
+ * / `desktop.ini`. Left unfiltered, each became its own unreadable "VECTOR .bin" upload
+ * (an `._foo.svg` matches the .svg extension test yet holds AppleDouble binary, so it
+ * sanitises to nothing and renders blank). Skip them everywhere files are ingested.
+ */
+export function isIgnoredUploadName(name: string): boolean {
+  const base = name.split('/').pop() || name;
+  return /(^|\/)__MACOSX(\/|$)/.test(name)
+    || base.startsWith('._')
+    || base === '.DS_Store'
+    || base === 'Thumbs.db'
+    || base === 'desktop.ini';
+}
+
+/**
  * Read the member files of a plain archive. `filename` disambiguates a `.tar.gz`
  * (gunzip then untar) from a bare gzip. Throws `ArchiveIngestError` when the input
  * is an OOXML/OCF package (route it to its own reader), an unsupported/corrupt
@@ -65,6 +82,7 @@ export function readArchiveMembers(bytes: Uint8Array, filename: string): Archive
   let total = 0;
   for (const e of raw) {
     if (!e.name || e.name.endsWith('/') || e.bytes.length === 0) continue; // dirs / empties
+    if (isIgnoredUploadName(e.name)) continue;                             // macOS/Windows junk
     members.push(e);
     total += e.bytes.length;
     if (members.length > MAX_ARCHIVE_MEMBERS) {

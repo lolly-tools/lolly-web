@@ -663,6 +663,9 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'lib/brand-editor.ts': 22,
   'lib/brand-studio-tabs.ts': 9,
   'lib/catalog-summary.ts': 2,
+  // Two provably-safe sinks: the two head buttons' glyphs (constant icon() strings,
+  // no interpolation) and the resize grips (constant panelGripsHtml(), like float-panel).
+  'lib/export-panel-float.ts': 2,
   'lib/float-panel.ts': 2,
   'lib/gamut-slider.ts': 1,
   'lib/page-filmstrip.ts': 1,

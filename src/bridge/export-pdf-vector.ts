@@ -679,6 +679,23 @@ export function cmykN(v: number): string {
   return v.toFixed(4).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') || '0';
 }
 
+// A fill/stroke is treated as solid black (and so OVERPRINTS) when it is pure K at
+// or above this. rgbToCmyk maps every neutral to exactly C=M=Y=0, so the equality
+// test on the CMY channels is exact; only K needs a threshold for near-solid text.
+export const OVERPRINT_K_MIN = 0.99;
+
+// The four overprint graphics states substitutePdfRgb selects (materialised as
+// /ExtGState dicts in renderCmykPdf). OPM 1 (nonzero overprint mode) is MANDATORY:
+// only under it does a DeviceCMYK component of 0 leave that plate untouched, which
+// is what makes black-overprint and spot/finish plates not knock out.
+//   GSfo = fill overprint, GSso = stroke overprint, GSfk = fill knockout, GSsk = stroke knockout
+export const OVERPRINT_GS_DEFS: Record<string, Record<string, boolean | number>> = {
+  GSfo: { op: true, OPM: 1 },
+  GSso: { OP: true, OPM: 1 },
+  GSfk: { op: false },
+  GSsk: { OP: false },
+};
+
 // Replaces `r g b rg` / `r g b RG` operators with their CMYK equivalents — a plain
 // DeviceCMYK "k"/"K" operator for a process-locked (or auto-derived, or naive
 // fallback) match, or, for a spot-locked match, a switch to that spot's
@@ -693,21 +710,44 @@ export function substitutePdfRgb(
   spotNames: Map<string, string>,
   used?: Set<string>,
   usedSpots?: Set<string>,
+  usedGs?: Set<string>,
 ): string {
   const N = '([+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)';
   const W = '[\\s]+';
+  // Each colour set is prefixed with a `/GSxx gs` selecting overprint or knockout,
+  // per press convention: a FINISH plate (foil/spot-UV/emboss) and 100%-K text/rules
+  // OVERPRINT the artwork beneath; an ordinary spot and any rich build (carries CMY)
+  // KNOCK OUT; white/paper (all-zero) knocks out so it never vanishes. `gs` is
+  // graphics state and persists to the following paint op, so it self-resets at the
+  // next colour set. Fill and stroke get independent states so one can't stomp the
+  // other. usedGs collects the names actually emitted, so renderCmykPdf only
+  // materialises the /ExtGState dicts that are referenced.
   return text
     .replace(new RegExp(`${N}${W}${N}${W}${N}${W}\\brg\\b`, 'g'), (_, r, g, b) => {
       const hit = pdfColorHit(+r, +g, +b, paletteMap, used);
-      if (hit?.spot) { usedSpots?.add(hit.spot.name); return `/${spotNames.get(hit.spot.name)} cs 1 scn`; }
+      if (hit?.spot) {
+        usedSpots?.add(hit.spot.name);
+        const gs = hit.spot.finish ? 'GSfo' : 'GSfk';   // finish overprints; ordinary spot knocks out
+        usedGs?.add(gs);
+        return `/${gs} gs /${spotNames.get(hit.spot.name)} cs 1 scn`;
+      }
       const [c, m, y, k] = hit ? hit.cmyk : rgbToCmyk(+r, +g, +b);
-      return `${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} k`;
+      const gs = (c === 0 && m === 0 && y === 0 && k >= OVERPRINT_K_MIN) ? 'GSfo' : 'GSfk';
+      usedGs?.add(gs);
+      return `/${gs} gs ${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} k`;
     })
     .replace(new RegExp(`${N}${W}${N}${W}${N}${W}\\bRG\\b`, 'g'), (_, r, g, b) => {
       const hit = pdfColorHit(+r, +g, +b, paletteMap, used);
-      if (hit?.spot) { usedSpots?.add(hit.spot.name); return `/${spotNames.get(hit.spot.name)} CS 1 SCN`; }
+      if (hit?.spot) {
+        usedSpots?.add(hit.spot.name);
+        const gs = hit.spot.finish ? 'GSso' : 'GSsk';
+        usedGs?.add(gs);
+        return `/${gs} gs /${spotNames.get(hit.spot.name)} CS 1 SCN`;
+      }
       const [c, m, y, k] = hit ? hit.cmyk : rgbToCmyk(+r, +g, +b);
-      return `${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} K`;
+      const gs = (c === 0 && m === 0 && y === 0 && k >= OVERPRINT_K_MIN) ? 'GSso' : 'GSsk';
+      usedGs?.add(gs);
+      return `/${gs} gs ${cmykN(c)} ${cmykN(m)} ${cmykN(y)} ${cmykN(k)} K`;
     });
 }
 
