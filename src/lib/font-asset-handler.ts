@@ -33,7 +33,7 @@ export async function installFontAsset(
     console.log(`[font-install] Starting install for ${file.name}`, { size: file.size, type: file.type });
 
     // Read file as ArrayBuffer
-    const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+    let buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const result = reader.result as ArrayBuffer;
@@ -51,6 +51,22 @@ export async function installFontAsset(
       };
       reader.readAsArrayBuffer(file);
     });
+
+    // WOFF1 ('wOFF') is not an sfnt: parseFontMetadata can't read its table directory
+    // and the render-time font-registry only decompresses woff2, not woff1 — so a WOFF1
+    // upload was broken end to end. Unwrap it to a plain TTF/OTF here, once, so every
+    // downstream reader sees an sfnt. woff2 is left as-is (font-registry decompresses it
+    // on demand); woffToSfnt throws on woff2, so the 'woff' gate never routes it here.
+    if (detectFontFormat(buffer) === 'woff') {
+      try {
+        const { woffToSfnt } = await import('@lolly/engine');
+        const sfnt = woffToSfnt(new Uint8Array(buffer));
+        buffer = sfnt.buffer.slice(sfnt.byteOffset, sfnt.byteOffset + sfnt.byteLength) as ArrayBuffer;
+      } catch (e) {
+        console.warn('[font-install] WOFF1->sfnt conversion failed', e);
+        return null;
+      }
+    }
 
     // Parse metadata
     const metadata = parseFontMetadata(buffer);

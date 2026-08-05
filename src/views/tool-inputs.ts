@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString, normalizeTableValue, looksLikeTable, parseTableText, toTsv, toHtmlTable } from '@lolly/engine';
+import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString, normalizeTableValue, looksLikeTable, parseTableText, toTsv, toHtmlTable, readXlsx } from '@lolly/engine';
 import type { TableValue } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { escape, NAV_EVENTS } from '../utils.js';
@@ -1210,6 +1210,14 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     }
   }
 
+  // Serialise readXlsx's ragged grid to the exact RFC-4180 dialect parseDataRows' readCsv
+  // parses back: quote a cell iff it holds a comma, quote, CR or LF, doubling internal
+  // quotes. Row 0 becomes the header, matching a pasted CSV.
+  function rowsToCsv(rows: string[][]): string {
+    const cell = (v: string): string => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    return rows.map(r => r.map(cell).join(',')).join('\n');
+  }
+
   // Detect what the pasted/uploaded text IS (Markdown vs CSV vs JSON) among the importers
   // this input enables, and route it. A file's extension wins; otherwise the content is
   // sniffed (`{`/`[` → JSON; headings/`---`/bullets/pipes → Markdown; commas → CSV).
@@ -1239,7 +1247,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const uploadAccept = (inp: InputModelItem): string => {
     const parts: string[] = [];
     if ((inp as { mdPaste?: boolean }).mdPaste === true) parts.push('.md', '.markdown', '.mdown', '.txt', '.text', 'text/markdown', 'text/plain');
-    if ((inp as { importData?: unknown }).importData) parts.push('.csv', '.json', 'text/csv', 'application/json');
+    if ((inp as { importData?: unknown }).importData) parts.push('.csv', '.json', '.xlsx', 'text/csv', 'application/json', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     return parts.join(',');
   };
 
@@ -1267,6 +1275,18 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const file = native.files?.[0];
       native.value = '';
       if (!file) return;
+      // .xlsx isn't text — unzip its first sheet to a grid, serialise to CSV, and route
+      // it through the SAME importer (parseDataRows). One importer, two spreadsheet formats.
+      if (/\.xlsx$/i.test(file.name)) {
+        try {
+          const { rows } = readXlsx(new Uint8Array(await file.arrayBuffer()));
+          ioFlash(btn, await applyData(rowsToCsv(rows), inp, 'csv'));
+        } catch (e) {
+          announce((e as { message?: string })?.message || 'Could not read that spreadsheet.', { assertive: true });
+          ioFlash(btn, 'empty');
+        }
+        return;
+      }
       let text = '';
       try { text = await file.text(); } catch { /* unreadable */ }
       ioFlash(btn, await routeImport(text, inp, file.name));

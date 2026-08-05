@@ -31,7 +31,7 @@
 
 import '../styles/picker.css';   // async CSS chunk (lazy view — not on the landing)
 import DOMPurify from 'dompurify';
-import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef } from '@lolly/engine';
+import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 // Format + embeddability rules — pure and unit-tested in ./picker-formats.test.ts.
 import {
@@ -84,7 +84,7 @@ import type { WebStateAPI } from '../bridge/state.ts';
  *  itself: callers route them to pdf-import.ts's ingestPdfAsSvgAssets /
  *  pptx-import.ts's ingestPptxAsSvgAssets (page(s)/slide(s) → stored SVG) via
  *  isPdfUpload / isPptxUpload. */
-export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx';
+export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,image/bmp,.bmp,image/x-icon,image/vnd.microsoft.icon,.ico,.cur,.svgz,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx';
 
 /** A PDF — or an Illustrator .ai, which saved PDF-compatible IS a PDF — that upload
  *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
@@ -2877,6 +2877,48 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     if (isPsdMagic || headStr === 'gimp xcf ') {
       const { ingestLayeredFileFlattened } = await import('./psd-import.ts');
       return ingestLayeredFileFlattened(host, file);
+    }
+  }
+  // BMP → decode to RGBA, PNG-pack, and re-enter as an ordinary raster: the same
+  // "normalise to a supported still, then fall through" move as the PSD/XCF block
+  // above. isBmp gates on 'BM' + a full header; decodeBmp validates the rest and
+  // throws BmpUnsupportedError on a compressed/paletted variant (the callers of
+  // storeUserUpload already try/catch + announce the message).
+  if ((head4[0] === 0x42 && head4[1] === 0x4d) || /\.bmp$/i.test(file.name)) {
+    const raw = new Uint8Array(await file.arrayBuffer());
+    if (isBmp(raw)) {
+      const { rgba, width, height } = decodeBmp(raw);
+      const png = packPng(rgba, { width, height, channels: 4 });
+      const base = file.name.replace(/\.bmp$/i, '') || 'image';
+      return storeUserUpload(host, new File([png as BlobPart], `${base}.png`, { type: 'image/png' }));
+    }
+  }
+  // ICO/CUR → decode the largest image. A PNG-payload entry (png===true) hands its
+  // raw bytes straight to the native raster path (re-enter as .png); a BMP-payload
+  // entry comes back as RGBA and is PNG-packed like the BMP branch. isIco fully
+  // validates the ICONDIR, so a false 00 00 01 00 prefix falls through.
+  if (/\.(ico|cur)$/i.test(file.name)
+    || (head4[0] === 0 && head4[1] === 0 && (head4[2] === 1 || head4[2] === 2) && head4[3] === 0)) {
+    const raw = new Uint8Array(await file.arrayBuffer());
+    if (isIco(raw)) {
+      const img = decodeIco(raw);
+      const png = img.png ? img.bytes : packPng(img.rgba, { width: img.width, height: img.height, channels: 4 });
+      const base = file.name.replace(/\.(ico|cur)$/i, '') || 'icon';
+      return storeUserUpload(host, new File([png as BlobPart], `${base}.png`, { type: 'image/png' }));
+    }
+  }
+  // .svgz (gzip(SVG)) → gunzip, then re-enter as a plain .svg so the vector path
+  // (sanitise + viewBox-normalise) handles it. MUST run before the isVector chain:
+  // an OS labelling .svgz as image/svg+xml would otherwise feed gzip bytes to
+  // sanitizeSvgFile. Only an SVG payload is accepted; other gzip content falls through.
+  if ((head4[0] === 0x1f && head4[1] === 0x8b && head4[2] === 0x08) || /\.svgz$/i.test(file.name)) {
+    const raw = new Uint8Array(await file.arrayBuffer());
+    if (raw[0] === 0x1f && raw[1] === 0x8b && raw[2] === 0x08) {
+      const svg = gunzip(raw);                                    // throws on a corrupt stream
+      if (/<svg[\s>]/i.test(new TextDecoder().decode(svg.subarray(0, 4096)))) {
+        const base = file.name.replace(/\.svgz$/i, '') || 'image';
+        return storeUserUpload(host, new File([svg as BlobPart], `${base}.svg`, { type: 'image/svg+xml' }));
+      }
     }
   }
   const isMidi = !isLottie && !isVector && !isVideo

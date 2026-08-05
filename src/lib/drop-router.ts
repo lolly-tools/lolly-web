@@ -48,11 +48,14 @@ type PickerModule = typeof import('../views/picker.ts');
  *  picker's UPLOAD_ACCEPT (that list deliberately excludes design formats). */
 const UNIVERSAL_ACCEPT =
   '.fig,.penpot,.zip,.svg,.idml,.indd,.pdf,.ai,.pptx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
-  '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac';
+  '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac,.bmp,.ico,.cur,.svgz';
 
 // Extension fallbacks for files whose MIME type the OS didn't fill in.
 const DESIGN_EXT_RE = /\.(fig|penpot|idml|indd|svg|zip)$/i;
-const MEDIA_EXT_RE = /\.(png|apng|jpe?g|webp|gif|avif|heic|heif|svg|mp4|webm|mov|mp3|wav|ogg|oga|opus|m4a|aac|flac|mid|midi|mod|xm|it|s3m|stm|mtm|json|lottie)$/i;
+// .bmp/.ico usually arrive with an image/* MIME (already accepted); the ext entries are
+// the blank-MIME backstop. .svgz is media/library only (svgz-as-design would need a
+// gunzip step in parseDesignFile).
+const MEDIA_EXT_RE = /\.(png|apng|jpe?g|webp|gif|avif|heic|heif|svg|svgz|bmp|ico|cur|mp4|webm|mov|mp3|wav|ogg|oga|opus|m4a|aac|flac|mid|midi|mod|xm|it|s3m|stm|mtm|json|lottie)$/i;
 
 // ── one-shot handoff stashes (the verify-handoff pattern) ──────────────────────
 

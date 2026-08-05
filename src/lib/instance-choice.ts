@@ -60,6 +60,13 @@ export async function markInstanceChoiceMade(): Promise<void> {
  */
 export async function maybeShowFirstRunInstanceSheet(host: HostV1): Promise<void> {
   if (!isTauriShell()) return;
+  // Headless CLI render (the desktop binary's `Lolly run <tool>` mode, which drives
+  // this same boot in an off-screen window) has no human to answer a first-run
+  // dialog: the await below would hang the whole render forever, before the tool
+  // ever mounts. Skip every interactive boot gate and keep the default (local)
+  // instance, which is exactly what an offline render wants. See
+  // shells/tauri-desktop/src-tauri/src/cli.rs.
+  if ((window as { __LOLLY_CLI__?: unknown }).__LOLLY_CLI__) return;
   if (await hasMadeInstanceChoice()) return;
   const { openInstanceSheet } = await import('../components/instance-sheet.ts');
   await openInstanceSheet(host, { firstRun: true });
