@@ -625,6 +625,10 @@ const RAW_HTML_SINK = /\.(?:inner|outer)HTML\s*\+?=(?!=)(?!\s*['"]\s*['"]\s*[;,)
 
 const RAW_HTML_ALLOWED: Record<string, number> = {
   'bridge/clipboard.ts': 2,
+  // The #/convert view's 3 innerHTML writes interpolate only t() strings, escape()d
+  // file names (utils.ts escape), and static in-code format labels/ids — no user
+  // markup reaches a sink unescaped.
+  'views/convert.ts': 3,
   'bridge/embed.ts': 1,
   'components/color-field.ts': 5,
   'components/custom-slider.ts': 1,

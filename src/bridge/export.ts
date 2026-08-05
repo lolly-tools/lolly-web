@@ -19,7 +19,7 @@ import {
   parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
   splitCssArgs, parseGradientAngle, parseGradientStop, expandGradientStops,
   parseColor, interpolateColor, colorToSrgb8,
-  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, packTiff, encodeBmp, gzip, ENGINE_VERSION,
+  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, prepareC2paIngredientFromStore, packTiff, encodeBmp, gzip, sfntKind, sfntToWoff, woffToSfnt, ENGINE_VERSION,
   buildExportMeta,
   embedWatermark, canCarryWatermark, LOSSLESS_STRENGTH,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
@@ -187,6 +187,10 @@ export interface ExportOpts {
    *  records whether a container raster was actually marked, so stampC2pa can
    *  claim an imprint truthfully for pdf. See ImprintState. */
   _imprintSink?: ImprintState;
+  /** Internal: accumulates componentOf ingredients extracted from bitmaps the SVG/PDF
+   *  walker inlines (whose canvas re-encode strips their C2PA), so an embedded genAI
+   *  asset's origin still rides the export's manifest. Created only under c2pa. */
+  _ingredientSink?: IngredientCredential[];
   palette?: BrandPaletteEntry[];
   bleed?: number | string;
   cropMarks?: boolean;
@@ -427,7 +431,24 @@ export function createExportAPI(host: WebHost) {
     // provenance metadata are ever applied, because the bytes are the user's own
     // content. (Tauri/CLI route this to a real save target.)
     async file(blob: Blob, opts: ExportOpts = {}): Promise<void> {
-      await this.download(blob, opts.filename || 'file');
+      let out = blob;
+      // export.file's one legal container change: fonts. When a transform's bytes are an
+      // sfnt/WOFF and the requested name asks for a DIFFERENT font container, convert it
+      // (TTF/OTF <-> WOFF, glyph outlines untouched) so the download matches the name —
+      // the font-convert tool's path. Never re-encodes anything else.
+      const name = opts.filename || 'file';
+      const de = name.match(/\.(ttf|otf|woff)$/i)?.[1]?.toLowerCase();
+      if (de) {
+        try {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          const k = sfntKind(bytes);
+          let conv: Uint8Array | null = null;
+          if (de === 'woff' && (k === 'ttf' || k === 'otf')) conv = sfntToWoff(bytes);
+          else if ((de === 'ttf' || de === 'otf') && k === 'woff') conv = woffToSfnt(bytes);
+          if (conv) out = new Blob([conv as BlobPart], { type: `font/${de}` });
+        } catch { /* not a convertible font — deliver the bytes as-is */ }
+      }
+      await this.download(out, name);
     },
   };
 }
@@ -455,6 +476,10 @@ async function renderFormat(node: Element, format: string, opts: ExportOpts = {}
   // path can flip `applied`, and read by stampC2pa AFTER. `want` gates whether any
   // Lolly-rendered raster gets marked at all.
   opts._imprintSink = { want: !!opts.imprint, applied: false };
+  // Collect componentOf ingredients from walker-inlined bitmaps ONLY when we will
+  // stamp — a preview/thumbnail render never pays to decode + C2PA-scan embedded
+  // images. Populated by the SVG/PDF walker (before its canvas re-encode), read below.
+  if (opts.c2pa) opts._ingredientSink ??= [];
   const blob = await renderFormatDispatch(node, format, opts);
   const key = format === 'webm' || format === 'mp4'
     ? (blob.type.includes('mp4') ? 'mp4' : 'webm')
@@ -467,6 +492,13 @@ async function renderFormat(node: Element, format: string, opts: ExportOpts = {}
     // the credential can record "where/how big" alongside the input digest.
     let dimensions: string | undefined;
     try { dimensions = describeDimensions(exportDims(node, opts)); } catch { /* size is a nicety */ }
+    // Merge walker-collected bitmap ingredients into the stamp, deduped against any the
+    // runtime already supplied for declared asset inputs (so a bitmap that WAS a
+    // declared asset is not double-listed).
+    if (opts._ingredientSink?.length) {
+      const have = new Set((opts.ingredients ?? []).map((i) => i.activeLabel));
+      opts.ingredients = [...(opts.ingredients ?? []), ...opts._ingredientSink.filter((i) => !have.has(i.activeLabel))];
+    }
     return stampC2pa(blob, key, opts, dimensions);
   }
   return blob;
@@ -3426,6 +3458,23 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // which is exactly the old behaviour — never worse than before.
           const dataUrl0 = src.startsWith('data:') ? src
             : await blobToDataUrl(src).catch(() => src);
+          // Preserve an embedded bitmap's provenance BEFORE downscaleRasterForBox's
+          // canvas re-encode strips it (canvas.toDataURL emits a metadata-free PNG):
+          // read the source's Content Credentials and carry them forward as a
+          // componentOf ingredient on the EXPORT's own manifest, so a genAI origin (or
+          // any credential) stays on the record even though the embedded pixels can no
+          // longer hold it. Verify walks ingredient manifests, so the flag surfaces.
+          // Only credentialed bitmaps add one; gated on _ingredientSink (c2pa only).
+          if (opts._ingredientSink && dataUrl0.startsWith('data:')) {
+            try {
+              const b = Uint8Array.from(atob(dataUrl0.slice(dataUrl0.indexOf(',') + 1)), (c) => c.charCodeAt(0));
+              const store = extractC2paStore(b);
+              const ing = store && prepareC2paIngredientFromStore(store.store, store.format);
+              if (ing && !opts._ingredientSink.some((p) => p.activeLabel === ing.activeLabel)) {
+                opts._ingredientSink.push({ ...ing, relationship: 'componentOf' });
+              }
+            } catch { /* not a decodable/credentialed bitmap */ }
+          }
           // CSS filter() (e.g. grayscale/contrast presets) is baked into the bitmap
           // via the browser so the vector image matches screen/PNG instead of
           // exporting full-colour. No-op + graceful fallback when filter is none.

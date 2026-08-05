@@ -43,7 +43,7 @@ import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from '
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -51,6 +51,7 @@ type Route =
   | { name: 'profile'; params: string }
   | { name: 'dashboard'; params?: string }
   | { name: 'verify'; params?: string }
+  | { name: 'convert'; params?: string }
   | { name: 'pro'; params?: string }
   | { name: 'projects'; folderId: string | null; params?: string }
   | { name: 'catalog'; params?: string }
@@ -117,6 +118,7 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   projects: { label: 'Projects', tab: 'projects', viewClasses: ['projects-view'], sigKey: 'folderId' },
   catalog: { label: 'Catalogue', tab: 'catalog', viewClasses: ['catalog-view'] },
   verify: { label: 'Verify', viewClasses: ['verify-view'] },
+  convert: { label: 'Convert', viewClasses: ['convert-view'] },
   // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
   // clicked while already on #/start must switch steps, not dedupe to a no-op.
   start: { label: 'Brand setup', viewClasses: ['start-view'], sigKey: 'params' },
@@ -321,6 +323,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     case 'verify': {
       const { mountValid } = await import('./views/valid.ts');
       await mountValid(view, host, route.params);
+      break;
+    }
+    // /convert — on-device file converter (fonts, SVG⇄SVGZ, raster⇄raster), a
+    // verify-like drop→pick→download surface. Lazy-loaded like the other dashboards.
+    case 'convert': {
+      const { mountConvert } = await import('./views/convert.ts');
+      await mountConvert(view, host, route.params);
       break;
     }
     // --- Multi-edit: 2–8 saved sessions edited side by side (grid of live
@@ -924,6 +933,7 @@ function parseRoute(): Route {
       return { name: 'dashboard', params: query || '' };
     }
     if (parts[0] === 'verify' || parts[0] === 'valid' || parts[0] === 'v') return { name: 'verify', params: query || '' };
+    if (parts[0] === 'convert') return { name: 'convert', params: query || '' }; // on-device file converter
     if (parts[0] === 'start') return { name: 'start', params: query || '' }; // brand wizard
     if (parts[0] === 'multi') return { name: 'multi', params: query || '' }; // multi-edit (?s=slot,slot…)
     if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
