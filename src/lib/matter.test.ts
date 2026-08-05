@@ -31,17 +31,16 @@ test('planLetterbox: a square image fills the square exactly', () => {
   assert.equal(p.offsetY, 0);
 });
 
-test('packNchwNormalized: IS-Net general uses mean 0.5 / std 1.0 (NOT ImageNet)', () => {
-  // The specific footgun: a mid-grey pixel must map to 0, and white to +0.5.
-  const spec = MATTE_MODEL_SPEC['isnet-general'];
+test('packNchwNormalized: MODNet uses [-1,1] normalization (mean 0.5 / std 0.5, NOT ImageNet)', () => {
+  // The specific footgun: a non-ImageNet net whose mean/std must be applied per its
+  // own recipe. MODNet maps grey 127.5 → 0 and white 255 → +1 (the [-1,1] range).
+  const spec = MATTE_MODEL_SPEC['modnet'];
   assert.deepEqual(spec.mean, [0.5, 0.5, 0.5]);
-  assert.deepEqual(spec.std, [1, 1, 1]);
-  // 2x2 (but pack is size-agnostic) — feed one grey + one white pixel via edge=1
-  // twice by hand: grey 127.5 → (0.5 − 0.5)/1 = 0; white 255 → (1 − 0.5)/1 = 0.5.
+  assert.deepEqual(spec.std, [0.5, 0.5, 0.5]);
   const grey = packNchwNormalized([128, 128, 128, 255], 1, spec);
-  assert.ok(Math.abs(grey[0]! - (128 / 255 - 0.5)) < 1e-6);
+  assert.ok(Math.abs(grey[0]! - (128 / 255 - 0.5) / 0.5) < 1e-6);
   const white = packNchwNormalized([255, 255, 255, 255], 1, spec);
-  assert.ok(Math.abs(white[0]! - 0.5) < 1e-6);
+  assert.ok(Math.abs(white[0]! - 1) < 1e-6);
 });
 
 test('packNchwNormalized: the ImageNet models subtract the ImageNet mean/std', () => {
@@ -82,8 +81,8 @@ test('activateMask sigmoid squashes logits (0 → 0.5, large + → ~1, large −
   assert.ok(m[2]! < 0.001);
 });
 
-test('the roster activations are pinned: saliency = minmax, BiRefNet = sigmoid', () => {
+test('the roster activations are pinned: bounded heads = minmax, BiRefNet = sigmoid', () => {
   assert.equal(MATTE_MODEL_SPEC['u2netp'].activation, 'minmax');
-  assert.equal(MATTE_MODEL_SPEC['isnet-general'].activation, 'minmax');
+  assert.equal(MATTE_MODEL_SPEC['modnet'].activation, 'minmax');
   assert.equal(MATTE_MODEL_SPEC['birefnet-lite'].activation, 'sigmoid');
 });

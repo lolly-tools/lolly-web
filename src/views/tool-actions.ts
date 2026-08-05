@@ -89,7 +89,7 @@ const isC2paFmt = (f: string | undefined): boolean => !!f && (C2PA_FORMATS.inclu
 // is gated on whether a mark was actually applied, never on this list, so no
 // over-claim (see export.ts stampC2pa). Mirrors the deep-link gate in views/tool.ts.
 // Zip carries the flag through to its bundled raster + container members.
-const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
+const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'bmp', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
 // Durable (neural TrustMark) embed is RASTER-ONLY — no pdf/pptx container path yet
 // (export.ts durableEmbedCanvas; see plans/28-durable-content-credentials.md).
 const isDurableFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
@@ -1598,6 +1598,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (!root) return false;
     const els: Element[] = [root, ...Array.from(root.querySelectorAll('*'))];
     for (const node of els) {
+      // Editor-only chrome tagged [data-export-hide] is detached before any raster
+      // render (detachExportHidden, bridge/export.ts), so a backdrop-filter on it is
+      // never in the export and warning about it is a false alarm. Skip exactly the
+      // subtree the exporter strips. Bitmap Studio's frosted HUD chips (the preset
+      // badge, the Before/After pills, the hover histogram) are the reference case.
+      if (node.closest('[data-export-hide]')) continue;
       const s = getComputedStyle(node) as CSSStyleDeclaration & { webkitBackdropFilter?: string };
       const bf = s.backdropFilter || s.webkitBackdropFilter || '';
       if (bf && bf !== 'none') return true;

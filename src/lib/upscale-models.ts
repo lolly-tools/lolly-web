@@ -79,7 +79,7 @@ export const UPSCALE_MODELS: UpscaleModelInfo[] = [
     id: 'realesrgan-x4plus',
     name: 'Real-ESRGAN x4plus (quality)',
     scale: 4,
-    approxBytes: 64 * 1024 * 1024,
+    approxBytes: 67_051_616,   // exact vendored size (verified 2026-08-05)
     license: 'BSD-3-Clause',
     attribution: RE_ATTRIBUTION,
     version: 'x4plus',
@@ -116,7 +116,7 @@ export const UPSCALE_MODEL_BYTES: Record<UpscaleModelId, number> = UPSCALE_MODEL
 /** True where the model's primary weights have a real pin in the fetch script. */
 export const UPSCALE_STAGED: Record<UpscaleModelId, boolean> = {
   'realesr-general-x4v3': true,   // real pin
-  'realesrgan-x4plus': false,     // PLACEHOLDER pin — quality tier withheld until a real single-file ONNX is sourced
+  'realesrgan-x4plus': true,      // real pin (SceneWorks single-file fp32 ONNX, verified 2026-08-05)
   'gfpgan-v1.4': true,            // real pin
 };
 

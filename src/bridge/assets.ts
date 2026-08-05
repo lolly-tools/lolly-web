@@ -209,6 +209,20 @@ function nextCopyName(srcName: string, taken: Set<string>): string {
   return name;
 }
 
+/**
+ * The recency key for a user asset. Every id is `user/<kind>/<ms>-…`, so the `<ms>`
+ * third segment is when it was made. Sorting the WHOLE id string instead orders by
+ * <kind> first (matte < upload < upscaled, alphabetically), which sinks a brand-new
+ * cutout below every older upload and upscale — "newest" never reaches the top.
+ * Parsing the ms out fixes that. Falls back to 0 for any id whose third segment
+ * isn't leading-numeric, so a non-timestamped kind stays put (ordered by the id
+ * tiebreak) instead of jumping to the front.
+ */
+function userIdTime(id: string): number {
+  const n = parseInt(id.split('/')[2] ?? '', 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export function createAssetsAPI(db: AssetsDb) {
   const api = {
     async get(id: string, opts: { format?: string; version?: string } = {}): Promise<AssetRef> {
@@ -483,7 +497,10 @@ export function createAssetsAPI(db: AssetsDb) {
       const needsRead = all.some(r => r.aiGenerated === undefined && r.credential && r.credentialFormat);
       const c2pa = needsRead ? await loadC2paVerify() : null;
       return all
-        .sort((a, b) => String(b.id).localeCompare(String(a.id)))
+        // Newest first by real creation time (the id's <ms>), with the id as a stable
+        // tiebreak so same-ms duplicates keep their padded-counter order (newer first).
+        .sort((a, b) => (userIdTime(String(b.id)) - userIdTime(String(a.id)))
+          || String(b.id).localeCompare(String(a.id)))
         .map(rec => {
           const ref = toAssetRef(rec, 'user');
           // Surface the AI flag on the ref (persisted on the record for new uploads;

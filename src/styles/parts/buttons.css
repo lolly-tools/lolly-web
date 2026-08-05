@@ -30,7 +30,7 @@
   padding: 5px 14px;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--input));
+  border: transparent;
   border-radius: var(--radius);
   font: inherit;
   font-size: calc(13px * var(--a11y-fs));

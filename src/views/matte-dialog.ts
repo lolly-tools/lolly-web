@@ -30,6 +30,7 @@ import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { extractC2paStore, prepareC2paIngredientFromStore } from '@lolly/engine';
+import { MATTE_DEFAULT_MODEL } from '../lib/matte-models.ts';
 import type {
   AssetRef, HostV1, MatteFrame, MatteModelId, MatteProgress,
 } from '@lolly-tools/core/host-v1';
@@ -163,7 +164,10 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
 
     const modelOptions = models.map(m =>
       `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
-    const defaultModel = models[0]!.id;
+    // Pre-select the canonical default (birefnet-lite) when it's staged, not just the
+    // first list entry — so the dialog opens on the recommended model, falling back to
+    // the first available if the default were ever withheld.
+    const defaultModel = models.find(m => m.id === MATTE_DEFAULT_MODEL)?.id ?? models[0]!.id;
 
     const overlay = document.createElement('div');
     overlay.className = 'matte-overlay';
