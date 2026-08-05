@@ -47,7 +47,7 @@ type PickerModule = typeof import('../views/picker.ts');
 /** Everything the file-picker fallback should let through — a superset of the
  *  picker's UPLOAD_ACCEPT (that list deliberately excludes design formats). */
 const UNIVERSAL_ACCEPT =
-  '.fig,.penpot,.zip,.svg,.idml,.indd,.pdf,.ai,.pptx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
+  '.fig,.penpot,.zip,.tar,.tgz,.gz,.svg,.idml,.indd,.pdf,.ai,.pptx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
   '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac,.bmp,.ico,.cur,.svgz';
 
 // Extension fallbacks for files whose MIME type the OS didn't fill in.
@@ -56,6 +56,14 @@ const DESIGN_EXT_RE = /\.(fig|penpot|idml|indd|svg|zip)$/i;
 // the blank-MIME backstop. .svgz is media/library only (svgz-as-design would need a
 // gunzip step in parseDesignFile).
 const MEDIA_EXT_RE = /\.(png|apng|jpe?g|webp|gif|avif|heic|heif|svg|svgz|bmp|ico|cur|mp4|webm|mov|mp3|wav|ogg|oga|opus|m4a|aac|flac|mid|midi|mod|xm|it|s3m|stm|mtm|json|lottie)$/i;
+// Plain archives the shell can explode into member assets. EXCLUDES the design
+// bundles (.penpot/.fig/.idml/.indd) and the OOXML/OCF packages (.xlsx/.docx/.pptx/
+// .epub/.odt) — those are zips too but route to their own readers. This is a cheap
+// name gate for the chooser; the authoritative byte check (never shred an office
+// file) lives in archive-ingest.readArchiveMembers, run when the user commits.
+const ARCHIVE_EXT_RE = /\.(zip|tar|tar\.gz|tgz)$/i;
+const PURE_DESIGN_EXT_RE = /\.(fig|penpot|idml|indd)$/i;
+const CONTAINER_DOC_EXT_RE = /\.(xlsx|docx|pptx|epub|odt)$/i;
 
 // ── one-shot handoff stashes (the verify-handoff pattern) ──────────────────────
 
@@ -109,6 +117,8 @@ interface Sniff {
   c2pa: boolean;
   /** A layered bitmap (Photoshop PSD/PSB or GIMP XCF). */
   layers: boolean;
+  /** A plain archive (.zip/.tar/.tar.gz) we can explode into member assets. */
+  archive: boolean;
 }
 
 const isMediaFile = (f: File): boolean =>
@@ -145,9 +155,14 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
       || text.startsWith('gimp xcf '))
     : /\.(psd|psb|xcf)$/i.test(file.name);
   const design = !pdf && !pptx && !layers && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
+  // A plain archive: a zip/tar by name, or PK-magic bytes that aren't a design
+  // bundle. Design bundles and office/OCF packages (zips too) are excluded so the
+  // "unpack" route never competes for a .penpot or shreds a .xlsx.
+  const archive = !layers && !PURE_DESIGN_EXT_RE.test(file.name) && !CONTAINER_DOC_EXT_RE.test(file.name)
+    && (ARCHIVE_EXT_RE.test(file.name) || (zipMagic && !DESIGN_EXT_RE.test(file.name)));
   // A PSD/XCF often carries an image/* MIME — the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
-  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers };
+  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive };
 }
 
 const toolExists = (id: string): boolean =>
@@ -189,8 +204,14 @@ export async function openDropChooser(
   if (single && s.layers) {
     choices.push({ id: 'flatten', label: t('Add the flattened image to your library') });
   }
+  // A plain archive leads with "unpack": a dropped .zip/.tar explodes into member
+  // assets, each re-imported through the normal library path. Kept above the design
+  // route so a data zip isn't primarily offered to Layout Studio (where it errors).
+  if (single && s.archive) {
+    choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: true });
+  }
   if (single && (s.design || s.pdf) && toolExists('layout-studio')) {
-    choices.push({ id: 'design', label: t('Edit in Layout Studio'), primary: true });
+    choices.push({ id: 'design', label: t('Edit in Layout Studio'), primary: !s.archive });
   }
   // Frames → timed scenes: the same design/PDF sniff can open as a video sequence
   // (free-canvas's scene-mode import consumes the stash on mount).
@@ -226,6 +247,7 @@ export async function openDropChooser(
   else if (s.layers) message = tRaw('“{name}” is a layered image (Photoshop/GIMP).', { name: first.name });
   else if (s.pdf) message = tRaw('“{name}” is a PDF or Illustrator document.', { name: first.name });
   else if (s.pptx) message = tRaw('“{name}” is a PowerPoint deck.', { name: first.name });
+  else if (s.archive) message = tRaw('“{name}” is an archive.', { name: first.name });
   else if (s.design) message = tRaw('“{name}” looks like a design file.', { name: first.name });
   else if (s.media) message = tRaw('“{name}” is ready to import.', { name: first.name });
   else message = tRaw('“{name}” isn’t a format Lolly can import directly.', { name: first.name });
@@ -289,6 +311,23 @@ export async function openDropChooser(
     case 'library':
       await ingestToLibrary(files, host, picker);
       break;
+    case 'unpack': {
+      // Explode the archive to its members, then feed them through the SAME library
+      // ingest as any multi-file drop. readArchiveMembers refuses an office/OCF
+      // package (never shreds a .xlsx) and enforces the member/byte caps.
+      try {
+        const { readArchiveMembers } = await import('./archive-ingest.ts');
+        const bytes = new Uint8Array(await first.arrayBuffer());
+        const members = readArchiveMembers(bytes, first.name);
+        const memberFiles = members.map(
+          (m) => new File([m.bytes as BlobPart], m.name.split('/').pop() || m.name),
+        );
+        await ingestToLibrary(memberFiles, host, picker);
+      } catch (err) {
+        announce(tRaw('Upload failed: {message}', { message: (err as Error).message }), { assertive: true });
+      }
+      break;
+    }
     case 'exports':
       await ingestExportsToLibrary(first, host);
       break;

@@ -47,7 +47,7 @@ let ingesting = false;
 export function mountUploadDropzone(container: HTMLElement, host: PickerHost, opts: DropzoneOpts = {}): () => void {
   container.innerHTML = `
     <label class="updz${opts.compact ? ' updz--compact' : ''}">
-      <input type="file" class="updz-input visually-hidden" multiple accept="${escape(UPLOAD_ACCEPT)}" aria-label="Upload files to your library">
+      <input type="file" class="updz-input visually-hidden" multiple accept="${escape(`${UPLOAD_ACCEPT},.zip,.tar,.tgz,.gz`)}" aria-label="Upload files to your library">
       <span class="updz-icon" aria-hidden="true">${UPLOAD_ICON}</span>
       <span class="updz-copy">
         <span class="updz-text">Drag &amp; drop files here, or <span class="updz-browse">browse</span></span>
@@ -63,9 +63,17 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
     const textEl = zone.querySelector<HTMLElement>('.updz-text');
     const idleText = textEl?.innerHTML ?? '';
     zone.classList.add('is-busy');
-    if (textEl) textEl.textContent = files.length === 1 ? 'Adding…' : `Adding ${files.length} files…`;
+    if (textEl) textEl.textContent = 'Adding…';
+    // Explode a dropped plain archive (.zip/.tar/.tar.gz) into its member files first,
+    // so its contents land in the library. Non-archives pass through untouched; an
+    // office/OCF package that shares the PK magic is NOT expanded (kept as-is and
+    // handled/errored by the normal path). Lazy chunk — the engine zip/tar readers
+    // load only when an archive actually arrives.
+    const { expandArchiveFiles } = await import('./archive-ingest.ts');
+    const expanded = await expandArchiveFiles(files);
+    if (textEl) textEl.textContent = expanded.length === 1 ? 'Adding…' : `Adding ${expanded.length} files…`;
     let stored = 0;
-    for (const file of files) {
+    for (const file of expanded) {
       try {
         // A PDF/.ai converts page(s) to SVG assets — multi-page docs ask which pages
         // (or all) via the shared picker dialog. Lazy chunk: pdf-lib loads only when
