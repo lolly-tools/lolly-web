@@ -251,6 +251,14 @@ export interface ExportOpts {
    *  z-index, 22 of them negative, and DOM order paints them all wrong. */
   stackingOrder?: boolean;
   noBoxShadow?: boolean;
+  /** Resolution ceiling for INLINED raster assets (`<img>` bitmaps), in DPI, decoupled
+   *  from `dpi` (which sets the vector/own-paint resolution). Opt-in: when set, an
+   *  embedded bitmap is downscaled to its display box at this DPI with a 1x floor —
+   *  so `rasterDpi: 96` embeds each photo at exactly its rendered box, replacing the
+   *  full-resolution source. Left unset, embedded rasters keep the dpi-derived >=2x cap.
+   *  Lets a walker SVG stay crisp-vector while its heavy continuous-tone assets shrink
+   *  to what a reader can actually see (e.g. a Verify shot of a 0.8 MB storm photo). */
+  rasterDpi?: number;
   password?: string;
   /** Strong tier: AES-256 (R6) applied as a final encrypt-last pass over the
    *  finished PDF bytes. Composes with PDF/X + CMYK + marks (unlike `password`,
@@ -3422,10 +3430,13 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           // via the browser so the vector image matches screen/PNG instead of
           // exporting full-colour. No-op + graceful fallback when filter is none.
           const dataUrlF = await bakeImageFilter(el, dataUrl0, style.filter);
-          // Cap the inlined resolution to what this box (w x h CSS px) can show at the
-          // export dpi — an over-provisioned preview PNG should not ship the pixels no
-          // one sees. dpi-aware, so a print export keeps its resolution.
-          const dataUrl = await downscaleRasterForBox(el, dataUrlF, Math.max(w, h), d.dpi);
+          // Cap the inlined resolution to what this box (w x h CSS px) can show. Normally
+          // dpi-aware off the export dpi (>=2x the box, so a print export keeps resolution);
+          // when `opts.rasterDpi` is set the asset instead embeds at that DPI with a 1x
+          // floor, so a walker SVG can shed a heavy photo's unseen pixels (ExportOpts.rasterDpi).
+          const rDpi = (opts.rasterDpi as number) > 0 ? (opts.rasterDpi as number) : d.dpi;
+          const rFloor = (opts.rasterDpi as number) > 0 ? 1 : 2;
+          const dataUrl = await downscaleRasterForBox(el, dataUrlF, Math.max(w, h), rDpi, rFloor);
           const rMin = Math.min(
             parseCssLen(style.borderTopLeftRadius,     w),
             parseCssLen(style.borderTopRightRadius,    w),
@@ -6910,7 +6921,10 @@ async function bakeImageFilter(imgEl: any, dataUrl: string, filterStr: string | 
 // small on a print page is not softened. Never UPSCALES, and returns the input unchanged
 // (byte-identical to before this existed) whenever the source is already within 15% of
 // the cap, so the common case pays one Image decode and nothing else.
-async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: number, dpi: number): Promise<string> {
+// `floor` is the minimum device-px-per-CSS-px the cap allows (default 2: never soften a
+// tool export below 2x its box). The docs walker opts down to 1 via `rasterDpi`, so a
+// continuous-tone asset can be embedded at exactly its rendered box — see ExportOpts.rasterDpi.
+async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: number, dpi: number, floor = 2): Promise<string> {
   if (!(boxLongCss > 0) || dataUrl.startsWith('data:image/svg')) return dataUrl;
   try {
     let img: any = (imgEl && imgEl.naturalWidth > 0) ? imgEl : null;
@@ -6922,7 +6936,7 @@ async function downscaleRasterForBox(imgEl: any, dataUrl: string, boxLongCss: nu
     }
     const nw = img.naturalWidth, nh = img.naturalHeight;
     if (!(nw > 0 && nh > 0)) return dataUrl;
-    const factor = Math.max(2, (dpi > 0 ? dpi : CSS_DPI) / CSS_DPI);
+    const factor = Math.max(floor, (dpi > 0 ? dpi : CSS_DPI) / CSS_DPI);
     const capLong = Math.max(256, Math.ceil(boxLongCss * factor));
     const srcLong = Math.max(nw, nh);
     if (srcLong <= capLong * 1.15) return dataUrl;         // already sane — leave it be

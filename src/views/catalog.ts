@@ -2794,6 +2794,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         const aiSourceType = aiKind === 'full' ? GENERATED_SOURCE_TYPE
           : aiKind === 'partial' ? COMPOSITE_SOURCE_TYPE
           : DIGITAL_SOURCE_TYPE;
+        // A genAI-flagged source can hand back an ingredient whose OWN chain records no AI
+        // *action* — the flag was authored onto catalog meta (assetAiKind is truthy) or
+        // lives in a non-action assertion collectActionChain can't read — so its
+        // digitalSourceType is undefined. The engine's c2pa.opened step then carries
+        // nothing and the cropped/edited output loses the flag (this is the real catalog
+        // crop drop). Backfill the source type from the asset's authored kind so it rides
+        // out on that opened step. Only an EMPTY source type is filled, and only for a
+        // genAI asset (aiKind '' → untouched), so it can never double-flag a non-AI asset.
+        if (ingredients && (aiKind === 'full' || aiKind === 'partial')) {
+          for (const ing of ingredients) {
+            if (!ing.digitalSourceType) ing.digitalSourceType = aiSourceType;
+          }
+        }
         const actions: C2paActionInput[] = ingredients
           ? o.edits
           : [{ action: 'c2pa.created', digitalSourceType: aiSourceType }, ...o.edits];
