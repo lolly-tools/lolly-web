@@ -279,11 +279,11 @@ describe('service worker: the offline-download buckets', () => {
       'once fetched, the runtime must serve offline from its bucket');
   });
 
-  test('/ort-hf (the speech worker\'s pinned transformers.js runtime) rides the same bucket', async () => {
+  test('/ort-hf (the speech worker\'s pinned transformers.js runtime) serves offline from its own bucket', async () => {
     // The served path is versioned (/ort-hf/<onnxruntime-web version>/ —
-    // scripts/copy-transformers-ort.ts), so a transformers.js upgrade is a
-    // cache MISS instead of a stale wasm pinned forever. ORT_PATTERN is a
-    // prefix match, so the versioned subdir must route exactly like /ort/.
+    // scripts/copy-transformers-ort.ts), so a transformers.js upgrade is a cache
+    // MISS instead of a stale wasm pinned forever. The speech part OWNS this runtime
+    // now (lolly-ort-hf); a network fetch fills that bucket and serves it offline.
     const h = loadServiceWorker();
     const url = 'https://lolly.tools/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm';
     h.server.set('/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm', 'HF_WASM_BYTES');
@@ -291,7 +291,21 @@ describe('service worker: the offline-download buckets', () => {
     assert.equal(await subresource(h, url), 'HF_WASM_BYTES');
     h.offline.value = true;
     assert.equal(await subresource(h, url), 'HF_WASM_BYTES',
-      'the two runtimes are different builds but share lolly-ort cache-first behaviour');
+      'once fetched, /ort-hf/ serves offline from lolly-ort-hf');
+  });
+
+  test('/ort-hf falls back to the legacy lolly-ort bucket — Verify pre-downloaders are not stranded', async () => {
+    // Migration: before the ort/ortHf split, the runtime was downloaded by the VERIFY
+    // part into lolly-ort. The SW now checks lolly-ort-hf first, then lolly-ort, so a
+    // user who pre-downloaded it via Verify keeps offline speech without a re-download.
+    const h = loadServiceWorker();
+    const path = '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm';
+    const legacy = new FakeCache();
+    legacy.entries.set(path, 'LEGACY_HF_BYTES');
+    h.caches.set('lolly-ort', legacy);
+    h.offline.value = true;
+    assert.equal(await subresource(h, `https://lolly.tools${path}`), 'LEGACY_HF_BYTES',
+      'offline, with the runtime only in the legacy lolly-ort bucket, /ort-hf/ is still served');
   });
 
   test('the whole app group serves offline — not just /assets/: voice, viz-presets, share stubs', async () => {
@@ -390,9 +404,11 @@ describe('precache.json grouping (vite.config.js)', () => {
       'the app group must exclude /ort/, /ort-hf/ and /models/ — lolly-app never serves those');
     assert.deepEqual(names(groups.ort), [
       '/ort/ort-wasm-simd-threaded.wasm',
+    ], 'the ort group is the /ort/ runtime ONLY (verify\'s deep-scan detectors) — the speech runtime moved to its own ortHf group');
+    assert.deepEqual(names(groups.ortHf), [
       '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm',
       '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.mjs',
-    ], 'the ort group is the ort-wasm-* files (wasm + mjs glue) of BOTH runtimes, and nothing else');
+    ], 'the ortHf group is transformers.js\'s ort-wasm-* runtime — owned by the speech part so downloading Speech is offline-complete');
     assert.deepEqual(names(groups.models), ['/models/trustmark/decoder_Q.onnx'],
       'verify\'s models are the TrustMark ones only — kokoro belongs to the speech part');
     assert.deepEqual(names(groups.speech), [

@@ -254,7 +254,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 18px 16px 12px;
-    border-bottom: 1px solid hsl(var(--border));
+    border-bottom: 0;
     flex-shrink: 0;
   }
   /* .export-popup-title/-close: hoisted out of both breakpoints — see tool.css. */

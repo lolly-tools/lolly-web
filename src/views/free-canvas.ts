@@ -3801,6 +3801,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return { x: (r.left - cr.left) / scale, y: (r.top - cr.top) / scale, w: r.width / scale, h: r.height / scale };
     };
 
+    // Settle fonts AND layout ONCE, up front — before touching any box DOM. A pending
+    // webfont load resolves here, and the template's fit pass (which re-runs on
+    // document.fonts.ready and rewrites --fit → font-size → line wrapping) gets two
+    // paint frames to finish. If we awaited this per box instead, a font-load could
+    // move the box between the query and the measurement, so the captured element is
+    // stale and the shaped glyphs land at the wrong size/place (or a repaint drops the
+    // result). After this, each box is queried fresh and measured with no await between.
+    try { await document.fonts?.ready; } catch { /* no Font Loading API */ }
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
     const results = new Map<string, OutlineGroup[]>();
     let firstRefusal: string | null = null;
     for (const id of srcIds) {

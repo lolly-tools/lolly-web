@@ -63,6 +63,12 @@ import { MATTE_MODEL_STORE, MATTE_MODEL_CACHE_VERSION } from './matte-models.ts'
  *  PIN_CACHE. */
 export const APP_CACHE = 'lolly-app';
 export const ORT_CACHE = 'lolly-ort';
+/** The transformers.js speech runtime (/ort-hf/<version>/ort-wasm-*), OWNED by the
+ *  speech part so pre-downloading Speech is offline-complete — it used to ride in the
+ *  verify-owned ORT_CACHE. sw.js serves /ort-hf/ from HERE, falling back to ORT_CACHE
+ *  for users who pre-downloaded it via Verify before this split. Also in sw.js's
+ *  PERSISTENT_CACHES. */
+export const ORT_HF_CACHE = 'lolly-ort-hf';
 export const INFO_CACHE = 'lolly-info';
 
 /** The speech buckets (also in sw.js's PERSISTENT_CACHES). 'transformers-cache'
@@ -89,11 +95,11 @@ export interface PrecacheManifest {
   version: string;
   /** `models`/`upscale`/`matte` are size metadata only — those bytes download
    *  through the detectors' / model runners' own IndexedDB path (lib/trustmark.ts,
-   *  lib/model-prefetch.ts), never through downloadList. `speech`/`upscale`/`matte`
+   *  lib/model-prefetch.ts), never through downloadList. `ortHf`/`speech`/`upscale`/`matte`
    *  are optional: manifests built before those parts existed don't carry the group. */
   groups: {
     app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[];
-    speech?: ManifestFile[]; upscale?: ManifestFile[]; matte?: ManifestFile[];
+    ortHf?: ManifestFile[]; speech?: ManifestFile[]; upscale?: ManifestFile[]; matte?: ManifestFile[];
   };
 }
 
@@ -460,20 +466,27 @@ export async function downloadSpeechFiles(
 ): Promise<{ bytes: number; files: number }> {
   const { signal, onProgress } = opts;
   const { model, voices } = speechFileLists(manifest);
-  const total = [...model, ...voices].reduce((n, f) => n + f.size, 0);
-  const count = model.length + voices.length;
-  let modelP: DownloadProgress = { loaded: 0, total: 0, done: 0, count: 0 };
-  const report = (voiceP?: DownloadProgress): void => onProgress?.({
-    loaded: modelP.loaded + (voiceP?.loaded ?? 0),
+  // The transformers.js runtime (/ort-hf/) the Kokoro/Whisper worker RUNS on. Owned by
+  // the speech part now (it used to ride in the verify-owned `ort` group), so downloading
+  // Speech is offline-complete instead of fetching ~22 MB on the first synthesis.
+  const ortHf = manifest.groups.ortHf ?? [];
+  const total = [...model, ...voices, ...ortHf].reduce((n, f) => n + f.size, 0);
+  const count = model.length + voices.length + ortHf.length;
+  const zero: DownloadProgress = { loaded: 0, total: 0, done: 0, count: 0 };
+  let modelP = zero, voiceP = zero, ortHfP = zero;
+  const report = (): void => onProgress?.({
+    loaded: modelP.loaded + voiceP.loaded + ortHfP.loaded,
     total,
-    done: modelP.done + (voiceP?.done ?? 0),
+    done: modelP.done + voiceP.done + ortHfP.done,
     count,
   });
   const a = await downloadList(TRANSFORMERS_CACHE, model, { signal, onProgress: p => { modelP = p; report(); } });
-  const b = await downloadList(SPEECH_CACHE, voices, { signal, onProgress: p => report(p) });
+  const b = await downloadList(SPEECH_CACHE, voices, { signal, onProgress: p => { voiceP = p; report(); } });
+  const c = await downloadList(ORT_HF_CACHE, ortHf, { signal, onProgress: p => { ortHfP = p; report(); } });
   await pruneSpeechBucket(TRANSFORMERS_CACHE, model);
   await pruneSpeechBucket(SPEECH_CACHE, voices);
-  return { bytes: a.bytes + b.bytes, files: a.files + b.files };
+  await pruneSpeechBucket(ORT_HF_CACHE, ortHf);
+  return { bytes: a.bytes + b.bytes + c.bytes, files: a.files + b.files + c.files };
 }
 
 /** Download the speech part — the on-device voice models, into the exact
@@ -494,6 +507,9 @@ export async function clearSpeechCaches(): Promise<void> {
   if (!('caches' in globalThis)) return;
   await caches.delete(TRANSFORMERS_CACHE);
   await caches.delete(SPEECH_CACHE);
+  // The speech-owned runtime bucket. NOT ORT_CACHE's legacy /ort-hf/ copy — that
+  // belongs to the verify part; the SW falls back to it if the user has it.
+  await caches.delete(ORT_HF_CACHE);
 }
 
 /** Measure the speech buckets for the profile storage meter. Sizes come from
@@ -505,7 +521,7 @@ export async function speechCacheBytes(): Promise<{ bytes: number; files: number
   if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
   let bytes = 0;
   let files = 0;
-  for (const name of [TRANSFORMERS_CACHE, SPEECH_CACHE]) {
+  for (const name of [TRANSFORMERS_CACHE, SPEECH_CACHE, ORT_HF_CACHE]) {
     try {
       const cache = await caches.open(name);
       for (const req of await cache.keys()) {
