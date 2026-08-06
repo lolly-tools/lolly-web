@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MATTE_DEFAULT_MODEL, MATTE_MODELS, MATTE_MODEL_BYTES, MATTE_MODEL_FILES,
-  MATTE_MODEL_SPEC, MATTE_STAGED, matteModel, stagedMatteModels,
+  MATTE_MODEL_SPEC, MATTE_NATIVE_ONLY, MATTE_STAGED, matteModel, matteModelsFor, stagedMatteModels,
 } from './matte-models.ts';
 
 test('every catalogue model has a file, a byte size, a spec, and a staged flag', () => {
@@ -54,4 +54,27 @@ test('HONESTY GATE: exactly the verified models are offered', () => {
 
 test('matteModel round-trips even an unstaged (withheld) id', () => {
   for (const m of MATTE_MODELS) assert.equal(matteModel(m.id)?.id, m.id);
+});
+
+test('BACKEND GATE: native-only models are offered only where a native backend exists', () => {
+  // birefnet (full Swin-L @1024²) OOMs the wasm32 heap — it is offered ONLY where a
+  // native ORT backend exists (Tauri desktop). Every other staged model runs in the
+  // wasm heap and is offered everywhere. matteModelsFor is the single gate both the
+  // picker (bridge/index.ts) and the offline pre-download (model-prefetch.ts) use, so
+  // the two can never disagree about what a shell can actually run.
+  assert.deepEqual(MATTE_NATIVE_ONLY, { 'u2netp': false, 'birefnet-lite': false, 'birefnet': true, 'modnet': false },
+    'only the full BiRefNet is native-only');
+
+  // A native-only model may only be flagged if it is actually staged (a gate on a
+  // withheld model would be meaningless and mask a staging regression).
+  for (const id of Object.keys(MATTE_NATIVE_ONLY) as (keyof typeof MATTE_NATIVE_ONLY)[]) {
+    if (MATTE_NATIVE_ONLY[id]) assert.ok(MATTE_STAGED[id], `${id} is native-only but not staged`);
+  }
+
+  // Web/CLI (no native backend): the wasm-runnable subset, birefnet withheld.
+  assert.deepEqual(matteModelsFor(false).map(m => m.id).sort(), ['birefnet-lite', 'modnet', 'u2netp'],
+    'web offers exactly the wasm-runnable staged models');
+  // Desktop (native backend): the full staged set.
+  assert.deepEqual(matteModelsFor(true).map(m => m.id).sort(), stagedMatteModels().map(m => m.id).sort(),
+    'a native shell offers every staged model');
 });

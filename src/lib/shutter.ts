@@ -66,6 +66,7 @@ uniform vec3 u_color;
 uniform vec3 u_cream;
 uniform vec3 u_ambLo;
 uniform vec3 u_ambHi;
+uniform float u_exposure;
 const float PI = 3.14159265359;
 const float NUM_STRIPES = 8.0;
 const float TWIST = -6.0;
@@ -112,13 +113,14 @@ void main() {
   final_color *= mix(0.25, 1.25, crevice_shadow);
   float center_occlusion = smoothstep(0.0, 0.3, r);
   final_color *= mix(0.15, 1.0, center_occlusion);
+  final_color *= u_exposure;   // per-theme overall brightness (dark themes dim it)
   gl_FragColor = vec4(final_color, alpha);
 }`;
 
 /* ── pure helpers ────────────────────────────────────────────────────────── */
 type Rgb = [number, number, number];
-/** One theme's swirl palette: coloured stripe, light stripe, ambient lo/hi. */
-type Tone = { green: Rgb; cream: Rgb; ambLo: Rgb; ambHi: Rgb };
+/** One theme's swirl palette: coloured stripe, light stripe, ambient lo/hi, overall brightness. */
+type Tone = { green: Rgb; cream: Rgb; ambLo: Rgb; ambHi: Rgb; exposure: number };
 
 function hexToRgb(hex: string): Rgb | null {
   let c = hex.trim().replace('#', '');
@@ -138,7 +140,13 @@ function saturationOf([r, g, b]: Rgb): number {
 }
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+/** Push an rgb away from its own luma to change saturation (>1 more, <1 less). */
+function saturate([r, g, b]: Rgb, factor: number): Rgb {
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return [clamp01(l + (r - l) * factor), clamp01(l + (g - l) * factor), clamp01(l + (b - l) * factor)];
+}
 
 /** Lightness 0…1 of an `h s% l%` token triple (e.g. --background); null if unparseable. */
 function tokenLightness(triple: string): number | null {
@@ -153,25 +161,44 @@ function bgLightness(): number {
 }
 
 /* The swirl's palette follows the THEME, not the brand:
-   - ambient + cream track the theme background lightness, so light themes
-     brighten the swirl and dark themes deepen it — continuously, so any future
-     theme adapts without a new preset;
-   - the green stays Lolly's identity green in light/dark, and only the mid-toned
-     'brand' theme leans it toward the live accent (a saturated one; neutral
-     brands stay green) — the "more colour influenced" variant. */
+   - exposure (overall brightness) tracks the theme background lightness, so the
+     dark theme is unmistakably darker and the light theme brighter — continuously,
+     so any future theme adapts without a new preset;
+   - light desaturates the green slightly (calmer); dark keeps Lolly green and lets
+     exposure do the dimming; the mid-toned 'brand' theme leans the green toward the
+     live accent and boosts saturation, and tints the cream stripe with it — the
+     "more colour influenced" variant. */
 function toneForTheme(): Tone {
   const bgL = bgLightness();
+  const theme = currentTheme();
+
   let green = hexToRgb(LOLLY_GREEN)!;
-  if (currentTheme() === 'brand') {
+  let creamTint = 0;
+  if (theme === 'light') {
+    green = saturate(green, 0.85);                 // calmer, less saturated on light
+  } else if (theme === 'brand') {
     const accent = liveAccentHint();
     const rgb = accent ? hexToRgb(accent) : null;
-    if (rgb && saturationOf(rgb) >= 0.12) green = mixRgb(green, rgb, 0.7);
+    if (rgb && saturationOf(rgb) >= 0.12) green = mixRgb(green, rgb, 0.75);  // more brand influence
+    green = saturate(green, 1.45);                 // the "more colour influenced" pop
+    creamTint = 0.4;                               // light stripes pick up the hue
   }
+  // dark keeps Lolly green — the low exposure below does the darkening.
+
+  let cream: Rgb = mixRgb([0.80, 0.85, 0.80], [0.97, 0.99, 0.97], bgL);
+  if (creamTint) cream = mixRgb(cream, green, creamTint);
+
+  // Overall brightness: dark << light. The brand theme is dark-toned but should
+  // stay vivid, so pull its exposure back up toward neutral rather than dim it.
+  let exposure = lerp(0.33, 1.08, bgL);
+  if (theme === 'brand') exposure = lerp(exposure, 1.0, 0.5);
+
   return {
     green,
-    cream: mixRgb([0.86, 0.90, 0.86], [0.97, 0.99, 0.97], bgL),
+    cream,
     ambLo: mixRgb([0.05, 0.08, 0.11], [0.34, 0.38, 0.40], bgL),
-    ambHi: mixRgb([0.30, 0.34, 0.38], [0.66, 0.70, 0.70], bgL),
+    ambHi: mixRgb([0.28, 0.32, 0.36], [0.66, 0.70, 0.70], bgL),
+    exposure,
   };
 }
 
@@ -240,6 +267,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   let uCream: WebGLUniformLocation | null = null;
   let uAmbLo: WebGLUniformLocation | null = null;
   let uAmbHi: WebGLUniformLocation | null = null;
+  let uExposure: WebGLUniformLocation | null = null;
   let glReady = false;
   let glFailed = false;
 
@@ -289,6 +317,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
       uCream = gl.getUniformLocation(program, 'u_cream');
       uAmbLo = gl.getUniformLocation(program, 'u_ambLo');
       uAmbHi = gl.getUniformLocation(program, 'u_ambHi');
+      uExposure = gl.getUniformLocation(program, 'u_exposure');
       glReady = true;
     } catch (err) {
       console.warn('[shutter] WebGL init failed, using plate fallback:', err);
@@ -308,6 +337,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     cream: [0.95, 0.98, 0.95],
     ambLo: [0.10, 0.15, 0.20],
     ambHi: [0.40, 0.45, 0.50],
+    exposure: 1,
   };
 
   const reduced = prefersReducedMotion;
@@ -332,6 +362,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
       gl.uniform3fv(uCream, tone.cream);
       gl.uniform3fv(uAmbLo, tone.ambLo);
       gl.uniform3fv(uAmbHi, tone.ambHi);
+      gl.uniform1f(uExposure, tone.exposure);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLES, 0, 6);

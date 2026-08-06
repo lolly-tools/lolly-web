@@ -28,8 +28,9 @@ import {
   UPSCALE_FACE_DETECT_FILE, UPSCALE_WDN_FILE, UPSCALE_DENOISE_STAGED, stagedUpscaleModels,
 } from './upscale-models.ts';
 import {
-  MATTE_MODEL_STORE, MATTE_MODEL_DIR, MATTE_MODEL_CACHE_VERSION, MATTE_MODEL_FILES, stagedMatteModels,
+  MATTE_MODEL_STORE, MATTE_MODEL_DIR, MATTE_MODEL_CACHE_VERSION, MATTE_MODEL_FILES, matteModelsFor,
 } from './matte-models.ts';
+import { isTauriShell } from './instance-choice.ts';
 
 const upscaleFetch = createModelFetcher({
   store: UPSCALE_MODEL_STORE, dir: UPSCALE_MODEL_DIR, version: UPSCALE_MODEL_CACHE_VERSION,
@@ -53,9 +54,12 @@ export function upscaleOfflineFiles(): string[] {
   return files;
 }
 
-/** The matte files the offline part vendors: every staged background-removal model. */
+/** The matte files the offline part vendors: every model THIS shell can actually
+ *  run (matteModelsFor mirrors the picker). The native-only full BiRefNet is a
+ *  ~467 MB download that only the desktop shell can use, so the web/PWA offline
+ *  section never offers it — pre-downloading bytes you can't run would be dishonest. */
 export function matteOfflineFiles(): string[] {
-  return stagedMatteModels().map(m => MATTE_MODEL_FILES[m.id]);
+  return matteModelsFor(isTauriShell()).map(m => MATTE_MODEL_FILES[m.id]);
 }
 
 /**
@@ -136,8 +140,9 @@ export function upscaleCacheBytes(): Promise<{ bytes: number; files: number }> {
   return modelStoreBytes(UPSCALE_MODEL_STORE, sizeByFile);
 }
 
-/** Bytes of the staged matte models currently cached in `matte-models` IDB. */
+/** Bytes of the offered matte models currently cached in `matte-models` IDB
+ *  (matteModelsFor mirrors matteOfflineFiles, so the meter and the download agree). */
 export function matteCacheBytes(): Promise<{ bytes: number; files: number }> {
-  const sizeByFile = new Map(stagedMatteModels().map(m => [MATTE_MODEL_FILES[m.id], m.approxBytes]));
+  const sizeByFile = new Map(matteModelsFor(isTauriShell()).map(m => [MATTE_MODEL_FILES[m.id], m.approxBytes]));
   return modelStoreBytes(MATTE_MODEL_STORE, sizeByFile);
 }

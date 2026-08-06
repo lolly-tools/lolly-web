@@ -71,10 +71,10 @@ import type { AuthoredPath, Continuity, Cubic, HyperbezierSolution, SplineKind, 
 import type { PenFrame } from './free-canvas-pen.ts';
 import type { OutlineGroup } from './outline-text.ts';
 import {
-  PEN_DEFAULT_KIND, PEN_KINDS, alignNodes, closesOnClick, convertKind, decodePathContours,
-  defaultContinuity, deleteNodes, denormNodes, distributeNodes, dragHandle, encodePathField,
+  PEN_DEFAULT_KIND, PEN_KINDS, alignPoints, closesOnClick, convertKind, decodePathContours,
+  defaultContinuity, deleteNodes, denormNodes, distributePoints, dragHandle, encodePathField,
   encodePathFields, frameToLocal, handlePoint, insertNodeOnCurve, kindReadsHandles,
-  localToFrame, lowerAuthored, type NodeAlignEdge,
+  localToFrame, lowerAuthored, type NodeAlignEdge, type PenPointRef,
   moveNodes, nearestOnPath, nodeAt, normNodes, pathPaintIsVisible, pathPaintSeed,
   penCommitFromNative, penFrame, pickPathPaint, pullHandles,
   refitFrame, resolveDrawnInk, setNodeContinuity,
@@ -1015,6 +1015,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // others. Both are DENORMALISED to box-local px.
   let penEdit: { id: string; path: AuthoredPath; rest: AuthoredPath[]; frame: PenFrame } | null = null;
   let penSel = new Set<number>();                // selected node indices while editing
+  // Selected CONTROL POINTS (handles) while editing — keys `${nodeIndex}:in` / `:out`.
+  // Built by shift-clicking a handle; align/distribute operate on nodes ∪ these. Kept
+  // separate from penSel so a handle is a point in its own right, not tied to its node.
+  let penHandleSel = new Set<string>();
   // The previous frame's hyperbezier solution, reused as the `warm` start. A 40-node solve
   // re-converged from the chord-bend guess costs an O(n) Newton run per pointermove; warm,
   // it costs one or two steps. This is exactly what `toCubics`' `warm` parameter is for.
@@ -4364,6 +4368,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const local = decoded.map((p) => denormNodes(p, frame.w, frame.h));
     penEdit = { id, frame, path: local[0]!, rest: local.slice(1) };
     penSel = new Set<number>();
+    penHandleSel = new Set<string>();
     penWarm = null;
     selection = new Set([id]);
     stageEl.classList.add('fc-node-editing');
@@ -4377,6 +4382,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     setPathSvgHidden(false);
     penEdit = null;
     penSel = new Set<number>();
+    penHandleSel = new Set<string>();
     penWarm = null;
     stageEl.classList.remove('fc-node-editing');
     clearPenChrome();
@@ -4399,6 +4405,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     penEdit = { id: penEdit.id, frame, path: local[0]!, rest: local.slice(1) };
     const n = penEdit.path.nodes.length;
     if ([...penSel].some((k) => k >= n)) penSel = new Set([...penSel].filter((k) => k < n));
+    // Handle-selection keys reference node indices; a structural change (insert/delete)
+    // reshuffles them, so drop any that no longer point at a live node rather than
+    // aligning the wrong control point.
+    if ([...penHandleSel].some((key) => Number(key.split(':')[0]) >= n)) {
+      penHandleSel = new Set([...penHandleSel].filter((key) => Number(key.split(':')[0]) < n));
+    }
   }
 
   /**
@@ -4465,6 +4477,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!res) return;
     penWarm = null;                             // one more node → the warm start is stale
     penSel = new Set([res.index]);
+    penHandleSel = new Set<string>();           // indices shifted; drop stale handle picks
     penEditWrite(res.path);
   }
 
@@ -4474,6 +4487,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!next) { flash(t('A path needs at least two points, so those were kept.')); return; }
     penWarm = null;
     penSel = new Set<number>();
+    penHandleSel = new Set<string>();
     penEditWrite(next);
   }
 
@@ -4488,18 +4502,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * along a straight edge is never actually straight, and the alternative is nudging each
    * one with the arrow keys.
    */
+  /** The selection as point refs — nodes ∪ selected control points — for align/distribute. */
+  function penPointRefs(): PenPointRef[] {
+    const refs: PenPointRef[] = [...penSel].map((i) => ({ node: i }));
+    for (const key of penHandleSel) {
+      const [i, which] = key.split(':');
+      refs.push({ node: Number(i), handle: which as 'in' | 'out' });
+    }
+    return refs;
+  }
+
   function openPenArrangeMenu(anchor: HTMLElement): void {
-    if (!penEdit || penSel.size < 2) return;
-    const canDist = penSel.size >= 3;
+    if (!penEdit) return;
+    const refs = penPointRefs();
+    if (refs.length < 2) return;
+    const canDist = refs.length >= 3;
     const align = (edge: NodeAlignEdge): void => {
       if (!penEdit) return;
-      penWarm = null;               // the nodes moved, so a warm hyperbezier start is stale
-      penEditWrite(alignNodes(penEdit.path, penSel, edge));
+      penWarm = null;               // points moved, so a warm hyperbezier start is stale
+      penEditWrite(alignPoints(penEdit.path, penPointRefs(), edge));
     };
     const dist = (axis: 'h' | 'v'): void => {
       if (!penEdit) return;
       penWarm = null;
-      penEditWrite(distributeNodes(penEdit.path, penSel, axis));
+      penEditWrite(distributePoints(penEdit.path, penPointRefs(), axis));
     };
     spawnPopover(anchor, [
       { cols: 3, grid: [
@@ -4744,6 +4770,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const a = nativeToStage(pt.at.x, pt.at.y, m);
       const b = nativeToStage(h.x, h.y, m);
       dot.hidden = false;
+      dot.classList.toggle('is-on', penHandleSel.has(`${i}:${which}`));
       dot.style.left = b.x + 'px';
       dot.style.top = b.y + 'px';
       arm.hidden = false;
@@ -4775,7 +4802,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = penEdit ? penEdit.path : penDraft;
     if (!p) return;
     const contSig = [...penSel].sort((a, b) => a - b).map((i) => p.nodes[i]?.continuity ?? '').join(',');
-    const key = `pen:${penEdit ? penEdit.id : 'draft'}:${p.kind}:${p.closed ? 'c' : 'o'}:${p.nodes.length}:${contSig}`;
+    const handleSig = [...penHandleSel].sort().join(',');
+    const key = `pen:${penEdit ? penEdit.id : 'draft'}:${p.kind}:${p.closed ? 'c' : 'o'}:${p.nodes.length}:${contSig}:${handleSig}`;
     if (key !== ctxSelKey) {
       ctxSelKey = key;
       buildPenCtxBar(p);
@@ -4788,6 +4816,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closeMorePanel();
     const drawing = !!penDraft;
     const selN = penSel.size;
+    // Align/distribute act on nodes ∪ selected control points, so the arrange button
+    // enables on the COMBINED count (delete + continuity stay node-only via selN).
+    const selPts = penSel.size + penHandleSel.size;
     const cont = selN ? String(p.nodes[[...penSel][0]!]?.continuity ?? defaultContinuity(p.kind)) : '';
     const kindLabel = penKindLabels();
     // Paint belongs to the BOX, so it only appears once there is one: a draft lives in JS
@@ -4811,7 +4842,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           ['symmetric', t('Symmetric point - handles stay in line and equal'), SVG.contSymmetric],
         ]) +
         `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" title="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
-        `<button type="button" class="fc-cbtn" data-pen="arrange"${selN >= 2 ? '' : ' disabled'} title="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
+        `<button type="button" class="fc-cbtn" data-pen="arrange"${selPts >= 2 ? '' : ' disabled'} title="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
         `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} title="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
       '<span class="fc-sep fc-sep-v"></span>' +
       `<button type="button" class="fc-cbtn" data-pen="done" title="${escape(drawing ? t('Finish this path (Enter)') : t('Finish editing points (Esc)'))}" aria-label="${escape(drawing ? t('Finish this path') : t('Finish editing points'))}">${icon(SVG.penDone)}</button>` +
@@ -5892,6 +5923,36 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!touchPts.size) { twoTapStart = 0; twoTapDone = false; }
   }
 
+  // Pen-DRAW placement and armed-CREATE, factored out so BOTH the in-frame handler
+  // (onCanvasPointerDown, bound to canvasEl) and the off-frame handler
+  // (onBackdropPointerDown, bound to the stage) share one implementation. The frame is
+  // canvasEl's own hit box, so without this a click on the empty stage OUTSIDE the frame
+  // never reaches the pen/create logic — you couldn't start a node or add an object off
+  // the artboard even though clientToNative maps such points fine and the gesture, once
+  // begun, already captures the pointer anywhere. Each returns true when it handled the
+  // event (the caller then stops propagation).
+  function tryPenDrawAt(e: PointerEvent, nat: Point): boolean {
+    if (mode !== 'pen') return false;
+    const tol = penTol();
+    if (penDraft && closesOnClick(penDraft.nodes, nat.x, nat.y, tol)) {
+      penDraft = { ...penDraft, closed: true };
+      penFinishDraw();
+      return true;
+    }
+    let px = nat.x, py = nat.y;
+    if (gridOn && !e.altKey) { px = gridRound(px); py = gridRound(py); }
+    const snap = snapPoint(px, py, otherAABBs(getBoxes(), new Set<number>()) as MathAABB[], canvasWH(), snapThreshNative());
+    drawGuides(snap.guides);
+    penPlaceNode(e, { x: snap.x, y: snap.y }, e.altKey);
+    return true;
+  }
+  function tryArmedCreateAt(e: PointerEvent, nat: Point): boolean {
+    if (!armedKind) return false;
+    beginGesture(e, { type: 'create', origin: nat, seed: armedKind.seed || {}, others: otherAABBs(getBoxes(), new Set<number>()) });
+    rubber.hidden = false;
+    return true;
+  }
+
   function onCanvasPointerDown(e: PointerEvent): void {
     if (e.button > 0) return;                 // primary button / touch only
     // A second finger belongs to a stage gesture (pan / pinch / two-finger tap), never to
@@ -5929,25 +5990,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     // Pen — DRAWING. Click places a node; the drag that follows pulls its handles out
     // symmetrically; a click on the first node closes the path. Nothing about the box
-    // selection model runs here, which is why Alt is free to mean "corner".
-    if (mode === 'pen') {
-      const tol = penTol();
-      if (penDraft && closesOnClick(penDraft.nodes, nat.x, nat.y, tol)) {
-        penDraft = { ...penDraft, closed: true };
-        penFinishDraw();
-        e.stopPropagation(); e.preventDefault();
-        return;
-      }
-      // Same snapping as an armed create: the pointer snaps to sibling/artboard edges and
-      // centres and draws the SAME `.fc-guides`, rather than a second snapping system.
-      let px = nat.x, py = nat.y;
-      if (gridOn && !e.altKey) { px = gridRound(px); py = gridRound(py); }
-      const snap = snapPoint(px, py, otherAABBs(boxes, new Set<number>()) as MathAABB[], canvasWH(), snapThreshNative());
-      drawGuides(snap.guides);
-      penPlaceNode(e, { x: snap.x, y: snap.y }, e.altKey);
-      e.stopPropagation(); e.preventDefault();
-      return;
-    }
+    // selection model runs here, which is why Alt is free to mean "corner". Shared with
+    // the off-frame handler so a path can be started/extended outside the artboard.
+    if (tryPenDrawAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
 
     // Pen — NODE EDITING. Handles first (smaller, and outside the curve), then nodes, then
     // the curve itself (a click on it inserts), and only then a marquee over the nodes.
@@ -5957,6 +6002,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const tol = penTol();
       const hh = penHandleAt(loc.x, loc.y, tol);
       if (hh) {
+        const key = `${hh.index}:${hh.which}`;
+        // Shift/⌘-click a control point TOGGLES it into the point selection (for align /
+        // distribute) rather than dragging it — the handle equivalent of shift-clicking a
+        // node. A plain click drags it (a direct edit), and clears any point selection.
+        if (e.shiftKey || e.metaKey || e.ctrlKey) {
+          penHandleSel.has(key) ? penHandleSel.delete(key) : penHandleSel.add(key);
+          ctxSelKey = null;
+          renderChrome();
+          e.stopPropagation(); e.preventDefault();
+          return;
+        }
+        penHandleSel = new Set<string>();
         setPathSvgHidden(true);
         beginGesture(e, { type: 'penhandle', origin: nat, index: hh.index, which: hh.which });
         e.stopPropagation(); e.preventDefault();
@@ -5965,7 +6022,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const ni = nodeAt(penEdit.path, loc.x, loc.y, tol);
       if (ni >= 0) {
         if (e.shiftKey || e.metaKey || e.ctrlKey) { penSel.has(ni) ? penSel.delete(ni) : penSel.add(ni); }
-        else if (!penSel.has(ni)) penSel = new Set([ni]);
+        else if (!penSel.has(ni)) { penSel = new Set([ni]); penHandleSel = new Set<string>(); }
         setPathSvgHidden(true);
         beginGesture(e, {
           type: 'pennode', origin: nat,
@@ -5990,12 +6047,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
 
-    if (armedKind) {
-      beginGesture(e, { type: 'create', origin: nat, seed: armedKind.seed || {}, others: otherAABBs(boxes, new Set<number>()) });
-      rubber.hidden = false;
-      e.stopPropagation(); e.preventDefault();
-      return;
-    }
+    if (tryArmedCreateAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
 
     const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
     if (hit >= 0) {
@@ -6049,9 +6101,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function onBackdropPointerDown(e: PointerEvent): void {
     if (e.button > 0 || e.target !== e.currentTarget) return;
     if (editing) commitTextEdit();
-    // Clicking right off the artboard is the natural "I'm done" for both pen modes, and it
-    // matches what the same click already does to a selection.
-    if (penDraft) { penFinishDraw(); return; }
+    // Off-frame click while DRAWING places/extends a node (not "finish"), and off-frame
+    // click while an Add is armed starts the create — the same as inside the artboard, so
+    // the whole stage is usable, not just the export frame. These come FIRST, before the
+    // "clicking off the artboard means I'm done" fallbacks below.
+    const natBd = clientToNative(e.clientX, e.clientY);
+    if (tryPenDrawAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
+    if (tryArmedCreateAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
+    // Clicking right off the artboard is the natural "I'm done" for a node-edit session,
+    // and it matches what the same click already does to a selection. (A pen DRAFT is no
+    // longer finished here — an off-frame click extends it, handled above.)
     if (penEdit) { endPenEdit(); return; }
     closePopover();
     deselectEdge();
@@ -6324,13 +6383,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
       if (penEdit) {
         if (moved < 6) {
-          if (!g.additive) penSel = new Set<number>();
+          if (!g.additive) { penSel = new Set<number>(); penHandleSel = new Set<string>(); }
         } else {
           const r = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
           const hits = penNodePoints().reduce<number[]>((acc, pt, i) =>
             (pt.at.x >= r.x && pt.at.x <= r.x + r.w && pt.at.y >= r.y && pt.at.y <= r.y + r.h ? (acc.push(i), acc) : acc), []);
           if (g.additive) for (const i of hits) penSel.add(i);
-          else penSel = new Set(hits);
+          else { penSel = new Set(hits); penHandleSel = new Set<string>(); }
         }
       }
       endGesture();

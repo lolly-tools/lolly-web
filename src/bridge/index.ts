@@ -37,7 +37,8 @@ import { vizSupported } from '../lib/viz-support.ts';
 import { KOKORO_MODEL_BYTES } from '../lib/speech-kokoro.ts';
 import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
 import { stagedUpscaleModels, UPSCALE_MODEL_BYTES } from '../lib/upscale-models.ts';
-import { stagedMatteModels, MATTE_MODEL_BYTES } from '../lib/matte-models.ts';
+import { matteModelsFor, MATTE_MODEL_BYTES } from '../lib/matte-models.ts';
+import { isTauriShell } from '../lib/instance-choice.ts';
 import { PROVIDED_CAPABILITIES } from './capabilities-provided.ts';
 import { openDB } from './db.ts';
 
@@ -376,7 +377,11 @@ export async function createBridge(): Promise<WebHost> {
   host.matte = {
     isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
     backend: () => matteApi?.backend() ?? null,
-    models: () => stagedMatteModels(),
+    // Offer only what THIS shell can actually run: the wasm-heavy full BiRefNet is
+    // native-only, so it appears on the Tauri desktop shell (native ORT, no wasm32
+    // ceiling) and is withheld on the web/PWA where it would OOM. matteModelsFor is
+    // the shared gate — the offline pre-download (model-prefetch.ts) uses the same one.
+    models: () => matteModelsFor(isTauriShell()),
     modelBytes: (id) => MATTE_MODEL_BYTES[id],
     cached: async (id) => (await loadMatte()).cached(id),
     canRun: async (src, o) => (await loadMatte()).canRun(src, o),
