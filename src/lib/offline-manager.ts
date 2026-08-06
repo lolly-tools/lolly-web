@@ -54,6 +54,8 @@
 
 import { openDB } from '../bridge/db.ts';
 import { currentLang } from '../i18n.ts';
+import { UPSCALE_MODEL_STORE, UPSCALE_MODEL_CACHE_VERSION } from './upscale-models.ts';
+import { MATTE_MODEL_STORE, MATTE_MODEL_CACHE_VERSION } from './matte-models.ts';
 
 /** The page-owned, unversioned Cache Storage buckets sw.js serves offline
  *  fallbacks from. Mirrored by sw.js (APP_CACHE / ORT_CACHE / INFO_CACHE
@@ -85,11 +87,14 @@ export interface ManifestFile { url: string; size: number; hash?: string }
  *  precacheManifest plugin). Absent in dev (the dev server has no dist). */
 export interface PrecacheManifest {
   version: string;
-  /** `models` is size metadata only — those bytes download through
-   *  lib/trustmark.ts's own IndexedDB path, never through downloadList.
-   *  `speech` (the Kokoro model set, plus Whisper when it ships) is optional:
-   *  manifests built before the speech part existed don't carry the group. */
-  groups: { app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[]; speech?: ManifestFile[] };
+  /** `models`/`upscale`/`matte` are size metadata only — those bytes download
+   *  through the detectors' / model runners' own IndexedDB path (lib/trustmark.ts,
+   *  lib/model-prefetch.ts), never through downloadList. `speech`/`upscale`/`matte`
+   *  are optional: manifests built before those parts existed don't carry the group. */
+  groups: {
+    app: ManifestFile[]; ort: ManifestFile[]; models: ManifestFile[];
+    speech?: ManifestFile[]; upscale?: ManifestFile[]; matte?: ManifestFile[];
+  };
 }
 
 /** /info/manifest.json — emitted by docs/build.ts. `audio` is the docs
@@ -100,7 +105,7 @@ export interface InfoManifest {
   groups: { en: ManifestFile[]; shots: ManifestFile[]; audio?: ManifestFile[]; locales: Record<string, ManifestFile[]> };
 }
 
-export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech';
+export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte';
 
 /** What one downloaded part records. `version` is the manifest watermark the
  *  download completed against; resyncOfflineParts re-downloads the delta when
@@ -506,6 +511,42 @@ export async function speechCacheBytes(): Promise<{ bytes: number; files: number
   return { bytes, files };
 }
 
+// ── On-device image-AI models (host.upscale / host.matte) ────────────────────
+//
+// Pre-download the SAME bytes the upscale/matte dialogs fetch on first use, into
+// the SAME IndexedDB stores their worker runners read (see lib/model-prefetch.ts
+// for why cache parity matters, and why this can't use downloadList — that writes
+// an unread SW-cache bucket, but the SW bypasses /models/ so the one true copy is
+// the IDB one). So a user can pull the models down from Profile in anticipation and
+// the dialog then finds them already on-device. Release-versioned like /ort/ + the
+// verify models, so resyncOfflineParts deliberately never re-syncs them (there is
+// no per-deploy delta — a bytes change rides UPSCALE/MATTE_MODEL_CACHE_VERSION).
+
+/** Download the upscale part — every staged upscaler into the `upscale-models` IDB
+ *  store the dialog reads. Throws (like downloadVerify) if a staged model didn't
+ *  land, so a partial run never records itself complete. */
+export async function downloadUpscale(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PartRecord> {
+  const { prefetchUpscaleModels } = await import('./model-prefetch.ts');
+  const res = await prefetchUpscaleModels(opts);
+  opts.signal?.throwIfAborted();
+  if (!res.ok) throw new Error('offline download: an upscale model download was incomplete');
+  const rec: PartRecord = { at: new Date().toISOString(), version: String(UPSCALE_MODEL_CACHE_VERSION), bytes: res.bytes, files: res.files };
+  await recordPart('upscale', rec);
+  return rec;
+}
+
+/** Download the background-removal part — every staged matte model into the
+ *  `matte-models` IDB store the dialog reads. */
+export async function downloadMatte(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PartRecord> {
+  const { prefetchMatteModels } = await import('./model-prefetch.ts');
+  const res = await prefetchMatteModels(opts);
+  opts.signal?.throwIfAborted();
+  if (!res.ok) throw new Error('offline download: a matte model download was incomplete');
+  const rec: PartRecord = { at: new Date().toISOString(), version: String(MATTE_MODEL_CACHE_VERSION), bytes: res.bytes, files: res.files };
+  await recordPart('matte', rec);
+  return rec;
+}
+
 /** Record a completed catalog download's scope + measured size. The BYTES went
  *  through catalog/sync.ts's prefetch (threaded in by the view); this record is
  *  what keeps them protected + refreshed at every boot (sync.ts reads it back
@@ -527,9 +568,10 @@ export async function offlineCatalogScope(): Promise<'all' | string[] | null> {
 
 /** Remove one downloaded part. app/docs/verify delete their buckets (verify
  *  also clears the model stores — the same bytes /verify's own banner offers,
- *  so removing here re-offers the download there). catalog only forgets the
- *  SELECTION: the blobs are shared with sessions and pins, so the next catalog
- *  sync's prune reclaims whatever nothing else references. */
+ *  so removing here re-offers the download there). upscale/matte clear their IDB
+ *  model stores — the dialog re-offers the download on next use. catalog only
+ *  forgets the SELECTION: the blobs are shared with sessions and pins, so the next
+ *  catalog sync's prune reclaims whatever nothing else references. */
 export async function removePart(id: OfflinePartId): Promise<void> {
   if ('caches' in globalThis) {
     if (id === 'app') await caches.delete(APP_CACHE);
@@ -537,11 +579,15 @@ export async function removePart(id: OfflinePartId): Promise<void> {
     if (id === 'verify') await caches.delete(ORT_CACHE);
   }
   if (id === 'speech') await clearSpeechCaches();
-  if (id === 'verify') {
+  if (id === 'verify' || id === 'upscale' || id === 'matte') {
     try {
       const db = await openDB();
-      await db.clear('trustmark-models').catch(() => {});
-      await db.clear('contentseal-models').catch(() => {});
+      if (id === 'verify') {
+        await db.clear('trustmark-models').catch(() => {});
+        await db.clear('contentseal-models').catch(() => {});
+      } else {
+        await db.clear(id === 'upscale' ? UPSCALE_MODEL_STORE : MATTE_MODEL_STORE).catch(() => {});
+      }
     } catch { /* stores absent — nothing to clear */ }
   }
   await forgetPart(id);

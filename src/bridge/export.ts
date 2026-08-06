@@ -4005,12 +4005,12 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 // the walkers therefore OR these flags down the tree rather than reading them only off
 // the text node's immediate parent. (Neither vector walker reads text-decoration
 // otherwise, so without this underline/strike render on screen but vanish in export.)
-interface Deco { u: boolean; s: boolean }
-function decoFlags(style: CSSStyleDeclaration): Deco {
+export interface Deco { u: boolean; s: boolean }
+export function decoFlags(style: CSSStyleDeclaration): Deco {
   const td = String(style.textDecorationLine || style.textDecoration || '');
   return { u: /underline/.test(td), s: /line-through/.test(td) };
 }
-function mergeDeco(a: Deco, b: Deco): Deco { return { u: a.u || b.u, s: a.s || b.s }; }
+export function mergeDeco(a: Deco, b: Deco): Deco { return { u: a.u || b.u, s: a.s || b.s }; }
 
 // Walks text nodes and inline elements, emitting one node per text line.
 //
@@ -4267,7 +4267,7 @@ export function hasOwnBox(child: Element): boolean {
 // new line whenever a glyph's top jumps; each line's edge whitespace is trimmed
 // so its rect.left aligns with the first rendered glyph (collapsed leading spaces
 // would otherwise shift the shaped run). Returns [{ text, rect }] per line.
-function visualLines(node: Node, start: number, end: number): { text: string; rect: DOMRect }[] {
+export function visualLines(node: Node, start: number, end: number): { text: string; rect: DOMRect }[] {
   const probe = document.createRange();
   const breaks = [start];
   let prevTop: number | null = null;
@@ -4301,7 +4301,7 @@ function visualLines(node: Node, start: number, end: number): { text: string; re
 // fontBoundingBox* are font-level (sample text doesn't matter); the actualBounding
 // and ratio fallbacks cover the rare engine without the fontBoundingBox metrics.
 let _measureCtx: CanvasRenderingContext2D | null = null;
-function fontMetricsPx(style: CSSStyleDeclaration, fontSizePx: number): { ascent: number; descent: number } {
+export function fontMetricsPx(style: CSSStyleDeclaration, fontSizePx: number): { ascent: number; descent: number } {
   if (!_measureCtx) _measureCtx = document.createElement('canvas').getContext('2d');
   _measureCtx!.font =
     `${style.fontStyle || 'normal'} ${style.fontWeight || 400} ${fontSizePx}px ${style.fontFamily || 'sans-serif'}`;

@@ -72,15 +72,15 @@ const XPLUS_MODEL: UpscaleModelId = 'realesrgan-x4plus';
 const ANIME_MODEL: UpscaleModelId = 'realesrgan-x4plus-anime';
 const FACE_MODEL: UpscaleModelId = 'gfpgan-v1.4';
 
-/** An intent the picker offers ("what are you upscaling?"), which routes to the best
- *  engine so the user never picks a model by name. `model` is the ONNX engine (absent
- *  for an algorithmic intent); `hqModel` is an optional "higher quality" swap;
- *  `algorithm: 'nearest'` is a local, no-download path (pixel art). */
+/** An intent the picker offers ("what are you upscaling?"), which RECOMMENDS an
+ *  engine so the user need not pick a model by name — but keeps control: `models`
+ *  is the ordered list of engines the intent offers, `models[0]` being the
+ *  recommended default and the rest selectable in the Model dropdown. Absent for an
+ *  algorithmic intent. `algorithm: 'nearest'` is a local, no-download path (pixel art). */
 interface UpscaleIntent {
   value: string;
   label: string;
-  model?: UpscaleModelId;
-  hqModel?: UpscaleModelId;
+  models?: UpscaleModelId[];
   algorithm?: 'nearest';
   note?: string;
 }
@@ -191,19 +191,28 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     // The active feasibility answer, so Run only fires when the device can cope.
     let feasible = false;
 
-    // The intent roster — built from the STAGED models, so an intent whose engine
-    // isn't vendored simply doesn't appear. Pixel art is always offered (it's a local
-    // algorithm, no model). Illustration routes to the dedicated anime/line-art model
-    // when it's staged, and gracefully falls back to the general model (with a note)
-    // where it isn't — e.g. a build whose anime ONNX hasn't been converted.
+    // The intent roster. Each intent RECOMMENDS its first model (the default) and
+    // offers sensible alternatives the user can switch to in the Model dropdown, so
+    // the recommendation leads but the user keeps control. Lists are filtered to the
+    // STAGED models, so an intent whose engines aren't vendored simply doesn't appear,
+    // and an alternative that isn't staged silently drops out. Pixel art is always
+    // offered (a local algorithm, no model). Illustration recommends the dedicated
+    // anime/line-art model, falling back (with a note) where it isn't staged.
     const has = (id: UpscaleModelId): boolean => models.some(m => m.id === id);
+    const staged = (...ids: UpscaleModelId[]): UpscaleModelId[] => ids.filter(has);
     const intents: UpscaleIntent[] = [];
-    if (has(GENERAL_MODEL)) intents.push({ value: 'photo', label: t('Photo'), model: GENERAL_MODEL, ...(has(XPLUS_MODEL) ? { hqModel: XPLUS_MODEL } : {}) });
-    if (has(ANIME_MODEL)) intents.push({ value: 'illustration', label: t('Illustration'), model: ANIME_MODEL });
-    else if (has(GENERAL_MODEL)) intents.push({ value: 'illustration', label: t('Illustration'), model: GENERAL_MODEL, note: t('Using the general model for now — a line-art model is on the way.') });
+    const photoModels = staged(GENERAL_MODEL, XPLUS_MODEL);
+    if (photoModels.length) intents.push({ value: 'photo', label: t('Photo'), models: photoModels });
+    const illoModels = staged(ANIME_MODEL, XPLUS_MODEL, GENERAL_MODEL);
+    if (illoModels.length) intents.push({
+      value: 'illustration', label: t('Illustration'), models: illoModels,
+      ...(has(ANIME_MODEL) ? {} : { note: t('Using the general model for now — a line-art model is on the way.') }),
+    });
     intents.push({ value: 'pixel', label: t('Pixel art'), algorithm: 'nearest' });
-    if (has(GENERAL_MODEL)) intents.push({ value: 'text', label: t('Text'), model: GENERAL_MODEL });
-    if (has(FACE_MODEL)) intents.push({ value: 'face', label: t('Face'), model: FACE_MODEL });
+    const textModels = staged(GENERAL_MODEL, XPLUS_MODEL);
+    if (textModels.length) intents.push({ value: 'text', label: t('Text'), models: textModels });
+    const faceModels = staged(FACE_MODEL, GENERAL_MODEL);
+    if (faceModels.length) intents.push({ value: 'face', label: t('Face'), models: faceModels });
     const intentOptions = intents.map(i =>
       `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
     const defaultIntent = intents[0]!.value;
@@ -228,6 +237,10 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
               <span class="upscale-field-label">${t('What are you upscaling?')}</span>
               <select class="field-select" data-intent>${intentOptions}</select>
             </label>
+            <label class="upscale-field" data-model-field hidden>
+              <span class="upscale-field-label">${t('Model')}</span>
+              <select class="field-select" data-model></select>
+            </label>
             <label class="upscale-field" data-edge-field>
               <span class="upscale-field-label">${t('Target longest edge (px)')}</span>
               <input type="number" class="field-input" data-edge min="16" step="16" inputmode="numeric" />
@@ -239,10 +252,6 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
                 <option value="3">3×</option>
                 <option value="4" selected>4×</option>
               </select>
-            </label>
-            <label class="upscale-field upscale-check" data-hq-field hidden>
-              <input type="checkbox" class="upscale-checkbox" data-hq />
-              <span class="upscale-field-label">${t('Higher quality (slower, larger download)')}</span>
             </label>
             <label class="upscale-field" data-denoise-field>
               <span class="upscale-field-label">${t('Denoise')} <span data-denoise-out>0.30</span></span>
@@ -270,11 +279,11 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
     const sourceEl   = overlay.querySelector<HTMLElement>('[data-source]')!;
     const controlsEl = overlay.querySelector<HTMLElement>('[data-controls]')!;
     const intentSel  = overlay.querySelector<HTMLSelectElement>('[data-intent]')!;
+    const modelField = overlay.querySelector<HTMLElement>('[data-model-field]')!;
+    const modelSel   = overlay.querySelector<HTMLSelectElement>('[data-model]')!;
     const edgeField  = overlay.querySelector<HTMLElement>('[data-edge-field]')!;
     const pixelField = overlay.querySelector<HTMLElement>('[data-pixel-field]')!;
     const pixelScaleSel = overlay.querySelector<HTMLSelectElement>('[data-pixel-scale]')!;
-    const hqField    = overlay.querySelector<HTMLElement>('[data-hq-field]')!;
-    const hqCheck    = overlay.querySelector<HTMLInputElement>('[data-hq]')!;
     const noteEl     = overlay.querySelector<HTMLElement>('[data-note]')!;
     const warningEl  = overlay.querySelector<HTMLElement>('[data-warning]')!;
     const edgeInput  = overlay.querySelector<HTMLInputElement>('[data-edge]')!;
@@ -323,28 +332,45 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
 
     const modelOf = (id: UpscaleModelId) => models.find(m => m.id === id) ?? models[0]!;
     const currentIntent = (): UpscaleIntent => intents.find(i => i.value === intentSel.value) ?? intents[0]!;
-    // The engine an intent resolves to: its `hqModel` when the "higher quality" box is
-    // ticked, else its `model`. Algorithmic intents (pixel art) have no model — they
-    // never reach the ONNX path — so this falls back to the general model only to keep
-    // the type total; the run handler branches on `currentIntent().algorithm` first.
+    // The engine an intent resolves to: whatever the Model dropdown holds, which defaults
+    // to the intent's recommended (first) model but is the user's to change. Algorithmic
+    // intents (pixel art) have no model — they never reach the ONNX path — so this falls
+    // back to the general model only to keep the type total; the run handler branches on
+    // `currentIntent().algorithm` first. A stale select value (mid intent-switch) is
+    // guarded by falling back to the recommendation.
     const currentModel = (): UpscaleModelId => {
       const it = currentIntent();
-      if (it.hqModel && hqCheck.checked) return it.hqModel;
-      return it.model ?? GENERAL_MODEL;
+      if (it.algorithm || !it.models?.length) return GENERAL_MODEL;
+      const chosen = modelSel.value as UpscaleModelId;
+      return it.models.includes(chosen) ? chosen : it.models[0]!;
     };
 
     // Show only the controls the active intent uses: the target-edge input for model
-    // intents, the integer-scale select for pixel art, the "higher quality" box only
-    // where an intent offers one, and the note where it has one.
+    // intents, the integer-scale select for pixel art, and the note where it has one.
+    // (The Model dropdown's own visibility is handled in paintModelOptions.)
     const paintControls = (): void => {
       const it = currentIntent();
       const isPixel = it.algorithm === 'nearest';
       edgeField.hidden = isPixel;
       pixelField.hidden = !isPixel;
-      hqField.hidden = !it.hqModel;
-      if (!it.hqModel) hqCheck.checked = false;
       noteEl.hidden = !it.note;
       if (it.note) noteEl.textContent = it.note;
+    };
+
+    // Populate the Model dropdown from the active intent's engine list (recommended
+    // first) and default the selection to that recommendation — visible only when
+    // there's a real choice (hidden for pixel art and single-engine intents). Rebuilt
+    // on each intent change, so switching intent re-seeds the recommended default while
+    // still letting the user override.
+    const paintModelOptions = (): void => {
+      const it = currentIntent();
+      const list = it.models ?? [];
+      modelField.hidden = it.algorithm != null || list.length <= 1;
+      modelSel.innerHTML = list.map((id, i) => {
+        const label = i === 0 ? t('{name} (recommended)', { name: modelOf(id).name }) : modelOf(id).name;
+        return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+      }).join('');
+      if (list.length) modelSel.value = list[0]!;
     };
 
     // A face restorer (GFPGAN) can synthesise detail that was never in the source,
@@ -449,23 +475,41 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
           feasEl.appendChild(document.createTextNode(' '));
           feasEl.appendChild(btn);
         }
-        // The only model-swap the intent UI exposes is the "higher quality" lever, so
-        // if THAT is what's too heavy, offer to drop back to standard rather than name
-        // a model. Other suggestedModel hints are folded into the edge lever above.
-        if (res.suggestedModel && res.suggestedModel !== o.model && hqCheck.checked && currentIntent().model === res.suggestedModel) {
+        // If the bridge suggests a lighter engine this intent also offers, expose it as
+        // a one-tap switch of the Model dropdown (the user's own control) rather than
+        // silently overriding their choice. Other suggestedModel hints fold into the
+        // edge lever above.
+        if (res.suggestedModel && res.suggestedModel !== o.model && (currentIntent().models ?? []).includes(res.suggestedModel)) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'upscale-suggest';
-          btn.textContent = t('Use standard quality');
-          btn.addEventListener('click', () => { hqCheck.checked = false; onIntentChange(); });
+          btn.textContent = t('Use {name}', { name: modelOf(res.suggestedModel).name });
+          btn.addEventListener('click', () => { modelSel.value = res.suggestedModel!; onModelChange(); });
           feasEl.appendChild(document.createTextNode(' '));
           feasEl.appendChild(btn);
         }
       }
     };
 
+    // The user picked a different engine in the Model dropdown: re-seed the target-edge
+    // ceiling to its scale and refresh the model-dependent chrome (warning, denoise,
+    // consent) + feasibility. Unlike an intent change it does NOT rebuild the option
+    // list — that would fight the user's selection.
+    const onModelChange = (): void => {
+      if (srcFrame) {
+        const native = Math.max(srcFrame.width, srcFrame.height) * modelOf(currentModel()).scale;
+        edgeInput.max = String(native);
+        if (Number(edgeInput.value) > native) edgeInput.value = String(native);
+      }
+      paintWarning();
+      paintDenoise();
+      void paintConsent();
+      void recheck();
+    };
+
     const onIntentChange = (): void => {
       paintControls();
+      paintModelOptions();   // rebuild the model list + reseed the recommended default
       const it = currentIntent();
       // Re-seed the target edge to the engine's native ceiling for the new scale
       // (model intents only — pixel art uses the integer-scale select instead).
@@ -480,7 +524,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
       void recheck();
     };
     intentSel.addEventListener('change', onIntentChange);
-    hqCheck.addEventListener('change', onIntentChange);
+    modelSel.addEventListener('change', onModelChange);
     pixelScaleSel.addEventListener('change', () => void recheck());
     edgeInput.addEventListener('change', () => void recheck());
     denoiseInput.addEventListener('change', () => void recheck());
@@ -500,6 +544,7 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
       edgeInput.value = String(native);
       controlsEl.hidden = false;
       paintControls();
+      paintModelOptions();
       paintWarning();
       paintDenoise();
       void paintConsent();

@@ -23,6 +23,7 @@ import { announce } from '../a11y.js';
 import { livePalette } from '../lib/live-palette.ts';
 import { isOwnProfile, ownDigest, listEligible, embedRowLabel } from '../lib/press-profile-embed.ts';
 import { marksToCsv } from '../lib/print-marks-csv.ts';
+import { placedImageLabel, isVectorImageSrc } from '../lib/placed-image.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { mountBodyPopover } from '../components/body-popover.ts';
 import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.js';
@@ -1721,8 +1722,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const rasterImages = [...canvasEl.querySelectorAll('img')].flatMap((el) => {
       const nW = el.naturalWidth, nH = el.naturalHeight, b = el.getBoundingClientRect();
       if (!(nW > 0) || !(nH > 0) || !(b.width > 0) || !(b.height > 0)) return [];
-      const label = el.getAttribute('alt') || el.getAttribute('aria-label')
-        || (el.currentSrc || el.src || '').split('/').pop()?.split('?')[0] || 'An image';
+      const src = el.currentSrc || el.src || '';
+      // A placed SVG is VECTOR: it carries through PDF/SVG export as vector (or a
+      // crisp render rasterised from the vector at output DPI — export.ts
+      // drawHtmlVectors), so measuring its intrinsic naturalWidth as an
+      // effective-DPI limit is meaningless and only ever a false "will look soft".
+      // The field is rasterImages; a vector does not belong in it.
+      if (isVectorImageSrc(src)) return [];
+      const label = placedImageLabel(el.getAttribute('alt'), el.getAttribute('aria-label'), src);
       return [{ label, naturalW: nW, naturalH: nH, boxCssW: b.width, boxCssH: b.height }];
     });
     return {

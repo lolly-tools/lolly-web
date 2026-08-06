@@ -73,9 +73,24 @@ export const STRIP_UPLOAD_META_FLAG: FeatureFlag = {
   info: 'Removes EXIF, location (GPS) and other embedded metadata from images you upload. Content Credentials (C2PA provenance) are always preserved — a signed or AI-generated image keeps its credential either way.',
 };
 
+// Opt-IN (default OFF): the export panel's "Before you export" prepress card. A
+// personal toggle since 2026-08-06 (it was control-plane-only before): anyone who
+// prints can turn it on, and the DEFAULT stays off so an individual exporting a
+// PNG for a chat message is never ambushed by prepress findings. A deployment
+// keeps governance through the ordinary flag mechanism below (default it on for
+// members, or hide the toggle), plus the legacy `can['export.preflight']`
+// capability, which orgFlagGovernance maps onto this flag's default.
+export const PREFLIGHT_FLAG: FeatureFlag = {
+  id: 'export-preflight',
+  label: 'Print preflight',
+  pill: 'prepress',
+  default: false,
+  info: 'Checks a print export before you download: bleed, resolution, ink coverage and plate counts appear above the Download button. It never blocks an export.',
+};
+
 // The standalone flags an OPTIONAL control plane may govern (default + visibility).
 // Ids match the server's GOVERNABLE_FLAGS; category/Pro flags stay purely local.
-export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, STRIP_UPLOAD_META_FLAG.id];
+export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, STRIP_UPLOAD_META_FLAG.id, PREFLIGHT_FLAG.id];
 
 /** Whether the control plane has hidden a flag's user-facing toggle (a staged
  *  surprise, or a policy the deployment owns). Dormant ⇒ false. The resolved
@@ -137,7 +152,7 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   // sync reads agree with isFlagOn: opt-in flags, and the brand-aware Jelly
   // default (setJellyDefault runs before this at boot). flagEnabledSync's own
   // fallback for a missing key stays ON, matching the historic flags.
-  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG]) {
+  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG]) {
     if (eff[f.id] === undefined && f.default === false) eff[f.id] = false;
   }
   try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(eff)); } catch { /* best-effort */ }
@@ -149,6 +164,22 @@ export function flagEnabledSync(id: string): boolean {
     return (JSON.parse(localStorage.getItem(FLAG_MIRROR_KEY) || '{}') as Record<string, boolean>)[id] !== false;
   } catch { return true; }
 }
+/** Default-aware synchronous read, for surfaces that render outside the
+ *  profile-aware views. Unlike flagEnabledSync (whose missing-key fallback is ON,
+ *  matching the historic opt-out flags), this honours the flag's own `default`, so
+ *  an opt-in flag stays OFF when the mirror has no entry for it (fresh device,
+ *  blocked localStorage) instead of failing open. Governance is already baked into
+ *  the mirror by hydrateFeatureFlags; the in-memory override wins over both. */
+export function isFlagOnSync(flag: FeatureFlag): boolean {
+  const mem = memOverride.get(flag.id);
+  if (mem !== undefined) return mem;
+  try {
+    const saved = (JSON.parse(localStorage.getItem(FLAG_MIRROR_KEY) || '{}') as Record<string, boolean>)[flag.id];
+    if (saved !== undefined) return saved;
+  } catch { /* fall through to the built-in default */ }
+  return flag.default !== false;
+}
+
 export function setFlagMirror(id: string, on: boolean): void {
   try {
     const m = JSON.parse(localStorage.getItem(FLAG_MIRROR_KEY) || '{}') as Record<string, boolean>;

@@ -35,7 +35,6 @@ import { setToolInputPolicies, clearInputPolicies, setInputPolicyFailClosed } fr
 import type { InputPolicy } from '../lib/input-policy.ts';
 import { registerShareSection } from '../lib/share-sections.ts';
 import { setExportPolicy } from '../lib/export-policy.ts';
-import { setPreflightGoverned } from '../lib/preflight-policy.ts';
 import { registerApprovalOpener } from '../lib/approval-request.ts';
 import { registerSessionSource } from '../lib/session-source.ts';
 import { setInjectedTools } from '../lib/injected-tools.ts';
@@ -126,9 +125,11 @@ export interface OrgConfig {
   profilePolicy?: Record<string, ProfileFieldSpec>;
   tools?: Record<string, ToolPolicySpec>;
   /** Capability flags the caller has on this instance (e.g. 'link.create',
-   *  'export.download', 'export.request'; 'export.preflight' turns on the
-   *  export-panel prepress card — deployment-governed, default off, see
-   *  lib/preflight-policy.ts). */
+   *  'export.download', 'export.request'. 'export.preflight' is LEGACY: the
+   *  prepress card is a personal feature flag since 2026-08-06, and
+   *  orgFlagGovernance maps this capability onto that flag's default so an
+   *  instance still granting it keeps the card on for members who haven't
+   *  chosen). */
   can?: Record<string, boolean>;
   /** Control-plane governance for the shell's per-user feature flags, by flag id:
    *  `default` is applied when the user hasn't chosen; `hidden` suppresses the
@@ -202,7 +203,17 @@ export function orgSession(): Session | null {
  *  is present or it has no opinion on this flag. Consumed by feature-flags.ts to
  *  resolve the default and hide governed toggles. */
 export function orgFlagGovernance(id: string): { default?: boolean; hidden?: boolean } | null {
-  return orgConfigState?.featureFlags?.[id] ?? null;
+  const gov = orgConfigState?.featureFlags?.[id] ?? null;
+  // Legacy bridge: `can['export.preflight']` predates the personal
+  // 'export-preflight' flag (2026-08-06). An instance still granting the
+  // capability — with no explicit featureFlags entry for the flag, which wins —
+  // reads as governance defaulting the flag ON: members keep the card unless
+  // they turn it off themselves. (String literal, not an import: flag ids are
+  // permanent contracts, and feature-flags.ts imports this module.)
+  if (!gov && id === 'export-preflight' && orgConfigState?.can?.['export.preflight'] === true) {
+    return { default: true };
+  }
+  return gov;
 }
 
 /**
@@ -343,14 +354,12 @@ function applyProfilePolicy(config: OrgConfig | null): void {
  * which is null in that case anyway.
  */
 function applyExportPolicy(config: OrgConfig | null, failClosed = false): void {
-  if (failClosed) { setExportPolicy({ canDownload: false, canRequestApproval: true, chains: {} }); setPreflightGoverned(false); return; }
-  if (!config) { setExportPolicy(undefined); setPreflightGoverned(false); return; }
+  if (failClosed) { setExportPolicy({ canDownload: false, canRequestApproval: true, chains: {} }); return; }
+  if (!config) { setExportPolicy(undefined); return; }
   const can = config.can ?? {};
-  // The export-panel preflight card is deployment-governed, default OFF — it
-  // exists only where an organisation runs a real print workflow (see the
-  // governance note in views/export-preflight.ts). Enterprise capability, not
-  // a personal toggle: it deliberately has no profile feature-flag entry.
-  setPreflightGoverned(can['export.preflight'] === true);
+  // The export-panel preflight card is a personal feature flag (default OFF) as
+  // of 2026-08-06; the legacy can['export.preflight'] capability is honoured by
+  // orgFlagGovernance below, not applied here.
   const chains: Record<string, string> = {};
   for (const [toolId, spec] of Object.entries(config.tools ?? {})) {
     if (spec?.approvalChain) chains[toolId] = spec.approvalChain;
@@ -694,5 +703,4 @@ export function _resetOrgForTests(): void {
   clearInputPolicies();
   setInputPolicyFailClosed(null);
   setExportPolicy(undefined);
-  setPreflightGoverned(false);
 }

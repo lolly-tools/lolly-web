@@ -152,8 +152,12 @@ function invokeInWorker(runId: number, name: WorkerHookName, ctx: unknown): Prom
   const callId = ++callSeq;
   const key = `${runId}:${callId}`;
   const { host: _omit, ...rest } = (ctx ?? {}) as Record<string, unknown> & { host?: unknown };
-  // Frame transfer (onFrame) is deferred to the onFrame-tool migration; cold-path
-  // tools carry no frame, so structured clone of `rest` is all that crosses here.
+  // An onFrame ctx carries `frame.data` (a Uint8ClampedArray); it crosses by
+  // STRUCTURED CLONE, deliberately NOT a Transferable. media.ts fans ONE shared
+  // MediaFrame object to every live subscriber synchronously (media.ts:74-77), so
+  // transferring its buffer would neuter it for a second subscriber. Clone is
+  // ~0.1ms at the 480px default working edge (≤~1ms at the 1920 cap) — negligible
+  // beside the worker's per-frame encode, and it can't corrupt the camera loop.
   return new Promise((resolve, reject) => {
     invokeWaiters.set(key, { resolve, reject });
     w.postMessage({ t: 'invoke', runId, callId, name, ctx: rest });

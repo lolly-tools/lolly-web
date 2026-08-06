@@ -27,6 +27,7 @@ import type { ExportAudio } from '../bridge/audio-envelope.ts';
 import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
+import { fpsTick, startFrameFps, stopFrameFps } from '../lib/frame-fps.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
 
 // Above this readable-query length the address bar and the Share dialog switch to
@@ -1475,6 +1476,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Cleanup: remove injected <style>, disconnect observer, tear down canvas nav + export.
   viewEl._cleanup = () => {
     runtime.stopLive?.(); // release the camera if a live session is running
+    stopFrameFps(); // stop the dev fps meter if it was running
     runtime.stopMeter?.(); runtime.cancelRecording?.(); // release the mic / abort any take
     runtime.destroy?.(); // release per-mount executor resources (a Worker-isolated tool's run)
     (stageEl as (HTMLElement & { _recordCleanup?: () => void }) | null)?._recordCleanup?.(); // viewfinder + timers
@@ -2744,6 +2746,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
 
   runtime.subscribe(({ model, hydrated }) => {
+    fpsTick(); // dev-only onFrame fps meter (no-op unless lolly.frameFps='1' + live)
     // Sidebar sync is cheap and must stay responsive, so it runs synchronously on
     // every emit; only the expensive canvas rebuild is deferred to the next frame.
     if (inputsEl && !_sliderDragging) {
@@ -2776,10 +2779,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       liveBtn.querySelector('.canvas-live-label')!.textContent = on ? t('Live') : t('Go live');
     };
     liveBtn.addEventListener('click', async () => {
-      if (runtime.isLive()) { runtime.stopLive(); setLiveUi(false); announce(t('Live camera stopped')); return; }
+      if (runtime.isLive()) { runtime.stopLive(); stopFrameFps(); setLiveUi(false); announce(t('Live camera stopped')); return; }
       liveBtn.disabled = true;
       try {
         await runtime.startLive();
+        startFrameFps(runtime.manifest.id); // dev-only fps meter (gated); measures the live onFrame rate
         setLiveUi(true);
         announce(t('Live camera started — the canvas now reacts to your camera'));
       } catch (e) {

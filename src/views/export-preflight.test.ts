@@ -19,18 +19,22 @@ import { JSDOM } from 'jsdom';
 
 import {
   preflightView, preflightBodyHtml, preflightRowHtml, applyPreflight, messageFor,
+  metaphorIcon, statusIcon,
 } from './export-preflight.ts';
-import { setPreflightGoverned } from '../lib/preflight-policy.ts';
+import { PREFLIGHT_FLAG, overrideFlagInMemory } from '../feature-flags.ts';
 import type { Count, Finding, PreflightReport } from '@lolly/engine';
 import { preflight } from '@lolly/engine';
 
-// The export-panel surface is deployment-governed and DEFAULT OFF (an
-// individual exporting a PNG must never be ambushed by prepress findings —
-// lib/preflight-policy.ts). Pin the default first, then enable for the rest of
-// the suite, which tests the surface as an enabled deployment sees it.
-test('preflight card is absent by default — control-plane enables it', () => {
-  assert.equal(preflightRowHtml(), '', 'no deployment opt-in ⇒ no card markup at all');
-  setPreflightGoverned(true);
+// The export-panel surface is a personal OPT-IN flag, default OFF (an individual
+// exporting a PNG must never be ambushed by prepress findings — PREFLIGHT_FLAG in
+// feature-flags.ts; a control plane can default it on or hide the toggle through
+// the ordinary flag governance). Pin the default first — with no mirror and no
+// override the flag's own `default:false` must hold, never the historic
+// missing-key-means-ON fallback — then enable for the rest of the suite, which
+// tests the surface as a user who turned it on sees it.
+test('preflight card is absent by default — the user (or governance) opts in', () => {
+  assert.equal(preflightRowHtml(), '', 'flag off ⇒ no card markup at all');
+  overrideFlagInMemory(PREFLIGHT_FLAG.id, true);
   assert.notEqual(preflightRowHtml(), '');
 });
 
@@ -231,6 +235,35 @@ test('the body uses tinted full-border findings, never a one-sided stripe or a d
   assert.match(html, /class="preflight-finding is-note"/);
   assert.match(html, /class="preflight-finding is-gap"/);
   assert.doesNotMatch(html, /border-left|dashed|style=/, 'no inline styles, stripes or dashed edges');
+});
+
+test('each finding carries a content metaphor and a status badge', () => {
+  const html = preflightBodyHtml(preflightView(report([
+    { id: 'print.ink-over-tac', severity: 'warn', message: 'Over TAC.' },
+    { id: 'plates.process', severity: 'info', message: 'Four plates.' },
+  ]), CTX));
+  // Two rows, each a figure (metaphor + badge) plus the wrapping text span.
+  assert.equal((html.match(/preflight-finding-figure/g) ?? []).length, 2);
+  assert.equal((html.match(/preflight-finding-metaphor/g) ?? []).length, 2);
+  assert.equal((html.match(/preflight-finding-badge"/g) ?? []).length, 2);
+  assert.equal((html.match(/preflight-finding-text/g) ?? []).length, 2);
+});
+
+test('the metaphor is the CONTENT of the check, the badge is its STATUS', () => {
+  // Content: keyed by id (exact, then family prefix, then a neutral default).
+  assert.equal(metaphorIcon('print.ink-over-tac'), 'droplet');
+  assert.equal(metaphorIcon('print.rich-black'), 'droplet');
+  assert.equal(metaphorIcon('plates.process'), 'layers');
+  assert.equal(metaphorIcon('print.no-bleed'), 'crop');
+  assert.equal(metaphorIcon('print.image-effective-dpi'), 'image');
+  assert.equal(metaphorIcon('count.pages.pages'), 'document', 'family prefix');
+  assert.equal(metaphorIcon('input.required-blank'), 'keyboard', 'family prefix');
+  assert.equal(metaphorIcon('a.brand.new.check'), 'checklist', 'unknown id still renders, via the default');
+  // Status: severity, never colour alone — a distinct glyph per tone.
+  assert.equal(statusIcon('error'), 'alert');
+  assert.equal(statusIcon('warn'), 'alert');
+  assert.equal(statusIcon('note'), 'info');
+  assert.equal(statusIcon('gap'), 'help');
 });
 
 test('body text is escaped, so a hostile brand ink name cannot inject markup', () => {

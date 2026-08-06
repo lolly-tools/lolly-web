@@ -65,10 +65,11 @@ import {
 import type { GradientSpec } from '@lolly/engine';
 import type { BooleanOpName, VectorFieldConfig, VectorOpFailure, VectorOpResult } from './vector-ops.ts';
 import {
-  booleanBoxes, boxOutlineKind, offsetBoxes, replaceBoxes, simplifyBoxes, strokeBoxesToPath,
+  booleanBoxes, boxOutlineKind, offsetBoxes, pathToBox, replaceBoxes, simplifyBoxes, strokeBoxesToPath,
 } from './vector-ops.ts';
 import type { AuthoredPath, Continuity, Cubic, HyperbezierSolution, SplineKind, SplineNode } from '@lolly/engine';
 import type { PenFrame } from './free-canvas-pen.ts';
+import type { OutlineGroup } from './outline-text.ts';
 import {
   PEN_DEFAULT_KIND, PEN_KINDS, alignNodes, closesOnClick, convertKind, decodePathContours,
   defaultContinuity, deleteNodes, denormNodes, distributeNodes, dragHandle, encodePathField,
@@ -485,6 +486,7 @@ const SVG = {
   offsetPath: '<rect x="7" y="9" width="10" height="6" rx="1.5"/><rect x="3.5" y="5.5" width="17" height="13" rx="4" stroke-dasharray="3 2.5" opacity="0.75"/>',
   // Simplify — one smooth curve with only its two end nodes left on it.
   simplify: '<path d="M4 17c4-11 12-11 16 0"/><circle cx="4" cy="17" r="1.8" fill="currentColor" stroke="none"/><circle cx="20" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
+  outlineText: '<path d="M5 7V4h14v3M12 4v12"/><path d="M9 20h6"/><rect x="10.2" y="14.2" width="3.6" height="3.6" fill="none"/>',
   // Pointer — the arrow cursor itself, outlined to sit with the rest of the line-art rail.
   // The one glyph in here that names a TOOL by drawing the cursor it gives you.
   pointer: '<path d="M5 2.8l10.9 10.9h-4.8l2.8 6-2.5 1.1-2.8-6L5 18.3z"/>',
@@ -2309,6 +2311,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         label: t('Simplify'), icon: icon(SVG.simplify), disabled: !paths,
         run: () => runVectorOp((ops, id) => simplifyBoxes(ops, SIMPLIFY_TOL, { cfg: vectorCfg, id }), { each: true }),
       });
+      // Outline text — the Font Outliner capability in place (plan 88): selected
+      // text becomes kind:'path' glyph geometry, shaped by host.text with the same
+      // per-line machinery the SVG/PDF export walk uses. Disabled rather than
+      // hidden without a target or host.text, like every entry in this section.
+      const outlinable = cfg.textField && (host as unknown as HostV1).text
+        ? countSelected(isOutlinableTextBox) : 0;
+      items.push({
+        label: t('Outline text'), icon: icon(SVG.outlineText), disabled: !outlinable,
+        run: () => void outlineTextOnSelection(),
+      });
     }
     // ── remove background ──────────────────────────────────────────────────────
     // Present for any tool with an image field (somewhere to store the cutout)
@@ -3724,6 +3736,177 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const sel = new Set(selIndices(boxes));
       commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [cfg.imageField]: cutout } : b)));
     } catch { /* cancelled or unavailable */ }
+  }
+
+  // ── outline text ─────────────────────────────────────────────────────────────
+  // Convert selected text boxes' glyphs into ordinary kind:'path' boxes (plan 88 —
+  // the Font Outliner capability, in place). Measurement + shaping live in the lazy
+  // outline-text.ts chunk, which reuses the export walk's line machinery; here is
+  // only the model surgery: source box → per-fill path boxes at the same z, one
+  // commit, refusal-first (a box that can't be outlined faithfully is left alone
+  // and said so, never partially converted).
+
+  function isOutlinableTextBox(b: Box): boolean {
+    const kind = String(b[cfg.kindField] ?? '');
+    if (kind === 'path' || kind === 'audio') return false;
+    return Boolean(cfg.textField && String(b[cfg.textField] ?? '').trim());
+  }
+
+  /** A box that paints something besides its text (fill, gradient, image, or a
+   *  border) keeps its frame; only the text leaves it. A bare text box is replaced
+   *  outright. The border matters because a non-path box renders strokeW>0 + a stroke
+   *  colour as a CSS border on the frame, and the glyph path boxes deliberately clear
+   *  their stroke — so without keeping the frame a bordered label would silently lose
+   *  its border on outline. */
+  function paintsBesidesText(b: Box): boolean {
+    const bg = cfg.fillField ? String(b[cfg.fillField] ?? '').trim() : '';
+    const grad = cfg.gradField ? String(b[cfg.gradField] ?? '').trim() : '';
+    const img = cfg.imageField ? (b[cfg.imageField] as { id?: string; url?: string } | undefined) : undefined;
+    const border = num(b[cfg.strokeWField], 0) > 0 && String(b[cfg.strokeField] ?? '').trim() !== '';
+    return Boolean(bg || grad || (img && (img.id || img.url)) || border);
+  }
+
+  // Re-entrancy guard: the action reads the live DOM across awaits (fonts, shaping)
+  // before its one synchronous commit. Two overlapping runs both measuring the
+  // pre-commit DOM could, for a box KEPT because it also paints (paintsBesidesText),
+  // splice a second copy of the same glyphs. The menu button self-destructs on click
+  // so this isn't reachable through the current dispatch, but the guard is a cheap,
+  // future-proof invariant for an async mutator.
+  let outliningInFlight = false;
+  async function outlineTextOnSelection(): Promise<void> {
+    if (outliningInFlight) return;
+    outliningInFlight = true;
+    try { await runOutlineTextOnSelection(); }
+    finally { outliningInFlight = false; }
+  }
+  async function runOutlineTextOnSelection(): Promise<void> {
+    if (!vectorCfg || !cfg.textField) return;
+    const textApi = (host as unknown as HostV1).text;
+    if (!textApi) return;
+    const boxes0 = getBoxes();
+    const srcIds = selIndices(boxes0)
+      .filter((i) => isOutlinableTextBox(boxes0[i]!))
+      .map((i) => idOf(boxes0[i], i));
+    if (!srcIds.length) return;
+
+    const { outlineBoxText, rotatedFrameShift } = await import('./outline-text.ts');
+    const rectToNative = (r: DOMRect): { x: number; y: number; w: number; h: number } => {
+      const { cr, scale } = metrics();
+      return { x: (r.left - cr.left) / scale, y: (r.top - cr.top) / scale, w: r.width / scale, h: r.height / scale };
+    };
+
+    const results = new Map<string, OutlineGroup[]>();
+    let firstRefusal: string | null = null;
+    for (const id of srcIds) {
+      const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+      const textEl = el?.querySelector<HTMLElement>('.lolly-box-text');
+      if (!el || !textEl) { firstRefusal ??= 'no-text'; continue; }
+      try {
+        const res = await outlineBoxText(el, textEl, textApi, rectToNative);
+        if (res.ok) results.set(id, res.groups);
+        else firstRefusal ??= res.reason;
+      } catch { firstRefusal ??= 'empty'; }
+    }
+
+    // The model may have moved while shaping — re-read and apply by id, one commit.
+    const timeCarry = timeCfg ? [
+      timeCfg.startField, timeCfg.durField, timeCfg.clipInField, timeCfg.speedField,
+      timeCfg.enterField, timeCfg.exitField, timeCfg.enterMsField, timeCfg.exitMsField,
+      timeCfg.muteField, timeCfg.laneField, timeCfg.enterEaseField, timeCfg.exitEaseField,
+    ].filter((f): f is string => Boolean(f)) : [];
+    const shadowCarry = [cfg.shadowColorField, cfg.shadowXField, cfg.shadowYField, cfg.shadowBlurField]
+      .filter(Boolean) as string[];
+    let next = getBoxes();
+    const nextSel = new Set<string>();
+    let outlined = 0;
+    for (const [srcId, groups] of results) {
+      const at = next.findIndex((b, i) => idOf(b, i) === srcId);
+      if (at < 0) continue;
+      const src = next[at]!;
+      // Keep the source frame (only the text leaves it) when it also paints a fill/
+      // gradient/image/border; a bare text box is replaced outright. Decided once here
+      // because it also governs shadow carry below.
+      const keepSource = paintsBesidesText(src);
+      const rot = num(src[cfg.rotationField], 0);
+      const scx = num(src[cfg.xField], 0) + num(src[cfg.wField], 0) / 2;
+      const scy = num(src[cfg.yField], 0) + num(src[cfg.hField], 0) / 2;
+      const made: Box[] = [];
+      let failed = false;
+      for (const g of groups) {
+        const pb = pathToBox(g.path, src, { cfg: vectorCfg, id: freshId(next.concat(made)) });
+        // Only the node ceiling gets here (finite, non-empty geometry by construction)
+        // — too much text for one encodable shape. Refuse the whole box.
+        if (!pb) { failed = true; break; }
+        // A path box's fill field paints the GLYPHS; the text box's fill was its
+        // background. pathToBox inherited the latter — override with the run colour.
+        if (cfg.fillField) pb[cfg.fillField] = g.fill;
+        pb[cfg.strokeField] = '';
+        pb[cfg.strokeWField] = 0;
+        pb[cfg.fillRuleField] = 'nonzero';
+        // Shadow: only carry it onto the glyphs when the source is REPLACED. If the
+        // frame is kept (keepSource), it still paints the box's own shadow, so copying
+        // it onto each glyph too would double it. And any carried shadow becomes
+        // 'content' (a drop-shadow following the glyph silhouette): 'text' has nothing
+        // to attach to once the text is geometry, and 'box' would otherwise draw a
+        // rectangle around each colour group's bounding box — never what was intended.
+        // Timing fields always carry (a clip on screen 2s..5s stays 2s..5s) — but never
+        // linkOf: duplicating a detach-audio link id would corrupt its link group.
+        const shadowField = cfg.shadowField;
+        if (!keepSource && shadowField) {
+          const sh = src[shadowField];
+          if (sh !== undefined && sh !== '' && sh !== 'none') {
+            pb[shadowField] = 'content';
+            for (const f of shadowCarry) if (src[f] !== undefined) pb[f] = src[f];
+          }
+        }
+        for (const f of timeCarry) if (src[f] !== undefined) pb[f] = src[f];
+        // Group membership carries onto every result, so both the replace and the
+        // keep-source branches match replaceBoxes (which only fills group when unset):
+        // outlining a grouped, background-painting text box keeps its glyphs in the
+        // group instead of orphaning them when the group later moves.
+        if (cfg.groupField && src[cfg.groupField] !== undefined) pb[cfg.groupField] = src[cfg.groupField];
+        if (rot) {
+          const cx = num(pb[cfg.xField], 0) + num(pb[cfg.wField], 0) / 2;
+          const cy = num(pb[cfg.yField], 0) + num(pb[cfg.hField], 0) / 2;
+          const { dx, dy } = rotatedFrameShift(scx, scy, cx, cy, rot);
+          pb[cfg.xField] = num(pb[cfg.xField], 0) + dx;
+          pb[cfg.yField] = num(pb[cfg.yField], 0) + dy;
+          pb[cfg.rotationField] = rot;
+        }
+        made.push(pb);
+      }
+      if (failed || !made.length) { firstRefusal ??= 'too-complex'; continue; }
+      if (keepSource) {
+        next = next.map((b, i) => (i === at ? { ...b, [cfg.textField as string]: '' } : b));
+        next = [...next.slice(0, at + 1), ...made, ...next.slice(at + 1)];
+      } else {
+        next = replaceBoxes(next, [srcId], -1, made, { cfg: vectorCfg });
+      }
+      for (const nb of made) nextSel.add(String(nb[cfg.idField]));
+      outlined++;
+    }
+
+    if (!outlined) {
+      flash(firstRefusal === 'not-visible'
+        ? t('This clip is not on screen at the current playhead. Move to it, then outline its text.')
+        : firstRefusal === 'no-font'
+          ? t('No font file could be resolved for this text, so it was left as it is.')
+          : firstRefusal === 'notdef'
+            ? t('The font cannot draw some of these characters, so the text was left as it is.')
+            : firstRefusal === 'too-complex'
+              ? t('There is too much text to outline in one shape, so it was left as it is.')
+              : t('Nothing in this selection can be outlined.'));
+      return;
+    }
+    selection = nextSel;
+    commit(next);
+    const skipped = srcIds.length - outlined;
+    flash((outlined === 1
+      ? t('Text outlined. It is now a shape and can no longer be edited as text.')
+      : t('{n} text boxes outlined. They are now shapes and can no longer be edited as text.', { n: outlined }))
+      + (skipped ? ' ' + (skipped === 1
+        ? t('One selected item could not be outlined and was left as it is.')
+        : t('{n} selected items could not be outlined and were left as they are.', { n: skipped })) : ''));
   }
 
   // ── grouping + clip/mask ──────────────────────────────────────────────────────
