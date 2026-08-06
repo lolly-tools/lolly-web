@@ -384,8 +384,9 @@ export async function downloadVerify(
   // Model downloads are the same fetch-once-into-IDB path the /verify header's
   // own "enable deep scan" button uses — one copy, shared consent.
   signal?.throwIfAborted();
-  const [{ prefetchTrustmarkModels }, { prefetchContentSealModel }] = await Promise.all([
+  const [{ prefetchTrustmarkModels }, { prefetchTrustmarkEncoder }, { prefetchContentSealModel }] = await Promise.all([
     import('./trustmark.ts'),
+    import('./trustmark-embed.ts'),
     import('./contentseal.ts'),
   ]);
   const onModel = (p: { loaded: number; total: number | null }): void => {
@@ -394,6 +395,14 @@ export async function downloadVerify(
     report();
   };
   const okTm = await prefetchTrustmarkModels({ onProgress: p => onModel({ loaded: p.loaded, total: p.total }) });
+  signal?.throwIfAborted();
+  // Durable-watermark ENCODER: the one model NO part offered before — it was lazy-only,
+  // fetched on the first durable export. Best-effort (404s until converted, must not fail
+  // the part) and shares the 'trustmark-models' store the decoders use. Its bytes are
+  // already reserved in plannedModels (the vite `models` group includes encoder_Q.onnx),
+  // so this fills a slot the planned size already counts.
+  const encBase = modelLoaded;
+  await prefetchTrustmarkEncoder({ onProgress: p => onModel({ loaded: encBase + p.loaded, total: p.total === null || modelTotal === null ? null : encBase + p.total }) });
   const modelBase = modelLoaded;
   signal?.throwIfAborted();
   // Best-effort: the Content Seal extractor is usually never vendored at all

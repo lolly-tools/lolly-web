@@ -42,7 +42,7 @@
 
 import { buildLollyDurablePayload, TRUSTMARK_PAYLOAD_BITS } from '@lolly/engine';
 import { openDB } from '../bridge/db.ts';
-import { loadOrt, readResponseWithProgress } from './ort.ts';
+import { loadOrt, readResponseWithProgress, type FetchProgress } from './ort.ts';
 
 /** The encoder variant we embed with. Q (256px) matches the decoder the deep
  *  scan tries first, so a Q-embedded mark reads back on the existing decode path. */
@@ -68,7 +68,7 @@ export interface DurableEmbedOptions {
 
 interface CachedModel { bytes: ArrayBuffer; version: number; cachedAt: number }
 
-async function fetchEncoderBytes(cacheOnly: boolean): Promise<ArrayBuffer | null> {
+async function fetchEncoderBytes(cacheOnly: boolean, onProgress?: (p: FetchProgress) => void): Promise<ArrayBuffer | null> {
   try {
     const db = await openDB();
     const cached = await db.get('trustmark-models', ENCODER_FILE) as CachedModel | undefined;
@@ -80,7 +80,7 @@ async function fetchEncoderBytes(cacheOnly: boolean): Promise<ArrayBuffer | null
   let resp: Response;
   try { resp = await fetch(url); } catch { return null; }
   if (!resp.ok) return null; // not converted yet (Andy hasn't run the script) — a plain 404
-  const bytes = await readResponseWithProgress(resp);
+  const bytes = await readResponseWithProgress(resp, onProgress);
   // Same SPA-fallback guard as the decoder fetch: a dev server answers a missing
   // model with index.html (200); an ONNX protobuf never starts with '<'.
   const contentType = resp.headers.get('content-type') || '';
@@ -91,6 +91,21 @@ async function fetchEncoderBytes(cacheOnly: boolean): Promise<ArrayBuffer | null
     await db.put('trustmark-models', { bytes, version: ENCODER_CACHE_VERSION, cachedAt: Date.now() }, ENCODER_FILE);
   } catch { /* best-effort cache */ }
   return bytes;
+}
+
+/**
+ * Pre-fetch the durable-watermark ENCODER into IndexedDB so a user can download it
+ * IN ADVANCE from the profile's offline section — it is otherwise lazy-only, fetched
+ * on the first durable export. Best-effort: returns false on the routine 404 when the
+ * encoder has not been converted yet (scripts/convert-trustmark-encoder-onnx.py), so a
+ * miss must never fail the offline "Verify" part — exactly like prefetchContentSealModel.
+ * Shares the 'trustmark-models' IDB store the deep-scan decoders use, so removePart('verify')
+ * clears it too.
+ */
+export async function prefetchTrustmarkEncoder(
+  opts: { onProgress?: (p: FetchProgress) => void } = {},
+): Promise<boolean> {
+  return !!(await fetchEncoderBytes(false, opts.onProgress));
 }
 
 type OrtModule = typeof import('onnxruntime-web');

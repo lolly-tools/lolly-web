@@ -2214,10 +2214,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closePopover();
     const has = selection.size > 0;
     const multi = selection.size >= 2;
+    // Outline text is the primary action on a selected text box, so it sits high in
+    // the menu (right under Delete) rather than buried at the end of the vector-ops
+    // section — where, for a text selection, every other entry is disabled and the
+    // whole menu can run past the bottom of the screen. Shown only when there's an
+    // outlinable text box in the selection AND the tool can store the result
+    // (vectorCfg = pathField declared) AND host.text is present.
+    const canOutlineText = Boolean(vectorCfg && cfg.textField && (host as unknown as HostV1).text);
+    const outlinableCount = canOutlineText ? countSelected(isOutlinableTextBox) : 0;
     const items: PopItem[] = [
       { label: t('Duplicate'), icon: icon(SVG.dup), run: () => duplicateSelection(), disabled: !has },
       { label: t('Delete'), icon: icon(SVG.trash), run: () => deleteSelection(), disabled: !has, danger: true },
       { sep: true },
+      ...(outlinableCount ? [
+        { label: t('Outline text'), icon: icon(SVG.outlineText), run: () => void outlineTextOnSelection() },
+        { sep: true } as PopItem,
+      ] : []),
       // Stacking order — icons only, 2×2: columns are magnitude (one step │ all the
       // way), rows are direction (up = forward/front, down = backward/back).
       { grid: [
@@ -2311,16 +2323,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         label: t('Simplify'), icon: icon(SVG.simplify), disabled: !paths,
         run: () => runVectorOp((ops, id) => simplifyBoxes(ops, SIMPLIFY_TOL, { cfg: vectorCfg, id }), { each: true }),
       });
-      // Outline text — the Font Outliner capability in place (plan 88): selected
-      // text becomes kind:'path' glyph geometry, shaped by host.text with the same
-      // per-line machinery the SVG/PDF export walk uses. Disabled rather than
-      // hidden without a target or host.text, like every entry in this section.
-      const outlinable = cfg.textField && (host as unknown as HostV1).text
-        ? countSelected(isOutlinableTextBox) : 0;
-      items.push({
-        label: t('Outline text'), icon: icon(SVG.outlineText), disabled: !outlinable,
-        run: () => void outlineTextOnSelection(),
-      });
+      // NOTE: "Outline text" lives near the TOP of this menu (just under Delete), not
+      // here — see the canOutlineText block at the head of openContextMenu. It is the
+      // gateway INTO vector editing for a text box, so it must not sit below a wall of
+      // path-only ops that are all disabled while text is selected.
     }
     // ── remove background ──────────────────────────────────────────────────────
     // Present for any tool with an image field (somewhere to store the cutout)
@@ -4181,7 +4187,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  module load so a language switch renames them. */
   function penKindLabels(): Record<string, string> {
     return {
-      hyperbezier: t('Smooth (auto)'), cubic: t('Bezier handles'),
+      hyperbezier: t('Smooth (auto)'), spiro: t('Spiro'), cubic: t('Bezier handles'),
       'catmull-rom': t('Through the points'), bspline: t('B-spline'), line: t('Straight lines'),
     };
   }
