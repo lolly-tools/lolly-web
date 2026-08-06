@@ -13,7 +13,7 @@
  * transcoding (svg→eps/dxf), archives, catalog "Download as", provenance on the output.
  */
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff } from '@lolly/engine';
+import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff, readXlsx, writeXlsx, rowsToCsv, parseTableText } from '@lolly/engine';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) — never re-fork it
 import '../styles/parts/platform.css';   // .platform-layout / .plat-header / .plat-title / .plat-sub
@@ -61,16 +61,35 @@ function targetsFor(kind: string): Target[] {
       ];
     // A raster can re-encode to any raster + wrap into PDF/ICO, but cannot become true vector.
     case 'raster': return RASTER_OUT;
+    // Tabular data — every data format converts to every other (grid round-trip). The
+    // caller drops the source format. An .xlsx converts from its FIRST sheet.
+    case 'xlsx': case 'csv': case 'tsv': case 'json':
+      return DATA_OUT;
     default: return [];
   }
 }
 
+/** The data-conversion targets (grid round-trip). */
+const DATA_OUT: Target[] = [
+  { id: 'csv', label: 'CSV (.csv)', ext: 'csv', mime: 'text/csv' },
+  { id: 'xlsx', label: 'Excel (.xlsx)', ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+  { id: 'json', label: 'JSON (.json)', ext: 'json', mime: 'application/json' },
+  { id: 'tsv', label: 'TSV (.tsv)', ext: 'tsv', mime: 'text/tab-separated-values' },
+];
+
 function detectKind(bytes: Uint8Array, file: File): string {
   const k = sfntKind(bytes);
   if (k) return k;                                          // ttf/otf/woff/woff2
+  // Tabular data — an .xlsx is a zip (workbook inside), csv/tsv/json are text. Checked
+  // before svgz/raster: an .xlsx's PK-zip and a .json's braces must not fall through.
+  if (/\.xlsx$/i.test(file.name)
+    || (sniffContainer(bytes) === 'zip' && /application\/vnd\.openxmlformats-officedocument\.spreadsheetml/.test(file.type))) return 'xlsx';
+  if (/\.tsv$/i.test(file.name)) return 'tsv';
   if (sniffContainer(bytes) === 'gzip' || /\.svgz$/i.test(file.name)) return 'svgz';
   const head = new TextDecoder('latin1').decode(bytes.subarray(0, 256));
   if (/<svg[\s>]/i.test(head) || /^\s*<\?xml/.test(head) || /\.svg$/i.test(file.name)) return 'svg';
+  if (/\.csv$/i.test(file.name) || /^text\/csv/.test(file.type)) return 'csv';
+  if (/\.json$/i.test(file.name) || (/^application\/json/.test(file.type) && /^\s*[[{]/.test(head))) return 'json';
   if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(file.name)) return 'raster';
   return 'unknown';
 }
@@ -85,12 +104,59 @@ async function convert(bytes: Uint8Array, kind: string, target: Target, file: Fi
   // SVG⇄SVGZ — exact-byte gzip, no render (keeps the credential + outlined text intact).
   if (kind === 'svg' && target.id === 'svgz') return new Blob([gzip(bytes) as BlobPart], { type: target.mime });
   if (kind === 'svgz' && target.id === 'svg') return new Blob([gunzip(bytes) as BlobPart], { type: target.mime });
+  // Tabular data — decode the source to a ragged grid (row 0 = header), re-encode to
+  // the target. Pure byte/text work, no canvas. An .xlsx reads its first sheet.
+  if (kind === 'xlsx' || kind === 'csv' || kind === 'tsv' || kind === 'json') {
+    const grid = sourceToGrid(kind, bytes);
+    return new Blob([gridToTarget(grid, target.id) as BlobPart], { type: target.mime });
+  }
   // Everything else: rasterise the source to a canvas, then encode that canvas straight
   // to the target with the engine's own codecs. We hold the pixels already, so there is
   // no reason to DOM-serialise them back through the tool-export path (dom-to-image
   // stalls on a detached node anyway) — this is faster and never hangs.
   if (target.render) return encodeFromCanvas(await sourceToCanvas(kind, bytes, file), target);
   throw new Error('That conversion is not supported.');
+}
+
+// ── tabular data conversion (grid round-trip) ────────────────────────────────
+
+/** Decode a data source to a ragged grid (row 0 = header). xlsx→first sheet;
+ *  csv/tsv→parseTableText; json→array-of-objects (keys become the header) or
+ *  array-of-arrays. Throws a user-ready message on an unreadable source. Exported
+ *  for the co-located round-trip test. */
+export function sourceToGrid(kind: string, bytes: Uint8Array): string[][] {
+  if (kind === 'xlsx') return readXlsx(bytes).rows;
+  if (kind === 'json') {
+    let parsed: unknown;
+    try { parsed = JSON.parse(new TextDecoder().decode(bytes)); }
+    catch { throw new Error('That JSON could not be parsed.'); }
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Expected a non-empty JSON array of rows.');
+    if (Array.isArray(parsed[0])) return (parsed as unknown[][]).map((r) => r.map((c) => String(c ?? '')));
+    // Array of objects → header = the union of keys in first-seen order.
+    const keys: string[] = [];
+    for (const row of parsed as Record<string, unknown>[]) for (const k of Object.keys(row ?? {})) if (!keys.includes(k)) keys.push(k);
+    return [keys, ...(parsed as Record<string, unknown>[]).map((row) => keys.map((k) => String(row?.[k] ?? '')))];
+  }
+  // csv / tsv (parseTableText auto-detects the delimiter + Markdown tables).
+  const table = parseTableText(new TextDecoder().decode(bytes));
+  if (!table) throw new Error('That file does not parse as CSV/TSV.');
+  return [table.columns, ...table.rows];
+}
+
+/** Re-encode a grid to the target data format. Returns bytes for xlsx, a string for
+ *  the text formats (the Blob wraps either). Exported for the round-trip test. */
+export function gridToTarget(grid: string[][], targetId: string): Uint8Array | string {
+  switch (targetId) {
+    case 'csv':  return rowsToCsv(grid);
+    case 'tsv':  return grid.map((r) => r.map((c) => c.replace(/[\t\r\n]/g, ' ')).join('\t')).join('\n');
+    case 'xlsx': return writeXlsx({ rows: grid });
+    case 'json': {
+      const [header = [], ...body] = grid;
+      const objs = body.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])));
+      return JSON.stringify(objs, null, 2);
+    }
+    default: throw new Error('That conversion is not supported.');
+  }
 }
 
 /** Decode the source (SVG markup or a raster file) into a <canvas> at its intrinsic

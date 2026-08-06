@@ -353,12 +353,18 @@
 /* The .saved-* session-row component moved to parts/saved-list.css (always-loaded
    via app.css) — see the note by .session-size above. */
 
-/* The storage meter's voice-models slice (views/profile.ts, the speech Cache
-   Storage buckets). The other categories colour from profile.css's --store-1..5;
-   tokens.css defines no --store-6 yet, so the fallback literal carries the hue
-   (a violet, distinct from every current slice in all four themes). */
+/* The storage meter's model-download slices (views/profile.ts): the speech Cache
+   Storage buckets and the upscale / matte IndexedDB model stores. The other
+   categories colour from profile.css's --store-1..5; tokens.css defines no
+   --store-6..8 yet, so the fallback literal carries the hue — each chosen distinct
+   from the teal→green store ramp, from each other, and legible in all four themes
+   (a violet, an amber, and a blue). */
 .profile-view .store-bar .seg[data-cat="speech"],
 .profile-view .store-chip-sw[data-cat="speech"] { background: hsl(var(--store-6, 265 55% 70%)); }
+.profile-view .store-bar .seg[data-cat="upscale"],
+.profile-view .store-chip-sw[data-cat="upscale"] { background: hsl(var(--store-7, 35 80% 58%)); }
+.profile-view .store-bar .seg[data-cat="matte"],
+.profile-view .store-chip-sw[data-cat="matte"] { background: hsl(var(--store-8, 212 62% 60%)); }
 
 /* `.segmented-control`/`.segmented-btn` (component audit rec 1) used to live here —
    a byte-for-byte duplicate of `.view-seg`/`.view-seg-btn` (styles/parts/gallery.css)

@@ -753,12 +753,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // page (decoded payload/message hex, schema, filenames, hex dumps of file
   // bytes, handoff notes) is escape()d at its sink; the rest are static t().
   'views/valid.ts': 21,
-  // 2 as of 2026-08-04 (new file). Reviewed as part of the SUSE assessment
-  // close-out: the panel build escapeHtml()s every interpolated value — the
-  // model <option> id/name pairs, both aria-labels — and the only other sink
-  // writes an icon() constant, with the model's warning text going through
-  // setAttribute (data-tip/aria-label), never HTML.
-  'views/upscale-dialog.ts': 2,
+  // 3 as of 2026-08-06 (the model warning became an inline banner). Reviewed: the
+  // panel build escapeHtml()s every interpolated value — the model <option> id/name
+  // pairs, both aria-labels — the options sink escapeHtml()s id + label, and the new
+  // warning sink writes an icon() constant plus escapeHtml()'d warning text
+  // (`${icon('info',…)}<span>${escapeHtml(warn)}</span>`), never raw input.
+  'views/upscale-dialog.ts': 3,
   // 1 as of 2026-08-04 (new file, the host.matte Remove-Background dialog). The
   // one innerHTML sink is the panel scaffold: every interpolated value is a t()
   // literal or escapeHtml()'d (the aria-labels, the model <option> id/name pairs);

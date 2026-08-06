@@ -62,6 +62,9 @@ const PATHS = {
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
   // merged: gallery.ts INFO_ICON (two <path>s) + profile.ts INFO_ICON (one combined <path>) drew the same glyph
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  // Warning triangle (Lucide triangle-alert). Used by the export preflight findings and
+  // the aspect-warning surface — an amber "check this" mark, not an error stop.
+  alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   dashboard: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
   // plain outline (no check) — the /valid hero fallback + drop-zone glyph
   shield: SHIELD_OUTLINE,

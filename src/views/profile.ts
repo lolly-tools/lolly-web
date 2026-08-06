@@ -43,7 +43,7 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
 import { stopAtmosphere } from '../lib/atmosphere.ts';
@@ -55,10 +55,11 @@ import type { PinRecord } from '../lib/offline-pins.ts';
 import { prefetchAssetsById, catalogDownloadSummary, catalogScopeSize, downloadCatalogScope } from '../catalog/sync.ts';
 import {
   fetchPrecacheManifest, fetchInfoManifest, docsFileList,
-  downloadApp, downloadDocs, downloadVerify, downloadSpeech, recordCatalogDownload,
-  partRecords, removePart, storageHeadroom, persistenceState, speechCacheBytes,
+  downloadApp, downloadDocs, downloadVerify, downloadSpeech, downloadUpscale, downloadMatte,
+  recordCatalogDownload, partRecords, removePart, storageHeadroom, persistenceState, speechCacheBytes,
 } from '../lib/offline-manager.ts';
 import type { OfflinePartId, PrecacheManifest, InfoManifest, DownloadProgress, PartState } from '../lib/offline-manager.ts';
+import { upscaleCacheBytes, matteCacheBytes } from '../lib/model-prefetch.ts';
 import { toolSupport } from '../capabilities.ts';
 import { derivedMediaSize, resetScrubCache } from '../lib/clip-proxy.ts';
 import { getInstanceBase, setInstanceBase } from '../lib/instance.ts';
@@ -156,6 +157,11 @@ interface StorageModel {
    *  Storage buckets — filled by the 'speech' offline part OR the Script-audio
    *  dialog's consent download, so this measures the caches, not a record. */
   speech: { bytes: number; files: number };
+  /** On-device AI image models in their IndexedDB stores — filled by the matching
+   *  offline part OR the Upscale / Remove-background dialogs' on-demand download, so
+   *  these measure the stores, not a record (twin of `speech`). */
+  upscale: { bytes: number; files: number };
+  matte: { bytes: number; files: number };
   measured: number;
   hasEstimate: boolean;
   usage: number | null;
@@ -405,7 +411,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${flagRow(NEUROSPICY_FLAG)}
             ${flagRow(JELLY_FLAG)}
             ${flagRow(PRO_FLAG)}
-            ${flagRow(STRIP_UPLOAD_META_FLAG)}`;
+            ${flagRow(STRIP_UPLOAD_META_FLAG)}
+            ${flagRow(PREFLIGHT_FLAG)}`;
 
   // ── Accessibility prefs (lib/a11y-prefs.ts) ──────────────────────────────────
   // Three opt-in comfort switches. Deliberately NOT feature flags and NOT in the
@@ -1069,7 +1076,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const estP = navigator.storage?.estimate
       ? navigator.storage.estimate().catch(() => null)
       : Promise.resolve(null);
-    const [estimate, sessions, sessionSizes, blobCacheBytes, derivedBytes, allImages, imagesBytes, previews, pins, speech] = await Promise.all([
+    const [estimate, sessions, sessionSizes, blobCacheBytes, derivedBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte] = await Promise.all([
       estP,
       host.state.list().catch((): SessionEntry[] => []),
       host.state.sizes!().catch((): Record<string, number> => ({})),
@@ -1080,6 +1087,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       measurePreviews(),
       pinnedToolBytes().catch(() => ({ bytes: 0, count: 0 })),
       speechCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
+      upscaleCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
+      matteCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
     // Derived scrub proxies (lib/clip-proxy.ts) are folded into the Asset cache
@@ -1095,7 +1104,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
-    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes;
+    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes + upscale.bytes + matte.bytes;
     const hasEstimate = !!(estimate && estimate.usage != null);
     const usage: number | null = hasEstimate ? estimate!.usage! : null;
     const quota: number | null = (estimate && estimate.quota) || null;
@@ -1109,6 +1118,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       previews,
       pins,
       speech,
+      upscale,
+      matte,
       measured, hasEstimate, usage, quota, overshoot, other, total,
     };
   }
@@ -1123,6 +1134,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     if (m.previews.available) parts.push(`Tool previews ${fmtBytes(m.previews.bytes)}`);
     if (m.pins.count) parts.push(`Available offline ${fmtBytes(m.pins.bytes)}`);
     if (m.speech.bytes) parts.push(`Voice models ${fmtBytes(m.speech.bytes)}`);
+    if (m.upscale.bytes) parts.push(`Upscaling models ${fmtBytes(m.upscale.bytes)}`);
+    if (m.matte.bytes) parts.push(`Background removal ${fmtBytes(m.matte.bytes)}`);
     let s = m.hasEstimate
       ? `Using ${fmtBytes(m.total)}: ${parts.join(', ')}`
       : `Measured ${fmtBytes(m.measured)}: ${parts.join(', ')}`;
@@ -1180,6 +1193,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const hasPins = m.pins.count > 0;
     // Same for the speech models: the slice appears only after a download.
     const hasSpeech = m.speech.bytes > 0;
+    // The AI image models (host.upscale / host.matte) — each appears only once its
+    // store holds bytes (pre-downloaded from Available offline, or fetched on demand
+    // by the Upscale / Remove-background dialogs).
+    const hasUpscale = m.upscale.bytes > 0;
+    const hasMatte = m.matte.bytes > 0;
     return `
       <section class="store-meter" aria-label="${escape(t('Storage on this device'))}">
         <header class="store-hero">
@@ -1195,6 +1213,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <button type="button" class="seg" data-cat="previews" style="flex-grow:0"${hasPrev ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="pins" style="flex-grow:0"${hasPins ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="speech" style="flex-grow:0"${hasSpeech ? '' : ' hidden'}></button>
+          <button type="button" class="seg" data-cat="upscale" style="flex-grow:0"${hasUpscale ? '' : ' hidden'}></button>
+          <button type="button" class="seg" data-cat="matte" style="flex-grow:0"${hasMatte ? '' : ' hidden'}></button>
           <span class="seg seg--other" data-cat="other" style="flex-grow:0" aria-hidden="true" hidden></span>
         </div>
         <p class="visually-hidden" id="store-aria-sentence"></p>
@@ -1206,6 +1226,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">${t('Tool previews')}</span><span class="store-chip-val" data-size="previews">—</span></button></li>` : ''}
           ${hasPins ? `<li><button type="button" class="store-chip" data-cat="pins"><span class="store-chip-sw" data-cat="pins"></span><span class="store-chip-name">${t('Available offline')}</span><span class="store-chip-val" data-size="pins">—</span></button></li>` : ''}
           ${hasSpeech ? `<li><button type="button" class="store-chip" data-cat="speech"><span class="store-chip-sw" data-cat="speech"></span><span class="store-chip-name">${t('Voice models')}</span><span class="store-chip-val" data-size="speech">—</span></button></li>` : ''}
+          ${hasUpscale ? `<li><button type="button" class="store-chip" data-cat="upscale"><span class="store-chip-sw" data-cat="upscale"></span><span class="store-chip-name">${t('Upscaling models')}</span><span class="store-chip-val" data-size="upscale">—</span></button></li>` : ''}
+          ${hasMatte ? `<li><button type="button" class="store-chip" data-cat="matte"><span class="store-chip-sw" data-cat="matte"></span><span class="store-chip-name">${t('Background removal')}</span><span class="store-chip-val" data-size="matte">—</span></button></li>` : ''}
           ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">—</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead — everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
         </ul>
 
@@ -1259,6 +1281,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           ${hasSpeech ? `<div class="store-manage store-manage--row" data-cat="speech">
             <span class="store-manage-name">${t('Voice models')} ${infoDot(t('On-device voices for Script audio and narration. Removing them frees the space; they download again with your consent when next used.'))} <span class="storage-count" data-size-label="speech">0 KB</span></span>
             <button type="button" id="clear-speech-btn" class="btn-link-danger">${t('Remove voices')}</button>
+          </div>` : ''}
+
+          ${hasUpscale ? `<div class="store-manage store-manage--row" data-cat="upscale">
+            <span class="store-manage-name">${t('Upscaling models')} ${infoDot(t('On-device AI upscalers for the Upscale tool. Removing them frees the space; they download again with your consent when next used.'))} <span class="storage-count" data-size-label="upscale">0 KB</span></span>
+            <button type="button" id="clear-upscale-btn" class="btn-link-danger">${t('Remove models')}</button>
+          </div>` : ''}
+
+          ${hasMatte ? `<div class="store-manage store-manage--row" data-cat="matte">
+            <span class="store-manage-name">${t('Background removal')} ${infoDot(t('On-device cut-out models for Remove background. Removing them frees the space; they download again with your consent when next used.'))} <span class="storage-count" data-size-label="matte">0 KB</span></span>
+            <button type="button" id="clear-matte-btn" class="btn-link-danger">${t('Remove models')}</button>
           </div>` : ''}
         </div>
 
@@ -1336,7 +1368,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     };
     function updateReclaim(m: StorageModel) {
       const el = body.querySelector('#store-reclaim');
-      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + m.pins.bytes + m.speech.bytes + selectedSessionBytes()) });
+      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + m.pins.bytes + m.speech.bytes + m.upscale.bytes + m.matte.bytes + selectedSessionBytes()) });
     }
 
     // Refresh ONLY the visualization (hero, segments, legend, quota, reclaim, aria,
@@ -1359,6 +1391,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         ['previews', m.previews.bytes, t('Tool previews'), m.previews.available],
         ['pins', m.pins.bytes, t('Available offline'), m.pins.count > 0],
         ['speech', m.speech.bytes, t('Voice models'), m.speech.bytes > 0],
+        ['upscale', m.upscale.bytes, t('Upscaling models'), m.upscale.bytes > 0],
+        ['matte', m.matte.bytes, t('Background removal'), m.matte.bytes > 0],
       ];
       for (const [cat, bytes, label, avail] of segs) {
         const seg = bar?.querySelector<HTMLElement>(`.seg[data-cat="${cat}"]`);
@@ -1377,6 +1411,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size="previews"]', fmtBytes(m.previews.bytes));
       setText('[data-size="pins"]', fmtBytes(m.pins.bytes));
       setText('[data-size="speech"]', fmtBytes(m.speech.bytes));
+      setText('[data-size="upscale"]', fmtBytes(m.upscale.bytes));
+      setText('[data-size="matte"]', fmtBytes(m.matte.bytes));
       setText('[data-size="other"]', `~${fmtBytes(m.other)}`);
       setText('[data-count="sessions"]', String(m.sessions.count));
       setText('[data-size-hint="sessions"]', fmtBytes(m.sessions.bytes));
@@ -1384,6 +1420,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size-label="previews"]', fmtBytes(m.previews.bytes));
       setText('[data-size-label="pins"]', fmtBytes(m.pins.bytes));
       setText('[data-size-label="speech"]', fmtBytes(m.speech.bytes));
+      setText('[data-size-label="upscale"]', fmtBytes(m.upscale.bytes));
+      setText('[data-size-label="matte"]', fmtBytes(m.matte.bytes));
       const imgCount = body.querySelector('#userimg-count');
       const imgSize = body.querySelector('#userimg-size');
       if (imgCount) imgCount.textContent = `${m.images.count}`;
@@ -1568,6 +1606,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       // record, so the offline section's Speech row reads not-downloaded again.
       const speechBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-speech-btn');
       if (speechBtn) { await clearRegenerable(speechBtn, () => removePart('speech'), t('Removed voice models')); return; }
+
+      // removePart clears the model's IndexedDB store and forgets the offline-part
+      // record, so Available offline reads not-downloaded again; the dialog re-fetches
+      // on next use behind its own consent line.
+      const upscaleBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-upscale-btn');
+      if (upscaleBtn) { await clearRegenerable(upscaleBtn, () => removePart('upscale'), t('Removed upscaling models')); return; }
+      const matteBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-matte-btn');
+      if (matteBtn) { await clearRegenerable(matteBtn, () => removePart('matte'), t('Removed background-removal models')); return; }
 
       if ((e.target as Element).closest('.store-selbar-clear')) { body.querySelectorAll<HTMLInputElement>('.store-sess-check').forEach(c => { c.checked = false; }); syncSelbar(); return; }
       const selDel = (e.target as Element).closest<HTMLButtonElement>('.store-selbar-del');
@@ -1974,9 +2020,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       verify: precache ? sum(precache.groups.ort) + sum(precache.groups.models) : 0,
       catalog: catSummary?.totalBytes ?? 0,
       speech: precache?.groups.speech ? sum(precache.groups.speech) : 0,
+      upscale: precache?.groups.upscale ? sum(precache.groups.upscale) : 0,
+      matte: precache?.groups.matte ? sum(precache.groups.matte) : 0,
     };
+    // Model parts are release-versioned in IndexedDB (invalidated by their own
+    // cache-version, not a manifest watermark), so they have no live manifest
+    // version to go stale against — resyncOfflineParts never touches them.
     const liveVersion = (id: OfflinePartId): string | null =>
-      id === 'docs' ? (infoManifest?.version ?? null) : (precache?.version ?? null);
+      id === 'docs' ? (infoManifest?.version ?? null)
+      : (id === 'upscale' || id === 'matte') ? null
+      : (precache?.version ?? null);
 
     interface PartDef { id: OfflinePartId; name: string; desc: string; heavy?: boolean }
     const partDefs: PartDef[] = [
@@ -1984,6 +2037,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       { id: 'catalog', name: t('Catalogue'), desc: t('Brand assets beyond the essentials — logos, art and music your tools can pull in. Narrow it by tag if you only need some of it.') },
       { id: 'docs', name: t('Guides & docs'), desc: t('The full documentation site in your language, screenshots included.') },
       { id: 'speech', name: t('Speech voices'), desc: t('Voice models for Script audio and narration. Downloads once (~{size}), runs on-device.', { size: fmtBytes(plannedBytes.speech) }), heavy: true },
+      { id: 'upscale', name: t('Upscaling models'), desc: t('The AI image upscalers — photo, illustration/anime and face. Pull them down now (~{size}) and Upscale runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.upscale) }), heavy: true },
+      { id: 'matte', name: t('Background removal'), desc: t('The on-device cut-out models for Remove background. Pull them down now (~{size}) and it runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.matte) }), heavy: true },
       { id: 'verify', name: t('Verify deep scan'), desc: t('The on-device watermark scanner for the Verify page. Big — only worth it if you check content credentials away from a connection.'), heavy: true },
     ];
 
@@ -2202,6 +2257,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const partAvailable: Record<OfflinePartId, boolean> = {
       app: !!precache, docs: !!infoManifest, verify: !!precache && plannedBytes.verify > 0, catalog: !!catSummary,
       speech: !!precache && plannedBytes.speech > 0,
+      upscale: !!precache && plannedBytes.upscale > 0,
+      matte: !!precache && plannedBytes.matte > 0,
     };
     const isStale = (id: OfflinePartId): boolean => {
       const rec = partState[id];
@@ -2261,7 +2318,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         .filter(id => partAvailable[id])
         .reduce((n, id) => n + planned(id), 0);
       sweepSizeEl.textContent = remaining ? t('about {size}', { size: fmtBytes(remaining) }) : '';
-      for (const id of ['app', 'docs', 'speech', 'verify', 'catalog'] as const) syncPartRow(id);
+      for (const id of ['app', 'docs', 'speech', 'upscale', 'matte', 'verify', 'catalog'] as const) syncPartRow(id);
     };
 
     const setBusy = (busy: boolean): void => {
@@ -2306,6 +2363,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         else if (id === 'docs' && infoManifest) await downloadDocs(infoManifest, { signal, onProgress });
         else if (id === 'verify' && precache) await downloadVerify(precache, { signal, onProgress });
         else if (id === 'speech' && precache) await downloadSpeech(precache, { signal, onProgress });
+        else if (id === 'upscale') await downloadUpscale({ signal, onProgress });
+        else if (id === 'matte') await downloadMatte({ signal, onProgress });
         else if (id === 'catalog') {
           const res = await downloadCatalogScope(syncHost, scope, { signal, onProgress });
           await recordCatalogDownload(scope, res.bytes, res.files);

@@ -781,7 +781,10 @@
    house anti-pattern. Dashed borders are reserved for drop areas and appear
    nowhere in this card. */
 .preflight-finding {
-  padding: 8px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 9px 11px;
   border-radius: 8px;
   border: 1px solid hsl(var(--border));
   background: hsl(var(--muted) / 0.5);
@@ -789,19 +792,76 @@
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
+/* The metaphor chip: a large rounded tile carrying the CONTENT icon (what the
+   check is about), with the STATUS badge pinned to its corner. A fixed square
+   that never shrinks; nudged onto the first line's cap height. Tone tint is set
+   per severity below — neutral here so a plain note/gap stays calm. */
+.preflight-finding-figure {
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(34px * var(--a11y-fs));
+  height: calc(34px * var(--a11y-fs));
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+.preflight-finding-metaphor {
+  width: calc(19px * var(--a11y-fs));
+  height: calc(19px * var(--a11y-fs));
+}
+/* The status badge: a small disc on the chip's lower corner, ringed in the card
+   colour so it reads as a separate mark against the tinted tile. Its own tone
+   colour is inherited from the chip (currentColor). */
+.preflight-finding-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
+  border-radius: 50%;
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 1.5px hsl(var(--card));
+}
+.preflight-finding-badge-icon {
+  width: calc(12px * var(--a11y-fs));
+  height: calc(12px * var(--a11y-fs));
+}
+/* The message. min-width:0 lets this flex child shrink below its content width so
+   wrapping engages, and overflow-wrap breaks a long unbreakable token (a URL, a
+   filename) instead of forcing horizontal overflow the modal would clip. */
+.preflight-finding-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding-top: 6px;   /* first line's cap sits against the chip centre; alignment, so NOT --a11y-fs scaled */
+}
 /* The same amber .export-aspect-warning already uses two cards up — there is no
    --warning token in tokens.css, and inventing one for this card would give the
-   panel two different warning hues. */
+   panel two different warning hues. Tone drives the chip fill AND the badge/metaphor
+   colour, so severity reads from the mark, never colour alone (the badge glyph
+   differs per tone too). */
 .preflight-finding.is-warn {
   --aspect-warn: 38 92% 45%;
   border-color: hsl(var(--aspect-warn) / 0.5);
   background: hsl(var(--aspect-warn) / 0.12);
   color: hsl(var(--foreground));
 }
+.preflight-finding.is-warn .preflight-finding-figure {
+  background: hsl(var(--aspect-warn) / 0.18);
+  color: hsl(var(--aspect-warn));
+}
 .preflight-finding.is-error {
   border-color: hsl(var(--destructive) / 0.45);
   background: hsl(var(--destructive) / 0.1);
   color: hsl(var(--foreground));
+}
+.preflight-finding.is-error .preflight-finding-figure {
+  background: hsl(var(--destructive) / 0.15);
+  color: hsl(var(--destructive));
 }
 /* A NAMED GAP: "Lolly could not check this". Same tinted-fill + full-hairline
    anatomy as the other two (never a left stripe), but drawn DOWN rather than up —
@@ -819,7 +879,7 @@
 /* The details modal (opened by .preflight-open via mountModal). A centred dialog;
    its body reuses .preflight-fact / .preflight-finding from above verbatim. */
 .preflight-modal {
-  width: min(560px, 92vw);
+  width: min(720px, 94vw);
   max-height: 86vh;
   padding: 0;
   border: 1px solid hsl(var(--border));

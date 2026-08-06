@@ -37,8 +37,8 @@
  */
 import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
-import { icon } from '../lib/icons.ts';
-import { preflightGoverned } from '../lib/preflight-policy.ts';
+import { icon, type IconName } from '../lib/icons.ts';
+import { PREFLIGHT_FLAG, isFlagOnSync } from '../feature-flags.ts';
 import { mountModal, type ModalHandle } from '../components/modal.ts';
 import type { Count, Finding, PreflightReport } from '@lolly/engine';
 
@@ -246,8 +246,15 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
  * setting, still last in the panel, and still never gates Download.
  */
 export function preflightRowHtml(): string {
-  // Deployment-governed, default off — see lib/preflight-policy.ts for why.
-  if (!preflightGoverned()) return '';
+  // A personal opt-in flag, default OFF (an individual exporting a PNG for a chat
+  // message must never be ambushed by prepress findings). The profile's Feature
+  // flags card turns it on; a control plane governs it through the ordinary flag
+  // mechanism (default/hidden, plus the legacy can['export.preflight'] capability
+  // that orgFlagGovernance maps onto the flag's default). Read through the
+  // synchronous mirror: this renders in the export panel, outside the
+  // profile-aware views, and an absent mirror entry must resolve to the flag's
+  // own opt-in default rather than failing open.
+  if (!isFlagOnSync(PREFLIGHT_FLAG)) return '';
   return `
       <div class="section-card export-preflight" data-preflight-section style="display:none">
         <button type="button" class="section-card-head preflight-head preflight-open" data-action="preflight-open" aria-haspopup="dialog">
@@ -256,13 +263,75 @@ export function preflightRowHtml(): string {
       </div>`;
 }
 
+/**
+ * Each row shows TWO marks: a large metaphor for WHAT the check is about (a droplet
+ * for ink, stacked plates for separations, a crop frame for bleed/trim), and a
+ * small corner badge for its STATUS (alert / info / help). Severity is carried by
+ * the badge AND the tone tint — never colour alone, so it survives a colour-blind
+ * reader and a monochrome print of the screen.
+ *
+ * The metaphor is keyed by finding id: an exact entry first, then an id-family
+ * prefix, then the card's own checklist glyph as a neutral default. A new engine
+ * check with no entry still renders (as the default), so this map never gates a
+ * finding — it only enriches the ones it knows.
+ */
+const METAPHOR_BY_ID: Record<string, IconName> = {
+  'print.no-bleed': 'crop', 'print.bleed-unknown': 'crop',
+  'print.trim-not-physical': 'crop', 'print.trim-partially-declared': 'crop',
+  'refuse.trim-when-unset': 'crop', 'settings.print-marks-on-non-print-format': 'crop',
+  'print.geometry': 'resize', 'settings.aspect-guard': 'resize',
+  'print.effective-dpi': 'image', 'print.image-effective-dpi': 'image',
+  'print.image-dpi-needs-stage': 'image', 'count.raster-pixels': 'image',
+  'count.ink-coverage-palette': 'droplet', 'print.ink-over-tac': 'droplet',
+  'print.rich-black': 'droplet', 'refuse.ink-coverage': 'droplet',
+  'settings.press-profile-on-non-separating-format': 'droplet',
+  'plates.palette-unresolved': 'palette',
+  'plates.process': 'layers', 'plates.spot-ceiling': 'layers',
+  'plates.no-spots-declared': 'layers', 'refuse.exact-separation': 'layers',
+  'plates.finish-ceiling': 'sparkle', 'print.finish-separates-as-ink': 'sparkle',
+  'print.finish-flattened-into-process': 'sparkle', 'print.finish-unknown-kind': 'sparkle',
+  'settings.format-not-offered': 'sliders',
+  'settings.hdr-on-unsupported-format': 'sunburst',
+  'settings.durable-on-unsupported-format': 'shield',
+  'count.sequence-duration': 'clock', 'count.video-duration-declared': 'clock',
+  'count.cuts-applies': 'grid', 'count.cuts-inert': 'grid', 'count.cuts-needs-stage': 'grid',
+  'refuse.output-file-size': 'package',
+  'export.experimental-watermark': 'imprint',
+};
+const METAPHOR_BY_PREFIX: ReadonlyArray<readonly [string, IconName]> = [
+  ['count.pages.', 'document'],
+  ['plates.', 'layers'],
+  ['input.', 'keyboard'],
+  ['print.finish', 'sparkle'],
+];
+export function metaphorIcon(id: string): IconName {
+  if (id in METAPHOR_BY_ID) return METAPHOR_BY_ID[id]!;
+  for (const [p, name] of METAPHOR_BY_PREFIX) if (id.startsWith(p)) return name;
+  return 'checklist';
+}
+
+/** The status glyph on the corner badge: an alert for a warn/error, a help mark
+ *  for a gap ("Lolly could not check this" — a refusal, never an alert), an info
+ *  mark for a plain note. Tone tint is applied in CSS. */
+export function statusIcon(tone: PreflightTone): IconName {
+  if (tone === 'warn' || tone === 'error') return 'alert';
+  if (tone === 'gap') return 'help';
+  return 'info';
+}
+
 /** The body markup for `view`. Exported for the test; escaped throughout. */
 export function preflightBodyHtml(view: PreflightView): string {
   const facts = view.facts.map(f =>
     `<div class="preflight-fact"><span class="preflight-fact-label">${escape(f.label)}</span><span class="preflight-fact-value">${escape(f.value)}</span></div>`).join('');
   const rows = view.rows.length
     ? `<ul class="preflight-findings">${view.rows.map(r =>
-        `<li class="preflight-finding is-${r.tone}" data-finding-id="${escape(r.id)}">${escape(r.text)}</li>`).join('')}</ul>`
+        `<li class="preflight-finding is-${r.tone}" data-finding-id="${escape(r.id)}">`
+        + `<span class="preflight-finding-figure">`
+        + icon(metaphorIcon(r.id), { className: 'preflight-finding-metaphor' })
+        + `<span class="preflight-finding-badge">${icon(statusIcon(r.tone), { className: 'preflight-finding-badge-icon' })}</span>`
+        + `</span>`
+        + `<span class="preflight-finding-text">${escape(r.text)}</span>`
+        + `</li>`).join('')}</ul>`
     : '';
   return facts + rows;
 }
