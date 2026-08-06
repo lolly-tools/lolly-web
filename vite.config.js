@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve, extname, relative, join, sep, dirname } from 'node:path';
-import { existsSync, statSync, readFileSync, cpSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, cpSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -252,12 +252,41 @@ function brandChrome() {
   };
 }
 
+// Strip model STAGING dirs from the production build. scripts/fetch-{matte,upscale}-
+// models.ts stage a candidate model under public/models/<cat>/.candidates/ for
+// evaluation before it is promoted into its served /models/<cat>/ path — and the DEV
+// server serves them (so a candidate can be tested at that URL), which is why they live
+// under public/. But vite copies publicDir wholesale, so a plain build would SHIP them
+// too: ~700 MB of dead weight nothing references (they are dot-dirs, so precacheManifest's
+// walk already skips them — no manifest/group/client points at them; they were reachable
+// only incidentally). Delete them from dist so they never ship via ANY path — local dist,
+// git-integration, or the loldev-ship archive. Build-only (`apply: 'build'`), so dev-server
+// candidate evaluation is untouched. Runs before precacheManifest for tidiness; the scan
+// skips dot-dirs regardless, so the emitted manifest is byte-identical either way.
+function stripModelCandidates() {
+  return {
+    name: 'lolly-strip-model-candidates',
+    apply: 'build',
+    closeBundle() {
+      const modelsDir = resolve(webDir, 'dist', 'models');
+      if (!existsSync(modelsDir)) return;
+      for (const cat of readdirSync(modelsDir, { withFileTypes: true })) {
+        if (!cat.isDirectory()) continue;
+        const cand = resolve(modelsDir, cat.name, '.candidates');
+        if (existsSync(cand)) rmSync(cand, { recursive: true, force: true });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   publicDir: 'public',
-  // precacheManifest LAST: its closeBundle scans dist/ after serveRepoStatic's
-  // closeBundle has copied catalog/tools/schemas in (it skips those, but the
-  // ordering keeps the scan deterministic either way).
-  plugins: [serveRepoStatic(), brandChrome(), precacheManifest()],
+  // stripModelCandidates before precacheManifest: remove the /models/*/.candidates
+  // staging dirs from dist before the manifest scan. precacheManifest LAST: its
+  // closeBundle scans dist/ after serveRepoStatic's closeBundle has copied
+  // catalog/tools/schemas in (it skips those, but the ordering keeps the scan
+  // deterministic either way).
+  plugins: [serveRepoStatic(), brandChrome(), stripModelCandidates(), precacheManifest()],
   // The Neurospicy player + video music-bed exporter render ZzFXM songs in a
   // module worker (src/lib/zzfxm-worker.ts, which ESM-imports the engine). Emit
   // it as an ES module so the import graph survives the build unchanged.
