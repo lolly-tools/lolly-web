@@ -53,12 +53,12 @@ import type { InputValue } from '../../../../engine/src/inputs.ts';
 /**
  * The kinds the switcher offers, in menu order.
  *
- * `'spiro'` is declared by the engine and lowers with an `'unsupported'` answer, so it is
- * absent rather than shown-disabled: an entry that can only ever refuse is a worse
- * affordance than no entry, and `SplineKind` gaining a real Spiro solver is the event that
- * should add it back.
+ * `'spiro'` (Levien's Euler-spiral spline, the one Inkscape ships) is now a real solver
+ * — `spiroCubics` in the engine — so it joins the switcher, requested by users who know
+ * it from Inkscape. It is knot-only like `hyperbezier`, a different curve family, and
+ * defaults its nodes to `'smooth'`.
  */
-export const PEN_KINDS: SplineKind[] = ['hyperbezier', 'cubic', 'catmull-rom', 'bspline', 'line'];
+export const PEN_KINDS: SplineKind[] = ['hyperbezier', 'spiro', 'cubic', 'catmull-rom', 'bspline', 'line'];
 
 /** New paths default to this — per the plan, and because its node default is `'smooth'`,
  *  so plain click-click-click draws a curve rather than a polyline. */
@@ -78,10 +78,11 @@ export function kindReadsHandles(kind: SplineKind): boolean {
   return kind === 'cubic' || kind === 'hyperbezier';
 }
 
-/** A node's continuity default depends on the kind: `hyperbezier` says `'smooth'` (see
- *  `hbPin`), everything else follows `enforceContinuity`'s `'corner'`. */
+/** A node's continuity default depends on the kind: the knot-only curvature-continuous
+ *  splines (`hyperbezier`, `spiro`) say `'smooth'` so plain click-click-click draws a
+ *  curve; everything else follows `enforceContinuity`'s `'corner'`. */
 export function defaultContinuity(kind: SplineKind): Continuity {
-  return kind === 'hyperbezier' ? 'smooth' : 'corner';
+  return kind === 'hyperbezier' || kind === 'spiro' ? 'smooth' : 'corner';
 }
 
 // ── the box frame ─────────────────────────────────────────────────────────────
