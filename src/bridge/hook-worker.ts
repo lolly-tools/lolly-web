@@ -194,12 +194,18 @@ async function mountInWorker(tool: Parameters<HookExecutor>[0], host: HostV1): P
   const slot = (name: WorkerHookName): ((ctx: unknown) => Promise<unknown>) | null =>
     has.has(name) ? (ctx: unknown) => invokeInWorker(runId, name, ctx) : null;
 
-  // The node-carrying export hooks run in-realm (a live Element can't cross the
-  // boundary). Only compile in-realm when the tool actually declares one, so a
-  // clean cold-path tool (the M2 first target) executes PURELY in the worker.
-  const flags = tool.manifest.hooks;
-  const needsInRealm = !!(flags?.beforeExport || flags?.afterExport || flags?.exportStill);
-  const inRealm = needsInRealm ? await inRealmHookExecutor(tool, host) : null;
+  // The node-carrying export hooks (beforeExport/afterExport/exportStill) receive
+  // a live DOM Element and MUST run in-realm — it can't cross the boundary. Always
+  // compile in-realm and source them from there: a hooks.js may DEFINE an export
+  // hook without declaring it in the manifest (filter-duotone defines beforeExport
+  // but lists only onInit/onInput/onFrame), so the manifest is not a reliable
+  // signal — the compiled module is. The in-realm compile is cheap (top-level is
+  // function definitions); its onInit/onInput/onFrame exist but are never called
+  // (those come from the worker). An export hook that reads render state must read
+  // it from the DOM (ctx.node), NOT from module vars an isolated interactive hook
+  // wrote — those live in the worker closure (see the overlay-export refactor,
+  // plans/86 §18); this split is only sound once that holds.
+  const inRealm = await inRealmHookExecutor(tool, host);
 
   return {
     onInit: slot('onInit'),
@@ -207,9 +213,9 @@ async function mountInWorker(tool: Parameters<HookExecutor>[0], host: HostV1): P
     onFrame: slot('onFrame'),
     onLevel: slot('onLevel'),
     exportFile: slot('exportFile'),
-    beforeExport: inRealm?.beforeExport ?? null,
-    afterExport: inRealm?.afterExport ?? null,
-    exportStill: inRealm?.exportStill ?? null,
+    beforeExport: inRealm.beforeExport,
+    afterExport: inRealm.afterExport,
+    exportStill: inRealm.exportStill,
     // Teardown (runtime.destroy → hooks.dispose): tell the worker to drop this
     // run and release the main-side host reference, so the singleton worker
     // doesn't retain one run per mount. Idempotent.
