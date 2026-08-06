@@ -87,6 +87,11 @@ const PIN_CACHE = 'lolly-pins';
 //                stay current; the bucket only answers when the network can't.
 const APP_CACHE = 'lolly-app';
 const ORT_CACHE = 'lolly-ort';
+// The transformers.js speech runtime (/ort-hf/<version>/ort-wasm-*), OWNED by the
+// speech offline part so pre-downloading Speech is offline-complete. It used to live
+// in ORT_CACHE (downloaded by the verify part); /ort-hf/ now serves from HERE and
+// falls back to ORT_CACHE for users who pre-downloaded it via Verify before the split.
+const ORT_HF_CACHE = 'lolly-ort-hf';
 const INFO_CACHE = 'lolly-info';
 
 // The Kokoro speech buckets. 'transformers-cache' is transformers.js's OWN
@@ -100,7 +105,7 @@ const TRANSFORMERS_CACHE = 'transformers-cache';
 const SPEECH_CACHE = 'lolly-speech';
 
 // Every bucket that survives a CACHE-generation bump (activate's keep-list).
-const PERSISTENT_CACHES = [PIN_CACHE, APP_CACHE, ORT_CACHE, INFO_CACHE, TRANSFORMERS_CACHE, SPEECH_CACHE];
+const PERSISTENT_CACHES = [PIN_CACHE, APP_CACHE, ORT_CACHE, ORT_HF_CACHE, INFO_CACHE, TRANSFORMERS_CACHE, SPEECH_CACHE];
 
 // Stable key the app-shell document is cached under for the offline fallback.
 // Every SPA navigation (/, /pro, /tool/...) resolves to the same index.html, so
@@ -150,13 +155,15 @@ const IMMUTABLE_PATTERNS = [
   /^\/catalog\/fonts\//,
 ];
 
-// The onnxruntime-web runtimes (/verify's deep scan at /ort/, the Kokoro speech
-// worker's pinned build at /ort-hf/<version>/ — the release-versioned subdir
-// scripts/copy-transformers-ort.ts emits, so cache-first can never pin a stale
-// wasm across a transformers.js upgrade): cache-first out of one shared
-// persistent bucket — see ORT_CACHE above. A prefix match, so the versioned
-// subdir is covered.
-const ORT_PATTERN = /^\/ort(-hf)?\//;
+// The onnxruntime-web runtimes, cache-first out of their OWN persistent buckets so
+// each offline part is self-complete. /ort/ (verify's deep scan) → ORT_CACHE. The
+// Kokoro/Whisper speech worker's pinned build at /ort-hf/<version>/ (the release-
+// versioned subdir scripts/copy-transformers-ort.ts emits, so cache-first can never
+// pin a stale wasm across a transformers.js upgrade) → ORT_HF_CACHE, falling back to
+// ORT_CACHE for users who pre-downloaded it via Verify before the split. Prefix
+// matches, so each versioned subdir is covered.
+const ORT_PATTERN = /^\/ort\//;
+const ORT_HF_PATTERN = /^\/ort-hf\//;
 
 // The /info docs site: network-first per URL with INFO_CACHE as the offline
 // fallback — see INFO_CACHE above and the /info note in BYPASS_PATTERNS.
@@ -233,6 +240,13 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // The speech runtime (/ort-hf/): cache-first from the speech-owned bucket, falling
+  // back to ORT_CACHE for users who pre-downloaded it via the Verify part before the
+  // split, then the network (filling ORT_HF_CACHE). Checked before /ort/ (disjoint).
+  if (ORT_HF_PATTERN.test(url.pathname)) {
+    event.respondWith(cacheFirstInEither(ORT_HF_CACHE, ORT_CACHE, event));
+    return;
+  }
   // The ONNX runtime: cache-first from its own persistent bucket (see ORT_CACHE).
   if (ORT_PATTERN.test(url.pathname)) {
     event.respondWith(cacheFirstIn(ORT_CACHE, event));
@@ -332,6 +346,27 @@ async function cacheFirstIn(cacheName, event) {
   try {
     const response = await fetch(request);
     if (response && response.ok) cache.put(request, response.clone());
+    return response;
+  } catch {
+    return new Response('Offline', { status: 503 });
+  }
+}
+
+// Like cacheFirstIn, but checks a SECOND (legacy) bucket on a miss before the network —
+// the migration path for /ort-hf/. New downloads land in the PRIMARY bucket (ORT_HF_CACHE,
+// speech-owned); a user who pre-downloaded the runtime via the Verify part still has it in
+// the fallback (ORT_CACHE), so serve that before giving up to the network. A network fetch
+// fills the PRIMARY bucket so future hits consolidate there and one copy is held.
+async function cacheFirstInEither(primaryCache, fallbackCache, event) {
+  const { request } = event;
+  const primary = await caches.open(primaryCache);
+  const hit = await primary.match(request);
+  if (hit) return hit;
+  const legacy = await (await caches.open(fallbackCache)).match(request);
+  if (legacy) return legacy;
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) primary.put(request, response.clone());
     return response;
   } catch {
     return new Response('Offline', { status: 503 });

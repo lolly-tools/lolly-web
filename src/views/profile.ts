@@ -2019,7 +2019,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       docs: infoManifest ? sum(docsFileList(infoManifest, currentLang())) : 0,
       verify: precache ? sum(precache.groups.ort) + sum(precache.groups.models) : 0,
       catalog: catSummary?.totalBytes ?? 0,
-      speech: precache?.groups.speech ? sum(precache.groups.speech) : 0,
+      speech: precache ? sum(precache.groups.speech ?? []) + sum(precache.groups.ortHf ?? []) : 0,
       upscale: precache?.groups.upscale ? sum(precache.groups.upscale) : 0,
       matte: precache?.groups.matte ? sum(precache.groups.matte) : 0,
     };

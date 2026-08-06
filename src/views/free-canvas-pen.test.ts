@@ -442,10 +442,11 @@ test('a press that TRAVELS is a drag, not a hold, so no menu opens', async () =>
   f.destroy();
 });
 
-test('the default kind is hyperbezier and spiro is not offered', () => {
+test('the default kind is hyperbezier, and spiro is now offered (a real Euler-spiral solver)', () => {
   assert.equal(PEN_DEFAULT_KIND, 'hyperbezier');
   assert.equal(PEN_KINDS[0], 'hyperbezier', 'and it leads the switcher');
-  assert.ok(!PEN_KINDS.includes('spiro' as never), 'spiro lowers to nothing, so it is absent rather than shown-broken');
+  // Spiro is implemented (engine/src/geom/spiro.ts) and now in the switcher, second.
+  assert.ok(PEN_KINDS.includes('spiro' as never), 'spiro lowers to real cubics, so it is offered');
 });
 
 test('penCommitFromNative frames the LOWERED curve, not the node polygon', () => {
@@ -1122,12 +1123,12 @@ const changeKind = (f: Fixture, to: string): void => {
   frames();
 };
 
-test('the switcher offers what the engine can lower, and never spiro', () => {
+test('the switcher offers exactly what the engine can lower, now including spiro', () => {
   const f = mount([cubicBox()]);
   enterNodeEdit(f, [400, 480]);
   const values = [...kindSelect(f).options].map((o) => o.value);
   assert.deepEqual(values, [...PEN_KINDS]);
-  assert.ok(!values.includes('spiro'));
+  assert.ok(values.includes('spiro'), 'spiro is a real solver now, so the switcher offers it');
   assert.equal(kindSelect(f).value, 'cubic', 'and it shows the path its own kind');
   f.destroy();
 });

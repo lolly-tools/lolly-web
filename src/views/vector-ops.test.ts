@@ -312,7 +312,6 @@ test('boxToPath: unusable path fields lower to null, never to a rectangle', () =
     '1!cubic!1_.5!0!!!!!!x',  // unknown continuity
     '1!cubic!1_.5!0!!!!!!c!9', // a field past the record's end
     '1!wat!1_0!0_1!1',        // decodes, but no engine can lower that kind
-    '1!spiro!1_0!0_1!1',      // declared, unimplemented
     '1!cubic!1_0!0',          // one node lowers to no curves
     '%7B%22kind',             // percent-encoded anything: this format needs no escaping
     // The OLD shell-side format (percent-encoded JSON) is refused outright rather than

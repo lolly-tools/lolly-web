@@ -1,27 +1,38 @@
 // SPDX-License-Identifier: MPL-2.0
-/* Export shutter — a canvas camera-iris that closes over the stage while the
-   brief full-res resize during export (the "shake") happens, then opens again.
-   Replaces the six CSS flaps that lived inline in views/tool.ts.
+/* Export shutter — a candy-swirl lollipop iris that closes over the stage while
+   the brief full-res resize during export (the "shake") happens, then opens
+   again. Replaces the 14-blade camera iris that lived here before (kept in git
+   history); that in turn replaced six skewed CSS flaps.
 
-   WHY CANVAS. The CSS version faked blades with skewed rotated boxes, which
-   cannot produce a real iris: the blades were straight-edged, they could not
-   lap each other, and the aperture was a rotating hexagram rather than a
-   closing polygon. This paints the actual mechanism — blade k pivots at P with
-   |OP| = R, its leading edge an arc of radius rc centred at C rigidly fixed at
-   |PC| = d, so the opening's inradius is exactly rc − |OC| and one rotation per
-   blade IS the whole animation.
+   WHY A SWIRL. It's the most on-brand cover we can paint: a lollipop swirl reads
+   as "Lolly" instantly. Its palette follows the THEME (light / dark / the
+   mid-toned 'brand' theme), NOT the brand colour: ambient brightness tracks the
+   theme background so light themes brighten the swirl and dark themes deepen it,
+   and only the mid-toned 'brand' theme leans the green toward the live accent —
+   the "more colour influenced" variant. See toneForTheme().
 
-   PERFORMANCE. This runs during export on phones, so every pass here earns its
-   place. Three passes from the prototype are deliberately absent rather than
-   set to zero — seam hairlines, the throat vignette, and the weave contact
-   shadow — see PASSES REMOVED at the bottom of this file. The remaining
-   per-frame cost is N blade paints plus `PAIRS` small offscreen composites
-   confined to a dirty rect, and one gradient fillRect for the cast shadow.
+   HOW IT COVERS. The swirl is drawn in a fragment shader normalised by
+   min(resolution), so it is ALWAYS a circle regardless of stage aspect. Coverage
+   grows from the outside in — at any progress every pixel at radius r is covered
+   at least as much as the aperture edge, so the corners are covered throughout
+   and at full close alpha is 1 everywhere. That is what lets it be an export
+   cover. A seal plate behind it (hsl(var(--background))) fades in over the last
+   sliver as belt-and-braces, and carries the whole close on its own if WebGL is
+   unavailable — so the "hide the stage during the resize" contract holds even
+   without a GPU.
 
-   Tuned in scratchpad/iris3.html; the constants below are that tool's readout. */
+   THE MARK. At ~70% of the close the brand-hued Lolly mark (the same
+   --lolly-logo bitmap the /verify medallion uses) pops out on top of the swirl,
+   sized to 18% of the stage's smaller dimension.
+
+   PERFORMANCE. This runs during export on phones. The shader is one full-screen
+   triangle pair per frame; DPR is capped (1.5 phone / 2 desktop). No CSS filter
+   on the iris canvas — the shader's own lighting is the depth cue. */
 
 import { playSfx } from './sfx.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
+import { liveAccentHint } from './viz-palette.ts';
+import { currentTheme } from '../theme.ts';
 
 export interface Shutter {
   /** Close the iris. Resolves once it is fully sealed. */
@@ -34,342 +45,156 @@ export interface Shutter {
 }
 
 /* ── the tuned look ──────────────────────────────────────────────────────── */
-const BLADES     = 14;
-const ARC_RADIUS = 5.30;   // rc, in units of (stage half-diagonal / 1.40)
-const DURATION   = 375;    // ms for one direction
-const ENTER_AT   = 0.22;   // below this the blades are still off-stage
-const LOCK_AT    = 0.97;   // above this they only bury themselves further
-const THICKNESS  = 0.01;   // blade edge wall
-const REVERSE_LAP = true;
-const WEAVE_REACH = 0.53;
-const PAIRS       = 5;     // seams that get the woven lap treatment
-const KEY_ANGLE   = -78 * Math.PI / 180;
-const CONTRAST    = 0.98;
-const SPOTLIGHT   = 1.00;
-const CAST        = 0.28;
-const COVER       = 0.02;
-const SPREAD      = 0.13;
+const DURATION  = 375;     // ms for one direction (parity with the old iris)
+const GAMMA     = 0.7;     // shapes raw progress → swirl closure (front-loaded)
+const MARK_FRAC = 0.18;    // mark size as a fraction of the stage's SMALLER side
+const POP_LO    = 0.6;     // close-progress where the mark starts to appear …
+const POP_HI    = 0.8;     // … and where it has fully popped
+const SEAL_LO   = 0.82;    // WebGL path: plate insurance only over the last sliver
+const LOLLY_GREEN = '#11734b';   // identity green for near-neutral brands
 
-const OPEN = 1.46;
-const SEAL = 0.02;
+/* ── the swirl shader ────────────────────────────────────────────────────── */
+const VERT = `
+attribute vec2 a_position;
+void main() { gl_Position = vec4(a_position, 0.0, 1.0); }`;
 
-/* ── geometry ────────────────────────────────────────────────────────────── */
-interface Geom { N: number; R: number; d: number; rc: number; RB: number; tOpen: number; tShut: number }
+// The precision line is prepended at compile time (highp where supported).
+const FRAG_BODY = `
+uniform vec2 u_resolution;
+uniform float u_progress;
+uniform vec3 u_color;
+uniform vec3 u_cream;
+uniform vec3 u_ambLo;
+uniform vec3 u_ambHi;
+const float PI = 3.14159265359;
+const float NUM_STRIPES = 8.0;
+const float TWIST = -6.0;
+const float TIP_ROUNDNESS = 13.0;
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / min(u_resolution.x, u_resolution.y);
+  float r = max(length(uv), 0.0001);
+  float theta = atan(uv.y, uv.x);
+  float global_rot = u_progress * PI * 1.2;
+  float phi = theta + r * TWIST + global_rot;
+  float val = phi * NUM_STRIPES / (2.0 * PI);
+  float segment = fract(val);
+  float stripe_id = floor(mod(val, NUM_STRIPES));
+  float u = segment * 2.0 - 1.0;
+  float max_hole = 1.5;
+  float current_hole = max_hole - u_progress * (max_hole + 2.0 / TIP_ROUNDNESS);
+  float r_edge = current_hole - sqrt(max(1.0 - u*u, 0.0)) / TIP_ROUNDNESS;
+  float alpha = smoothstep(r_edge - 0.005, r_edge + 0.015, r);
+  if (alpha <= 0.001) { gl_FragColor = vec4(0.0); return; }
+  float v = max(0.0, current_hole - r) * TIP_ROUNDNESS;
+  float profile = max(1.0 - u*u - v*v, 0.0);
+  float z = sqrt(profile);
+  vec2 grad_phi = vec2(-uv.y, uv.x) / (r*r) + TWIST * (uv / r);
+  vec2 perp = normalize(grad_phi);
+  vec2 tangent = vec2(perp.y, -perp.x);
+  if (dot(tangent, uv) > 0.0) tangent = -tangent;
+  vec3 N = normalize(vec3(perp * u + tangent * v, z * 0.8));
+  bool is_green = (mod(stripe_id, 2.0) == 0.0);
+  vec3 base_color = is_green ? u_color : u_cream;
+  vec3 L_main = normalize(vec3(-0.5, 0.8, 1.0));
+  vec3 V = vec3(0.0, 0.0, 1.0);
+  vec3 H = normalize(L_main + V);
+  float diffuse = pow(max(dot(N, L_main) * 0.5 + 0.5, 0.0), 1.5);
+  float spec_main = pow(max(dot(N, H), 0.0), 60.0) * 1.5;
+  vec2 matcapUV = N.xy * 0.5 + 0.5;
+  float window1 = smoothstep(0.1,0.2,matcapUV.x) * smoothstep(0.4,0.3,matcapUV.x) * smoothstep(0.5,0.9,matcapUV.y);
+  float window2 = smoothstep(0.6,0.7,matcapUV.x) * smoothstep(0.9,0.8,matcapUV.x) * smoothstep(0.4,0.8,matcapUV.y);
+  vec3 fake_reflection = vec3(window1 + window2) * 0.6;
+  vec3 ambient = mix(u_ambLo, u_ambHi, N.y * 0.5 + 0.5);
+  float highlight_mask = is_green ? 1.0 : 0.8;
+  vec3 final_color = base_color * (ambient + diffuse * 0.7);
+  final_color += (vec3(1.0) * spec_main + fake_reflection) * highlight_mask;
+  float crevice_shadow = smoothstep(0.0, 0.1, z);
+  final_color *= mix(0.25, 1.25, crevice_shadow);
+  float center_occlusion = smoothstep(0.0, 0.3, r);
+  final_color *= mix(0.15, 1.0, center_occlusion);
+  gl_FragColor = vec4(final_color, alpha);
+}`;
 
-function geom(N: number, rc: number): Geom {
-  const rhoOpen = rc - OPEN, rhoShut = rc + 0.02 + SEAL;
-  const R = (rhoOpen + rhoShut) / 2;
-  const d = (rhoShut - rhoOpen) / 2 * 1.45;
-  const ang = (r: number) =>
-    Math.acos(Math.max(-1, Math.min(1, (r * r - R * R - d * d) / (2 * R * d))));
-  return { N, R, d, rc, RB: R + rc + 3, tOpen: ang(rhoOpen), tShut: ang(rhoShut) };
+/* ── pure helpers ────────────────────────────────────────────────────────── */
+type Rgb = [number, number, number];
+/** One theme's swirl palette: coloured stripe, light stripe, ambient lo/hi. */
+type Tone = { green: Rgb; cream: Rgb; ambLo: Rgb; ambHi: Rgb };
+
+function hexToRgb(hex: string): Rgb | null {
+  let c = hex.trim().replace('#', '');
+  if (c.length === 3) c = c.split('').map((x) => x + x).join('');
+  if (c.length !== 6 || /[^0-9a-fA-F]/.test(c)) return null;
+  return [
+    parseInt(c.slice(0, 2), 16) / 255,
+    parseInt(c.slice(2, 4), 16) / 255,
+    parseInt(c.slice(4, 6), 16) / 255,
+  ];
 }
 
-/* Annular sector about C, spanning the half facing the aperture. Its straight
-   side edges sit at |OC| ≥ R−d, always off-stage, so the blades can never leave
-   a gap on the canvas — which is what lets this be used as an export cover. */
-function bladePath(c: CanvasRenderingContext2D, g: Geom): void {
-  c.beginPath();
-  c.arc(g.d, 0, g.rc, Math.PI / 2, 3 * Math.PI / 2, false);
-  c.arc(g.d, 0, g.RB, 3 * Math.PI / 2, Math.PI / 2, true);
-  c.closePath();
-}
-function bladePath2D(g: Geom): Path2D {
-  const p = new Path2D();
-  p.arc(g.d, 0, g.rc, Math.PI / 2, 3 * Math.PI / 2, false);
-  p.arc(g.d, 0, g.RB, 3 * Math.PI / 2, Math.PI / 2, true);
-  p.closePath();
-  return p;
-}
-function bladeAngle(g: Geom, prog: number, _k: number): number {
-  const p = Math.max(0, Math.min(1, prog));
-  return g.tOpen + (g.tShut - g.tOpen) * p;
+/** HSL saturation of an rgb, used as a cheap "is this brand near-neutral" gate. */
+function saturationOf([r, g, b]: Rgb): number {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  return d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
 }
 
-const CONIC = typeof CanvasRenderingContext2D.prototype.createConicGradient === 'function';
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 
-/* Shading that FOLLOWS THE BLADE: built about C, so iso-lines are concentric
-   with the leading edge (radial) or sweep along it (conic). A linear gradient
-   cuts across the curve and is what makes blades read flat. */
-function conicShade(
-  c: CanvasRenderingContext2D, x: number, y: number, peak: number,
-  f: (cos: number) => string, steps = 22,
-): CanvasGradient {
-  const gr = c.createConicGradient(peak, x, y);
-  for (let i = 0; i <= steps; i++) gr.addColorStop(i / steps, f(Math.cos(i / steps * 2 * Math.PI)));
-  return gr;
+/** Lightness 0…1 of an `h s% l%` token triple (e.g. --background); null if unparseable. */
+function tokenLightness(triple: string): number | null {
+  const parts = triple.trim().split(/\s+/);
+  const l = parts.length >= 3 ? parseFloat(parts[2]!.replace('%', '')) : NaN;
+  return Number.isFinite(l) ? Math.max(0, Math.min(1, l / 100)) : null;
 }
 
-/* ── the renderer ────────────────────────────────────────────────────────── */
+function bgLightness(): number {
+  if (typeof getComputedStyle !== 'function') return 0.5;
+  return tokenLightness(getComputedStyle(document.documentElement).getPropertyValue('--background')) ?? 0.5;
+}
 
-function drawIris(
-  ctx: CanvasRenderingContext2D, ov: HTMLCanvasElement, octx: CanvasRenderingContext2D,
-  W: number, H: number, prog: number, face: string, ink: string,
-): void {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-  if (prog <= 0) return;
-
-  const N = BLADES, g = geom(N, ARC_RADIUS);
-  const S = Math.hypot(W, H) / 2 / 1.40;
-  const cx = W / 2, cy = H / 2;
-  const K = CONTRAST;
-
-  let c = ctx;   // redirected at the offscreen during the lap passes
-
-  const setT = (k: number): number => {
-    const t = bladeAngle(g, prog, k);
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.translate(cx, cy); c.scale(S, S);
-    c.rotate(k * 2 * Math.PI / N); c.translate(g.R, 0); c.rotate(t);
-    return t;
+/* The swirl's palette follows the THEME, not the brand:
+   - ambient + cream track the theme background lightness, so light themes
+     brighten the swirl and dark themes deepen it — continuously, so any future
+     theme adapts without a new preset;
+   - the green stays Lolly's identity green in light/dark, and only the mid-toned
+     'brand' theme leans it toward the live accent (a saturated one; neutral
+     brands stay green) — the "more colour influenced" variant. */
+function toneForTheme(): Tone {
+  const bgL = bgLightness();
+  let green = hexToRgb(LOLLY_GREEN)!;
+  if (currentTheme() === 'brand') {
+    const accent = liveAccentHint();
+    const rgb = accent ? hexToRgb(accent) : null;
+    if (rgb && saturationOf(rgb) >= 0.12) green = mixRgb(green, rgb, 0.7);
+  }
+  return {
+    green,
+    cream: mixRgb([0.86, 0.90, 0.86], [0.97, 0.99, 0.97], bgL),
+    ambLo: mixRgb([0.05, 0.08, 0.11], [0.34, 0.38, 0.40], bgL),
+    ambHi: mixRgb([0.30, 0.34, 0.38], [0.66, 0.70, 0.70], bgL),
   };
-  const lambert = (k: number, t: number): number => {
-    const psi = Math.atan2(g.d * Math.sin(t), g.R + g.d * Math.cos(t));
-    return 0.5 + 0.5 * Math.cos(k * 2 * Math.PI / N + psi + Math.PI - KEY_ANGLE);
-  };
-
-  /* The thickness wall is swept as nested annuli sharing an inner edge — nested,
-     not disjoint, because disjoint bands meet on SUB−1 antialiased boundaries
-     and leave a diagonal moiré across every blade.
-
-     SUB scales with the wall's PIXEL width instead of being a fixed 34. At this
-     thickness the wall is only a few px, so 34 steps painted the same handful of
-     pixels 34 times — 476 fills per frame at 14 blades, for no visible gain. */
-  const wallPx = THICKNESS * S;
-  const SUB = Math.max(4, Math.min(34, Math.round(wallPx / 1.5)));
-
-  function paintBlade(k: number, t: number): void {
-    const alpha = k * 2 * Math.PI / N + t;
-    const lam = lambert(k, t);
-    const peakFace = KEY_ANGLE - alpha;
-    const peakWall = KEY_ANGLE - Math.PI - alpha;
-
-    // Base face. A fixed separation from the card keeps blades reading as solid
-    // material at any contrast; without it they vanish into the card and only
-    // the thickness bands survive, which reads as ribbons.
-    bladePath(c, g);
-    c.fillStyle = `hsl(${face})`;
-    c.fill();
-    bladePath(c, g);
-    const sep = 0.10 + (lam - 0.5) * K * 0.30;
-    c.fillStyle = `hsl(${ink} / ${Math.max(0.02, sep).toFixed(4)})`;
-    c.fill();
-
-    // Directional light along the arc — the main dimensional cue.
-    if (CONIC) {
-      bladePath(c, g);
-      c.fillStyle = conicShade(c, g.d, 0, peakFace, v =>
-        v >= 0 ? `hsl(0 0% 100% / ${(v * v * K * 0.30).toFixed(4)})`
-               : `hsl(0 0% 0% / ${(v * v * K * 0.34).toFixed(4)})`);
-      c.fill();
-    }
-
-    // Bevel concentric with the leading edge.
-    bladePath(c, g);
-    const bev = c.createRadialGradient(g.d, 0, g.rc, g.d, 0, g.rc + 1.35);
-    bev.addColorStop(0,    `hsl(0 0% 100% / ${(0.22 * K + 0.05).toFixed(4)})`);
-    bev.addColorStop(0.06, `hsl(0 0% 100% / ${(0.07 * K).toFixed(4)})`);
-    bev.addColorStop(0.22, 'rgba(0,0,0,0)');
-    bev.addColorStop(1,    `rgba(0,0,0,${(0.34 * K + 0.04).toFixed(4)})`);
-    c.fillStyle = bev;
-    c.fill();
-
-    // Thickness wall. Canvas can't multiply two gradients in one fill, but it
-    // can multiply a gradient by globalAlpha — so build the conic once, then
-    // sweep nested annuli varying only alpha.
-    if (THICKNESS > 0 && CONIC) {
-      c.fillStyle = conicShade(c, g.d, 0, peakWall, v =>
-        v >= 0 ? `hsl(0 0% 100% / ${(v * (0.30 * K + 0.07)).toFixed(4)})`
-               : `hsl(0 0% 0% / ${(-v * (0.42 * K + 0.14)).toFixed(4)})`);
-      const a = 1 - Math.pow(0.12, 1 / SUB);
-      for (let i = 1; i <= SUB; i++) {
-        c.globalAlpha = a;
-        c.beginPath();
-        c.arc(g.d, 0, g.rc, Math.PI / 2, 3 * Math.PI / 2, false);
-        c.arc(g.d, 0, g.rc + THICKNESS * Math.pow(i / SUB, 1.7), 3 * Math.PI / 2, Math.PI / 2, true);
-        c.closePath();
-        c.fill();
-      }
-      c.globalAlpha = 1;
-    }
-  }
-
-  // ── pass 1: bodies, back to front. Whichever is drawn LAST sits on top.
-  const order = REVERSE_LAP ? Array.from({ length: N }, (_, i) => i)
-                            : Array.from({ length: N }, (_, i) => N - 1 - i);
-  for (const k of order) paintBlade(k, setT(k));
-
-  /* ── pass 2: close the cycle ──────────────────────────────────────────────
-     Painter order is a stack; a real iris is a cycle, so exactly one lap is
-     inverted — the bottom blade must sit over the top one. Repainting it across
-     the WHOLE overlap is wrong: these blades are half-plane-sized, so any point
-     covered by three of them is a genuine Penrose contradiction and fixing it
-     globally just moves the error. So fix it where the eye checks — the rim —
-     and fade out before reaching a third blade.
-
-     Pairs beyond the first are not correctness, they are coverage: each pair
-     also repaints its seam with the lap shading, and only the seams it touches
-     get it, so the count walks the treatment further around the rim. */
-  const half = Math.PI / N;
-  const pairs = Math.max(1, Math.min(PAIRS, N - 1));
-
-  for (let j = 0; j < pairs; j++) {
-    const under = (N - 1 - j + N) % N;
-    const over  = (under + 1) % N;
-    if (under === over) break;
-
-    const tb  = bladeAngle(g, prog, under);
-    const rho = Math.hypot(g.R + g.d * Math.cos(tb), g.d * Math.sin(tb));
-    const h2  = g.rc * g.rc - Math.pow(rho * Math.sin(half), 2);
-    if (h2 <= 0) continue;
-
-    const q = Math.abs(rho * Math.cos(half) - Math.sqrt(h2));
-    const open = Math.max(0, Math.min(1, (g.rc - rho) / OPEN));
-    // Later pairs sit further out so they don't stack in one ring — but this
-    // SATURATES; unbounded growth made far pairs read as a different-sized lap
-    // instead of continuing the same seam round the rim.
-    const step = j <= 2 ? 1 + j * 0.55 : 2.10 + 0.55 * (1 - Math.exp(-(j - 2) / 1.5));
-    const rIn  = (q + 0.10 + 0.60 * (1 - open)) * WEAVE_REACH * step;
-    const rOut = rIn * 2.6;
-
-    /* Dirty rect. The lap is confined to a disc of radius rOut about the centre,
-       so clearing and copying back the whole canvas — five times a frame, at
-       DPR 2 — was pure waste. Bounding it is the single biggest saving here. */
-    const rpx = rOut * S + 2;
-    const bx = Math.max(0, Math.floor(cx - rpx)), by = Math.max(0, Math.floor(cy - rpx));
-    const bw = Math.min(W, Math.ceil(cx + rpx)) - bx, bh = Math.min(H, Math.ceil(cy + rpx)) - by;
-    if (bw <= 0 || bh <= 0) continue;
-
-    if (ov.width !== W || ov.height !== H) { ov.width = W; ov.height = H; }
-    octx.setTransform(1, 0, 0, 1, 0, 0);
-    octx.clearRect(bx, by, bw, bh);
-    octx.globalCompositeOperation = 'source-over';
-
-    c = octx;
-    c.save();
-    setT(over); bladePath(c, g); c.clip();
-    paintBlade(under, setT(under));
-    c.restore();
-
-    /* Clipping to `over`'s BODY is only safe while `over` is the blade actually
-       visible there — true at the top of the stack, false below it. So erase
-       whatever is painted after `over`, and the patch stays confined to where
-       `over` is genuinely on show, whichever pair it belongs to. */
-    const oi = order.indexOf(over);
-    if (oi >= 0 && oi < N - 1) {
-      const above = new Path2D(), bp = bladePath2D(g);
-      for (let i = oi + 1; i < N; i++) {
-        const kk = order[i];
-        if (kk === undefined || kk === under) continue;
-        const tt = bladeAngle(g, prog, kk);
-        above.addPath(bp, new DOMMatrix().translate(cx, cy).scale(S)
-          .rotate(kk * 360 / N).translate(g.R, 0).rotate(tt * 180 / Math.PI));
-      }
-      c.setTransform(1, 0, 0, 1, 0, 0);
-      c.globalCompositeOperation = 'destination-out';
-      c.fill(above);
-      c.globalCompositeOperation = 'source-over';
-    }
-
-    /* Mask from the APERTURE CENTRE, not the seam crossing. Fading isotropically
-       out of a crossing dissolves the repaint in every direction and reads as a
-       stain; a ring about the centre stays hard where blades actually weave. The
-       long eased tail matters — a short one leaves a circular edge the eye reads
-       as a blade boundary, which is worse than the seam it fixes. */
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.translate(cx, cy); c.scale(S, S);
-    c.globalCompositeOperation = 'destination-in';
-    const m = c.createRadialGradient(0, 0, 0, 0, 0, rOut);
-    const knee = Math.min(0.9, rIn / rOut);
-    m.addColorStop(0, 'rgba(0,0,0,1)');
-    m.addColorStop(knee, 'rgba(0,0,0,1)');
-    for (let i = 1; i <= 6; i++) {
-      const u = i / 7;
-      m.addColorStop(knee + (1 - knee) * u, `rgba(0,0,0,${Math.pow(1 - u, 2.4).toFixed(4)})`);
-    }
-    m.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = m;
-    c.fillRect(-rOut, -rOut, rOut * 2, rOut * 2);
-    c.globalCompositeOperation = 'source-over';
-
-    c = ctx;
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.drawImage(ov, bx, by, bw, bh, bx, by, bw, bh);
-  }
-
-  /* ── pass 3: screen-space ambience. 'source-atop' confines this to pixels the
-     blades already painted — a plain fillRect would tint the aperture opening
-     too, i.e. wash over the user's artwork, the one thing a shutter must never
-     touch. */
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalCompositeOperation = 'source-atop';
-  const D = Math.hypot(W, H);
-  const lx = cx + Math.cos(KEY_ANGLE) * W * 0.34, ly = cy + Math.sin(KEY_ANGLE) * H * 0.34;
-  const spot = ctx.createRadialGradient(lx, ly, 0, lx, ly, D * 0.62);
-  spot.addColorStop(0,    `rgba(255,255,255,${(0.20 * SPOTLIGHT).toFixed(3)})`);
-  spot.addColorStop(0.45, `rgba(255,255,255,${(0.06 * SPOTLIGHT).toFixed(3)})`);
-  spot.addColorStop(1,    `rgba(0,0,0,${(0.26 * SPOTLIGHT).toFixed(3)})`);
-  ctx.fillStyle = spot;
-  ctx.fillRect(0, 0, W, H);
-
-  if (COVER > 0) {
-    const dx = Math.cos(KEY_ANGLE + Math.PI), dy = Math.sin(KEY_ANGLE + Math.PI);
-    const ox = cx + dx * D * 0.60, oy = cy + dy * D * 0.60;
-    const cov = ctx.createRadialGradient(ox, oy, D * 0.30, ox, oy, D * 0.86);
-    cov.addColorStop(0,    `rgba(0,0,0,${(0.42 * COVER).toFixed(3)})`);
-    cov.addColorStop(0.55, `rgba(0,0,0,${(0.30 * COVER).toFixed(3)})`);
-    cov.addColorStop(1,    'rgba(0,0,0,0)');
-    ctx.fillStyle = cov;
-    ctx.fillRect(0, 0, W, H);
-  }
-  ctx.globalCompositeOperation = 'source-over';
-
-  /* ── pass 4: cast shadow ──────────────────────────────────────────────────
-     'destination-over' paints only where the canvas is still transparent —
-     exactly the aperture — so this lands on the artwork showing through and
-     never on the blades.
-
-     A radial gradient, NOT a drop shadow. createRadialGradient takes two
-     circles: the inner is transparent, the outer opaque, and offsetting the
-     inner one against the key makes the falloff directional without a second
-     pass. The gradient IS the softness, so nothing needs blurring — this
-     replaced two Path2D unions of all N blades fill()ed through full-canvas
-     blur()s, which was the most expensive thing in the frame by a wide margin. */
-  const trav = Math.max(0, Math.min(1, (prog - ENTER_AT) / Math.max(0.01, LOCK_AT - ENTER_AT)));
-  const ramp = trav * trav * (3 - 2 * trav);
-  if (CAST > 0 && ramp > 0.01) {
-    const t0 = bladeAngle(g, prog, 0);
-    const openPx = Math.max(D * 0.02,
-      (g.rc - Math.hypot(g.R + g.d * Math.cos(t0), g.d * Math.sin(t0))) * S);
-    const rOut = openPx * 1.06;
-    const rIn  = rOut * (1 - Math.min(0.92, 0.22 + 0.70 * SPREAD));
-    // Clamped inside the outer circle: past that the gradient degenerates into a
-    // cone with a hard edge across the aperture, which reads as a crease.
-    const off = Math.min((rOut - rIn) * 0.55 * ramp, rOut * 0.98 - rIn);
-    const a = CAST * ramp;
-    const sh = ctx.createRadialGradient(
-      cx + Math.cos(KEY_ANGLE + Math.PI) * off, cy + Math.sin(KEY_ANGLE + Math.PI) * off, rIn,
-      cx, cy, rOut);
-    sh.addColorStop(0,    'rgba(0,0,0,0)');
-    sh.addColorStop(0.45, `rgba(0,0,0,${(0.20 * a).toFixed(3)})`);
-    sh.addColorStop(0.80, `rgba(0,0,0,${(0.55 * a).toFixed(3)})`);
-    sh.addColorStop(1,    `rgba(0,0,0,${(0.85 * a).toFixed(3)})`);
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalCompositeOperation = 'destination-over';
-    ctx.fillStyle = sh;
-    ctx.fillRect(0, 0, W, H);
-    ctx.restore();
-  }
 }
 
-/* ── controller ──────────────────────────────────────────────────────────── */
+/** The brand-hued Lolly bitmap the /verify medallion uses; falls back to the raw icon. */
+function markSrc(): string {
+  if (typeof getComputedStyle !== 'function') return '/icons/icon-192.png';
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--lolly-logo').trim();
+  const m = v.match(/url\(\s*["']?(.*?)["']?\s*\)/);
+  return m?.[1] || '/icons/icon-192.png';
+}
 
-/* Progress runs 0…1, but the shutter only DOES anything between ENTER_AT (the
-   blades reach the frame) and LOCK_AT (they lock together). Below and above
-   that it spends the budget on motion the eye can't see, so the eased curve is
-   mapped onto that span and the whole duration goes to visible travel. */
+const smoothstep = (a: number, b: number, x: number): number => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+// Overshoot ease for the mark pop; easeOutBack(1) === 1 so the reduced-motion
+// end-state is exactly full size.
+const easeOutBack = (x: number): number => {
+  const c1 = 2.2, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+};
+
+/* Close easing — the same cubic-bezier feel the blade iris used (ease-out). */
 const bez = (p: number, a: number, b: number, cc: number, d: number): number => {
   let x = p;
   for (let i = 0; i < 6; i++) {
@@ -382,6 +207,8 @@ const bez = (p: number, a: number, b: number, cc: number, d: number): number => 
   return 3 * s * s * x * b + 3 * s * x * x * d + x * x * x;
 };
 
+/* ── controller ──────────────────────────────────────────────────────────── */
+
 export function createShutter(stage: HTMLElement | null): Shutter {
   if (!stage) {
     return { close: () => Promise.resolve(), open: () => {}, play: () => {}, destroy: () => {} };
@@ -390,57 +217,155 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   const root = document.createElement('div');
   root.className = 'export-shutter';
   root.setAttribute('aria-hidden', 'true');
+  const seal = document.createElement('div');
+  seal.className = 'export-shutter__seal';
   const cv = document.createElement('canvas');
   cv.className = 'export-shutter__iris';
+  const mark = document.createElement('img');
+  mark.className = 'export-shutter__mark';
+  mark.alt = '';
+  mark.decoding = 'async';
+  mark.setAttribute('aria-hidden', 'true');
   const flash = document.createElement('div');
   flash.className = 'export-shutter__flash';
-  root.append(cv, flash);
+  root.append(seal, cv, mark, flash);
   stage.appendChild(root);
 
-  const ctx = cv.getContext('2d');
-  const ov = document.createElement('canvas');
-  const octx = ov.getContext('2d');
+  // ── WebGL, created lazily on the first close so tools that never export don't
+  //    hold a GPU context. If anything fails we fall back to the seal plate.
+  let gl: WebGLRenderingContext | null = null;
+  let uRes: WebGLUniformLocation | null = null;
+  let uProg: WebGLUniformLocation | null = null;
+  let uColor: WebGLUniformLocation | null = null;
+  let uCream: WebGLUniformLocation | null = null;
+  let uAmbLo: WebGLUniformLocation | null = null;
+  let uAmbHi: WebGLUniformLocation | null = null;
+  let glReady = false;
+  let glFailed = false;
+
+  function compile(type: number, src: string): WebGLShader | null {
+    if (!gl) return null;
+    const sh = gl.createShader(type);
+    if (!sh) return null;
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      console.warn('[shutter] shader compile failed:', gl.getShaderInfoLog(sh));
+      gl.deleteShader(sh);
+      return null;
+    }
+    return sh;
+  }
+
+  function ensureGL(): void {
+    if (glReady || glFailed) return;
+    try {
+      const opts: WebGLContextAttributes = { alpha: true, antialias: true, premultipliedAlpha: false, depth: false };
+      gl = (cv.getContext('webgl', opts) || cv.getContext('experimental-webgl', opts)) as WebGLRenderingContext | null;
+      if (!gl) { glFailed = true; return; }
+      const hi = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+      const precision = hi && hi.precision > 0 ? 'highp' : 'mediump';
+      const vs = compile(gl.VERTEX_SHADER, VERT);
+      const fs = compile(gl.FRAGMENT_SHADER, `precision ${precision} float;\n${FRAG_BODY}`);
+      if (!vs || !fs) { glFailed = true; gl = null; return; }
+      const program = gl.createProgram();
+      if (!program) { glFailed = true; gl = null; return; }
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { glFailed = true; gl = null; return; }
+      gl.useProgram(program);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(program, 'a_position');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      uRes = gl.getUniformLocation(program, 'u_resolution');
+      uProg = gl.getUniformLocation(program, 'u_progress');
+      uColor = gl.getUniformLocation(program, 'u_color');
+      uCream = gl.getUniformLocation(program, 'u_cream');
+      uAmbLo = gl.getUniformLocation(program, 'u_ambLo');
+      uAmbHi = gl.getUniformLocation(program, 'u_ambHi');
+      glReady = true;
+    } catch (err) {
+      console.warn('[shutter] WebGL init failed, using plate fallback:', err);
+      glFailed = true;
+      gl = null;
+    }
+  }
+  // A lost context drops us to the plate fallback for the rest of this session.
+  cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); glReady = false; glFailed = true; }, false);
 
   let raf = 0;
-  let cur = ENTER_AT;
+  let cur = 0;
   let destroyed = false;
+  // Sensible default until close() reads the live theme (matches the old fixed look).
+  let tone: Tone = {
+    green: hexToRgb(LOLLY_GREEN)!,
+    cream: [0.95, 0.98, 0.95],
+    ambLo: [0.10, 0.15, 0.20],
+    ambHi: [0.40, 0.45, 0.50],
+  };
 
-  // Motion only — the iris still opens and closes, it just jumps to the sealed
-  // state instead of tweening. Nothing here touches the export itself: the
-  // shutter paints on its own overlay canvas, never on the tool canvas, so the
-  // exported bytes are the same either way.
   const reduced = prefersReducedMotion;
   const fullscreen = (): boolean => window.matchMedia('(max-width: 640px)').matches;
 
   function paint(prog: number): void {
-    if (!ctx || !octx || destroyed) return;
+    if (destroyed) return;
     const r = cv.getBoundingClientRect();
-    /* DPR is capped at 2 on desktop and 1.5 on phones. The iris is a transient
-       cover, never inspected at rest, and the fill rate — not the geometry — is
-       what costs on a phone. */
+    // DPR capped: the iris is a transient cover, never inspected at rest, and
+    // fill rate — not geometry — is what costs on a phone.
     const dpr = Math.min(window.devicePixelRatio || 1, fullscreen() ? 1.5 : 2);
     const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
-    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
-    const cs = getComputedStyle(document.documentElement);
-    drawIris(ctx, ov, octx, W, H, prog,
-      cs.getPropertyValue('--secondary').trim(), cs.getPropertyValue('--foreground').trim());
+    const p = Math.max(0, Math.min(1, prog));
+
+    ensureGL();
+    if (glReady && gl) {
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+      gl.viewport(0, 0, W, H);
+      gl.uniform2f(uRes, W, H);
+      gl.uniform1f(uProg, Math.pow(p, GAMMA));
+      gl.uniform3fv(uColor, tone.green);
+      gl.uniform3fv(uCream, tone.cream);
+      gl.uniform3fv(uAmbLo, tone.ambLo);
+      gl.uniform3fv(uAmbHi, tone.ambHi);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    // Seal plate. With the swirl it's insurance over the final sliver; without
+    // WebGL it carries the whole close as a plain fade to the app background.
+    seal.style.opacity = (glReady ? smoothstep(SEAL_LO, 1, p) : smoothstep(0, 1, p)).toFixed(3);
+
+    // Mark: pops out on top of the swirl around 70% of the close.
+    const minSide = Math.min(r.width, r.height);
+    mark.style.width = (minSide * MARK_FRAC).toFixed(1) + 'px';
+    const pop = smoothstep(POP_LO, POP_HI, p);
+    mark.style.opacity = pop.toFixed(3);
+    mark.style.transform = `translate(-50%, -50%) scale(${(0.5 + 0.5 * easeOutBack(pop)).toFixed(3)})`;
   }
 
   function animate(to: number): Promise<void> {
     cancelAnimationFrame(raf);
-    const target = ENTER_AT + (LOCK_AT - ENTER_AT) * to;
-    if (reduced()) { cur = target; paint(cur); return Promise.resolve(); }
+    // Motion only — the iris still opens and closes, it just jumps to the sealed
+    // state instead of tweening. Nothing here touches the export: the shutter
+    // paints on its own overlay, never on the tool canvas.
+    if (reduced()) { cur = to; paint(cur); return Promise.resolve(); }
     const from = cur, t0 = performance.now();
-    return new Promise<void>(resolve => {
-      const stepFn = (now: number): void => {
+    return new Promise<void>((resolve) => {
+      const step = (now: number): void => {
         if (destroyed) { resolve(); return; }
-        const p = Math.min(1, (now - t0) / DURATION);
-        cur = from + (target - from) * bez(p, 0.33, 0.86, 0.31, 1);
+        const t = Math.min(1, (now - t0) / DURATION);
+        cur = from + (to - from) * bez(t, 0.33, 0.86, 0.31, 1);
         paint(cur);
-        if (p < 1) raf = requestAnimationFrame(stepFn);
+        if (t < 1) raf = requestAnimationFrame(step);
         else resolve();
       };
-      raf = requestAnimationFrame(stepFn);
+      raf = requestAnimationFrame(step);
     });
   }
 
@@ -455,6 +380,9 @@ export function createShutter(stage: HTMLElement | null): Shutter {
 
   async function close(): Promise<void> {
     if (destroyed) return;
+    tone = toneForTheme();
+    const src = markSrc();
+    if (mark.getAttribute('src') !== src) mark.setAttribute('src', src);
     /* Mobile: lift the shutter out of the stage so it covers the WHOLE screen —
        over the sidebar sheet and export controls — while the system download or
        share sheet appears. (An ancestor's backdrop-filter is a fixed-positioning
@@ -465,9 +393,9 @@ export function createShutter(stage: HTMLElement | null): Shutter {
       root.classList.add('export-shutter--fullscreen');
     }
     root.classList.add('is-active');
-    cur = ENTER_AT;
+    cur = 0;
     paint(cur);
-    playSfx('shutter');            // the ka-chunk, synced to the iris closing
+    playSfx('shutter');            // the ka-chunk, synced to the swirl closing
     await animate(1);
     fireFlash();                   // sealed — pop the primary
   }
@@ -489,24 +417,11 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     close,
     open,
     play(): void { void close().then(open); },
-    destroy(): void { destroyed = true; cancelAnimationFrame(raf); root.remove(); },
+    destroy(): void {
+      destroyed = true;
+      cancelAnimationFrame(raf);
+      if (gl) { try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* best effort */ } }
+      root.remove();
+    },
   };
 }
-
-/* ── PASSES REMOVED (deliberate, for frame budget) ────────────────────────────
-   The prototype has three more passes. All three are absent here rather than
-   present-and-zeroed, so they cost nothing in code size either:
-
-   · Seam hairlines + seam continuity. Both alphas are multiplied by the seam
-     WEIGHT, which the tuned look sets to 0 — so the continuity value of 0.72 was
-     already painting nothing. Restoring continuity means restoring seam weight
-     too, or it stays invisible. Cost: 2N strokes per frame.
-   · Throat vignette. Tuned to 0. Cost: one full-canvas gradient fill.
-   · Weave contact shadow. Tuned to 0. The most expensive of the three by far —
-     a canvas blur() plus a full-canvas composite PER PAIR, so five blurs a
-     frame at this pair count. See scratchpad/iris3.html "the woven cue".
-
-   Also note `metal` and `flat` render identically in the prototype — only
-   `spectrum` branches — so the tuned "Metal" finish is the plain face path
-   reproduced here. Spectrum's hues come from an even walk around the colour
-   wheel and are NOT brand colours; it is not implemented here. */

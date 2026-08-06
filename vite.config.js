@@ -139,10 +139,16 @@ export function groupPrecacheFiles(all) {
   // runtime/model binaries — /ort/, /ort-hf/ (the speech worker's runtime,
   // which the SW can only serve from lolly-ort, never lolly-app) and /models/.
   const app = all.filter(f => !f.url.startsWith('/ort/') && !f.url.startsWith('/ort-hf/') && !f.url.startsWith('/models/'));
-  // Only the files the runtimes load at runtime (ort-wasm-*): the 1.27 build at
-  // /ort/ plus transformers.js's pinned build at /ort-hf/<version>/. The other
-  // ort.*.mjs files are package dist entrypoints Vite bundles — dead weight.
-  const ort = all.filter(f => /^\/ort(-hf\/[^/]+)?\/ort-wasm-/.test(f.url));
+  // The runtime wasm each ONNX runtime loads (ort-wasm-*), split by OWNER so each
+  // offline part is self-complete: `ort` is the 1.27 build at /ort/ (the verify
+  // deep-scan detectors), `ortHf` is transformers.js's pinned build at
+  // /ort-hf/<version>/ (the Kokoro/Whisper speech worker). They used to share one
+  // `ort` group the VERIFY part downloaded, so pre-downloading Speech alone still
+  // fetched the ~22 MB /ort-hf/ runtime on first synthesis; owning it here lets the
+  // speech part be truly offline-complete. The other ort.*.mjs files are package
+  // dist entrypoints Vite bundles — dead weight.
+  const ort = all.filter(f => /^\/ort\/ort-wasm-/.test(f.url));
+  const ortHf = all.filter(f => /^\/ort-hf\/[^/]+\/ort-wasm-/.test(f.url));
   // The verify part's models are the TrustMark decoders ONLY — downloaded via
   // lib/trustmark.ts's own IDB path, listed here so the part can state its true
   // size up front. /models/kokoro/ is deliberately NOT here: it belongs to the
@@ -164,7 +170,7 @@ export function groupPrecacheFiles(all) {
   // the offline-download manager can state the part's true size up front. Like the
   // upscale/speech/verify models, /models/matte/ is SW-bypassed (single IDB copy).
   const matte = all.filter(f => f.url.startsWith('/models/matte/'));
-  return { app, ort, models, speech, upscale, matte };
+  return { app, ort, ortHf, models, speech, upscale, matte };
 }
 
 // Content hash for files whose URL does NOT already encode their bytes.

@@ -253,17 +253,19 @@ export async function shapeCollectedLines(
 }
 
 /**
- * Outline one rendered box's text. Waits for fonts (shaping against a fallback
- * face would bake wrong metrics — the template's own fit pass has a second
- * chance on document.fonts.ready; a one-shot conversion does not), neutralises
- * the box's transform for the duration of the synchronous measurement so line
- * rects are unrotated layout geometry (the caller re-applies rotation on the
- * result boxes), then shapes.
+ * Outline one rendered box's text. Neutralises the box's transform for the
+ * SYNCHRONOUS measurement so line rects are unrotated layout geometry (the caller
+ * re-applies rotation on the result boxes), then shapes.
+ *
+ * The caller MUST have already awaited `document.fonts.ready` and a paint frame
+ * before calling this — measuring here after an `await` is a bug: a font-load can
+ * fire the template's fit pass mid-wait, moving the box under us so the captured
+ * `boxEl` is stale and the geometry is wrong. This function stays await-free from
+ * entry to the synchronous `collectTextLines`.
  */
 export async function outlineBoxText(
   boxEl: HTMLElement, textEl: HTMLElement, textApi: TextApi, rectToNative: RectToNative, deps?: ShapeDeps,
 ): Promise<OutlineOutcome> {
-  try { await document.fonts?.ready; } catch { /* no Font Loading API — shape with what's rendered */ }
   // A box that isn't laid out has no line geometry to read. The reachable case is
   // Sequence Studio's off-playhead clips (`.seq-off` → display:none): the sequence
   // "one rule" lets an off-playhead box stay selected, so this action can be invoked
