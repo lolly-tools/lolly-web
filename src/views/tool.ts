@@ -19,7 +19,7 @@ import '../styles/parts/document.css';
 import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
 import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
-import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
+import { createInteractiveToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import type { HdrSettings, DepthSetting } from '@lolly/engine';
 // The one declaration of the export bar's audio selection shape (mix-in bed
 // incl.) — see bridge/audio-envelope.ts; ExportOpts references it too.
@@ -1476,6 +1476,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   viewEl._cleanup = () => {
     runtime.stopLive?.(); // release the camera if a live session is running
     runtime.stopMeter?.(); runtime.cancelRecording?.(); // release the mic / abort any take
+    runtime.destroy?.(); // release per-mount executor resources (a Worker-isolated tool's run)
     (stageEl as (HTMLElement & { _recordCleanup?: () => void }) | null)?._recordCleanup?.(); // viewfinder + timers
     actionsApi?.stopAudioPreview?.(); // a detached <audio> keeps playing — stop it on navigation
     stopSlotPreview();                // and the sidebar slot's own sound preview (also a detached <audio>)

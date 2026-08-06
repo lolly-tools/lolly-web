@@ -24,16 +24,61 @@
  * greps the source tree to hold the line.
  */
 import { createRuntime } from '@lolly/engine';
+import type { HookExecutor } from '@lolly/engine';
 import { installToolApis } from '../bridge/index.ts';
+import { getWorkerHookExecutor } from '../bridge/hook-worker.ts';
 
 type CreateRuntime = typeof createRuntime;
+
+// One shared Worker-isolated executor (a singleton Worker under it), built lazily
+// the first time an opted-in tool mounts. Falls back to in-realm on any failure.
+let workerExecutor: HookExecutor | null = null;
+
+/**
+ * Should this mount run its hooks in a Worker (plans/86-worker-isolation-hooks.md
+ * M2)? The manifest opt-in (`isolate: true`), OR a dev override — localStorage
+ * `lolly.workerHooks` set to the tool's id (or `'1'` for every tool) — used to
+ * field-verify a tool in a real browser BEFORE its manifest flag is flipped.
+ */
+function wantsWorkerHooks(id: string, isolate: boolean | undefined): boolean {
+  if (isolate) return true;
+  try {
+    const flag = typeof localStorage !== 'undefined' ? localStorage.getItem('lolly.workerHooks') : null;
+    return flag === '1' || flag === id;
+  } catch { return false; }
+}
 
 /**
  * `createRuntime`, with `host.color`/`host.geom` guaranteed present (or, if
  * their import failed, deliberately absent — tools feature-detect, and a failed
  * optional API must not block the mount).
+ *
+ * ALWAYS in-realm — the default for one-shot/non-interactive mounts (thumbnails,
+ * previews, exports, session seeding). A one-shot render gains nothing from
+ * Worker isolation (the sandbox matters for INTERACTIVE untrusted code, not a
+ * trusted mount-render-drop), and routing it through the shared worker would add
+ * spawn/RPC latency and leak a worker run per render (these callers drop the
+ * runtime without a teardown). The interactive tool view uses
+ * createInteractiveToolRuntime instead.
  */
-export const createToolRuntime: CreateRuntime = async (...args) => {
-  await installToolApis(args[1] as Parameters<typeof installToolApis>[0]);
-  return createRuntime(...args);
+export const createToolRuntime: CreateRuntime = async (tool, host, initialState, opts) => {
+  await installToolApis(host as Parameters<typeof installToolApis>[0]);
+  return createRuntime(tool, host, initialState, opts);
+};
+
+/**
+ * Like createToolRuntime, but routes an opted-in tool's hooks through the
+ * Worker-isolated executor (the manifest `isolate` flag or the `lolly.workerHooks`
+ * dev override). Reserved for the LIVE, interactive tool view, which holds the
+ * runtime across the session and calls `runtime.destroy()` on unmount — so the
+ * worker run is disposed rather than leaked. Non-interactive callers must use
+ * createToolRuntime (above), which never touches the worker.
+ */
+export const createInteractiveToolRuntime: CreateRuntime = async (tool, host, initialState, opts) => {
+  await installToolApis(host as Parameters<typeof installToolApis>[0]);
+  if (typeof Worker !== 'undefined' && wantsWorkerHooks(tool.manifest.id, tool.manifest.isolate)) {
+    workerExecutor ??= getWorkerHookExecutor();
+    opts = { ...(opts ?? {}), hookExecutor: workerExecutor };
+  }
+  return createRuntime(tool, host, initialState, opts);
 };

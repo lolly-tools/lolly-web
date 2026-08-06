@@ -84,7 +84,7 @@ import type { WebStateAPI } from '../bridge/state.ts';
  *  itself: callers route them to pdf-import.ts's ingestPdfAsSvgAssets /
  *  pptx-import.ts's ingestPptxAsSvgAssets (page(s)/slide(s) → stored SVG) via
  *  isPdfUpload / isPptxUpload. */
-export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,image/bmp,.bmp,image/x-icon,image/vnd.microsoft.icon,.ico,.cur,.svgz,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx';
+export const UPLOAD_ACCEPT = 'image/svg+xml,image/png,image/apng,image/jpeg,image/webp,image/gif,image/avif,image/heic,image/heif,image/bmp,.bmp,image/x-icon,image/vnd.microsoft.icon,.ico,.cur,.svgz,video/mp4,video/webm,.mp4,.webm,.mov,audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.mid,.midi,.mod,.xm,.it,.s3m,.stm,.mtm,application/json,.json,.lottie,application/pdf,.pdf,application/illustrator,.ai,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,.xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 /** A PDF — or an Illustrator .ai, which saved PDF-compatible IS a PDF — that upload
  *  surfaces must hand to the page→SVG converter instead of storeUserUpload. Sync and
@@ -205,6 +205,7 @@ interface PickerOpts {
     | 'profile'
     | 'ratecard'
     | 'text'
+    | 'data'
     | 'image';
   namespace?: string;
   tags?: string[];
@@ -2749,6 +2750,7 @@ const MAX_ANIMATED_RASTER_BYTES = 20 * 1024 * 1024; // 20 MB
 // under this; an uncompressed wav/flac can blow past it, and the friendly error asks
 // the user to compress rather than the store throwing QuotaExceededError mid-write.
 const MAX_AUDIO_BYTES = 30 * 1024 * 1024;         // 30 MB
+const MAX_DATA_BYTES = 16 * 1024 * 1024;          // 16 MB — a spreadsheet/CSV data asset
 // Credential preservation reads the ORIGINAL bytes whole (the only branch that
 // does — rasters otherwise stream through createImageBitmap without a JS-heap
 // copy). Skip the scan for outsized originals rather than buffer them: a real
@@ -2971,13 +2973,21 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
   const isAudio = !isLottie && !isVector && !isVideo && !isMidi && !isModule
     && (/^audio\//i.test(file.type) || /\.(mp3|wav|ogg|oga|opus|m4a|aac|flac)$/i.test(file.name));
 
+  // A tabular DATA file (.xlsx/.csv/.tsv) — stored VERBATIM as a type:'data' asset so a
+  // spreadsheet lives in the catalogue and drops into a tool's data input later (plan 87,
+  // the "Add data → From your library" source). Kept as-is (no raster/text processing);
+  // .json is deliberately NOT claimed here — it is ambiguous with a Lottie animation and
+  // stays on the Lottie path. Detected after every media test so a real media file wins.
+  const isData = !isLottie && !isVector && !isVideo && !isMidi && !isModule && !isAudio
+    && /\.(xlsx|csv|tsv)$/i.test(file.name);
+
   // Classify animated rasters (gif/apng/animated-webp) and catch mislabelled video —
   // both from the HEADER BYTES, since an animated raster shares its MIME with the
   // still form and an OS can hand over a blank/wrong type or extension. The magic
   // bytes are the source of truth (that is the whole reason to byte-sniff); MIME/name
   // only widen which files we bother to read. (Audio is verbatim — nothing to sniff.)
   let animatedKind: 'gif' | 'apng' | 'webp' | null = null;
-  if (!isLottie && !isVector && !isAudio && !isMidi && !isModule) {
+  if (!isLottie && !isVector && !isAudio && !isMidi && !isModule && !isData) {
     const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
     // Byte-level video backstop: a real mp4/webm handed over with a wrong extension
     // AND a blank/non-video MIME would otherwise fall to downscaleRaster and be
@@ -3099,6 +3109,12 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     assertVerbatimSize(file, MAX_AUDIO_BYTES, t('audio track'));
     format = audioFormatOf(file);
     durationMs = await probeMediaDurationMs(file, 'audio');
+  } else if (isData) {
+    // Verbatim: a spreadsheet/CSV is kept byte-for-byte (an .xlsx is a zip — a canvas
+    // path would destroy it). It becomes a type:'data' catalogue asset the "Add data →
+    // From your library" source reads back through readXlsx/parseDataRows. No dimensions.
+    assertVerbatimSize(file, MAX_DATA_BYTES, t('data file'));
+    format = /\.xlsx$/i.test(file.name) ? 'xlsx' : /\.tsv$/i.test(file.name) ? 'tsv' : 'csv';
   } else if (animatedKind) {
     // Verbatim: re-encoding an animated gif/apng/webp through a canvas flattens it
     // to a single frame, so store the original bytes. It stays type:'raster' — it
@@ -3248,7 +3264,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
 
   const record: UserAssetRecordInput = {
     id,
-    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi || isModule) ? 'audio' : 'raster',
+    type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi || isModule) ? 'audio' : isData ? 'data' : 'raster',
     format,
     blob,
     width,

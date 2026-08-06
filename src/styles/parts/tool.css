@@ -784,6 +784,18 @@
 }
 .help-tip-btn:hover, .help-tip-btn:focus-visible { opacity: 1; color: var(--primary); }
 .help-tip-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 50%; }
+/* Unified "Add data" affordance (plan 87) — a text/longtext input's dataSource button,
+   styled like the help-tip button so it reads as label chrome, not a primary control. */
+.input-data-src {
+  display: inline-flex; align-items: center; justify-content: center;
+  vertical-align: middle; margin-left: 4px;
+  width: 16px; height: 16px; padding: 0;
+  border: none; border-radius: 4px; background: transparent;
+  color: hsl(var(--muted-foreground)); cursor: pointer;
+  opacity: 0.55; transition: opacity 0.12s ease, color 0.12s ease;
+}
+.input-data-src:hover, .input-data-src:focus-visible { opacity: 1; color: var(--primary); }
+.input-data-src:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 /* The focus ring sits a few px outside the 16px button. The floating-label rule
    clips .input-label (overflow:hidden, for long-label ellipsis), which crops that
    ring top/bottom — so un-clip the label when it hosts a help button (selectors

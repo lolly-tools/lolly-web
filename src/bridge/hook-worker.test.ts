@@ -1,0 +1,206 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * Proof for the hook-Worker executor core (hook-worker.worker.ts) — M2,
+ * plans/86-worker-isolation-hooks.md §13.1.
+ *
+ * Drives `createHookWorkerCore` with a stub port + a mock main-thread host
+ * dispatcher, exactly as sequence-render-worker.test.ts drives its worker core,
+ * so the whole message protocol + host-proxy construction is verified in plain
+ * Node — no real Worker, no DOM. Proves the three buckets:
+ *   - CO-LOCATE: host.color.* runs locally in the core (real makeColorApi).
+ *   - TOKEN SNAPSHOT: host.tokens.colors()/resolve() answer from a local
+ *     createTokenSet built off a shipped doc — no round-trip.
+ *   - RPC: host.assets.get(...) round-trips through the stub port to a mock host.
+ * Plus: an ABSENT optional namespace stays absent (feature-detect survives), and
+ * the REAL chart-creator hooks.js compiles + runs onInit/onInput in the core.
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import {
+  createHookWorkerCore,
+  type HookWorkerOut, type HookInvokeDoneMsg, type HookInitDoneMsg, type HookHostCallMsg,
+} from './hook-worker.worker.ts';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+/** A minimal DTCG doc so createTokenSet yields a couple of resolvable colours. */
+const TOKEN_DOC = {
+  color: {
+    brand: { $type: 'color', $value: '#30ba78' },
+    ink: { $type: 'color', $value: '#101418' },
+  },
+};
+
+/** Run the core against a stub port; return a driver that collects posted messages
+ *  and can service host-call RPCs against a mock host. */
+function harness(mockHost: Record<string, Record<string, (...a: unknown[]) => unknown>> = {}) {
+  const posted: HookWorkerOut[] = [];
+  const core = createHookWorkerCore({ post: (m) => { posted.push(m); } });
+  // Auto-service host-call messages against the mock host, replying next tick.
+  let serviced = 0;
+  async function pump(): Promise<void> {
+    await tick();
+    for (; serviced < posted.length; serviced++) {
+      const m = posted[serviced];
+      if (!m || m.t !== 'host-call') continue;
+      const call = m as HookHostCallMsg;
+      const dot = call.method.indexOf('.');
+      const ns = call.method.slice(0, dot);
+      const method = call.method.slice(dot + 1);
+      const fn = mockHost[ns]?.[method];
+      try {
+        const value = typeof fn === 'function' ? await fn(...call.args) : undefined;
+        core.handle({ t: 'host-reply', runId: call.runId, hostCallId: call.hostCallId, ok: typeof fn === 'function', value, error: typeof fn === 'function' ? undefined : `no host.${call.method}` });
+      } catch (e) {
+        core.handle({ t: 'host-reply', runId: call.runId, hostCallId: call.hostCallId, ok: false, error: (e as Error).message });
+      }
+    }
+    await tick();
+  }
+  return { core, posted, pump };
+}
+
+test('worker core: co-located color + token snapshot + RPC all reach a hook', async () => {
+  const source = `
+    async function onInit({ model, host }) {
+      const dist = host.color.distinct(3);              // co-located (real makeColorApi)
+      const swatches = await host.tokens.colors();      // token snapshot (local TokenSet)
+      const brand = await host.tokens.resolve('{color.brand}');
+      const asset = await host.assets.get('logo/primary'); // RPC → main
+      const missing = host.pdf ? 'has-pdf' : 'no-pdf';  // absent namespace stays absent
+      return {
+        distinctCount: String(dist.length),
+        tokenCount: String(swatches.length),
+        brand: String(brand),
+        assetUrl: asset ? asset.url : 'none',
+        pdf: missing,
+      };
+    }`;
+
+  const { core, posted, pump } = harness({
+    assets: { get: async (id: unknown) => ({ id, url: `blob:mock/${id}` }) },
+  });
+
+  core.handle({
+    t: 'init', runId: 1, hooksSource: source, tokenDoc: TOKEN_DOC, tokenExcluded: [],
+    // hostShape deliberately OMITS pdf → host.pdf must be undefined in the worker.
+    hostShape: { assets: ['get'], color: ['distinct'], tokens: ['get', 'colors', 'resolve'] },
+    seeds: {}, shell: 'web', capabilities: [],
+  });
+  const init = posted.find((m): m is HookInitDoneMsg => m.t === 'init-done');
+  assert.ok(init, 'init-done posted');
+  assert.deepEqual(init.declared, ['onInit'], 'onInit is the only declared worker hook');
+
+  core.handle({ t: 'invoke', runId: 1, callId: 1, name: 'onInit', ctx: { model: [] } });
+  await pump(); // service the assets.get RPC, let the hook resolve
+
+  const done = posted.find((m): m is HookInvokeDoneMsg => m.t === 'invoke-done' && (m as HookInvokeDoneMsg).callId === 1);
+  assert.ok(done, 'invoke-done posted');
+  assert.ok(done.ok, `hook succeeded (${(done as HookInvokeDoneMsg).error ?? ''})`);
+  const patch = done.patch as Record<string, string>;
+  assert.equal(patch.distinctCount, '3', 'host.color.distinct ran locally in the worker');
+  assert.ok(Number(patch.tokenCount) >= 2, 'host.tokens.colors resolved from the local snapshot');
+  assert.match(patch.brand ?? '', /#?30ba78/i, 'host.tokens.resolve returned the brand colour from the snapshot');
+  assert.equal(patch.assetUrl, 'blob:mock/logo/primary', 'host.assets.get round-tripped through the RPC bridge');
+  assert.equal(patch.pdf, 'no-pdf', 'an absent optional namespace stays absent (feature-detect survives)');
+});
+
+test('worker core: a hook error surfaces as a failed invoke, not a crash', async () => {
+  const source = `function onInput({ value }) { throw new Error('boom: ' + value); }`;
+  const { core, posted } = harness();
+  core.handle({ t: 'init', runId: 2, hooksSource: source, tokenDoc: null, tokenExcluded: [], hostShape: {}, seeds: {}, shell: 'web', capabilities: [] });
+  core.handle({ t: 'invoke', runId: 2, callId: 1, name: 'onInput', ctx: { id: 'x', value: 'v', model: [] } });
+  await tick();
+  const done = posted.find((m): m is HookInvokeDoneMsg => m.t === 'invoke-done');
+  assert.ok(done && !done.ok, 'a throwing hook reports ok:false');
+  assert.match(done.error ?? '', /boom: v/, 'the error message crosses back');
+});
+
+test('worker core: seeded feature-detects answer synchronously, never a Promise', async () => {
+  // The sync isAvailable family must come from the seed, not the RPC stub — a
+  // Promise would stringify to [object Promise] and break a hook that branches on it.
+  const source = `
+    function onInit({ host }) {
+      return {
+        media: String(host.media.isAvailable()),
+        recVideo: String(host.recorder.isAvailable('video')),
+        recAudio: String(host.recorder.isAvailable('audio')),
+      };
+    }`;
+  const { core, posted } = harness();
+  core.handle({
+    t: 'init', runId: 4, hooksSource: source, tokenDoc: null, tokenExcluded: [],
+    hostShape: { media: ['isAvailable', 'start'], recorder: ['isAvailable', 'record'] },
+    seeds: { 'media.isAvailable': true, 'recorder.isAvailable': { audio: true, video: false, screen: false } },
+    shell: 'web', capabilities: [],
+  });
+  core.handle({ t: 'invoke', runId: 4, callId: 1, name: 'onInit', ctx: {} });
+  await tick();
+  const done = posted.find((m): m is HookInvokeDoneMsg => m.t === 'invoke-done' && (m as HookInvokeDoneMsg).callId === 1);
+  assert.ok(done?.ok, `seeded hook ran (${done?.error ?? ''})`);
+  const patch = done!.patch as Record<string, string>;
+  assert.equal(patch.media, 'true', 'media.isAvailable returned the seed synchronously');
+  assert.equal(patch.recVideo, 'false', 'recorder.isAvailable(video) is per-kind seeded');
+  assert.equal(patch.recAudio, 'true', 'recorder.isAvailable(audio) is per-kind seeded');
+});
+
+test('worker core: dispose drops the run so a singleton worker does not leak per mount', async () => {
+  const { core } = harness();
+  core.handle({ t: 'init', runId: 6, hooksSource: 'function onInit(){ return {}; }', tokenDoc: null, tokenExcluded: [], hostShape: {}, seeds: {}, shell: 'web', capabilities: [] });
+  assert.equal(core._runs.size, 1, 'a mount registers one run');
+  core.handle({ t: 'dispose', runId: 6 });
+  assert.equal(core._runs.size, 0, 'dispose removes the run — no per-mount accumulation');
+  // A late host-reply / invoke for the disposed run must not resurrect or throw.
+  core.handle({ t: 'invoke', runId: 6, callId: 9, name: 'onInit', ctx: {} });
+  assert.equal(core._runs.size, 0, 'a post-dispose invoke does not recreate the run');
+});
+
+test('worker core: a compile error is reported so the client can fall back', async () => {
+  const { core, posted } = harness();
+  core.handle({ t: 'init', runId: 5, hooksSource: 'function onInit( { syntax error', tokenDoc: null, tokenExcluded: [], hostShape: {}, seeds: {}, shell: 'web', capabilities: [] });
+  const init = posted.find((m): m is HookInitDoneMsg => m.t === 'init-done');
+  assert.ok(init, 'init-done still posts on a compile error');
+  assert.ok(init.compileError, 'the compile error is signalled (so mountInWorker rejects → in-realm fallback)');
+  assert.deepEqual(init.declared, [], 'no hooks are declared from a broken source');
+});
+
+test('worker core: the REAL chart-creator hooks.js runs onInit + onInput in the worker', async () => {
+  // The M2 first opt-in tool — proves a shipping, DOM-free tool executes unchanged
+  // through the worker executor and produces its chartSvg patch.
+  let source: string;
+  try {
+    source = readFileSync(join(REPO, 'community', 'chart-creator', 'hooks.js'), 'utf8');
+  } catch {
+    // community submodule not mounted in this environment — skip rather than fail.
+    return;
+  }
+  const { core, posted, pump } = harness({
+    // chart-creator's onInit resolves a palette from tokens/color (both local);
+    // provide assets.get as a no-op RPC in case any code path reaches for it.
+    assets: { get: async () => null },
+  });
+  core.handle({
+    t: 'init', runId: 3, hooksSource: source, tokenDoc: TOKEN_DOC, tokenExcluded: [],
+    hostShape: { assets: ['get'], color: ['distinct', 'deltaE'], tokens: ['get', 'colors', 'resolve'] },
+    seeds: {}, shell: 'web', capabilities: [],
+  });
+  const init = posted.find((m): m is HookInitDoneMsg => m.t === 'init-done');
+  assert.ok(init, 'chart-creator compiled in the worker core');
+  assert.ok(init.declared.includes('onInit') && init.declared.includes('onInput'), 'both cold hooks are declared');
+
+  // A representative model: chart-creator reads its inputs; an empty model uses defaults.
+  core.handle({ t: 'invoke', runId: 3, callId: 1, name: 'onInit', ctx: { model: [] } });
+  await pump();
+  const done = posted.find((m): m is HookInvokeDoneMsg => m.t === 'invoke-done' && (m as HookInvokeDoneMsg).callId === 1);
+  assert.ok(done?.ok, `chart-creator onInit ran in the worker (${done?.error ?? ''})`);
+  const patch = (done!.patch ?? {}) as Record<string, unknown>;
+  assert.equal(typeof patch.chartSvg, 'string', 'onInit produced a chartSvg extra');
+  // With an empty model chart-creator emits its placeholder group (the <svg> wrapper
+  // lives in template.html, not this extra) — distinctive real chart-creator markup,
+  // proving the shipping tool executed unchanged inside the worker.
+  assert.match(patch.chartSvg as string, /<svg|<g|data-canvas-input/i, 'the chartSvg is real chart-creator markup');
+});

@@ -45,6 +45,7 @@ export const MATTE_MODEL_CACHE_VERSION = 1;
 export const MATTE_MODEL_FILES: Record<MatteModelId, string> = {
   'u2netp': 'u2netp.onnx',
   'birefnet-lite': 'birefnet-lite.onnx',
+  'birefnet': 'birefnet.onnx',
   'modnet': 'modnet.onnx',
 };
 
@@ -62,7 +63,7 @@ export const MATTE_DEFAULT_MODEL: MatteModelId = 'birefnet-lite';
 // length from the downloaded file and this must be reconciled before staging.
 
 // Order here IS the picker order (models() filters to the staged set, preserving it):
-// fast preview → the general default → the portrait specialist.
+// fast preview → the general default → the max-quality full model → the portrait specialist.
 export const MATTE_MODELS: MatteModelInfo[] = [
   {
     id: 'u2netp',
@@ -83,6 +84,16 @@ export const MATTE_MODELS: MatteModelInfo[] = [
     attribution: 'BiRefNet © 2024 Peng Zheng et al. (MIT)',
     version: 'lite',
     note: 'Best all-round — a transformer that copes with dark and low-contrast backgrounds. The default.',
+  },
+  {
+    id: 'birefnet',
+    name: 'BiRefNet (max quality)',
+    tier: 'pro',
+    approxBytes: 489_666_272,   // exact vendored size (fp16, verified 2026-08-06)
+    license: 'MIT',
+    attribution: 'BiRefNet © 2024 Peng Zheng et al. (MIT)',
+    version: 'full',
+    note: 'The full model — cleanest edges on hair, fur and fine detail. A large (~490 MB) one-time download and slower to run; best on a powerful machine.',
   },
   {
     id: 'modnet',
@@ -149,6 +160,16 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
     std: IMAGENET_STD,
     activation: 'sigmoid',
   },
+  'birefnet': {
+    // The FULL BiRefNet — same contract as the lite (same exporter/family):
+    // input_image f32 [1,3,1024,1024], LOGIT head → sigmoid. CONFIRMED against
+    // the real ONNX graph in onnxruntime-node (2026-08-06): ran clean in 18 s on
+    // CPU, output range [−78,+31] (unbounded logits, so sigmoid, NOT minmax).
+    inputSize: [1024, 1024],
+    mean: IMAGENET_MEAN,
+    std: IMAGENET_STD,
+    activation: 'sigmoid',
+  },
 };
 
 // ── Which weights are actually vendored in THIS build ────────────────────────
@@ -169,6 +190,7 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
 export const MATTE_STAGED: Record<MatteModelId, boolean> = {
   'u2netp': true,          // fast preview (saliency, minmax)
   'birefnet-lite': true,   // DEFAULT — transformer, fixes dark/low-contrast (logit → sigmoid)
+  'birefnet': true,        // MAX quality — full Swin-L BiRefNet, ~490 MB fp16 (logit → sigmoid); graph inspected + ran clean on CPU 2026-08-06
   'modnet': true,          // portrait specialist — soft hair ([-1,1] norm, bounded alpha → minmax)
 };
 

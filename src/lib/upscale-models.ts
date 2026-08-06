@@ -36,6 +36,7 @@ export const UPSCALE_MODEL_CACHE_VERSION = 1;
 export const UPSCALE_MODEL_FILES: Record<UpscaleModelId, string> = {
   'realesr-general-x4v3': 'realesr-general-x4v3.onnx',
   'realesrgan-x4plus': 'realesrgan-x4plus.onnx',
+  'realesrgan-x4plus-anime': 'realesrgan-x4plus-anime.onnx',
   'gfpgan-v1.4': 'gfpgan-v1.4.onnx',
 };
 
@@ -85,6 +86,15 @@ export const UPSCALE_MODELS: UpscaleModelInfo[] = [
     version: 'x4plus',
   },
   {
+    id: 'realesrgan-x4plus-anime',
+    name: 'Real-ESRGAN anime (illustration)',
+    scale: 4,
+    approxBytes: 17_939_969,   // exact converted size (RRDBNet 6-block fp32, verified 2026-08-06)
+    license: 'BSD-3-Clause',
+    attribution: RE_ATTRIBUTION,
+    version: 'x4plus-anime-6B',
+  },
+  {
     id: 'gfpgan-v1.4',
     name: 'GFPGAN face restore',
     scale: 4,
@@ -110,14 +120,19 @@ export const UPSCALE_MODEL_BYTES: Record<UpscaleModelId, number> = UPSCALE_MODEL
 // models with a PLACEHOLDER sha (no self-contained single-file ONNX source found
 // yet), so their weights are never staged on the server — offering them would
 // promise a one-time download that can never complete. Withhold them until a real
-// pin lands, and flip the flag HERE in the same change. The general + GFPGAN
-// weights (and the GFPGAN face detector) have real, verified pins today.
+// pin lands, and flip the flag HERE in the same change. The general + x4plus +
+// GFPGAN weights (and the GFPGAN face detector) have real, verified fetch-script
+// pins today; the anime/illustration model has no published ONNX mirror, so it is
+// CONVERSION-SOURCED — reproduced on-device from the upstream BSD-3 .pth by
+// scripts/convert-anime-upscale-onnx.py (RRDBNet 6-block, verified to run + scale
+// x4 in onnxruntime), which writes it straight into the served /models/upscale/ tree.
 
 /** True where the model's primary weights have a real pin in the fetch script. */
 export const UPSCALE_STAGED: Record<UpscaleModelId, boolean> = {
-  'realesr-general-x4v3': true,   // real pin
-  'realesrgan-x4plus': true,      // real pin (SceneWorks single-file fp32 ONNX, verified 2026-08-05)
-  'gfpgan-v1.4': true,            // real pin
+  'realesr-general-x4v3': true,        // real pin
+  'realesrgan-x4plus': true,           // real pin (SceneWorks single-file fp32 ONNX, verified 2026-08-05)
+  'realesrgan-x4plus-anime': true,     // converted on-device from the BSD-3 .pth (scripts/convert-anime-upscale-onnx.py); ran + scaled x4 in onnxruntime 2026-08-06
+  'gfpgan-v1.4': true,                 // real pin
 };
 
 /** Whether the general model's denoise partner (WDN) is vendored. Placeholder pin

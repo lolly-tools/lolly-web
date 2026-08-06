@@ -41,14 +41,14 @@ test('HONESTY GATE: exactly the verified models are offered', () => {
   // verified its ONNX (see scripts/fetch-matte-models.ts gate list). Flipping a
   // flag without that verification is exactly the mistake this guards.
   //
-  // Staged roster as of 2026-08-05: u2netp (fast) + birefnet-lite (default) + modnet
-  // (portraits). Each has a real sha256/byte-verified pin (fetch-matte-models.ts), its
-  // ONNX graph inspected in onnxruntime (tensor shape/dtype, per-model normalization +
-  // activation confirmed), and a permissive licence (Apache-2.0 ×2, MIT — MPL-compatible).
-  // Matte runs WASM-only, so no WebGPU gate applies. If this fails, a staged flag changed
-  // — re-affirm the licence + pin were actually verified, then update this list in the
-  // SAME change.
-  assert.deepEqual(stagedMatteModels().map(m => m.id).sort(), ['birefnet-lite', 'modnet', 'u2netp'],
+  // Staged roster as of 2026-08-06: u2netp (fast) + birefnet-lite (default) + birefnet
+  // (max quality, full Swin-L, ~490 MB fp16) + modnet (portraits). Each has a real
+  // sha256/byte-verified pin (fetch-matte-models.ts), its ONNX graph inspected in
+  // onnxruntime (tensor shape/dtype, per-model normalization + activation confirmed),
+  // and a permissive licence (Apache-2.0 ×2, MIT ×2 — MPL-compatible). Matte runs
+  // WASM-only, so no WebGPU gate applies. If this fails, a staged flag changed — re-affirm
+  // the licence + pin were actually verified, then update this list in the SAME change.
+  assert.deepEqual(stagedMatteModels().map(m => m.id).sort(), ['birefnet', 'birefnet-lite', 'modnet', 'u2netp'],
     'the staged set must match the verified models');
 });
 

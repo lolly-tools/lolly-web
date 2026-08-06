@@ -356,9 +356,13 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   });
 
   // ── The combined sidebar ────────────────────────────────────────────────────
-  // Shared card: a fan-out "runtime" — the ONLY members renderInputs touches are
-  // setInput and getModel (verified), so this adapter is the full contract it
-  // exercises. setInput writes to every session that declares the input.
+  // Shared card: a fan-out "runtime". renderInputs drives it through setInput,
+  // getModel AND `manifest` — the dense-sections density hint reads
+  // runtime.manifest.render, and a bare { setInput, getModel } adapter (its original
+  // contract) threw "Cannot read properties of undefined (reading 'render')" and took
+  // the whole /multi view down whenever 2+ sessions shared an input. Any member's
+  // manifest satisfies it: the density hint is tool-level and copies share a tool.
+  // setInput writes to every session that declares the input.
   const sharedPanel = viewEl.querySelector<PanelEl>('[data-me-shared-panel]');
   let sharedModelPrev: InputModelItem[] | null = null;
   const sharedModel = (): InputModelItem[] =>
@@ -368,6 +372,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       return item ? [{ ...item, showIf: undefined }] : [];
     });
   const fanRuntime = {
+    manifest: members[0]?.tool.manifest,
     async setInput(id: string, value: InputValue): Promise<void> {
       for (const m of sharedMembersOf(id)) { await m.runtime.setInput(id, value); m.dirty = true; }
     },

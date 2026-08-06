@@ -85,4 +85,5 @@ test('the roster activations are pinned: bounded heads = minmax, BiRefNet = sigm
   assert.equal(MATTE_MODEL_SPEC['u2netp'].activation, 'minmax');
   assert.equal(MATTE_MODEL_SPEC['modnet'].activation, 'minmax');
   assert.equal(MATTE_MODEL_SPEC['birefnet-lite'].activation, 'sigmoid');
+  assert.equal(MATTE_MODEL_SPEC['birefnet'].activation, 'sigmoid');
 });

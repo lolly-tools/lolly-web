@@ -69,6 +69,7 @@ export interface UpscaleDialogOpts {
 /** The general (WDN-pair) model is the only one that takes a denoise strength. */
 const GENERAL_MODEL: UpscaleModelId = 'realesr-general-x4v3';
 const XPLUS_MODEL: UpscaleModelId = 'realesrgan-x4plus';
+const ANIME_MODEL: UpscaleModelId = 'realesrgan-x4plus-anime';
 const FACE_MODEL: UpscaleModelId = 'gfpgan-v1.4';
 
 /** An intent the picker offers ("what are you upscaling?"), which routes to the best
@@ -192,12 +193,14 @@ export function openUpscaleDialog(host: UpscaleHost, opts: UpscaleDialogOpts = {
 
     // The intent roster — built from the STAGED models, so an intent whose engine
     // isn't vendored simply doesn't appear. Pixel art is always offered (it's a local
-    // algorithm, no model). Illustration rides the general model until a dedicated
-    // line-art model is staged, with a note that says so.
+    // algorithm, no model). Illustration routes to the dedicated anime/line-art model
+    // when it's staged, and gracefully falls back to the general model (with a note)
+    // where it isn't — e.g. a build whose anime ONNX hasn't been converted.
     const has = (id: UpscaleModelId): boolean => models.some(m => m.id === id);
     const intents: UpscaleIntent[] = [];
     if (has(GENERAL_MODEL)) intents.push({ value: 'photo', label: t('Photo'), model: GENERAL_MODEL, ...(has(XPLUS_MODEL) ? { hqModel: XPLUS_MODEL } : {}) });
-    if (has(GENERAL_MODEL)) intents.push({ value: 'illustration', label: t('Illustration'), model: GENERAL_MODEL, note: t('Using the general model for now — a line-art model is on the way.') });
+    if (has(ANIME_MODEL)) intents.push({ value: 'illustration', label: t('Illustration'), model: ANIME_MODEL });
+    else if (has(GENERAL_MODEL)) intents.push({ value: 'illustration', label: t('Illustration'), model: GENERAL_MODEL, note: t('Using the general model for now — a line-art model is on the way.') });
     intents.push({ value: 'pixel', label: t('Pixel art'), algorithm: 'nearest' });
     if (has(GENERAL_MODEL)) intents.push({ value: 'text', label: t('Text'), model: GENERAL_MODEL });
     if (has(FACE_MODEL)) intents.push({ value: 'face', label: t('Face'), model: FACE_MODEL });

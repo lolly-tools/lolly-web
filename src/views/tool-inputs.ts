@@ -488,7 +488,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       ? `<span class="input-lock-chip" data-tip="${escape(pol.note)}" aria-label="${escape(pol.note)}" tabindex="0" style="display:inline-flex;align-items:center;margin-inline-start:.35rem;vertical-align:middle;color:hsl(var(--muted-foreground))">${icon('lock', { size: 12, strokeWidth: 2 })}</span>`
       : '';
     const labelText = `<span class="input-label-text"${isComposite ? ` id="${labelId}"` : ''}>${escape(input.label ?? input.id)}${valueTag}</span>`;
-    const label = `<span class="input-label">${labelText}${lockChip}${ht ? ht.button : ''}</span>`;
+    // Unified "Add data" affordance (plan 87): a text/longtext input that declares
+    // `dataSource` gets a small button beside its label to fill the field from a file
+    // or a catalog text/boilerplate asset. Not on a locked input.
+    const dataSrcBtn = (!locks && input.dataSource && (input.control === 'textarea' || input.control === 'text-input'))
+      ? `<button type="button" class="input-data-src" data-data-source="${escape(input.id)}" title="Add data from a file or your library" aria-label="Add data">${icon('filePlus', { size: 13, strokeWidth: 2 })}</button>`
+      : '';
+    const label = `<span class="input-label">${labelText}${lockChip}${ht ? ht.button : ''}${dataSrcBtn}</span>`;
     // A locked input displays the policy VALUE (when one is given) in place of the
     // model's stored value — a render-only substitution, so the model is untouched.
     const renderInput: InputModelItem = (pol?.mode === 'locked' && pol.value !== undefined)
@@ -533,7 +539,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Tool-scoped density hint (chrome-only): sections named here render their short
   // controls in a 2-column grid. Never touches the model, URL, or determinism.
   const denseSections = new Set(
-    (runtime.manifest.render as { denseSections?: string[] })?.denseSections ?? [],
+    // Optional-chain the MANIFEST, not just `.render`: multi-edit's shared-card
+    // fanRuntime is a minimal { setInput, getModel } adapter with no manifest, so
+    // reading `.render` off an undefined manifest threw "Cannot read properties of
+    // undefined (reading 'render')" and took the whole /multi view down (2+ sessions
+    // sharing an input). renderInputs must tolerate a manifest-less runtime.
+    ((runtime.manifest?.render) as { denseSections?: string[] } | undefined)?.denseSections ?? [],
   );
   let pillbarOpen = false;   // a run of consecutive `display:'pill'` booleans, wrapped
   const isPillInput = (i: InputModelItem): boolean => i.control === 'checkbox' && i.display === 'pill';
@@ -1335,6 +1346,37 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       let text = '';
       try { text = await file.text(); } catch { /* unreadable */ }
       ioFlash(btn, await routeImport(text, inp, file.name));
+    });
+  });
+
+  // Unified "Add data" affordance (plan 87): a text/longtext input with `dataSource`
+  // fills its field from a picked file (csv/json/txt/md/xlsx) or a catalog text asset.
+  // The value is written through the control's own `input` event, so it syncs to the
+  // runtime exactly like typing (no direct model poke). Lazy chunk — the picker loads
+  // only on first use.
+  el.querySelectorAll<HTMLButtonElement>('[data-data-source]').forEach(btn => {
+    const id = btn.dataset.dataSource!;
+    const inp = panelModel.find(i => i.id === id);
+    if (!inp) return;
+    btn.addEventListener('click', async () => {
+      const { openDataSource } = await import('../lib/data-source.ts');
+      await openDataSource(host, {
+        tags: inp.dataSource?.tags,
+        accept: inp.dataSource?.accept,
+        announce: (m, o) => announce(m, o),
+        onText: (text) => {
+          const ctl = el.querySelector<HTMLElement>(`[data-input-id="${CSS.escape(id)}"]`);
+          if (!ctl) return;
+          (ctl as unknown as { value: string }).value = text;
+          // The runtime listener binds to the INNER shadow control for a jelly field
+          // (its `input` is composed:false and never bubbles to the host) and to the
+          // control itself for a native field — fire `input` where the listener is.
+          // Line 812 reads the HOST value, which we set above, so either target works.
+          const inner = ctl.shadowRoot?.querySelector<HTMLElement>('input, textarea');
+          (inner ?? ctl).dispatchEvent(new Event('input', { bubbles: true }));
+          onDirty?.(id);
+        },
+      });
     });
   });
 

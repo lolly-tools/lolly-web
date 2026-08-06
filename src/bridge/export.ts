@@ -6246,9 +6246,27 @@ async function rasterizeBoxShadow(
 // data URL, alpha preserved. The PDF walker uses this for gradient / filter
 // illustrations the vector path can't reproduce faithfully (no shading; CSS-class
 // fills). `flipX` mirrors horizontally to honour a scaleX(-1) CSS transform.
+// Neutralise DOCUMENT-LAYOUT style on a root SVG that is about to be serialised and
+// loaded standalone as an <img> for rasterisation. A caller (the <img>→SVG branch)
+// positions the live element off-screen — style="position:absolute;left:-99999px;…;
+// width:Npx;height:Mpx" — so its computed fills resolve for the vector walk. That style
+// must NOT ride into the raster: as a standalone image, left:-99999px shifts the WHOLE
+// artwork off the raster (→ a blank PNG, which is how bag-video's gradient Geeko vanished
+// from every PDF export), and a style width/height overrides the sizing attributes the
+// rasteriser sets. Only LAYOUT props are stripped; colour / custom-properties
+// (currentColor, var() fills) survive so the artwork keeps its paint.
+const RASTER_STRIP_STYLE_PROPS = ['position', 'left', 'top', 'right', 'bottom', 'inset',
+  'margin', 'margin-left', 'margin-top', 'margin-right', 'margin-bottom',
+  'transform', 'width', 'height'] as const;
+export function stripRasterLayoutStyle(el: Element): void {
+  const s = (el as unknown as HTMLElement).style;
+  if (s) for (const p of RASTER_STRIP_STYLE_PROPS) s.removeProperty(p);
+}
+
 async function rasterizeSvgElement(svgEl: Element, pxW: number, pxH: number, flipX = false, imprint?: ImprintState): Promise<string> {
   const clone = svgEl.cloneNode(true) as Element;
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  stripRasterLayoutStyle(clone);
   clone.setAttribute('width',  String(pxW));
   clone.setAttribute('height', String(pxH));
   await inlineBlobUrlsInEl(clone);
