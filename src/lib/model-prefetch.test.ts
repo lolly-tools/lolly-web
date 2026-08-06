@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { upscaleOfflineFiles, matteOfflineFiles } from './model-prefetch.ts';
 import { UPSCALE_MODEL_FILES, UPSCALE_FACE_DETECT_FILE, stagedUpscaleModels } from './upscale-models.ts';
-import { MATTE_MODEL_FILES, stagedMatteModels } from './matte-models.ts';
+import { MATTE_MODEL_FILES, matteModelsFor } from './matte-models.ts';
 
 test('the upscale offline part vendors every staged upscaler + the face detector', () => {
   const files = upscaleOfflineFiles();
@@ -27,9 +27,17 @@ test('the illustration/anime model is in the offline part (the fix)', () => {
   );
 });
 
-test('the matte offline part vendors exactly the staged cut-out models', () => {
+test('the matte offline part vendors exactly the cut-out models this shell can run', () => {
+  // Cache parity is against what the picker OFFERS, which is backend-gated: the
+  // native-only full BiRefNet (~467 MB) is withheld where it can't run, so the
+  // offline section must not pre-download it there either. This test runs with no
+  // Tauri backend (isTauriShell() === false), so matteOfflineFiles() is the
+  // wasm-runnable subset — matteModelsFor(false).
   assert.deepEqual(
     [...matteOfflineFiles()].sort(),
-    stagedMatteModels().map(m => MATTE_MODEL_FILES[m.id]).sort(),
+    matteModelsFor(false).map(m => MATTE_MODEL_FILES[m.id]).sort(),
   );
+  // The native-only heavyweight is explicitly NOT vendored on the web/CLI side.
+  assert.ok(!matteOfflineFiles().includes(MATTE_MODEL_FILES['birefnet']),
+    'the wasm-impossible full BiRefNet is not offered for web offline download');
 });

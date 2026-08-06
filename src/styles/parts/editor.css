@@ -485,6 +485,14 @@
   box-shadow: 0 0 0 1px var(--pen-edge);
 }
 .fc-pen-handle[hidden] { display: none; }
+/* A SELECTED control point (shift-clicked, for align/distribute). The resting handle is
+   already primary-filled, so selection inverts it — white fill, primary ring — to read
+   clearly as picked at any size. */
+.fc-pen-handle.is-on {
+  background: #ffffff;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary));
+}
 /* The arms were the worst case — a 1px line at 60% in the brand colour vanished against
    anything near it. Full-strength ink, cased both ways, still reads as a hairline. */
 .fc-pen-arm {

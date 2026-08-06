@@ -56,9 +56,10 @@ import type { InputValue } from '../../../../engine/src/inputs.ts';
  * `'spiro'` (Levien's Euler-spiral spline, the one Inkscape ships) is now a real solver
  * — `spiroCubics` in the engine — so it joins the switcher, requested by users who know
  * it from Inkscape. It is knot-only like `hyperbezier`, a different curve family, and
- * defaults its nodes to `'smooth'`.
+ * defaults its nodes to `'smooth'`. Kept LAST in the list (Andy, 2026-08-06): it is the
+ * specialist option, so it sits at the bottom below the everyday kinds.
  */
-export const PEN_KINDS: SplineKind[] = ['hyperbezier', 'spiro', 'cubic', 'catmull-rom', 'bspline', 'line'];
+export const PEN_KINDS: SplineKind[] = ['hyperbezier', 'cubic', 'catmull-rom', 'bspline', 'line', 'spiro'];
 
 /** New paths default to this — per the plan, and because its node default is `'smooth'`,
  *  so plain click-click-click draws a curve rather than a polyline. */
@@ -427,22 +428,6 @@ export function moveNodes(p: AuthoredPath, indices: Iterable<number>, dx: number
  *  same six names the box-level `AlignEdge` uses, so one menu can drive either. */
 export type NodeAlignEdge = 'left' | 'hcentre' | 'right' | 'top' | 'vcentre' | 'bottom';
 
-/** The selection's bounding box, over node POSITIONS only. Handles are excluded on
- *  purpose: a handle is a tangent, not a point the user placed, so letting one stretch the
- *  reference box would make "align left" depend on curvature. */
-function nodesAABB(nodes: SplineNode[], idx: number[]): { minX: number; minY: number; maxX: number; maxY: number } | null {
-  if (!idx.length) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const i of idx) {
-    const n = nodes[i]!;
-    if (n.x < minX) minX = n.x;
-    if (n.x > maxX) maxX = n.x;
-    if (n.y < minY) minY = n.y;
-    if (n.y > maxY) maxY = n.y;
-  }
-  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
-}
-
 /** The selected indices, deduplicated, in range, and in path order. */
 function selIdx(p: AuthoredPath, indices: Iterable<number>): number[] {
   return [...new Set(indices)].filter((i) => Number.isInteger(i) && i >= 0 && i < p.nodes.length).sort((a, b) => a - b);
@@ -461,25 +446,7 @@ function selIdx(p: AuthoredPath, indices: Iterable<number>): number[] {
  * select is how an align becomes a surprise.
  */
 export function alignNodes(p: AuthoredPath, indices: Iterable<number>, edge: NodeAlignEdge): AuthoredPath {
-  const idx = selIdx(p, indices);
-  const ref = idx.length >= 2 ? nodesAABB(p.nodes, idx) : null;
-  if (!ref) return p;
-  const set = new Set(idx);
-  return {
-    ...p,
-    nodes: p.nodes.map((n, k) => {
-      if (!set.has(k)) return n;
-      switch (edge) {
-        case 'left': return { ...n, x: ref.minX };
-        case 'right': return { ...n, x: ref.maxX };
-        case 'hcentre': return { ...n, x: (ref.minX + ref.maxX) / 2 };
-        case 'top': return { ...n, y: ref.minY };
-        case 'bottom': return { ...n, y: ref.maxY };
-        case 'vcentre': return { ...n, y: (ref.minY + ref.maxY) / 2 };
-        default: return n;
-      }
-    }),
-  };
+  return alignPoints(p, selIdx(p, indices).map((i) => ({ node: i })), edge);
 }
 
 /**
@@ -492,22 +459,101 @@ export function alignNodes(p: AuthoredPath, indices: Iterable<number>, edge: Nod
  * them in path order would shuffle them past each other.
  */
 export function distributeNodes(p: AuthoredPath, indices: Iterable<number>, axis: 'h' | 'v'): AuthoredPath {
-  const idx = selIdx(p, indices);
-  if (idx.length < 3) return p;
-  const co = (i: number): number => (axis === 'h' ? p.nodes[i]!.x : p.nodes[i]!.y);
-  const order = idx.slice().sort((a, b) => co(a) - co(b) || a - b);
-  const first = co(order[0]!), last = co(order[order.length - 1]!);
-  const step = (last - first) / (order.length - 1);
-  const target = new Map<number, number>();
-  order.forEach((i, k) => target.set(i, first + step * k));
+  return distributePoints(p, selIdx(p, indices).map((i) => ({ node: i })), axis);
+}
+
+// ── nodes AND control points (handles) ─────────────────────────────────────────
+//
+// Align/distribute over a MIXED selection of nodes and control points. A control point
+// is a node's in/out handle; unlike `alignNodes` (which leaves handles alone), here a
+// SELECTED handle is a point in its own right — its absolute position is aligned, which
+// means changing its OFFSET from the node. Only `cubic`/`hyperbezier` paths have handles
+// to select; the other kinds are handle-free, so this degrades to node-only there.
+
+/** A selectable point: a node, or one of its handles. */
+export interface PenPointRef { node: number; handle?: 'in' | 'out' }
+
+export const penRefKey = (r: PenPointRef): string => (r.handle ? `${r.node}:${r.handle}` : `${r.node}`);
+
+/** Absolute position of a point ref, or null (out-of-range node, or a handle a node
+ *  doesn't have — handles are OPTIONAL, an absent one is "no handle", not (0,0)). */
+function refAbs(nodes: SplineNode[], r: PenPointRef): { x: number; y: number } | null {
+  const n = nodes[r.node];
+  if (!n) return null;
+  if (!r.handle) return { x: n.x, y: n.y };
+  const hx = r.handle === 'in' ? n.hInX : n.hOutX;
+  const hy = r.handle === 'in' ? n.hInY : n.hOutY;
+  if (hx == null || hy == null) return null;
+  return { x: n.x + hx, y: n.y + hy };
+}
+
+/** Apply per-ref absolute-coordinate targets (only the aligned/distributed axis is set;
+ *  the other keeps its value). A node target moves the node; a handle target changes its
+ *  offset, computed against the node's FINAL position, so a node+handle both selected stay
+ *  coincident on the aligned axis. */
+function applyRefTargets(p: AuthoredPath, targets: Map<string, { x?: number; y?: number }>): AuthoredPath {
+  if (!targets.size) return p;
   return {
     ...p,
     nodes: p.nodes.map((n, k) => {
-      const v = target.get(k);
-      if (v === undefined) return n;
-      return axis === 'h' ? { ...n, x: v } : { ...n, y: v };
+      const nt = targets.get(`${k}`);
+      const nx = nt?.x ?? n.x, ny = nt?.y ?? n.y;
+      const out: SplineNode = { ...n, x: nx, y: ny };
+      const it = targets.get(`${k}:in`);
+      if (it && n.hInX != null && n.hInY != null) {
+        out.hInX = (it.x ?? n.x + n.hInX) - nx;
+        out.hInY = (it.y ?? n.y + n.hInY) - ny;
+      }
+      const ot = targets.get(`${k}:out`);
+      if (ot && n.hOutX != null && n.hOutY != null) {
+        out.hOutX = (ot.x ?? n.x + n.hOutX) - nx;
+        out.hOutY = (ot.y ?? n.y + n.hOutY) - ny;
+      }
+      return out;
     }),
   };
+}
+
+/** The valid, deduplicated refs with a resolvable absolute position, and that AABB. */
+function refPositions(p: AuthoredPath, refs: PenPointRef[]): { key: string; x: number; y: number }[] {
+  const seen = new Set<string>();
+  const out: { key: string; x: number; y: number }[] = [];
+  for (const r of refs) {
+    const key = penRefKey(r);
+    if (seen.has(key)) continue;
+    const pos = refAbs(p.nodes, r);
+    if (!pos) continue;
+    seen.add(key);
+    out.push({ key, x: pos.x, y: pos.y });
+  }
+  return out;
+}
+
+/** Align selected nodes AND control points to an edge of their shared bounding box. */
+export function alignPoints(p: AuthoredPath, refs: PenPointRef[], edge: NodeAlignEdge): AuthoredPath {
+  const pts = refPositions(p, refs);
+  if (pts.length < 2) return p;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const q of pts) { if (q.x < minX) minX = q.x; if (q.x > maxX) maxX = q.x; if (q.y < minY) minY = q.y; if (q.y > maxY) maxY = q.y; }
+  const t: { x?: number; y?: number } =
+    edge === 'left' ? { x: minX } : edge === 'right' ? { x: maxX } : edge === 'hcentre' ? { x: (minX + maxX) / 2 }
+    : edge === 'top' ? { y: minY } : edge === 'bottom' ? { y: maxY } : { y: (minY + maxY) / 2 };
+  const targets = new Map<string, { x?: number; y?: number }>();
+  for (const q of pts) targets.set(q.key, t);
+  return applyRefTargets(p, targets);
+}
+
+/** Space selected nodes AND control points evenly along an axis, holding the extremes. */
+export function distributePoints(p: AuthoredPath, refs: PenPointRef[], axis: 'h' | 'v'): AuthoredPath {
+  const pts = refPositions(p, refs);
+  if (pts.length < 3) return p;
+  const co = (q: { x: number; y: number }): number => (axis === 'h' ? q.x : q.y);
+  const order = pts.map((q, i) => ({ q, i })).sort((a, b) => co(a.q) - co(b.q) || a.i - b.i).map((e) => e.q);
+  const first = co(order[0]!), last = co(order[order.length - 1]!);
+  const step = (last - first) / (order.length - 1);
+  const targets = new Map<string, { x?: number; y?: number }>();
+  order.forEach((q, k) => targets.set(q.key, axis === 'h' ? { x: first + step * k } : { y: first + step * k }));
+  return applyRefTargets(p, targets);
 }
 
 /**

@@ -1,0 +1,72 @@
+/* Virtualized datagrid (plan 89, components/data-grid.ts). Real DOM, themed via the
+   app tokens so it matches the table input + /pro grids. The viewport is the sole
+   scroll container; the header is sticky INSIDE it so it scrolls horizontally with
+   the body and stays pinned vertically. Rows are absolutely positioned via a
+   translateY on .dg-rows within a full-height .dg-canvas spacer. */
+.data-grid {
+  display: block;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  overflow: hidden;
+  background: hsl(var(--background));
+  font-size: calc(13px * var(--a11y-fs, 1));
+}
+
+.dg-viewport {
+  position: relative;
+  height: 320px;             /* the host may override via a style attribute */
+  overflow: auto;
+  outline: none;
+}
+.dg-viewport:focus-visible { box-shadow: inset 0 0 0 2px hsl(var(--ring)); }
+
+.dg-inner { position: relative; min-width: 100%; }
+
+.dg-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  background: hsl(var(--muted));
+  border-bottom: 1px solid hsl(var(--border));
+}
+.dg-head-cell {
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.dg-canvas { position: relative; }
+.dg-rows { position: absolute; inset: 0 auto auto 0; width: 100%; will-change: transform; }
+
+.dg-row { display: flex; }
+.dg-row:nth-child(even) .dg-cell { background: color-mix(in srgb, hsl(var(--muted)) 30%, transparent); }
+
+.dg-cell {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  line-height: 20px;
+  border-right: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: hsl(var(--foreground));
+}
+.dg-cell.dg-ro { color: hsl(var(--muted-foreground)); font-style: italic; }
+.dg-row .dg-cell { cursor: cell; }
+.dg-row .dg-cell.dg-ro { cursor: default; }
+
+.dg-editor {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  padding: 4px 7px;
+  border: 2px solid hsl(var(--ring));
+  border-radius: 3px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit;
+  outline: none;
+}

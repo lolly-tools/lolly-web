@@ -203,6 +203,32 @@ export function stagedMatteModels(): MatteModelInfo[] {
   return MATTE_MODELS.filter((m) => MATTE_STAGED[m.id]);
 }
 
+// ── Which staged models need a NATIVE ORT backend ────────────────────────────
+//
+// Staging (MATTE_STAGED) is a WEIGHTS-verified fact; this is a separate BACKEND
+// fact. The full BiRefNet is a Swin-L transformer that runs at a fixed 1024²: its
+// upcast fp32 weights (~490 MB fp16 → ~980 MB) plus a Swin-L's activations blow
+// past the ~4 GB ceiling of the single-thread wasm32 heap the web/CLI runner uses
+// (ort.ts numThreads=1), so `session.run()` aborts with std::bad_alloc — on
+// EFFECTIVELY ANY DEVICE, since it's an ADDRESS-SPACE limit, not a RAM one. It ran
+// clean under onnxruntime-node (native, 64-bit) in ~18 s, so it is offered ONLY
+// where a native ORT backend exists (Tauri desktop, via bridge-overrides/matte.ts).
+// The other three fit the wasm heap and run everywhere.
+export const MATTE_NATIVE_ONLY: Record<MatteModelId, boolean> = {
+  'u2netp': false,
+  'birefnet-lite': false,
+  'birefnet': true,   // full Swin-L @1024² — wasm32 OOMs; native-only
+  'modnet': false,
+};
+
+/** The staged models a shell should OFFER given whether it has a native ORT
+ *  backend. Web/CLI pass `false` and never see the native-only heavyweights (they
+ *  would download hundreds of MB only to OOM at run); the desktop shell passes
+ *  `true` and offers the full set. Preserves MATTE_MODELS order. */
+export function matteModelsFor(hasNativeBackend: boolean): MatteModelInfo[] {
+  return stagedMatteModels().filter((m) => hasNativeBackend || !MATTE_NATIVE_ONLY[m.id]);
+}
+
 /** The catalogue entry for an id, or undefined for an unknown one. Looks up the
  *  FULL catalogue (incl. unstaged) so an id round-trips even for a withheld model. */
 export function matteModel(id: MatteModelId): MatteModelInfo | undefined {

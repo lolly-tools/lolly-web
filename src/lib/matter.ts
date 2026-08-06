@@ -221,22 +221,34 @@ export function canRun(src: { width: number; height: number }, opts: MatteOpts =
   }
 }
 
-/** Run the matte. Returns a MatteFrame whose RGB is the (work-size) source and
- *  alpha is the computed matte. Rejects on abort; returns null when the model
- *  isn't on device yet (the caller shows the download/consent path). */
-export async function runMatte(frame: MatteFrame, opts: MatteOpts, ctx: MatteRunCtx): Promise<MatteFrame> {
-  ctx.checkAbort();
-  const id = opts.model ?? MATTE_DEFAULT_MODEL;
-  const spec = MATTE_MODEL_SPEC[id];
+// The letterbox/normalize (in) and activate/unpad/scale/compose (out) halves are
+// split out so BOTH the wasm runner below and the desktop NATIVE override
+// (shells/tauri-desktop/bridge-overrides/matte.ts) reuse the exact same geometry —
+// the fiddly canvas math has ONE source of truth, and only the inference call in
+// the middle differs (ort-web session.run vs. a native ORT invoke()).
+
+/** Everything preprocessMatte produces that postprocessMatte needs to reassemble
+ *  the cutout from the model's raw mask. */
+export interface MattePre {
+  /** Work-size source RGBA (identity when uncapped) — the final RGB planes. */
+  workRgba: Uint8ClampedArray;
+  workW: number;
+  workH: number;
+  /** Letterbox placement of the work image inside the model square. */
+  plan: LetterboxPlan;
+  /** NCHW [1,3,edge,edge] float32, normalized per the spec — the model input. */
+  input: Float32Array;
+  /** Model square edge (spec.inputSize[0]). */
+  edge: number;
+  /** The model spec (its activation is read back in postprocessMatte). */
+  spec: MatteModelSpec;
+}
+
+/** Source frame → the model's normalized NCHW input, keeping the work-size RGB and
+ *  letterbox plan needed to reassemble the matte. `maxEdge` caps the OUTPUT (the RGB
+ *  is byte-identical when uncapped); the model input is always its fixed square. */
+export function preprocessMatte(frame: MatteFrame, spec: MatteModelSpec, opts: MatteOpts = {}): MattePre {
   const edge = spec.inputSize[0];
-
-  const session = await loadSession(MATTE_MODEL_FILES[id], (p) =>
-    ctx.onProgress?.({ phase: 'download', loaded: p.loaded, total: p.total }));
-  if (!session) throw new ModelNotInstalledError(id);
-  ctx.checkAbort();
-  ctx.onProgress?.({ phase: 'inference', fraction: 0 });
-
-  // Work size: honour maxEdge by capping the OUTPUT (byte-identical RGB when uncapped).
   const longEdge = Math.max(frame.width, frame.height);
   const cap = Math.min(longEdge, opts.maxEdge ?? longEdge);
   const wScale = cap / longEdge;
@@ -266,23 +278,17 @@ export async function runMatte(frame: MatteFrame, opts: MatteOpts, ctx: MatteRun
   inCtx.imageSmoothingQuality = 'high';
   inCtx.drawImage(workCanvas as unknown as CanvasImageSource, plan.offsetX, plan.offsetY, plan.contentW, plan.contentH);
   const inRgba = inCtx.getImageData(0, 0, edge, edge).data;
-  ctx.checkAbort();
 
-  // Normalize → run.
   const input = packNchwNormalized(inRgba, edge, spec);
-  const ort = await loadOrt();
-  const tensor = new ort.Tensor('float32', input, [1, 3, edge, edge]);
-  const result = await session.run({ [session.inputNames[0]!]: tensor });
-  ctx.checkAbort();
-  const out = result[session.outputNames[0]!]!;
-  // Tensor data is a numeric TypedArray for a float mask (never the string[] the
-  // union allows — that is text/int-tensor territory); getData() defends against a
-  // GPU-resident buffer the way runModel does in upscaler.ts.
-  const raw = (typeof out.getData === 'function' ? await out.getData(false) : out.data) as unknown as Float32Array;
-  ctx.onProgress?.({ phase: 'inference', fraction: 0.85 });
+  return { workRgba, workW, workH, plan, input, edge, spec };
+}
 
+/** The model's single-channel output → the finished straight-alpha cutout:
+ *  activate → unpad → scale the mask back to work size → compose over the work RGB. */
+export function postprocessMatte(rawMask: ArrayLike<number>, pre: MattePre): MatteFrame {
+  const { workRgba, workW, workH, plan, edge, spec } = pre;
   // Activate to a 0..1 mask at model resolution.
-  const maskEdge = activateMask(raw, edge * edge, spec.activation);
+  const maskEdge = activateMask(rawMask, edge * edge, spec.activation);
 
   // Unpad (crop the content rect) → grayscale ImageData → scale to work size.
   const maskCanvas = makeCanvas(plan.contentW, plan.contentH);
@@ -312,6 +318,42 @@ export async function runMatte(frame: MatteFrame, opts: MatteOpts, ctx: MatteRun
     outData[o + 2] = workRgba[o + 2]!;
     outData[o + 3] = scaledMask[o]!; // R of the grayscale mask is the alpha
   }
-  ctx.onProgress?.({ phase: 'inference', fraction: 1 });
   return { width: workW, height: workH, data: outData };
+}
+
+/** Run the matte on the WASM (ort-web) path. Returns a MatteFrame whose RGB is the
+ *  (work-size) source and alpha is the computed matte. Rejects on abort; throws
+ *  ModelNotInstalledError when the model isn't on device yet (the caller shows the
+ *  download/consent path). The desktop shell overrides this for the native-only
+ *  heavyweight — see shells/tauri-desktop/bridge-overrides/matte.ts. */
+export async function runMatte(frame: MatteFrame, opts: MatteOpts, ctx: MatteRunCtx): Promise<MatteFrame> {
+  ctx.checkAbort();
+  const id = opts.model ?? MATTE_DEFAULT_MODEL;
+  const spec = MATTE_MODEL_SPEC[id];
+  const edge = spec.inputSize[0];
+
+  const session = await loadSession(MATTE_MODEL_FILES[id], (p) =>
+    ctx.onProgress?.({ phase: 'download', loaded: p.loaded, total: p.total }));
+  if (!session) throw new ModelNotInstalledError(id);
+  ctx.checkAbort();
+  ctx.onProgress?.({ phase: 'inference', fraction: 0 });
+
+  const pre = preprocessMatte(frame, spec, opts);
+  ctx.checkAbort();
+
+  // Normalize → run.
+  const ort = await loadOrt();
+  const tensor = new ort.Tensor('float32', pre.input, [1, 3, edge, edge]);
+  const result = await session.run({ [session.inputNames[0]!]: tensor });
+  ctx.checkAbort();
+  const out = result[session.outputNames[0]!]!;
+  // Tensor data is a numeric TypedArray for a float mask (never the string[] the
+  // union allows — that is text/int-tensor territory); getData() defends against a
+  // GPU-resident buffer the way runModel does in upscaler.ts.
+  const raw = (typeof out.getData === 'function' ? await out.getData(false) : out.data) as unknown as Float32Array;
+  ctx.onProgress?.({ phase: 'inference', fraction: 0.85 });
+
+  const frameOut = postprocessMatte(raw, pre);
+  ctx.onProgress?.({ phase: 'inference', fraction: 1 });
+  return frameOut;
 }

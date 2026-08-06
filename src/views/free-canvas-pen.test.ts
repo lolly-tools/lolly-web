@@ -29,8 +29,8 @@ import {
 import type { Box } from './free-canvas-math.ts';
 import { initFreeCanvas } from './free-canvas.ts';
 import {
-  PEN_DEFAULT_KIND, PEN_KINDS, alignNodes, convertKind, deleteNodes, denormNodes,
-  distributeNodes, dragHandle, insertNodeOnCurve, kindSwitchIsLossy, lowerAuthored,
+  PEN_DEFAULT_KIND, PEN_KINDS, alignNodes, alignPoints, convertKind, deleteNodes, denormNodes,
+  distributeNodes, distributePoints, dragHandle, insertNodeOnCurve, kindSwitchIsLossy, lowerAuthored,
   normNodes, penCommitFromNative, refitFrame,
 } from './free-canvas-pen.ts';
 
@@ -1047,6 +1047,46 @@ test('distributeNodes equalises spacing by COORDINATE, holding the extremes stil
   assert.deepEqual(out.nodes.map((n) => n.x), [0, 90, 30, 60], 'evenly spaced in x, in place');
   assert.deepEqual(distributeNodes(p, [0, 1], 'h').nodes.map((n) => n.x), [0, 90, 10, 20],
     'two points are already evenly spaced, so this is a no-op');
+});
+
+test('alignPoints aligns nodes AND control points (a selected handle moves by its offset)', () => {
+  const p = { kind: 'cubic' as const, closed: false, nodes: [
+    { x: 0, y: 0, hOutX: 10, hOutY: 0 }, { x: 100, y: 0 },
+  ] };
+  // node 0's OUT control point (abs x=10) + node 1 (x=100); align right → both to x=100.
+  const out = alignPoints(p, [{ node: 0, handle: 'out' }, { node: 1 }], 'right');
+  assert.equal(out.nodes[1]!.x, 100, 'node 1 unchanged (already rightmost)');
+  assert.equal(out.nodes[0]!.x, 0, 'node 0 itself was not selected, so it stays put');
+  assert.equal(out.nodes[0]!.hOutX, 100, 'its out-handle moved to abs x=100 → offset 100');
+  assert.equal(out.nodes[0]!.hOutY, 0, 'the off-axis coordinate is untouched');
+});
+
+test('alignPoints with a node and its own handle collapses them to one coordinate', () => {
+  const p = { kind: 'cubic' as const, closed: false, nodes: [
+    { x: 0, y: 0, hOutX: 40, hOutY: 0 }, { x: 100, y: 0 },
+  ] };
+  const out = alignPoints(p, [{ node: 0 }, { node: 0, handle: 'out' }], 'left');
+  assert.equal(out.nodes[0]!.x, 0);
+  assert.equal(out.nodes[0]!.hOutX, 0, 'the handle collapses onto the node x (offset 0)');
+});
+
+test('alignPoints ignores a ref to a handle a node does not have', () => {
+  const p = { kind: 'cubic' as const, closed: false, nodes: [{ x: 0, y: 0 }, { x: 100, y: 0 }] };
+  // node 0 has no out-handle, so that ref is dropped; the two NODES still align.
+  const out = alignPoints(p, [{ node: 0, handle: 'out' }, { node: 0 }, { node: 1 }], 'right');
+  assert.equal(out.nodes[0]!.x, 100);
+  assert.equal(out.nodes[1]!.x, 100);
+});
+
+test('distributePoints spaces nodes AND control points evenly by coordinate', () => {
+  const p = { kind: 'cubic' as const, closed: false, nodes: [
+    { x: 0, y: 0 }, { x: 100, y: 0, hInX: -10, hInY: 0 }, { x: 50, y: 0 },
+  ] };
+  // points by x: node0(0), node2(50), node1.in(abs 90) → even spacing 0, 45, 90.
+  const out = distributePoints(p, [{ node: 0 }, { node: 1, handle: 'in' }, { node: 2 }], 'h');
+  assert.equal(out.nodes[0]!.x, 0);
+  assert.equal(out.nodes[2]!.x, 45, 'the middle point (node 2) spaced to 45');
+  assert.equal(out.nodes[1]!.x + out.nodes[1]!.hInX!, 90, 'the control point held at the max (90)');
 });
 
 test('the Arrange button turns on with two selected points and off with one', () => {
