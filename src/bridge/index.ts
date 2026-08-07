@@ -418,9 +418,10 @@ export async function createBridge(): Promise<WebHost> {
 }
 
 /**
- * Install the two synchronous, tool-hook-only engine APIs — `host.color`
- * (v1.40) and `host.geom` (v1.64) — that createBridge() deliberately leaves
- * off the boot path (see the comment where they used to be attached).
+ * Install the three synchronous, tool-hook-only engine APIs — `host.color`
+ * (v1.40), `host.geom` (v1.64) and `host.connectors` (v1.106) — that
+ * createBridge() deliberately leaves off the boot path (see the comment where
+ * they used to be attached).
  *
  * Idempotent and safe to call concurrently: the in-flight promise is cached, so
  * N runtimes mounting at once share one import. Every path that mounts a tool
@@ -431,7 +432,7 @@ export async function createBridge(): Promise<WebHost> {
  * tools feature-detect them, so a failed import degrades a colour/vector tool to
  * its own fallback rather than blocking the mount.
  */
-let toolApiModules: Promise<{ color: HostV1['color']; geom: HostV1['geom'] }> | null = null;
+let toolApiModules: Promise<{ color: HostV1['color']; geom: HostV1['geom']; connectors: HostV1['connectors'] }> | null = null;
 export async function installToolApis(host: HostV1): Promise<void> {
   // Cache the MODULES, not the install: multi-edit and pro/render-export mount
   // runtimes against per-mount host CLONES (scoped net, thumb assets), so the
@@ -440,14 +441,16 @@ export async function installToolApis(host: HostV1): Promise<void> {
     toolApiModules = Promise.all([
       import('../../../../engine/src/color-tools.ts'),
       import('../../../../engine/src/geom-api.ts'),
-    ]).then(([c, g]) => ({ color: c.makeColorApi(), geom: g.makeGeomApi() }));
+      import('../../../../engine/src/connectors.ts'),
+    ]).then(([c, g, n]) => ({ color: c.makeColorApi(), geom: g.makeGeomApi(), connectors: { build: n.buildConnectorSvg } }));
   }
   try {
     const apis = await toolApiModules;
     host.color ??= apis.color;
     host.geom ??= apis.geom;
+    host.connectors ??= apis.connectors;
   } catch (err) {
     toolApiModules = null; // let a later mount retry
-    console.warn('[warn] could not install host.color/host.geom', err);
+    console.warn('[warn] could not install host.color/host.geom/host.connectors', err);
   }
 }

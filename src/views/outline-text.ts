@@ -150,6 +150,53 @@ export function rectContours(x: number, y: number, w: number, h: number): GeomPa
   return pathFromSubPaths(parseSvgPath(`M${x} ${y}L${x + w} ${y}L${x + w} ${y + h}L${x} ${y + h}Z`));
 }
 
+/** A contour's horizontal extent (min/max x over every control point). */
+function contourXSpan(c: GeomPath[number]): [number, number] {
+  let lo = Infinity, hi = -Infinity;
+  for (const cv of c.curves) for (let i = 0; i < 8; i += 2) { if (cv[i]! < lo) lo = cv[i]!; if (cv[i]! > hi) hi = cv[i]!; }
+  return [lo, hi];
+}
+
+/**
+ * Split a run's contours into one GeomPath per glyph, so each becomes its own path
+ * box (the "separate objects, grouped" model). The signal is HORIZONTAL OVERLAP: a
+ * glyph's counter (the hole in e/a/o/p) sits inside its outline's x-span, and a dot
+ * sits directly above its stem, so both overlap and stay with their glyph — which is
+ * required for the hole to render (a counter must share a box with its outline so the
+ * nonzero winding cuts it out, exactly as `shapeCollectedLines` keeps deco bars apart
+ * for the same reason). Side-by-side letters have a kerning gap, so their x-spans are
+ * disjoint and they split. Tightly-kerned or overlapping letters (script faces, some
+ * italics) may merge into one box — acceptable, and still renders correctly. Union-find
+ * over pairwise overlap makes the grouping transitive; clusters come back left-to-right.
+ */
+export function clusterContoursByGlyph(path: GeomPath): GeomPath[] {
+  const n = path.length;
+  if (n <= 1) return n ? [path] : [];
+  const span = path.map(contourXSpan);
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (a: number): number => { while (parent[a] !== a) { parent[a] = parent[parent[a]!]!; a = parent[a]!; } return a; };
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      // Strict overlap: touching-but-adjacent spans (a hairline kerning meet) stay apart;
+      // a real overlap (a counter inside its outline, a dot over its stem) merges.
+      if (span[i]![0] < span[j]![1] && span[j]![0] < span[i]![1]) {
+        const ri = find(i), rj = find(j);
+        if (ri !== rj) parent[ri] = rj;
+      }
+    }
+  }
+  const byRoot = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const arr = byRoot.get(r);
+    if (arr) arr.push(i); else byRoot.set(r, [i]);
+  }
+  return [...byRoot.values()]
+    .map((idxs) => ({ idxs, minX: Math.min(...idxs.map((k) => span[k]![0])) }))
+    .sort((a, b) => a.minX - b.minX)
+    .map((cl) => cl.idxs.map((k) => path[k]!));
+}
+
 /** Computed CSS color → #rrggbb(aa) for a box fill field (hooks' safeColor
  *  accepts 3-8 digit hex; hex also stays compact on the block URL wire). */
 export function cssColorToHex(color: string): string | null {
@@ -176,9 +223,15 @@ export function rotatedFrameShift(
 }
 
 /**
- * Shape collected lines into per-fill contour groups. Group order is first-seen
- * run order, so the z-stacking of the resulting path boxes follows the reading
- * order of the runs that produced them.
+ * Shape collected lines into contour groups — ONE PER GLYPH, in reading order, so
+ * each glyph becomes its own kind:'path' box that can be moved, recoloured and
+ * node-edited on its own (the "separate objects, grouped" model — the caller groups
+ * a source's boxes together). A glyph's counter stays with its outline in the same
+ * group (see `clusterContoursByGlyph`), so the hole still renders.
+ *
+ * Group order is reading order: line order, then left-to-right within a line, then
+ * any decoration bars last. Groups carry their run's fill, so a multi-colour run
+ * (inline spans) keeps each glyph its own colour without a separate merge pass.
  */
 export async function shapeCollectedLines(
   lines: CollectedLine[], textApi: TextApi, deps: ShapeDeps = {},
@@ -188,22 +241,21 @@ export async function shapeCollectedLines(
     ?? ((s: RunStyle, fs: number) => fontMetricsPx(s as unknown as CSSStyleDeclaration, fs));
   if (!lines.length) return { ok: false, reason: 'no-text' };
 
-  // Glyph contours and decoration bars are kept in SEPARATE per-fill groups (each
-  // becomes its own kind:'path' box). A bar must not share a nonzero-filled path
-  // with glyph outlines: the bar is a solid rect, the glyphs carry counters via
-  // opposed winding, and a rect whose winding happens to oppose a glyph's outer
-  // contour (CFF/PostScript-flavoured OTF fonts, which a user can upload) would
-  // punch a hole where it crosses a stroke. The export walk draws each bar as an
-  // independent <rect> for exactly this reason — we mirror that with a separate box.
-  const glyphGroups = new Map<string, GeomPath>();
+  // Glyph boxes are collected as an ORDERED list (reading order); decoration bars are
+  // kept in SEPARATE per-fill groups (each its own box). A bar must not share a nonzero-
+  // filled path with glyph outlines: the bar is a solid rect, the glyphs carry counters
+  // via opposed winding, and a rect whose winding happens to oppose a glyph's outer
+  // contour (CFF/PostScript-flavoured OTF fonts, which a user can upload) would punch a
+  // hole where it crosses a stroke. The export walk draws each bar as an independent
+  // <rect> for exactly this reason — we mirror that with a separate box.
+  const glyphOut: OutlineGroup[] = [];
   const decoGroups = new Map<string, GeomPath>();
-  const addTo = (m: Map<string, GeomPath>, fill: string, contours: GeomPath): void => {
+  const addDeco = (fill: string, contours: GeomPath): void => {
     if (!contours.length) return;
-    const cur = m.get(fill);
+    const cur = decoGroups.get(fill);
     if (cur) cur.push(...contours);
-    else m.set(fill, [...contours]);
+    else decoGroups.set(fill, [...contours]);
   };
-  const add = (fill: string, contours: GeomPath): void => addTo(glyphGroups, fill, contours);
 
   for (const line of lines) {
     const text = applyTextTransform(line.text, line.style.textTransform);
@@ -233,21 +285,24 @@ export async function shapeCollectedLines(
     const fill = cssColorToHex(line.style.color) ?? '#000000';
     const { ascent, descent } = metricsFor(line.style, fontSize);
     const by = textBaselineY(line.top, line.height, ascent, descent);
-    if (res.d) add(fill, translateContours(pathFromSubPaths(parseSvgPath(res.d)), line.x, by));
+    if (res.d) {
+      const all = translateContours(pathFromSubPaths(parseSvgPath(res.d)), line.x, by);
+      for (const glyph of clusterContoursByGlyph(all)) if (glyph.length) glyphOut.push({ fill, path: glyph });
+    }
 
     // Underline / strikethrough, same offsets and thickness as the export walk —
     // into the DECO groups (see the note above), never merged with the glyph path.
     if (line.deco.u || line.deco.s) {
       const thick = Math.max(0.75, fontSize * 0.06);
-      if (line.deco.u) addTo(decoGroups, fill, rectContours(line.x, by + fontSize * 0.11 - thick / 2, line.width, thick));
-      if (line.deco.s) addTo(decoGroups, fill, rectContours(line.x, by - fontSize * 0.28 - thick / 2, line.width, thick));
+      if (line.deco.u) addDeco(fill, rectContours(line.x, by + fontSize * 0.11 - thick / 2, line.width, thick));
+      if (line.deco.s) addDeco(fill, rectContours(line.x, by - fontSize * 0.28 - thick / 2, line.width, thick));
     }
   }
 
-  // Glyph boxes first (in first-seen fill order), then any decoration boxes — so the
-  // bars stack above the glyphs of the same run, matching the on-screen paint order.
-  const out = [...glyphGroups, ...decoGroups]
-    .map(([fill, path]) => ({ fill, path })).filter((g) => g.path.length > 0);
+  // Glyph boxes first (reading order), then any decoration boxes — so the bars stack
+  // above the glyphs of the same run, matching the on-screen paint order.
+  const out = [...glyphOut, ...[...decoGroups].map(([fill, path]) => ({ fill, path }))]
+    .filter((g) => g.path.length > 0);
   if (!out.length) return { ok: false, reason: 'empty' };
   return { ok: true, groups: out };
 }

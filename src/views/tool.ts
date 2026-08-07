@@ -59,6 +59,7 @@ import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.t
 import { playSfx } from '../lib/sfx.ts';
 import { createShutter } from '../lib/shutter.ts';
 import { exportSizeDriver } from './export-size.ts';
+import { exportFormatDriver } from './export-format.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { createNetAPI } from '../bridge/net.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
@@ -89,7 +90,7 @@ import {
 } from './tool-inputs.ts';
 import {
   renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt,
-  printEnabled, marksToCsv, c2paDefaultOn, readBleed, readMarks,
+  printEnabled, marksToCsv, c2paDefaultOn, readBleed, readMarks, exportTargetNode,
 } from './tool-actions.ts';
 
 // ── Shell-side type aliases (all erased at build; no runtime effect) ──────────
@@ -206,6 +207,9 @@ export interface ActionsApi {
   preview?: () => Promise<void>;
   save?: (btn?: HTMLElement | null) => Promise<boolean>;
   setDims?: (dims?: { width?: number; height?: number; unit?: string }) => void;
+  /** Narrow the export format bar to a mode/effect select option's `formats`
+   *  (see exportFormatDriver). Keeps the current pick when it survives. */
+  setFormats?: (allowed: string[]) => void;
   stopAudioPreview?: () => void;
   /** Tear down the cost-authoring slot: unsubscribe the registry-change listener
    *  and run the hydrated extension's disposer. Called from mountTool's cleanup. */
@@ -725,12 +729,19 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // canvas + export controls; the on-canvas overlay replaces the sidebar. The 'deck' layout
   // is intentionally excluded — it keeps the sidebar.
   const chromeless = editorLayout || documentLayout;
-  // Hide the sidebar for pure-canvas utilities: either no inputs at all, or an
-  // explicit canvas layout — where the tool's single file input becomes a
-  // drag-and-drop / click-to-pick zone on the canvas itself (setupCanvasFileDrop).
+  // A full-bleed utility that has NO declared inputs yet still EXPORTS — the
+  // template IS the whole interface and its canvas is a live preview (e.g. Run Web
+  // Code: a code editor + sandboxed preview that exports a snapshot). It drops the
+  // (empty) input aside like a canvas utility, but unlike a plain no-input+no-export
+  // tool it KEEPS the render/export pill. Without this such a tool regressed into an
+  // empty sidebar squashing the editor the moment its manifest turned export on.
+  const bareExport = !hasInputs && !noExport && !canvasLayout && !chromeless;
+  // Hide the sidebar for pure-canvas utilities: no inputs at all, an explicit canvas
+  // layout — where the tool's single file input becomes a drag-and-drop / click-to-pick
+  // zone on the canvas itself (setupCanvasFileDrop) — or a bareExport full-bleed tool.
   // NOTE: editorLayout is deliberately NOT hideSidebar — it needs the live canvas
   // node + export UI. It only removes the input aside (via showAside below).
-  const hideSidebar = (noExport && !hasInputs) || canvasLayout;
+  const hideSidebar = (noExport && !hasInputs) || canvasLayout || bareExport;
   // A standard sidebar tool whose template stacks several [data-pdf-page] boxes
   // (render.paged — e.g. multi-page-pdf). Unlike the editorLayout carousel (pagesMode,
   // pages side-by-side) it renders through the ordinary render path; the difference is
@@ -860,7 +871,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
              clipped by the sheet's overflow, which must stay hidden so the form
              can't spill past the sheet's rounded edge. -->
         <button type="button" class="sheet-grip" id="sheet-grip" aria-label="${escape(t('Drag to resize controls, tap to expand'))}"></button>
-      ` : (chromeless ? `<div class="tool-actions" id="tool-actions"></div>` : '')}
+      ` : (chromeless || bareExport ? `<div class="tool-actions" id="tool-actions"></div>` : '')}
       <div class="tool-stage" id="tool-stage">
         ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="${escape(t('Expand sidebar'))}"></button>` : ''}
         ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
@@ -873,7 +884,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
                style="width: ${nativeW}px; height: ${nativeH}px;"></div>
         </div>`}
       </div>
-      ${!hideSidebar && !exportUiEmpty ? `
+      ${(!hideSidebar || bareExport) && !exportUiEmpty ? `
         <div class="render-pill" id="render-pill" role="group" aria-label="${escape(t('Export and save'))}">
           <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="${escape(t('Export options'))}">
             <svg class="render-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
@@ -919,6 +930,29 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const canvasEl  = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas');
   const outerEl   = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas-outer');
   const contentEl = (hideSidebar ? viewEl.querySelector<HTMLElement>('#tool-content') : canvasEl)!;
+  // The node the export/thumbnail actions target. Normally the fixed render canvas;
+  // a bareExport full-bleed tool has no #tool-canvas, so it's the mounted #tool-content
+  // (whose [data-export-root] mirror exportTargetNode then retargets). Non-null wherever
+  // export is offered, unlike canvasEl which is null for every hideSidebar layout.
+  const exportSourceNode = bareExport ? contentEl : canvasEl;
+
+  // Shell chrome a full-bleed tool can host INSIDE its own top toolbar via
+  // [data-shell-slot] hooks: the render/export control and the real app theme toggle
+  // (light→dark→brand). A hideSidebar tool has no sidebar footer and no stage-nav HUD,
+  // so without this it would miss both — the toggle especially, since the tool's palette
+  // already follows the app theme tokens (--background/--primary). Re-applied after each
+  // template paint (paint() swaps innerHTML, recreating the empty slots). Generic: any
+  // tool that renders these slots gets them; no tool that doesn't is affected.
+  let placeRenderPill: (() => void) | null = null;
+  const mountToolbarSlots = (): void => {
+    const themeSlot = contentEl.querySelector<HTMLElement>('[data-shell-slot="theme"]');
+    if (themeSlot && !themeSlot.firstElementChild) {
+      themeSlot.appendChild(createThemeToggle(
+        host as unknown as Parameters<typeof createThemeToggle>[0],
+        { className: 'stage-nav-btn stage-nav-theme shell-slot-theme' }));
+    }
+    placeRenderPill?.();
+  };
   // Slide-sorter filmstrip for paged tools — mounted lazily on the first paint (below),
   // refreshed on each re-render, and torn down with the view. See lib/page-filmstrip.ts.
   let filmstrip: Filmstrip | null = null;
@@ -1340,7 +1374,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   renderSaveBtn       = viewEl.querySelector<HTMLButtonElement>('#render-save');  // the "Save" half (outer-scoped)
   const exportOverlay = viewEl.querySelector<HTMLElement>('#export-overlay');
   const exportBody    = viewEl.querySelector<HTMLElement>('#export-popup-body');
-  if (!hideSidebar && renderFab && exportOverlay && exportBody && actionsEl && renderPill) {
+  if ((!hideSidebar || bareExport) && renderFab && exportOverlay && exportBody && actionsEl && renderPill) {
     const mqMobile    = window.matchMedia('(max-width: 640px)');
     const exportPopup = exportOverlay.querySelector<HTMLElement>('.export-popup')!;
     // The export panel is modal ONLY on mobile, where it's a full bottom sheet over a
@@ -1387,10 +1421,18 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // it on mobile, where it's a viewport FAB the sheet's overflow would clip.
     const placeActions = (): void => {
       if (actionsEl.parentElement !== exportBody) exportBody.appendChild(actionsEl);
-      // No sidebar in chromeless modes → the pill floats over the stage (like mobile).
-      const fabDest = (mqMobile.matches || chromeless || !sidebarEl) ? layout : sidebarEl;
+      // A full-bleed tool can host the pill INSIDE its own toolbar via
+      // [data-shell-slot="export"] (desktop). Otherwise: no sidebar in chromeless
+      // modes → the pill floats over the stage (like mobile); else it docks under
+      // the sidebar. The slot only exists once the template has painted, so this is
+      // re-run from paint() via placeRenderPill below.
+      const exportSlot = !mqMobile.matches
+        ? contentEl.querySelector<HTMLElement>('[data-shell-slot="export"]') : null;
+      const fabDest = exportSlot
+        ?? ((mqMobile.matches || chromeless || !sidebarEl) ? layout : sidebarEl);
       if (renderPill.parentElement !== fabDest) fabDest.appendChild(renderPill);
     };
+    placeRenderPill = placeActions;
     renderFab.setAttribute('aria-haspopup', 'dialog');
     renderFab.setAttribute('aria-expanded', 'false');
     renderFab.addEventListener('click', () => openExport());
@@ -1575,6 +1617,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const sizeDims = sizeDriver
     ? sizeDriver.dims[String(runtime.getModel().find(i => i.id === sizeDriver.id)?.value)]
     : null;
+  // A mode-style select (its options carry `formats`) narrows the export format bar
+  // to the selected option's formats — a vector effect offers svg/pdf/emf, a raster
+  // one only png/jpg — while render.formats stays the union. Applied on mount and on
+  // every change of the driving input, below (mirrors sizeDriver).
+  const formatDriver = exportFormatDriver(tool.manifest);
+  let lastFmtDriveVal: unknown;
 
   const exportDefaults: ExportDefaults = {
     filename: urlFilename || (initialValues.__export_filename as string | undefined),
@@ -1850,7 +1898,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (id) dirtyParams.add(id);
   }
 
-  const actionsApi = renderActions(actionsEl, tool.manifest, runtime, canvasEl, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot, reachedViaLink);
+  const actionsApi = renderActions(actionsEl, tool.manifest, runtime, exportSourceNode, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot, reachedViaLink);
 
   // Preview-generation hook — scripts/build-previews.ts calls this to grab a VECTOR
   // SCREENSHOT (SVG) of the mounted canvas for ANY tool, even an export:false utility
@@ -2581,6 +2629,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // Keep the canvas's accessible summary current when it's a live a11yLabel.
         if (tool.manifest.a11yLabel) contentEl.setAttribute('aria-label', canvasLabel());
         runTemplateScripts(contentEl);
+        // Populate any [data-shell-slot] hooks the freshly-painted template exposes
+        // (the app theme toggle, the relocated export pill) — see mountToolbarSlots.
+        mountToolbarSlots();
         if (tableEditOpts) mountTableCellEditing(contentEl, tableEditOpts);
         embedsPending = hydrateEmbeds(contentEl, { host, isCurrent: () => gen === renderGen });
         // Lottie markers are mounted by the shell, not the template (tools stay
@@ -2640,6 +2691,18 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         lastDimsSizeVal = v;
         const d = sizeDriver.dims[String(v)];
         if (d) actionsApi?.setDims?.(d);
+      }
+    }
+
+    // When a format-driving select changes (e.g. the filter effect), narrow the
+    // export format bar to that option's formats. Runs on the initial emit too, so
+    // the bar opens already scoped to the starting effect.
+    if (formatDriver) {
+      const v = model.find(i => i.id === formatDriver.id)?.value;
+      if (v !== lastFmtDriveVal) {
+        lastFmtDriveVal = v;
+        const f = formatDriver.formats[String(v)];
+        if (f) actionsApi?.setFormats?.(f);
       }
     }
 
@@ -2717,7 +2780,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           }
         }
         exportUnscaled(() =>
-          runtime.export(canvasEl, fmt, expOpts)
+          runtime.export(exportTargetNode(exportSourceNode), fmt, expOpts)
             .then(blob => host.export.download(blob, `${name}.${extFor(fmt, blob)}`))
             .catch(err => console.error('Auto-export failed:', err))
         );

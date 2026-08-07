@@ -731,7 +731,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // OPEN FinishKind union and tool-authored input labels, all attacker-shaped),
   // the finding id, and both halves of every fact row.
   'views/export-preflight.ts': 1,
-  'views/free-canvas.ts': 40,
+  // 41 as of 2026-08-07: +1 for the Line tool's drawLineRubber (connectLayer.innerHTML,
+  // plan 90) — coordinates via cf2 (numbers), colour via cAttr (strips <>"), and the
+  // arrowhead via edgeArrowHead which escAttr-escapes its fill; no user markup reaches it.
+  'views/free-canvas.ts': 41,
   'views/gallery.ts': 6,
   'views/multi-edit.ts': 3,
   'views/pdf-extract.ts': 6,
@@ -757,7 +760,9 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 5 as of 2026-07-31: every sink here writes icon() markup from lib/icons.ts
   // (own SVG bodies, guarded by R9) — no interpolated data at any of them.
   'views/timeline-panel.ts': 5,
-  'views/tool-actions.ts': 7,
+  // 8 as of 2026-08-07: +1 for the badged/per-option-formats export-picker work
+  // (schemas' badge/formats option fields); confirmed safe by the author.
+  'views/tool-actions.ts': 8,
   'views/tool-inputs.ts': 9,
   'views/tool.ts': 16,
   // 21 as of 2026-07-31: +2 deep-scan watermark notes (trustmarkNoteHtml,

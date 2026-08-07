@@ -71,6 +71,17 @@ export function wireExportPanelFloat(opts: ExportFloatOpts): () => void {
     const y = Math.min(Math.max(MARGIN, b.y), vh() - KEEP_VISIBLE);
     return { x, y, w, h };
   };
+  // Pull the box FULLY inside the viewport. Used when the viewport itself changes
+  // (resize) or on (re)open — a panel left hanging off an edge there reads as broken,
+  // and the user can't always drag it back. Distinct from clamp(), which is lenient
+  // by design so a user CAN tuck the panel to a KEEP_VISIBLE sliver while dragging.
+  const clampFully = (b: Box): Box => {
+    const w = Math.min(Math.max(MIN.w, b.w), vw() - MARGIN * 2);
+    const h = Math.min(Math.max(MIN.h, b.h), vh() - MARGIN * 2);
+    const x = Math.min(Math.max(MARGIN, b.x), vw() - MARGIN - w);
+    const y = Math.min(Math.max(MARGIN, b.y), vh() - MARGIN - h);
+    return { x, y, w, h };
+  };
   const currentRect = (): Box => {
     const r = popup.getBoundingClientRect();
     return { x: r.left, y: r.top, w: r.width, h: r.height };
@@ -187,8 +198,10 @@ export function wireExportPanelFloat(opts: ExportFloatOpts): () => void {
   // ── window resize + breakpoint changes ───────────────────────────────────
   const onResize = (): void => {
     if (mode === 'docked' || isMobile()) { clearInline(); return; }
-    if (mode === 'maximized') box = clamp({ x: (box ?? currentRect()).x, y: MARGIN, w: (box ?? currentRect()).w, h: vh() - MARGIN * 2 });
-    else if (box) box = clamp(box);
+    // A viewport change must never strand the panel off-screen: pull it FULLY back in
+    // (clampFully), not merely to the lenient drag sliver.
+    if (mode === 'maximized') box = clampFully({ x: (box ?? currentRect()).x, y: MARGIN, w: (box ?? currentRect()).w, h: vh() - MARGIN * 2 });
+    else if (box) box = clampFully(box);
     render();
   };
   window.addEventListener('resize', onResize);
@@ -196,7 +209,8 @@ export function wireExportPanelFloat(opts: ExportFloatOpts): () => void {
   // ── init: restore saved state, or start floated in a free layout ─────────
   const saved = loadSaved();
   if (saved && saved.mode !== 'docked' && saved.box) {
-    mode = saved.mode; box = clamp(saved.box); render();
+    // Reopen fully on-screen — the saved box may be from a larger window/monitor.
+    mode = saved.mode; box = clampFully(saved.box); render();
   } else if (freeLayout && !saved) {
     // No sidebar to dock under → open floated, bottom-left over the stage.
     const w = Math.min(380, vw() - MARGIN * 2);
