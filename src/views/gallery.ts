@@ -1711,6 +1711,12 @@ const utilityViews = (speechOk: boolean): UtilityView[] => [{
   icon: 'palette',
   name: t('Colour Lab'),
   description: t('Inspect any colour: where it sits in OKLCH, which displays can show it, how much chroma is left, and every notation.'),
+}, {
+  id: 'spreadsheet',
+  href: '#/data',
+  icon: 'grid',
+  name: t('Spreadsheet'),
+  description: t('Open, read and edit an .xlsx, .csv or .tsv on your device — no Excel or internet needed. Switch sheets, edit cells, download as CSV or Excel.'),
 },
 // Script audio only where the speech bridge exists — a card that opened a dead
 // surface would break the grid's promise that every tile is something you can
@@ -1734,7 +1740,7 @@ function viewCardMarkup(v: UtilityView, isFav: boolean): string {
         <div class="gtile-cap">
           <span class="tool-card-icon" aria-hidden="true">${icon(v.icon, { size: 24 })}</span>
           <span class="gtile-meta">
-            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — v.href comes from the hardcoded utilityViews() table ('#/verify', '#/pdf', '#/lab', '#/script') */ ''}
+            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — v.href comes from the hardcoded utilityViews() table ('#/verify', '#/pdf', '#/lab', '#/data', '#/script') */ ''}
             <a class="gtile-name" href="${escape(v.href)}">${escape(v.name)}</a>
             <p class="gtile-desc">${escape(v.description)}</p>
           </span>

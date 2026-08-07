@@ -43,7 +43,7 @@ import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from '
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'data' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -52,6 +52,7 @@ type Route =
   | { name: 'dashboard'; params?: string }
   | { name: 'verify'; params?: string }
   | { name: 'convert'; params?: string }
+  | { name: 'data'; params?: string }
   | { name: 'pro'; params?: string }
   | { name: 'projects'; folderId: string | null; params?: string }
   | { name: 'catalog'; params?: string }
@@ -119,6 +120,7 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   catalog: { label: 'Catalogue', tab: 'catalog', viewClasses: ['catalog-view'] },
   verify: { label: 'Verify', viewClasses: ['verify-view'] },
   convert: { label: 'Convert', viewClasses: ['convert-view'] },
+  data: { label: 'Spreadsheet', viewClasses: ['data-view'] },
   // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
   // clicked while already on #/start must switch steps, not dedupe to a no-op.
   start: { label: 'Brand setup', viewClasses: ['start-view'], sigKey: 'params' },
@@ -330,6 +332,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     case 'convert': {
       const { mountConvert } = await import('./views/convert.ts');
       await mountConvert(view, host, route.params);
+      break;
+    }
+    // /data — on-device spreadsheet viewer/editor (xlsx/csv/tsv/json → virtualized
+    // grid → edit → download-as). Lazy-loaded like the other dashboards.
+    case 'data': {
+      const { mountDataView } = await import('./views/data.ts');
+      await mountDataView(view, host, route.params);
       break;
     }
     // --- Multi-edit: 2–8 saved sessions edited side by side (grid of live
@@ -934,6 +943,7 @@ function parseRoute(): Route {
     }
     if (parts[0] === 'verify' || parts[0] === 'valid' || parts[0] === 'v') return { name: 'verify', params: query || '' };
     if (parts[0] === 'convert') return { name: 'convert', params: query || '' }; // on-device file converter
+    if (parts[0] === 'data') return { name: 'data', params: query || '' }; // on-device spreadsheet viewer/editor
     if (parts[0] === 'start') return { name: 'start', params: query || '' }; // brand wizard
     if (parts[0] === 'multi') return { name: 'multi', params: query || '' }; // multi-edit (?s=slot,slot…)
     if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
