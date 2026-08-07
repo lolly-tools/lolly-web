@@ -194,6 +194,20 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // this, re-saving after an edit orphaned a fresh copy in Uncategorised and left the
   // original folder card frozen at its first-save state.
   let activeSlot = initialSlot;
+  // Does the on-screen canvas ARTBOARD follow the export width/height (so a dimension
+  // change resizes it 1:1), or is it a scaled preview thumbnail that must be clamped to
+  // the native render size? This mirrors EXACTLY the condition under which tool.ts hands
+  // the free-canvas overlay a `setCanvasSize` (a resizable editor): render.layout:'editor',
+  // NOT a carousel (render.pages — the page strip owns the size), and NOT a fixed canvas
+  // (canvas.fixedCanvas — connector geometry stays native-locked). Keeping the two in lock-
+  // step is what makes the export-bar and rail size paths agree. See refreshCanvasPreview.
+  const canvasBlocksInput = manifest.inputs?.find(
+    (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas,
+  ) as { canvas?: { fixedCanvas?: boolean } } | undefined;
+  const artboardFollowsDims =
+    manifest.render.layout === 'editor' &&
+    !manifest.render.pages &&
+    !canvasBlocksInput?.canvas?.fixedCanvas;
   // Shareable-link button (wired by wireUpCopyUrl). A link glyph + label; the
   // label is swapped to "Copied!" on click, so it's wrapped in its own span to
   // keep the icon. Lives at the foot of the actions bar — after the render
@@ -2040,7 +2054,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     refreshPreflight();    // width / height / unit / DPI all flow through here
     const { width: w, height: h } = previewPx();
     if (!((w ?? 0) > 0 && (h ?? 0) > 0)) return;
-    const previewScale = Math.min(1, manifest.render.width / w!, manifest.render.height / h!);
+    // When the artboard FOLLOWS the export size (see artboardFollowsDims) the canvas IS the
+    // artboard, not a scaled thumbnail: box coordinates are absolute pixels in the artboard's
+    // own space, so the layout box must equal the true (CSS-px) export size and fitCanvas's
+    // transform does the on-screen fit. Clamping it to the native render size — right for a
+    // preview thumbnail — would shrink the artboard under fixed box coords, so a bigger export
+    // size pushed boxes off the frame and distorted the aspect ratio (thread B). The transform
+    // fit already caps the on-screen size, so the clamp bought those editors nothing but
+    // breakage. A fixed-canvas / carousel editor is NOT in this set: its canvas is owned
+    // elsewhere (native-locked connector geometry, or the page strip) and keeps the clamp.
+    const previewScale = artboardFollowsDims
+      ? 1
+      : Math.min(1, manifest.render.width / w!, manifest.render.height / h!);
     canvasEl!.style.width  = Math.round(w! * previewScale) + 'px';
     canvasEl!.style.height = Math.round(h! * previewScale) + 'px';
     fitCanvas();

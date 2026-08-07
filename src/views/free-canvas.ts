@@ -982,6 +982,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * why they could all be true at once.
    */
   let mode: EditorMode = 'select';
+  // The Node tool (Inkscape's `N`): a sub-mode of 'select' where a single click on a path
+  // box jumps straight into node editing rather than selecting it. A flag, not a 5th
+  // EditorMode, because `setMode` ends any `penEdit` session — the very thing this tool
+  // wants to keep — so a real mode would fight that invariant. Mutually exclusive with the
+  // other tools: picking pen/create/connect (or the plain pointer) clears it.
+  let nodeToolActive = false;
   let armedKind: AddKind | null = null;        // the create gesture's seed; set iff mode === 'create'
   let gesture: Gesture | null = null;          // active pointer gesture
   let editing: EditingState | null = null;     // { id, el, prev } while editing a box's text inline
@@ -1019,6 +1025,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Built by shift-clicking a handle; align/distribute operate on nodes ∪ these. Kept
   // separate from penSel so a handle is a point in its own right, not tied to its node.
   let penHandleSel = new Set<string>();
+  // Node-edit selection mode: false = a marquee picks NODES only (default); true = it also
+  // picks CONTROL POINTS. A session-scoped preference toggled from the node-edit bar.
+  let penSelectHandles = false;
   // The previous frame's hyperbezier solution, reused as the `warm` start. A 40-node solve
   // re-converged from the chord-bend guess costs an O(n) Newton run per pointermove; warm,
   // it costs one or two steps. This is exactly what `toCubics`' `warm` parameter is for.
@@ -1758,6 +1767,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  pen and connect are opt-in, so not every tool has all four. */
   const modeBtns: Record<'select' | 'create' | 'pen' | 'connect', HTMLButtonElement | null> =
     { select: null, create: null, pen: null, connect: null };
+  let nodeToolBtn: HTMLButtonElement | null = null;   // the Node tool (opt-in, cv.pathField)
   function closePopover() { popover?.remove(); popover = null; }
   buildToolbar();   // after arrangeBtn exists (buildToolbar assigns it)
   // Put the rail back where it was dragged to earlier in this page session, re-clamped
@@ -1924,6 +1934,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       modeBtns.pen = toolBtn(t('Pen - click to place points, drag to curve, Alt for a corner. Hold for the spline type'), SVG.pen,
         () => { mode === 'pen' ? toPointer() : setMode('pen'); }, 'fc-btn-pen',
         (b) => openPenKindMenu(b));
+      // Node tool (Inkscape's N): click a shape to edit its points directly.
+      nodeToolBtn = toolBtn(t('Edit points (N) - click a shape to edit its nodes directly'), SVG.nodes,
+        () => toggleNodeTool(), 'fc-btn-nodes');
     }
     // Timeline (opt-in via the canvas time-model fields — a tool with nowhere to store
     // a start/duration has no timeline). Toggles the docked panel; the panel module
@@ -2368,6 +2381,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // `contextmenu` event and the touch two-finger tap below, so both behave identically.
   function contextMenuAt(clientX: number, clientY: number, soloBox: boolean): void {
     if (editing) commitTextEdit();
+    // While node editing, right-click is a NODE menu (align/distribute/continuity/delete),
+    // not the object menu — and it must not re-select boxes underneath.
+    if (penEdit) { openPenNodeMenu(clientX, clientY); return; }
     const nat = clientToNative(clientX, clientY);
     const boxes = getBoxes();
     const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
@@ -4512,11 +4528,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return refs;
   }
 
-  function openPenArrangeMenu(anchor: HTMLElement): void {
-    if (!penEdit) return;
-    const refs = penPointRefs();
-    if (refs.length < 2) return;
-    const canDist = refs.length >= 3;
+  /** The align + distribute grids for the current node/control-point selection, shared by
+   *  the node-edit bar's Arrange button and the node right-click menu. `disabled` reflects
+   *  the combined count (align ≥2, distribute ≥3) so the SAME items read correctly in a
+   *  context menu that stays a constant shape. */
+  function penArrangeItems(): PopItem[] {
+    const n = penPointRefs().length;
     const align = (edge: NodeAlignEdge): void => {
       if (!penEdit) return;
       penWarm = null;               // points moved, so a warm hyperbezier start is stale
@@ -4527,21 +4544,65 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       penWarm = null;
       penEditWrite(distributePoints(penEdit.path, penPointRefs(), axis));
     };
-    spawnPopover(anchor, [
+    return [
       { cols: 3, grid: [
-        { label: t('Align left'), icon: icon(SVG.alignL), run: () => align('left') },
-        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => align('hcentre') },
-        { label: t('Align right'), icon: icon(SVG.alignR), run: () => align('right') },
-        { label: t('Align top'), icon: icon(SVG.alignT), run: () => align('top') },
-        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => align('vcentre') },
-        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => align('bottom') },
+        { label: t('Align left'), icon: icon(SVG.alignL), run: () => align('left'), disabled: n < 2 },
+        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => align('hcentre'), disabled: n < 2 },
+        { label: t('Align right'), icon: icon(SVG.alignR), run: () => align('right'), disabled: n < 2 },
+        { label: t('Align top'), icon: icon(SVG.alignT), run: () => align('top'), disabled: n < 2 },
+        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => align('vcentre'), disabled: n < 2 },
+        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => align('bottom'), disabled: n < 2 },
       ] },
       // Evenly spacing three points needs three points.
       { cols: 2, grid: [
-        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => dist('h'), disabled: !canDist },
-        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => dist('v'), disabled: !canDist },
+        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => dist('h'), disabled: n < 3 },
+        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => dist('v'), disabled: n < 3 },
       ] },
-    ]);
+    ];
+  }
+
+  function openPenArrangeMenu(anchor: HTMLElement): void {
+    if (!penEdit || penPointRefs().length < 2) return;
+    spawnPopover(anchor, penArrangeItems());
+  }
+
+  /** Right-click menu WHILE node editing: the same align/distribute grids plus delete and
+   *  continuity, at the cursor. Selects the node/handle under the pointer first (like the
+   *  object menu selects the box under it) so a right-click acts on what it is over. */
+  function openPenNodeMenu(clientX: number, clientY: number): void {
+    if (!penEdit) return;
+    closePopover();
+    const nat = clientToNative(clientX, clientY);
+    const loc = frameToLocal(penEdit.frame, nat.x, nat.y);
+    const tol = penTol();
+    const hh = penHandleAt(loc.x, loc.y, tol);
+    if (hh) {
+      const key = `${hh.index}:${hh.which}`;
+      if (!penHandleSel.has(key)) { penHandleSel = new Set([key]); penSel = new Set<number>(); }
+    } else {
+      const ni = nodeAt(penEdit.path, loc.x, loc.y, tol);
+      if (ni >= 0 && !penSel.has(ni)) { penSel = new Set([ni]); penHandleSel = new Set<string>(); }
+    }
+    renderChrome();
+    const items: PopItem[] = [...penArrangeItems()];
+    if (penSel.size && kindReadsHandles(penEdit.path.kind)) {
+      items.push({ sep: true });
+      items.push({ cols: 3, grid: [
+        { label: t('Corner point - handles move independently'), icon: icon(SVG.contCorner), run: () => penSetContinuity('corner') },
+        { label: t('Smooth point - handles stay in line'), icon: icon(SVG.contSmooth), run: () => penSetContinuity('smooth') },
+        { label: t('Symmetric point - handles stay in line and equal'), icon: icon(SVG.contSymmetric), run: () => penSetContinuity('symmetric') },
+      ] });
+    }
+    items.push({ sep: true });
+    items.push({ label: t('Delete the selected points'), icon: icon(SVG.trash), danger: true, disabled: !penSel.size, run: () => penDeleteSelected() });
+    popover = document.createElement('div');
+    popover.className = 'fc-popover fc-context-menu';
+    fillPopover(popover, items);
+    popover.addEventListener('pointerdown', (e) => e.stopPropagation());
+    stageEl.appendChild(popover);
+    const sr = stageEl.getBoundingClientRect();
+    popover.style.left = Math.max(6, Math.min(clientX - sr.left, sr.width - popover.offsetWidth - 6)) + 'px';
+    popover.style.top = Math.max(6, Math.min(clientY - sr.top, sr.height - popover.offsetHeight - 6)) + 'px';
   }
 
   function penSetContinuity(c: Continuity): void {
@@ -4803,7 +4864,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!p) return;
     const contSig = [...penSel].sort((a, b) => a - b).map((i) => p.nodes[i]?.continuity ?? '').join(',');
     const handleSig = [...penHandleSel].sort().join(',');
-    const key = `pen:${penEdit ? penEdit.id : 'draft'}:${p.kind}:${p.closed ? 'c' : 'o'}:${p.nodes.length}:${contSig}:${handleSig}`;
+    const key = `pen:${penEdit ? penEdit.id : 'draft'}:${p.kind}:${p.closed ? 'c' : 'o'}:${p.nodes.length}:${contSig}:${handleSig}:${penSelectHandles ? 'h' : '-'}`;
     if (key !== ctxSelKey) {
       ctxSelKey = key;
       buildPenCtxBar(p);
@@ -4842,6 +4903,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           ['symmetric', t('Symmetric point - handles stay in line and equal'), SVG.contSymmetric],
         ]) +
         `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" title="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
+        // Marquee selection mode: nodes only, or nodes + control points. Only meaningful
+        // where control points exist (cubic / hyperbezier).
+        (kindReadsHandles(p.kind)
+          ? `<button type="button" class="fc-cbtn${penSelectHandles ? ' is-on' : ''}" data-pen="handlesel" aria-pressed="${penSelectHandles}" title="${escape(penSelectHandles ? t('Selecting nodes and control points - click for nodes only') : t('Selecting nodes only - click to include control points'))}" aria-label="${escape(t('Include control points in a marquee selection'))}">${icon(SVG.nodes)}</button>`
+          : '') +
         `<button type="button" class="fc-cbtn" data-pen="arrange"${selPts >= 2 ? '' : ' disabled'} title="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
         `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} title="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
       '<span class="fc-sep fc-sep-v"></span>' +
@@ -4867,6 +4933,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       e.stopPropagation();
       const which = b.dataset.pen;
       if (which === 'closed') penToggleClosed();
+      else if (which === 'handlesel') { penSelectHandles = !penSelectHandles; ctxSelKey = null; renderChrome(); }
       else if (which === 'arrange') openPenArrangeMenu(b);
       else if (which === 'del') penDeleteSelected();
       else if (which === 'done') { if (penDraft) penFinishDraw(); else endPenEdit(); }
@@ -4931,6 +4998,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (next === 'connect' && !connectCfg) return;
     if (next === 'pen' && !cfg.pathField) return;
     if (next === 'create' && !o.kind && !armedKind) return;
+    if (next !== 'select') nodeToolActive = false;   // any other tool exits the Node tool
     const from = mode;
     if (penEdit) endPenEdit();
     if (from === 'pen' && penDraft) { if (o.draft === 'discard') penCancelDraw(); else penFinishDraw(); }
@@ -4952,9 +5020,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  other two tools announce themselves and a mode change no screen reader hears is not a
    *  mode change; the internal exits above stay quiet, or every edge click would speak. */
   const pickPointer = (): void => {
+    nodeToolActive = false;                     // the plain pointer is NOT the Node tool
     toPointer();
     announce(t('Pointer on - click to select, drag to move.'));
   };
+
+  /** Toggle the Node tool. Turning it on drops any other tool (it is a select sub-mode)
+   *  and, if exactly one path box is selected, jumps straight into editing it — the
+   *  "jump straight into node editing an object" ask. */
+  function toggleNodeTool(): void {
+    if (nodeToolActive) { nodeToolActive = false; if (penEdit) endPenEdit(); syncModeUI(); announce(t('Pointer on - click to select, drag to move.')); return; }
+    if (mode !== 'select') setMode('select');   // exit pen/create/connect
+    nodeToolActive = true;
+    const boxes = getBoxes();
+    if (selection.size === 1) {
+      const id = [...selection][0]!;
+      const i = boxes.findIndex((b, k) => idOf(b, k) === id);
+      if (i >= 0 && boxOutlineKind(boxes[i], vectorCfg ?? undefined) === 'path') startPenEdit(id);
+    }
+    syncModeUI();
+    announce(t('Node tool on - click a shape to edit its points.'));
+  }
 
   function enterCreate(kind?: AddKind): void {
     if (kind) armedKind = kind;
@@ -5002,10 +5088,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       b.classList.toggle('is-armed', on);
       b.setAttribute('aria-pressed', String(on));
     };
-    flag(modeBtns.select, mode === 'select');
+    flag(modeBtns.select, mode === 'select' && !nodeToolActive);
     flag(modeBtns.create, mode === 'create');
     flag(modeBtns.pen, mode === 'pen');
     flag(modeBtns.connect, mode === 'connect');
+    flag(nodeToolBtn, nodeToolActive);
   }
 
   // Auto-arrange the connected cards into a tidy top-down hierarchy. Roots (cards with
@@ -6049,6 +6136,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     if (tryArmedCreateAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
 
+    // Node tool: a click on a PATH box jumps straight into editing its nodes (the click
+    // that would otherwise just select it). Non-path boxes fall through to normal select,
+    // so the tool doesn't trap you on a shape it can't edit. Runs only when no node-edit
+    // session is live (that case is handled by the penEdit block above).
+    if (nodeToolActive && vectorCfg && !penEdit) {
+      const nh = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+      if (nh >= 0 && boxOutlineKind(boxes[nh], vectorCfg) === 'path') {
+        startPenEdit(idOf(boxes[nh], nh));
+        e.stopPropagation(); e.preventDefault();
+        return;
+      }
+    }
+
     const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
     if (hit >= 0) {
       deselectEdge();                              // picking a card drops any connector selection
@@ -6386,10 +6486,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           if (!g.additive) { penSel = new Set<number>(); penHandleSel = new Set<string>(); }
         } else {
           const r = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
-          const hits = penNodePoints().reduce<number[]>((acc, pt, i) =>
-            (pt.at.x >= r.x && pt.at.x <= r.x + r.w && pt.at.y >= r.y && pt.at.y <= r.y + r.h ? (acc.push(i), acc) : acc), []);
-          if (g.additive) for (const i of hits) penSel.add(i);
-          else { penSel = new Set(hits); penHandleSel = new Set<string>(); }
+          const inR = (p: Point): boolean => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+          const pts = penNodePoints();
+          const nodeHits = pts.reduce<number[]>((acc, pt, i) => (inR(pt.at) ? (acc.push(i), acc) : acc), []);
+          // In "nodes + control points" mode, a marquee also grabs any handle whose point
+          // falls in the box — the direct-selection behaviour Illustrator/Inkscape users
+          // expect. Nodes-only mode (the default) leaves handles alone.
+          const handleHits: string[] = [];
+          if (penSelectHandles && penEdit && kindReadsHandles(penEdit.path.kind)) {
+            pts.forEach((pt, i) => {
+              if (pt.hIn && inR(pt.hIn)) handleHits.push(`${i}:in`);
+              if (pt.hOut && inR(pt.hOut)) handleHits.push(`${i}:out`);
+            });
+          }
+          if (g.additive) { for (const i of nodeHits) penSel.add(i); for (const k of handleHits) penHandleSel.add(k); }
+          else { penSel = new Set(nodeHits); penHandleSel = new Set(handleHits); }
         }
       }
       endGesture();
@@ -7535,6 +7646,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'p' || e.key === 'P') && cfg.pathField) {
       e.preventDefault();
       if (mode !== 'pen') setMode('pen');
+      return;
+    }
+    // N — the Node tool (Inkscape's key). Toggles direct node editing on the selection.
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'n' || e.key === 'N') && cfg.pathField) {
+      e.preventDefault();
+      toggleNodeTool();
       return;
     }
     // Enter / F2 on a selected box → edit its text (select-all so typing replaces it).

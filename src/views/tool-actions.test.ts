@@ -520,3 +520,82 @@ test('exr/hdr open for a tool with exportStill + host.codec (Bitmap Studio on th
   assert.ok(vals.includes('hdr'), 'Radiance HDR is offered');
   assert.ok(vals.includes('png'), 'ordinary formats are unaffected');
 });
+
+// ── 8. the canvas layout box on a dimension change: artboard vs preview thumbnail ─
+// A dimension change resizes #tool-canvas via refreshCanvasPreview. For a preview
+// tool the canvas is a thumbnail and is CLAMPED so its longest side never exceeds
+// the native render size (fitCanvas's transform then does the on-screen fit). For a
+// freeform EDITOR (render.layout:'editor') the canvas IS the artboard — its box
+// coordinates are absolute pixels in its own space — so it must take the TRUE export
+// px with no clamp, or a bigger export size shrinks the artboard under fixed boxes
+// and pushes them off the frame (thread B). Both drive through the same input event.
+
+/** Mount the export bar over a canvas and return the width/height fields + canvas. */
+function mountDims(
+  layout?: string,
+  render: Record<string, unknown> = {},
+  inputs: unknown[] = [],
+): { canvas: HTMLElement; wField: HTMLInputElement; hField: HTMLInputElement } {
+  const doc = dom.window.document;
+  doc.body.innerHTML = '';
+  const panel = doc.createElement('div');
+  const canvas = doc.createElement('div');
+  canvas.style.width = '1080px';
+  canvas.style.height = '1080px';
+  doc.body.append(panel, canvas);
+  const manifest = {
+    id: 'dims-probe', name: 'Dims Probe', version: '1.0.0', inputs,
+    render: { width: 1080, height: 1080, formats: ['png', 'svg'], ...(layout ? { layout } : {}), ...render },
+  };
+  const runtime = {
+    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    export: async () => new dom.window.Blob(['x']),
+  };
+  const host = { assets: { query: async () => [] }, state: { save: async () => {} }, export: { download: async () => {} } };
+  renderActions(
+    panel as never, manifest as never, runtime as never, canvas, host as never,
+    () => {}, (async (fn: () => unknown) => fn()) as never, {},
+  );
+  return {
+    canvas,
+    wField: panel.querySelector('[data-action="export-width"]') as HTMLInputElement,
+    hField: panel.querySelector('[data-action="export-height"]') as HTMLInputElement,
+  };
+}
+
+test('editor: a wider export size makes the artboard that exact size (no clamp)', () => {
+  const { canvas, wField } = mountDims('editor');
+  wField.value = '1920';
+  wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(canvas.style.width, '1920px', 'the artboard takes the true export width');
+  assert.equal(canvas.style.height, '1080px', 'the untouched height stays put — no aspect distortion');
+});
+
+test('preview tool: the same change is CLAMPED to the native render size', () => {
+  const { canvas, wField } = mountDims(); // no layout → preview thumbnail
+  wField.value = '1920';
+  wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  // previewScale = min(1, 1080/1920, 1080/1080) = 0.5625 → 1920*0.5625=1080, 1080*0.5625=608
+  assert.equal(canvas.style.width, '1080px', 'the thumbnail longest side is capped at native');
+  assert.equal(canvas.style.height, '608px', 'the thumbnail keeps the requested aspect, scaled down');
+});
+
+test('fixed-canvas editor (Org Chart): artboard stays native-locked — keeps the clamp', () => {
+  // canvas.fixedCanvas keeps connector geometry 1:1 with box coords, so the artboard must
+  // NOT grow to the export size even though it is layout:'editor'. Same clamp as a preview.
+  const { canvas, wField } = mountDims('editor', {}, [{ id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } }]);
+  wField.value = '1920';
+  wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(canvas.style.width, '1080px', 'a fixed-canvas editor is clamped, not resized to the export width');
+});
+
+test('carousel editor (render.pages): the page strip owns the size — no 1:1 resize', () => {
+  // A carousel editor sets render.pages; the canvas is the page strip, owned by syncStrip.
+  // (Real carousel tools also set render.dims:false so the fields are hidden; here we prove
+  // the sizing branch alone excludes them.) It must take the clamp, not the artboard path.
+  const { canvas, wField } = mountDims('editor', { pages: { count: 'n', width: 'w', height: 'h' } }, [{ id: 'boxes', type: 'blocks', canvas: {} }]);
+  wField.value = '1920';
+  wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(canvas.style.width, '1080px', 'a carousel editor is clamped, not resized to the export width');
+});

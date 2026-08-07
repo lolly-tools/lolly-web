@@ -629,9 +629,21 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // file names (utils.ts escape), and static in-code format labels/ids — no user
   // markup reaches a sink unescaped.
   'views/convert.ts': 3,
+  // The spreadsheet (data) view. Reviewed 2026-08-07: the 4 sinks are the static page
+  // scaffold (t() labels + static DOWNLOAD_TARGETS id/label), the limits banner
+  // (escape()d LIMITS_HTML + escape()d truncated note), the sheet tabs (escape()d sheet
+  // names + numeric/boolean attrs), and the read-error banner (escape()d message) — all
+  // user-data interpolations go through escape() (utils.ts).
+  'views/data.ts': 4,
   'bridge/embed.ts': 1,
   'components/color-field.ts': 5,
   'components/custom-slider.ts': 1,
+  // The virtual data grid (spreadsheet view). Reviewed 2026-08-07: the 3 sinks are the
+  // static viewport scaffold (no interpolation), the header cells (esc()d column names +
+  // numeric width/index attrs), and the row cells (esc()d cell text + numeric row/col/
+  // width attrs) — esc() escapes &<> and is used only in text content, so no user markup
+  // reaches a sink unescaped.
+  'components/data-grid.ts': 3,
   'components/featured-row.ts': 2,
   'components/fonts-manager.ts': 3,
   'components/headshot-cropper.ts': 1,

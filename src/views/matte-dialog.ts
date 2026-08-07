@@ -31,6 +31,7 @@ import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { extractC2paStore, prepareC2paIngredientFromStore } from '@lolly/engine';
 import { MATTE_DEFAULT_MODEL } from '../lib/matte-models.ts';
+import { classifyMatteError, type MatteErrorKind } from '../lib/matte-error.ts';
 import type {
   AssetRef, HostV1, MatteFrame, MatteModelId, MatteProgress,
 } from '@lolly-tools/core/host-v1';
@@ -133,6 +134,21 @@ function frameToBlob(frame: MatteFrame, fmt: OutFormat): Promise<{ blob: Blob; f
       return { blob: png, format: 'png' as OutFormat };
     });
   });
+}
+
+/** A human, actionable message for a failed matte run — never the raw runtime
+ *  string. 'aborted' is handled by the caller (silent), so it's not mapped here. */
+function matteErrorMessage(kind: Exclude<MatteErrorKind, 'aborted'>): string {
+  switch (kind) {
+    case 'not-installed':
+      return t("Couldn't download the model. Check your connection and try again.");
+    case 'memory':
+      // canRun can't see a transformer's activation memory, so a run can still run
+      // out after a green check — point at the two levers that actually help.
+      return t('Ran out of memory removing the background. Try a smaller image, or the fast model, which needs the least.');
+    default:
+      return t("Couldn't remove the background. Try a smaller image, or a different model.");
+  }
 }
 
 function matteAssetIds(sourceName: string, now: number): { id: string; name: string } {
@@ -417,12 +433,14 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
         done(await host.assets.get(id));
       } catch (e) {
         if (!overlay.isConnected) return;
-        if ((e as Error | null)?.name !== 'AbortError') {
-          host.log('error', 'Matte run failed', { error: String(e) });
-          const msg = (e as Error | null)?.message?.trim();
-          showStatus(msg || t("Couldn't remove the background. Try a smaller image."), true);
-        } else {
-          hideStatus();
+        // Belt-and-braces: never surface a raw runtime string (e.g. ort-web's
+        // "failed to call OrtRun()… std::bad_alloc"). Classify to an actionable
+        // message. Abort stays silent. See lib/matte-error.ts.
+        const kind = classifyMatteError(e);
+        if (kind === 'aborted') { hideStatus(); }
+        else {
+          host.log('error', 'Matte run failed', { error: String(e), kind });
+          showStatus(matteErrorMessage(kind), true);
         }
       } finally {
         abort = null;
