@@ -1157,6 +1157,60 @@
   color: hsl(var(--primary));
 }
 
+/* ── Badged select (select options carrying a `badge`) ────────────────────────
+   A radiogroup of full-width option buttons, each a label plus a small pill (e.g.
+   vector / raster). Reuses the checked-pill on-state (tint + full primary border,
+   mirroring .input-row--pill:has(:checked)) so it reads consistently. */
+.badge-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.badge-select-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: calc(13px * var(--a11y-fs));
+  cursor: pointer;
+  text-align: start;
+}
+.badge-select-opt:hover { border-color: hsl(var(--primary) / 0.5); }
+.badge-select-opt:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+.badge-select-opt.is-on {
+  background: hsl(var(--primary) / 0.14);
+  border-color: hsl(var(--primary));
+}
+.badge-select-opt.is-on .badge-select-label {
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+.badge-select-pill {
+  flex: none;
+  font-size: calc(10px * var(--a11y-fs));
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: hsl(var(--foreground) / 0.08);
+  color: hsl(var(--muted-foreground));
+}
+/* Vector output = the crisp/scalable path → the accent tint; raster stays neutral.
+   Tint only (no coloured border) so the pill obeys the rounded-pill border rule. */
+.badge-select-pill[data-badge="vector"] {
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+}
+
 /* (A `.input-row input[type="color"]:not(.color-popover-native)` box lived here.
    The shell mints exactly ONE native colour input — `.color-popover-native`, the
    escape hatch inside our own OKLCH picker (components/color-field.ts) — and the

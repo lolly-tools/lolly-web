@@ -93,7 +93,11 @@ export function createMediaAPI(): MediaAPI {
     const facingMode = opts?.facingMode ?? 'user';
     starting = (async () => {
       const s = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+        // Capture at 1080p so a high-resolution subscriber (a raster filter, or a
+        // user-driven resolution slider — see runtime `render.liveMaxEdgeInput`) has
+        // real pixels to downscale from; the grab loop never upscales past native
+        // (grab() clamps scale ≤ 1), so a low working edge still stays cheap.
+        video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       });
       stream = s;

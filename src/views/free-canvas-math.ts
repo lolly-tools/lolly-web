@@ -578,123 +578,17 @@ export function clampBoxToCanvas(box: Box, cfg: BoxFieldConfig, canvas: Canvas):
   return withRect(box, { x: r.x + (cx - c.x), y: r.y + (cy - c.y) }, cfg);
 }
 
-// ── Connector / edge geometry ───────────────────────────────────────────────────
-// Routing for the editor's connector overlay (free-canvas.ts) AND its on-drag preview.
-// Pure: rectangles in native px → waypoints / SVG path `d` strings. This MIRRORS the
-// committed-render routing in tools/org-chart/hooks.js (waypoints / roundedPolyPath /
-// smoothPath); the elbow fractions (0.18 / 0.82 / 0.5), the useV orientation rule and
-// the rounded-corner radius must stay in sync with that hook — tests/connector-geometry
-// .test.ts locks these values and asserts both files share the elbow fractions.
-
-/** A native-px rectangle {x,y,w,h} carrying a connector endpoint (a box). */
-export interface EdgeRect { x: number; y: number; w: number; h: number }
-/** A rectangle reduced to centre + half-extents, for border-point math. */
-export interface EdgeAnchor { cx: number; cy: number; hw: number; hh: number }
-
-const ef2 = (v: number): number => Math.round(v * 100) / 100;
-
-/** Centre + half-extents of an edge rect. */
-export function edgeAnchor(r: EdgeRect): EdgeAnchor {
-  return { cx: r.x + r.w / 2, cy: r.y + r.h / 2, hw: r.w / 2, hh: r.h / 2 };
-}
-
-/** The point on anchor `a`'s border along the ray toward (tx,ty). */
-export function edgeBorderPt(a: EdgeAnchor, tx: number, ty: number): Point {
-  const dx = tx - a.cx, dy = ty - a.cy;
-  if (dx === 0 && dy === 0) return { x: a.cx, y: a.cy };
-  const sx = dx !== 0 ? a.hw / Math.abs(dx) : Infinity;
-  const sy = dy !== 0 ? a.hh / Math.abs(dy) : Infinity;
-  const t = Math.min(sx, sy);
-  return { x: a.cx + dx * t, y: a.cy + dy * t };
-}
-
-// Arc variants — [depth × chord, side sign, px cap]. MIRRORS tools/org-chart/hooks.js
-// (ARC_VARIANTS); the committed render draws a real Q bezier, the editor samples it below.
-const ARC_VARIANTS: Record<string, [number, number, number]> = {
-  arc: [0.22, 1, 70], 'arc-wide': [0.42, 1, 220], 'arc-flip': [0.22, -1, 70], 'arc-flip-wide': [0.42, -1, 220],
-};
-/** Sample a quadratic bezier pa→pb (control cpt) into a polyline for hit-test + highlight. */
-function sampleQuad(pa: Point, cpt: Point, pb: Point, n = 14): Point[] {
-  const out: Point[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n, u = 1 - t;
-    out.push({ x: u * u * pa.x + 2 * u * t * cpt.x + t * t * pb.x, y: u * u * pa.y + 2 * u * t * cpt.y + t * t * pb.y });
-  }
-  return out;
-}
-
-/**
- * Ordered waypoints for an edge from rect a → rect b. `style`: straight · elbow (auto
- * V/H) · elbow-v/-h (forced trunk) · elbow-src/-tgt (bend near an end, at frac 0.18/0.82)
- * · arc/arc-wide/arc-flip/arc-flip-wide (a sampled quadratic bow) · anything else = mid
- * elbow. `curved` uses the elbow points, rendered by smoothEdgePath.
- */
-export function edgeWaypoints(a: EdgeRect, b: EdgeRect, style: string): Point[] {
-  const ca = edgeAnchor(a), cb = edgeAnchor(b);
-  if (style === 'straight') return [edgeBorderPt(ca, cb.cx, cb.cy), edgeBorderPt(cb, ca.cx, ca.cy)];
-  const av = ARC_VARIANTS[style];
-  if (av) {
-    const pa = edgeBorderPt(ca, cb.cx, cb.cy), pb = edgeBorderPt(cb, ca.cx, ca.cy);
-    const ax = pb.x - pa.x, ay = pb.y - pa.y, al = Math.hypot(ax, ay) || 1;
-    const nx = -ay / al, ny = ax / al, bow = Math.min(av[2], al * av[0]) * av[1];
-    const cpt = { x: (pa.x + pb.x) / 2 + nx * bow, y: (pa.y + pb.y) / 2 + ny * bow };
-    return sampleQuad(pa, cpt, pb);
-  }
-  const dx = cb.cx - ca.cx, dy = cb.cy - ca.cy;
-  const frac = style === 'elbow-src' ? 0.18 : style === 'elbow-tgt' ? 0.82 : 0.5;
-  const useV = style === 'elbow-v' ? true : style === 'elbow-h' ? false : (Math.abs(dy) >= Math.abs(dx));
-  if (useV) {
-    const down = dy >= 0;
-    const s = { x: ca.cx, y: down ? a.y + a.h : a.y };
-    const t = { x: cb.cx, y: down ? b.y : b.y + b.h };
-    const cy = s.y + frac * (t.y - s.y);
-    return [s, { x: s.x, y: cy }, { x: t.x, y: cy }, t];
-  }
-  const right = dx >= 0;
-  const s2 = { x: right ? a.x + a.w : a.x, y: ca.cy };
-  const t2 = { x: right ? b.x : b.x + b.w, y: cb.cy };
-  const cx = s2.x + frac * (t2.x - s2.x);
-  return [s2, { x: cx, y: s2.y }, { x: cx, y: t2.y }, t2];
-}
-
-/** True when one rect is fully inside the other (nested cards draw no connector). */
-export function edgeNested(a: EdgeRect, b: EdgeRect): boolean {
-  const inside = (o: EdgeRect, i: EdgeRect): boolean =>
-    o.x <= i.x + 0.5 && i.x + i.w <= o.x + o.w + 0.5 &&
-    o.y <= i.y + 0.5 && i.y + i.h <= o.y + o.h + 0.5;
-  return inside(a, b) || inside(b, a);
-}
-
-/** SVG path `d` for a polyline through `pts` with rounded corners of radius `r`. */
-export function roundedEdgePath(pts: Point[], r: number): string {
-  if (pts.length < 2) return '';
-  const D = (p: Point): string => `${ef2(p.x)} ${ef2(p.y)}`;
-  if (pts.length === 2) return `M${D(pts[0]!)}L${D(pts[1]!)}`;
-  const d2 = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y);
-  const along = (from: Point, toward: Point, dd: number): Point => {
-    const L = d2(from, toward) || 1;
-    return { x: from.x + (toward.x - from.x) / L * dd, y: from.y + (toward.y - from.y) / L * dd };
-  };
-  let d = `M${D(pts[0]!)}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const prev = pts[i - 1]!, cur = pts[i]!, next = pts[i + 1]!;
-    const rr = Math.min(r, d2(prev, cur) / 2, d2(cur, next) / 2);
-    d += `L${D(along(cur, prev, rr))}Q${ef2(cur.x)} ${ef2(cur.y)} ${D(along(cur, next, rr))}`;
-  }
-  return d + `L${D(pts[pts.length - 1]!)}`;
-}
-
-/** SVG path `d` for a smooth S-curve over the first + last of `pts`. */
-export function smoothEdgePath(pts: Point[]): string {
-  if (pts.length < 3) return roundedEdgePath(pts, 0);
-  const s = pts[0]!, t = pts[pts.length - 1]!;
-  if (Math.abs(t.y - s.y) >= Math.abs(t.x - s.x)) {
-    const my = (s.y + t.y) / 2;
-    return `M${ef2(s.x)} ${ef2(s.y)}C${ef2(s.x)} ${ef2(my)} ${ef2(t.x)} ${ef2(my)} ${ef2(t.x)} ${ef2(t.y)}`;
-  }
-  const mx = (s.x + t.x) / 2;
-  return `M${ef2(s.x)} ${ef2(s.y)}C${ef2(mx)} ${ef2(s.y)} ${ef2(mx)} ${ef2(t.y)} ${ef2(t.x)} ${ef2(t.y)}`;
-}
+// ── Connector / edge geometry — re-exported from the engine (plan 90 R1) ──────────
+// The routing, arrowheads, endpoint model, and the committed-SVG builder now live in
+// engine/src/connectors.ts as the ONE source, so the editor preview here, the committed
+// export, and the CLI all emit identical geometry. Re-exported so every existing
+// `from './free-canvas-math.ts'` import keeps working unchanged.
+export {
+  edgeAnchor, edgeBorderPt, edgeWaypoints, edgeNested, connectorRoute,
+  roundedEdgePath, smoothEdgePath, edgeArrowHead, edgeHeadInset,
+  isEdgePoint, parseEdgePoint, formatEdgePoint, edgeEndRect, buildConnectorSvg,
+} from '@lolly/engine';
+export type { EdgeRect, EdgeAnchor, ConnectorRoute, ConnectorRenderOpts } from '@lolly/engine';
 
 // ── on-canvas gradient editing ───────────────────────────────────────────────
 //

@@ -302,9 +302,14 @@
   pointer-events: none;
 }
 
-/* Contextual bar above the selection. Its `left` is JS-centred (NOT translateX,
-   and no backdrop-filter) so its colour-picker popover's `position:fixed` stays
-   viewport-relative rather than anchoring to a transformed/filtered ancestor. */
+/* Contextual bar PINNED to the top chrome row (JS sets left/top/max-width from ctxTopBand
+   in free-canvas.ts) — a toolbar on the line with the back pill and zoom HUD, no longer a
+   float above the selection where it sat over the artwork being edited. Its `left` is
+   JS-centred (NOT translateX, and no backdrop-filter) so its colour-picker popover's
+   `position:fixed` stays viewport-relative rather than anchoring to a transformed/filtered
+   ancestor. Capped to the band between that chrome and scrolled inside it (overflow-x
+   below), so a narrow phone keeps one clean row instead of a bar that drops over the
+   canvas. */
 .fc-ctxbar {
   position: absolute; z-index: 15;
   display: flex; align-items: center; gap: 2px;
@@ -313,6 +318,16 @@
   isolation: isolate;   /* contain the frosted ::before (see .fc-frosted note) */
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.24), 0 0 0 1px hsl(var(--border));
   pointer-events: auto;
+  /* Overflow scrolls the controls into reach when the band is narrower than the bar
+     (mobile), keeping it a single row on the chrome line. The colour popover is
+     `position:fixed` with no transform/filter on this element, so it escapes the clip
+     rather than being trapped by it; the scrollbar itself is hidden — swipe on touch,
+     shift-wheel/drag on desktop. */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* legacy Edge */
+  overscroll-behavior: contain; /* a swipe on the bar never pans the stage behind it */
   /* Auto-hide with the rail — gone at rest, revealed whenever the pointer is over
      the editor stage, on the bar's own hover, or while it holds focus (so an open
      colour popover keeps it up). Always-on for touch (see the coarse block below). */
@@ -323,6 +338,7 @@
      out and back while the user was doing nothing but moving the mouse. */
   transition: opacity 0.18s ease 0.45s;
 }
+.fc-ctxbar::-webkit-scrollbar { display: none; }   /* WebKit/Blink */
 .tool-stage:hover .fc-ctxbar,
 .fc-ctxbar:hover,
 .fc-ctxbar:focus-within { opacity: 1; transition-delay: 0s; }
@@ -372,6 +388,9 @@
    hover so it's clear they're the click targets. */
 .tool-stage.fc-connecting { cursor: crosshair; }
 .tool-stage.fc-connecting .lolly-box { cursor: crosshair; }
+/* Line tool (plan 90): drag anywhere to draw a line/arrow — crosshair everywhere. */
+.tool-stage.fc-lining { cursor: crosshair; }
+.tool-stage.fc-lining .lolly-box { cursor: crosshair; }
 .tool-stage.fc-connecting .lolly-box:hover { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Keyboard focus on a card (Tab) — a visible ring; focus also makes it the selection. */
 .fc-open-canvas .lolly-box:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: 2px; }
@@ -919,6 +938,11 @@ button.fc-readout:empty { display: none; }
 
 @media (pointer: coarse) {
   .fc-ctxbar .color-picker-field, .fc-ctxbar .color-trigger { width: 36px; height: 36px; }
+  /* Touch: the bar routinely overflows the narrow top band and scrolls, and the frosted
+     ::before is an absolute child that would scroll out from under the controls. Drop it
+     and lean on a near-opaque solid, which paints on the element box and stays put. */
+  .fc-ctxbar { background: hsl(var(--card) / 0.94); }
+  .fc-ctxbar::before { display: none; }
 }
 
 /* Canvas-layout file utilities (render.layout:"canvas") put the drop zone on

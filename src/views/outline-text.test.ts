@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   translateContours, rectContours, cssColorToHex, rotatedFrameShift, shapeCollectedLines,
-  type CollectedLine, type RunStyle,
+  clusterContoursByGlyph, type CollectedLine, type RunStyle,
 } from './outline-text.ts';
 
 const STYLE: RunStyle = {
@@ -105,14 +105,50 @@ test('shapeCollectedLines places the glyph square at pen origin + baseline', asy
   assert.equal(Math.max(...ys), 73);
 });
 
-test('shapeCollectedLines groups by fill in first-seen run order', async () => {
+test('shapeCollectedLines emits one glyph box per run in reading order (no merge)', async () => {
   const api = stubTextApi();
   const red: RunStyle = { ...STYLE, color: 'rgb(255, 0, 0)' };
   const res = await shapeCollectedLines(
     [line(), line({ top: 100, style: red }), line({ top: 180 })], api as never, DEPS);
   assert.ok(res.ok);
-  assert.deepEqual(res.groups.map((g) => g.fill), ['#11141f', '#ff0000']);
-  assert.equal(res.groups[0]!.path.length, 2, 'both dark lines merge into one group');
+  // Per glyph now: each single-square run is its OWN box, in reading order — the two dark
+  // runs no longer merge, so the letters stay independently selectable/editable.
+  assert.deepEqual(res.groups.map((g) => g.fill), ['#11141f', '#ff0000', '#11141f']);
+  assert.ok(res.groups.every((g) => g.path.length === 1), 'each glyph is its own single-contour box');
+});
+
+test('clusterContoursByGlyph splits side-by-side glyphs, keeps a counter with its outline', () => {
+  // Two disjoint squares (a kerning gap between them) → two glyph clusters.
+  const twoLetters = [...rectContours(0, 0, 40, 50), ...rectContours(60, 0, 40, 50)];
+  const split = clusterContoursByGlyph(twoLetters);
+  assert.equal(split.length, 2, 'disjoint x-spans split into two glyphs');
+  assert.ok(split.every((g) => g.length === 1));
+  // Left-to-right order: first cluster starts at x=0, second at x=60.
+  assert.ok(split[0]![0]!.curves[0]![0]! < split[1]![0]!.curves[0]![0]!);
+
+  // An outline with a nested counter (hole strictly inside) → ONE glyph of two contours,
+  // so the box still cuts the hole out by winding.
+  const withHole = [...rectContours(0, 0, 100, 50), ...rectContours(20, 10, 60, 30)];
+  const one = clusterContoursByGlyph(withHole);
+  assert.equal(one.length, 1, 'a counter stays with its outline');
+  assert.equal(one[0]!.length, 2, 'the glyph box holds outline + counter');
+});
+
+test('clusterContoursByGlyph is a no-op for zero or one contour', () => {
+  assert.deepEqual(clusterContoursByGlyph([]), []);
+  const single = rectContours(5, 5, 10, 10);
+  const out = clusterContoursByGlyph(single);
+  assert.equal(out.length, 1);
+  assert.equal(out[0]!.length, 1);
+});
+
+test('shapeCollectedLines splits a multi-glyph run into one box each', async () => {
+  // A run whose shaped `d` is two separated squares → two glyph boxes from ONE line.
+  const api = stubTextApi('M0,0L40,0L40,-50L0,-50Z M60,0L100,0L100,-50L60,-50Z');
+  const res = await shapeCollectedLines([line()], api as never, DEPS);
+  assert.ok(res.ok);
+  assert.equal(res.groups.length, 2, 'two glyphs → two boxes');
+  assert.ok(res.groups.every((g) => g.fill === '#11141f' && g.path.length === 1));
 });
 
 test('shapeCollectedLines applies text-transform before shaping', async () => {

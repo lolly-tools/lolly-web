@@ -469,7 +469,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // collapse chevron (the reported "clicking the 2nd scene expands the 1st"), and a
     // `vector` input forwards to its first number field. Wrap these in a <div role=group>
     // instead: the caption still names them (aria-labelledby), but it never proxies clicks.
-    const isComposite = ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker', 'table'].includes(input.control);
+    // A badged select renders as a radiogroup of buttons (see controlHtml). Treat it
+    // like other composites: a wrapping <label> would proxy dead-space clicks to the
+    // first option button, and the caption must be aria-labelledby, not a <label for>.
+    const isBadgedSelect = input.control === 'select' && (input.options ?? []).some(o => (o as { badge?: string }).badge);
+    const isComposite = isBadgedSelect || ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker', 'table'].includes(input.control);
     const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isPill ? ' input-row--pill' : ''}${isStaticLabel ? ' input-row--static-label' : ''}${isSubControl(input, prev) ? ' input-row--sub' : ''}`;
     const valueTag = input.control === 'slider'
       ? ` <span class="input-value">${parseFloat(String(input.value ?? 0))}</span>`
@@ -889,6 +893,33 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // In-tool sound preview: play/pause the placed clip via a detached <audio>.
   el.querySelectorAll<HTMLElement>('[data-preview-id]').forEach(btn => {
     btn.addEventListener('click', () => toggleSlotPreview(btn));
+  });
+
+  // Badged select: a radiogroup of labelled pills (see controlHtml). Click or the
+  // ARIA radio keys (arrows/Home/End, Space/Enter) commit the option through the
+  // normal input path; the change re-renders the panel (which reveals that option's
+  // showIf-gated inputs) and the by-id focus restore returns to the checked button.
+  el.querySelectorAll<HTMLElement>('[data-badge-select]').forEach(group => {
+    const id = group.dataset.badgeSelect!;
+    const opts = [...group.querySelectorAll<HTMLElement>('.badge-select-opt')];
+    const pick = (btn: HTMLElement | undefined): void => {
+      if (!btn) return;
+      runtime.setInput(id, btn.dataset.badgeValue!);
+      onDirty?.(id);
+    };
+    opts.forEach((btn, idx) => {
+      btn.addEventListener('click', () => pick(btn));
+      btn.addEventListener('keydown', (e) => {
+        const k = (e as KeyboardEvent).key;
+        let ni = -1;
+        if (k === 'ArrowDown' || k === 'ArrowRight') ni = (idx + 1) % opts.length;
+        else if (k === 'ArrowUp' || k === 'ArrowLeft') ni = (idx - 1 + opts.length) % opts.length;
+        else if (k === 'Home') ni = 0;
+        else if (k === 'End') ni = opts.length - 1;
+        else if (k === ' ' || k === 'Enter') { e.preventDefault(); pick(btn); return; }
+        if (ni >= 0) { e.preventDefault(); pick(opts[ni]); }
+      });
+    });
   });
 
   // icon-toggle: one button that CYCLES its select's options (see the schema's
@@ -1926,10 +1957,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // brandFonts: append every font the user added to their brand as extra options
       // (de-duped against the manifest's own), so a font picker lists the whole brand
       // type kit — mirrors the same flag on a `blocks` select sub-field.
-      let selOpts = (input.options ?? []).map(o => ({ value: String(o.value), label: String(o.label ?? o.value) }));
+      let selOpts = (input.options ?? []).map(o => ({ value: String(o.value), label: String(o.label ?? o.value), badge: (o as { badge?: string }).badge ? String((o as { badge?: string }).badge) : '' }));
       if (input.brandFonts) {
         const seen = new Set(selOpts.map(o => o.value));
-        for (const fam of brandFontFamilies()) if (!seen.has(fam)) { selOpts.push({ value: fam, label: fam }); seen.add(fam); }
+        for (const fam of brandFontFamilies()) if (!seen.has(fam)) { selOpts.push({ value: fam, label: fam, badge: '' }); seen.add(fam); }
       }
       // Control-plane `choice`: narrow the options to the allowed set (a rendering
       // overlay — the model is untouched; the server enforces the same set). Only
@@ -1939,6 +1970,26 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         const allow = new Set(policy.allow.map(String));
         const restricted = selOpts.filter(o => allow.has(o.value));
         if (restricted.length) selOpts = restricted;
+      }
+      // Badged picker: when ANY option carries a `badge`, render a radiogroup of
+      // labelled pills instead of a native <select>, so the badge (e.g. vector/raster)
+      // is visible while choosing rather than hidden inside a closed dropdown. Roving
+      // tabindex on the checked option; data-input-id rides the checked button so the
+      // panel's by-id focus restore lands back on it after the rebuild a change triggers.
+      // A radiogroup selects on arrow, so each move re-renders — the reveal of an
+      // effect's inputs (showIf) is exactly why that rebuild is wanted.
+      if (selOpts.some(o => o.badge)) {
+        const cur = String(input.value ?? '');
+        const btns = selOpts.map(o => {
+          const on = o.value === cur;
+          return `<button type="button" role="radio" class="badge-select-opt${on ? ' is-on' : ''}"`
+            + ` data-badge-value="${escape(o.value)}" aria-checked="${on ? 'true' : 'false'}"`
+            + ` tabindex="${on ? '0' : '-1'}"${on ? ` data-input-id="${id}"` : ''}>`
+            + `<span class="badge-select-label">${escape(o.label)}</span>`
+            + (o.badge ? `<span class="badge-select-pill" data-badge="${escape(o.badge)}">${escape(o.badge)}</span>` : '')
+            + `</button>`;
+        }).join('');
+        return `<div class="badge-select" role="radiogroup" data-badge-select="${id}" aria-label="${escape(input.label ?? id)}">${btns}</div>`;
       }
       return `<select data-input-id="${id}">${selOpts.map(o =>
         `<option value="${escape(o.value)}" ${o.value === String(input.value ?? '') ? 'selected' : ''}>${escape(o.label)}</option>`

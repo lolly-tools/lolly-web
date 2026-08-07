@@ -1,136 +1,129 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Where the editor's contextual bar lands — the pure geometry of `placeCtxBar`, plus the
- * two CSS contracts the placement leans on.
+ * Where the editor's contextual bar lands — the pure geometry of `ctxTopBand` +
+ * `centreCtxBar`, plus the CSS contracts the placement leans on.
  *
- * The rule it replaced was `top = max(6, selectionTop - 48)` with `left` clamped to the
- * stage width and nothing else. Every assertion below is a failure that rule produced in
- * a screen recording of the Sequence Studio:
- *   • a full-frame scene box has its top edge AT the stage top, so `max(6, …)` parked the
- *     bar in the top band — which the zoom HUD owns — and the width clamp knew nothing
- *     about the HUD, so the two pills butted together and the HUD sliced the bar's
- *     coordinate readout down to a stray digit;
- *   • the back pill occupies the other end of that same band, so "just move it left" is
- *     not an answer on its own.
+ * The bar used to float ABOVE (or inside) the selection, which put it right over the very
+ * artwork being dragged or resized. It is pinned to the TOP chrome row now — on the line
+ * with the back pill (top-left) and the zoom HUD (top-right) — centred in the band between
+ * them so all three read as one row and none can overlap another. On a narrow phone the
+ * bar is capped to that band and scrolls its controls into reach (see the `.fc-ctxbar`
+ * overflow) rather than dropping down over the canvas. Every assertion below is one half
+ * of that contract: the band never runs into the chrome, and a too-wide bar pins to the
+ * band's left edge instead of pushing past it.
  *
  * Not covered here, because jsdom has no layout: the entrance animation, the frozen
- * placement during a drag, and the measured blocker rects (`ctxBarBlockers` reads real
- * getBoundingClientRects). Verified by hand in a browser.
+ * placement during a drag, the measured blocker rects (`ctxBarBlockers` reads real
+ * getBoundingClientRects), and the actual scroll. Verified by hand in a browser.
  *
  * Run directly:  node --test shells/web/src/views/free-canvas-ctxbar.test.ts
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { placeCtxBar } from './free-canvas.ts';
+import { ctxTopBand, centreCtxBar } from './free-canvas.ts';
 
 const STAGE = { w: 1000, h: 700 };
-const BAR = { w: 420, h: 40 };
-// The two pieces of fixed chrome, in stage coordinates: the zoom HUD top-right
-// (− 48% + Fit ☀ 🔇) and the back pill top-left (← Home).
-const HUD = { left: 700, top: 10, right: 990, bottom: 48 };
+// The two pieces of fixed chrome, in stage coordinates: the back pill top-left (← Home)
+// and the zoom HUD top-right (− 48% + Fit ☀ 🔇).
 const HOME = { left: 10, top: 10, right: 120, bottom: 48 };
+const HUD = { left: 700, top: 10, right: 990, bottom: 48 };
 
 /** Do these two boxes touch at all? The bar keeps a gap, so plain overlap is the floor. */
-const overlaps = (a: { left: number; top: number; right: number; bottom: number },
-                  b: { left: number; top: number; right: number; bottom: number }): boolean =>
+const overlaps = (a: { left: number; right: number; top: number; bottom: number },
+                  b: { left: number; right: number; top: number; bottom: number }): boolean =>
   a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-const barBox = (p: { left: number; top: number }, bar = BAR) =>
-  ({ left: p.left, top: p.top, right: p.left + bar.w, bottom: p.top + bar.h });
+/** The bar as it actually paints: `max-width` caps it to the band, so a too-wide bar shows
+ *  band-width and scrolls the rest — its painted right edge is never past `hi`. */
+const paintedBox = (bw: number, band: { lo: number; hi: number; top: number }, h = 40) => {
+  const pos = centreCtxBar(bw, band);
+  return { left: pos.left, right: pos.left + Math.min(bw, band.hi - band.lo), top: pos.top, bottom: pos.top + h };
+};
 
-// ══ the classic case ══════════════════════════════════════════════════════════
+// ══ the band ══════════════════════════════════════════════════════════════════
 
-test('a mid-canvas selection keeps the bar above it, centred', () => {
-  const pos = placeCtxBar({ left: 400, top: 300, right: 600, bottom: 500 }, BAR, STAGE, [HUD, HOME]);
-  assert.equal(pos.placement, 'above');
-  assert.equal(pos.top, 300 - 8 - 40, 'one gap above the selection\'s top edge');
-  assert.equal(pos.left, 500 - BAR.w / 2, 'centred on the selection');
+test('the band runs between the back pill and the zoom HUD, on their line', () => {
+  const band = ctxTopBand(STAGE, [HOME, HUD]);
+  assert.equal(band.lo, HOME.right + 8, 'starts one gap right of the back pill');
+  assert.equal(band.hi, HUD.left - 8, 'ends one gap left of the zoom HUD');
+  assert.equal(band.top, 10, 'aligned to the chrome row, not the stage edge');
 });
 
-test('a selection near the left edge slides the bar back on-stage rather than off it', () => {
-  const pos = placeCtxBar({ left: 0, top: 300, right: 60, bottom: 400 }, BAR, STAGE, [HUD, HOME]);
-  assert.equal(pos.left, 6, 'clamped to the stage pad');
-  assert.equal(pos.placement, 'above');
+test('with no chrome the band spans the whole padded top', () => {
+  assert.deepEqual(ctxTopBand(STAGE, []), { lo: 6, hi: 994, top: 6 });
 });
 
-// ══ the full-frame scene box (the reported defect) ════════════════════════════
-
-test('a full-frame selection flips the bar INSIDE its top edge instead of into the top band', () => {
-  const pos = placeCtxBar({ left: 0, top: 0, right: 1000, bottom: 700 }, BAR, STAGE, [HUD, HOME]);
-  assert.notEqual(pos.placement, 'above', 'there is no room above a selection that starts at the stage top');
-  assert.ok(pos.top >= 8, 'it sits inside the selection, not pinned to the stage edge');
+test('only the zoom HUD present bounds the right and leaves the left at the pad', () => {
+  const band = ctxTopBand(STAGE, [HUD]);
+  assert.equal(band.lo, 6);
+  assert.equal(band.hi, HUD.left - 8);
 });
 
-test('the bar never overlaps the zoom HUD or the back pill', () => {
-  // The three shapes that used to collide: the full-frame box, a wide box whose top is
-  // in the HUD's band, and a box tucked into the top-right corner under the HUD itself.
-  const sels = [
-    { left: 0, top: 0, right: 1000, bottom: 700 },
-    { left: 40, top: 20, right: 960, bottom: 300 },
-    { left: 640, top: 4, right: 980, bottom: 200 },
-  ];
-  for (const sel of sels) {
-    const pos = placeCtxBar(sel, BAR, STAGE, [HUD, HOME]);
-    const box = barBox(pos);
-    assert.equal(overlaps(box, HUD), false, `clear of the zoom HUD for ${JSON.stringify(sel)}`);
-    assert.equal(overlaps(box, HOME), false, `clear of the back pill for ${JSON.stringify(sel)}`);
-    assert.ok(box.left >= 6 && box.right <= STAGE.w - 6, 'still on-stage');
-    assert.ok(box.top >= 6 && box.bottom <= STAGE.h - 6, 'still on-stage vertically');
+test('only the back pill present bounds the left and leaves the right at the pad', () => {
+  const band = ctxTopBand(STAGE, [HOME]);
+  assert.equal(band.lo, HOME.right + 8);
+  assert.equal(band.hi, 994);
+});
+
+test('the band aligns its top to the TOPMOST chrome, never to zero', () => {
+  const band = ctxTopBand(STAGE, [{ ...HOME, top: 12, bottom: 50 }, { ...HUD, top: 8, bottom: 46 }]);
+  assert.equal(band.top, 8, 'the higher of the two pills');
+});
+
+// ══ centring in the band ══════════════════════════════════════════════════════
+
+test('a bar that fits centres in the band', () => {
+  const band = ctxTopBand(STAGE, [HOME, HUD]);   // lo 128, hi 692, room 564
+  const pos = centreCtxBar(420, band);
+  assert.equal(pos.top, band.top);
+  assert.equal(pos.left, 128 + Math.round((564 - 420) / 2), 'centred in the free span');
+});
+
+test('a bar too wide for the band pins to its left edge and scrolls the rest', () => {
+  const band = ctxTopBand(STAGE, [HOME, HUD]);   // room 564
+  const pos = centreCtxBar(900, band);
+  assert.equal(pos.left, band.lo, 'left never intrudes the back pill');
+  // Capped to the band by max-width, so the painted right edge lands on `hi`, never past
+  // it into the zoom HUD — the overflow is what scrolls, not the bar's footprint.
+  assert.ok(paintedBox(900, band).right <= band.hi, 'painted footprint stays clear of the HUD');
+});
+
+test('the painted bar never overlaps the back pill or the zoom HUD, at any width', () => {
+  const band = ctxTopBand(STAGE, [HOME, HUD]);
+  for (const bw of [120, 300, 420, 564, 700, 1200]) {
+    const box = paintedBox(bw, band);
+    assert.equal(overlaps(box, HOME), false, `clear of the back pill at ${bw}px`);
+    assert.equal(overlaps(box, HUD), false, `clear of the zoom HUD at ${bw}px`);
   }
-});
-
-test('a narrow bar slides sideways into the gap between the pills rather than dropping down', () => {
-  const narrow = { w: 300, h: 40 };
-  const pos = placeCtxBar({ left: 0, top: 0, right: 1000, bottom: 700 }, narrow, STAGE, [HUD, HOME]);
-  assert.equal(pos.placement, 'inside');
-  const box = barBox(pos, narrow);
-  assert.equal(overlaps(box, HUD), false);
-  assert.equal(overlaps(box, HOME), false);
-  assert.ok(box.top < HUD.bottom, 'it stays on the HUD\'s line — the shift was horizontal, not a drop');
-});
-
-test('a bar too wide to fit beside the chrome drops BELOW the occupied band', () => {
-  const wide = { w: 860, h: 40 };
-  const pos = placeCtxBar({ left: 0, top: 0, right: 1000, bottom: 700 }, wide, STAGE, [HUD, HOME]);
-  assert.equal(pos.placement, 'below');
-  assert.ok(pos.top >= HUD.bottom, 'clear under the whole top band');
-  assert.equal(overlaps(barBox(pos, wide), HUD), false);
-  assert.equal(overlaps(barBox(pos, wide), HOME), false);
-});
-
-test('an empty top band leaves the flip exactly where it always was', () => {
-  // The drop is a response to chrome, never a tax on tools that have none: with no
-  // blockers a full-frame selection gets the bar one gap inside its own top edge.
-  const pos = placeCtxBar({ left: 0, top: 0, right: 1000, bottom: 700 }, BAR, STAGE, []);
-  assert.deepEqual(pos, { left: 290, top: 8, placement: 'inside' });
 });
 
 // ══ degenerate inputs ═════════════════════════════════════════════════════════
 
-test('an unmeasurable stage keeps the anchored placement instead of clamping to zeroes', () => {
-  // A display:none stage, a pre-layout ResizeObserver delivery, jsdom: clamping against
-  // a 0×0 stage would slam the bar into the corner and lose the anchor entirely.
-  const pos = placeCtxBar({ left: 400, top: 300, right: 600, bottom: 500 }, BAR, { w: 0, h: 0 }, [HUD]);
-  assert.deepEqual(pos, { left: 290, top: 252, placement: 'above' });
+test('an unmeasurable stage returns a padded strip instead of a band from zeroes', () => {
+  // A display:none stage, a pre-layout ResizeObserver delivery, jsdom.
+  assert.deepEqual(ctxTopBand({ w: 0, h: 0 }, [HUD]), { lo: 6, hi: 6, top: 6 });
 });
 
-test('a stage shorter than the bar still yields an on-stage top', () => {
-  const pos = placeCtxBar({ left: 0, top: 0, right: 200, bottom: 200 }, BAR, { w: 1000, h: 30 }, []);
-  assert.ok(pos.top >= 6, 'never negative, however little room there is');
-});
-
-test('a rotated selection is placed off its AABB, so the corners never poke through the bar', () => {
-  // The caller hands in the rotation-aware union (groupAABBNative), so this is really a
-  // statement that placeCtxBar has no opinion of its own about rotation.
-  const a = placeCtxBar({ left: 300, top: 200, right: 500, bottom: 400 }, BAR, STAGE, []);
-  const b = placeCtxBar({ left: 280, top: 180, right: 520, bottom: 420 }, BAR, STAGE, []);
-  assert.equal(a.left, b.left, 'both centre on 400');
-  assert.ok(b.top < a.top, 'the wider AABB pushes the bar further up');
+test('chrome that leaves no gap never inverts the band — hi clamps up to lo', () => {
+  const band = ctxTopBand({ w: 300, h: 700 }, [
+    { left: 0, top: 8, right: 160, bottom: 48 },
+    { left: 150, top: 8, right: 300, bottom: 48 },
+  ]);
+  assert.ok(band.hi >= band.lo, 'a zero-or-negative span, never a flipped one');
+  assert.equal(centreCtxBar(200, band).left, band.lo, 'the bar still pins to lo and scrolls');
 });
 
 // ══ the CSS contracts the placement depends on ════════════════════════════════
 
 const css = readFileSync(new URL('../styles/parts/editor.css', import.meta.url), 'utf8');
+const ctxRule = css.match(/^\.fc-ctxbar\s*\{[^}]*\}/m);
+
+test('the bar scrolls its controls into reach — the one-row overflow the top-pin leans on', () => {
+  assert.ok(ctxRule, 'editor.css declares .fc-ctxbar');
+  assert.match(ctxRule![0], /overflow-x:\s*auto/, 'a horizontal scroll for a bar wider than the band');
+  assert.match(ctxRule![0], /max-width:/, 'capped so the scroll has something to clip against');
+  assert.match(ctxRule![0], /scrollbar-width:\s*none/, 'the scrollbar itself is hidden');
+});
 
 test('the entrance animation fills BACKWARDS, never forwards', () => {
   // A transform that survives the animation makes the bar the containing block for its

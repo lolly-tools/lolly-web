@@ -68,6 +68,14 @@ import { c2paDefaultOn } from '../lib/c2pa-policy.ts';
 import { jellyActive } from '../lib/jelly.ts';
 
 // Human-readable labels and file extensions for format identifiers that differ
+// Export-target opt-in (plan: run-web-code render). A tool whose exported output is
+// NOT its whole canvas — e.g. a code sandbox whose rendered preview is transplanted
+// into a same-origin mirror node — marks that node with `data-export-root`; the
+// walker then rasterises the mirror instead of the IDE chrome. Inert by construction
+// for every other tool: no marker → querySelector null → the canvas itself is used.
+export const exportTargetNode = (c: HTMLElement | null): HTMLElement | null =>
+  c?.querySelector<HTMLElement>('[data-export-root]') ?? c;
+
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
 const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
   emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
@@ -2131,6 +2139,23 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Apply a {width,height,unit} from a size-select option to the export-bar fields,
   // so choosing a size sets the actual exported page size. Refreshes the preview +
   // URL just like a manual edit. The user can still override the fields afterwards.
+  // Narrow the export format bar to the formats `allowed` (an effect/mode select's
+  // per-option list), intersected with the tool's capability-filtered union. Keeps
+  // the current pick when it survives, else falls to the first surviving format and
+  // fires the format `change` refresh so every per-format control follows. Never
+  // empties the bar (an empty intersection falls back to the full set). Driven by
+  // exportFormatDriver in tool.js; a no-op for a single-format tool (no <select>).
+  function setFormats(allowed: string[]): void {
+    if (!formatEl) return;
+    const allow = new Set(allowed.map(f => (f === 'jpeg' ? 'jpg' : f)));
+    let narrowed = formats.filter(f => allow.has(f));
+    if (!narrowed.length) narrowed = formats;         // never render an empty selector
+    const cur = formatEl.value;
+    const next = narrowed.includes(cur) ? cur : narrowed[0]!;
+    formatEl.innerHTML = formatOptionsHtml(narrowed, next, fmtLabel);
+    if (next !== cur) formatEl.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function setDims({ width, height, unit }: { width?: number; height?: number; unit?: string } = {}): void {
     if (manifest.render.dims === false) return;
     sizeUserSet = true;   // a size-select pick is the user setting the page size
@@ -2203,7 +2228,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const TEXT_FORMATS = new Set(['txt', 'md', 'markdown']);
     if (TEXT_FORMATS.has(fmt)) {
       playShutter();   // parallel capture feedback — writeText must stay in-gesture
-      const blob = await exportUnscaled(() => runtime.export(canvasEl, fmt, exportDims()));
+      const blob = await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, exportDims()));
       await host.clipboard.writeText(await blob.text());
       return;
     }
@@ -2277,7 +2302,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // it first (awaiting before write() loses the gesture and the browser silently
     // denies the write; deferring the blob inside the promise is the cross-browser
     // pattern that survives the ~shutter delay). One export feeds both paths.
-    const blobPromise = exportUnscaled(() => runtime.export(canvasEl, 'png', exportDims()), { shutter: true });
+    const blobPromise = exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), 'png', exportDims()), { shutter: true });
     if (navigator.clipboard?.write && window.ClipboardItem) {
       try {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
@@ -2579,8 +2604,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // (see the CSS): it stays closed for the variable export time, and the export
         // popup keeps showing progress underneath it.
         const blob = liveTake
-          ? await runtime.export(canvasEl, fmt, opts)
-          : await exportUnscaled(() => runtime.export(canvasEl, fmt, opts), { shutter: true });
+          ? await runtime.export(exportTargetNode(canvasEl), fmt, opts)
+          : await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, opts), { shutter: true });
         downloadedBlob = blob;
         await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
       }
@@ -2701,7 +2726,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     previewing = true;
     try {
       const fmt = (manifest.render.preview as { format?: string } | undefined)?.format || manifest.render.formats[0]!;
-      await exportUnscaled(() => runtime.export(canvasEl, fmt, exportDims()));
+      await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, exportDims()));
     } finally {
       previewing = false;
     }
@@ -2710,7 +2735,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Expose actions the mount scope can trigger programmatically (e.g. `?copy`,
   // and the unsaved-changes dialog's "Save & leave"). stopAudioPreview lets the
   // popup-close + tool-teardown paths silence an in-progress audio audition.
-  return { copy: performCopy, preview, save: performSave, setDims, stopAudioPreview, dispose: disposeCostSlot };
+  return { copy: performCopy, preview, save: performSave, setDims, setFormats, stopAudioPreview, dispose: disposeCostSlot };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.
@@ -2873,7 +2898,7 @@ async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | 
   if (format === 'svg' || forceVector) {
     try {
       const blob = await exportUnscaled(
-        () => runtime.export(canvasEl, 'svg', { width: nw, height: nh, embedMeta: false, thumbnail: true }),
+        () => runtime.export(exportTargetNode(canvasEl), 'svg', { width: nw, height: nh, embedMeta: false, thumbnail: true }),
         { shutter },
       );
       const svg = await blob.text();
@@ -2897,7 +2922,7 @@ async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | 
     const blob = await exportUnscaled(
       // thumbnail:true lets expensive hooks (e.g. url-shot's capture) reuse the
       // last render on the canvas instead of re-running a slow capture.
-      () => runtime.export(canvasEl, 'png', { width: tw, height: th, embedMeta: false, thumbnail: true }),
+      () => runtime.export(exportTargetNode(canvasEl), 'png', { width: tw, height: th, embedMeta: false, thumbnail: true }),
       { shutter },
     );
     return await new Promise<string | null>((resolve, reject) => {

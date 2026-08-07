@@ -54,6 +54,7 @@ import {
   seedBox, normDragRect, snapAngle, normAngle, clampBoxToCanvas, selectionAABB,
   snapMove, snapPoint, scaleGroup, rotateGroup, num,
   edgeBorderPt, edgeWaypoints, edgeNested, roundedEdgePath, smoothEdgePath,
+  edgeArrowHead, edgeHeadInset, isEdgePoint, edgeEndRect, formatEdgePoint,
   gradientLine, gradientPosAt, gradientAngleAt,
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
@@ -74,7 +75,7 @@ import {
   PEN_DEFAULT_KIND, PEN_KINDS, alignPoints, closesOnClick, convertKind, decodePathContours,
   defaultContinuity, deleteNodes, denormNodes, distributePoints, dragHandle, encodePathField,
   encodePathFields, frameToLocal, handlePoint, insertNodeOnCurve, kindReadsHandles,
-  localToFrame, lowerAuthored, type NodeAlignEdge, type PenPointRef,
+  localToFrame, lowerAuthored, type InsertResult, type NodeAlignEdge, type PenPointRef,
   moveNodes, nearestOnPath, nodeAt, normNodes, pathPaintIsVisible, pathPaintSeed,
   penCommitFromNative, penFrame, pickPathPaint, pullHandles,
   refitFrame, resolveDrawnInk, setNodeContinuity,
@@ -191,7 +192,7 @@ interface CanvasCfg {
  * timeline: the docked panel is a second surface alongside the canvas, not a different
  * reading of a canvas press, so it stays a plain toggle and outlives any tool change.
  */
-type EditorMode = 'select' | 'create' | 'pen' | 'connect';
+type EditorMode = 'select' | 'create' | 'pen' | 'connect' | 'line';
 
 /** `canvas.connect` — how the editor authors + stores connector edges. */
 interface ConnectCfg {
@@ -357,6 +358,8 @@ interface GestureBase { pointerId: number; startClient: Point; origin?: Point }
 interface TapGesture extends GestureBase { type: 'tap' }
 interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; additive: boolean }
 interface CreateGesture extends GestureBase { type: 'create'; origin: Point; seed: Box; others: AABB[]; corner?: Point }
+// Line tool — draw a line/arrow whose ends are a box id OR an `@x,y` free point (plan 90).
+interface LineGesture extends GestureBase { type: 'line'; origin: Point; fromEnd: string; toEnd?: string }
 interface MoveGesture extends GestureBase { type: 'move'; start: Map<number, Rect>; sel: number[]; selAABB: AABB | null; others: AABB[]; moveDelta?: { dx: number; dy: number } }
 interface ResizeGesture extends GestureBase { type: 'resize'; index: number; handle: HandleName; startRect: Rect; others: AABB[]; liveRect?: Rect }
 interface RotateGesture extends GestureBase { type: 'rotate'; index: number; startRect: Rect; centerClient: Point; pointerStartDeg: number; liveRect?: Rect }
@@ -369,8 +372,11 @@ interface PenDrawGesture extends GestureBase { type: 'pendraw'; origin: Point; i
 interface PenNodeGesture extends GestureBase { type: 'pennode'; origin: Point; indices: number[]; start: SplineNode[]; moved?: boolean }
 interface PenHandleGesture extends GestureBase { type: 'penhandle'; origin: Point; index: number; which: 'in' | 'out'; moved?: boolean }
 interface PenMarqueeGesture extends GestureBase { type: 'penmarquee'; origin: Point; additive: boolean }
+/** One contour's slice of the combined node-edit path: how many nodes it owns, and the
+ *  kind + closed flag to restore when the flat run is split back into real contours. */
+interface PenPart { count: number; kind: SplineKind; closed: boolean }
 type Gesture = TapGesture | MarqueeGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture
-  | GScaleGesture | GRotateGesture | PenDrawGesture | PenNodeGesture | PenHandleGesture | PenMarqueeGesture;
+  | GScaleGesture | GRotateGesture | PenDrawGesture | PenNodeGesture | PenHandleGesture | PenMarqueeGesture | LineGesture;
 type FilledBaseFields = 'pointerId' | 'startClient';
 type GestureInit =
   | Omit<TapGesture, FilledBaseFields>
@@ -384,7 +390,8 @@ type GestureInit =
   | Omit<PenDrawGesture, FilledBaseFields>
   | Omit<PenNodeGesture, FilledBaseFields>
   | Omit<PenHandleGesture, FilledBaseFields>
-  | Omit<PenMarqueeGesture, FilledBaseFields>;
+  | Omit<PenMarqueeGesture, FilledBaseFields>
+  | Omit<LineGesture, FilledBaseFields>;
 
 const HANDLES: HandleName[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const SNAP_PX = 6;          // snap threshold in SCREEN px
@@ -400,6 +407,8 @@ const SVG = {
   align: '<line x1="3" y1="4" x2="3" y2="20"/><rect x="6" y="7" width="12" height="4" rx="1"/><rect x="6" y="14" width="7" height="4" rx="1"/>',
   // Connect mode — two nodes joined by a link (start linking cards).
   connect: '<circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8 8l8 8"/>',
+  // Line tool — a diagonal shaft ending in an arrowhead (draw a line or arrow).
+  line: '<path d="M5 19 L19 5"/><path d="M12 5h7v7"/>',
   // Snap-to-grid toggle — a magnet in a box (snapping = magnetic pull to the grid).
   grid: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 15.5V11a3 3 0 0 1 6 0v4.5"/><path d="M7.5 15.5h3"/><path d="M13.5 15.5h3"/>',
   // Auto-arrange the connected cards into a tidy hierarchy.
@@ -625,88 +634,63 @@ export function placePopover(
 /** A stage-relative box, in stage px. */
 interface StageBox { left: number; top: number; right: number; bottom: number }
 
+/** The top-chrome-row band the contextual bar is pinned into, in stage-relative px. */
+export interface CtxTopBand { lo: number; hi: number; top: number }
+
 /**
- * Where the contextual bar goes above (or inside) a selection, in stage-relative px,
- * given the boxes it must not collide with.
+ * The free horizontal band on the top-chrome row where the contextual bar sits.
  *
- * The original rule was `top = max(6, selectionTop - 48)` with `left` clamped only to
- * the stage width, and it has two failure modes that a full-frame selection hits every
- * single time: `max(6, …)` pins the bar to the top of the stage — the same band the
- * zoom HUD owns — and the width clamp knows nothing about that HUD, so the two pills
- * butt together and the HUD slices the bar's coordinate readout down to a stray digit.
+ * The bar used to float ABOVE (or inside) the selection, which put it right over the very
+ * artwork the user was looking at — the thing they were dragging or resizing. So it is
+ * pinned to the TOP now, on the same line as the back pill (top-left) and the zoom HUD
+ * (top-right): the band runs from the right edge of the left-corner chrome to the left
+ * edge of the right-corner chrome, so all three read as one row at every width and none
+ * can overlap another — the "layout harmony" the narrow mobile top row needs.
  *
- * So the placement is candidate-based, in preference order, and the first candidate
- * that is on-stage AND clear of every blocker wins:
- *   1. ABOVE the selection, centred on it        — the classic, and what a mid-canvas
- *                                                  card still gets;
- *   2. INSIDE the selection's top edge           — the flip, for a selection whose top
- *                                                  is against the stage top (the
- *                                                  full-frame scene box);
- *   3. BELOW the occupied top band               — when the bar is too wide to sit
- *                                                  beside the chrome at all.
- * Within a band the centred x is tried first, then the nearest x that clears the
- * blockers on either side. Nothing fits → the last band, centred and clamped, which is
- * the old behaviour and is strictly no worse than it.
+ * `blockers` are that fixed chrome in stage coordinates, measured by the caller (so this
+ * stays pure numbers and honestly testable without a browser — the same bargain
+ * clampRailPos makes). A blocker whose centre is left of the stage centre bounds the band
+ * on the left (the back pill); one to the right bounds it on the right (the zoom HUD). The
+ * shared `top` aligns the bar with that chrome so the three sit on one line.
  *
- * `blockers` are the fixed stage chrome in stage coordinates — the zoom HUD top-right
- * and the back pill top-left. Measured by the caller, so this stays pure numbers and
- * honestly testable without a browser (the same bargain clampRailPos makes).
+ * The caller caps the bar to `hi - lo` and lets it scroll inside that width (see the
+ * `.fc-ctxbar` overflow), so a bar too wide for the band — a phone — becomes a scrolling
+ * strip on the row rather than a bar that drops down over the canvas.
  */
-export function placeCtxBar(
-  sel: StageBox,
-  bar: { w: number; h: number },
+export function ctxTopBand(
   stage: { w: number; h: number },
   blockers: StageBox[] = [],
   o: { pad?: number; gap?: number } = {},
-): { left: number; top: number; placement: 'above' | 'inside' | 'below' } {
+): CtxTopBand {
   const pad = o.pad ?? 6;
   const gap = o.gap ?? 8;
-  const wantX = (sel.left + sel.right) / 2 - bar.w / 2;
   // An unmeasurable stage (display:none, a pre-layout ResizeObserver delivery, jsdom)
-  // gives nothing to clamp against — hand back the anchored placement rather than
-  // inventing one from zeroes, exactly as clampRailPos and placePopover do.
-  if (!(stage.w > 0) || !(stage.h > 0)) {
-    return { left: Math.round(wantX), top: Math.round(sel.top - gap - bar.h), placement: 'above' };
+  // gives nothing to bound against — hand back a padded strip at the top rather than
+  // inventing a band from zeroes, exactly as clampRailPos and placePopover do.
+  if (!(stage.w > 0)) return { lo: pad, hi: pad, top: pad };
+  const live = blockers.filter((b) => b.right > b.left && b.bottom > b.top);
+  let lo = pad;
+  let hi = Math.max(pad, stage.w - pad);
+  // Align the bar's top with the chrome row (its topmost blocker); with no chrome to
+  // align to, the plain pad.
+  const top = live.length ? Math.max(pad, Math.min(...live.map((b) => b.top))) : pad;
+  const cx = stage.w / 2;
+  for (const b of live) {
+    if ((b.left + b.right) / 2 <= cx) lo = Math.max(lo, b.right + gap);   // back pill, left
+    else hi = Math.min(hi, b.left - gap);                                  // zoom HUD, right
   }
-  const maxX = Math.max(pad, stage.w - bar.w - pad);
-  const clampX = (x: number): number => Math.min(Math.max(x, pad), maxX);
-  const hits = (x: number, y: number, b: StageBox): boolean =>
-    x < b.right + gap && x + bar.w > b.left - gap && y < b.bottom + gap && y + bar.h > b.top - gap;
+  return { lo, hi: Math.max(lo, hi), top };
+}
 
-  /** The best x in this band, or null when the band cannot hold the bar at all. */
-  function xInBand(y: number): number | null {
-    const active = blockers.filter((b) => y < b.bottom + gap && y + bar.h > b.top - gap);
-    const centred = clampX(wantX);
-    if (!active.some((b) => hits(centred, y, b))) return centred;
-    // Slide clear: fully left of every blocker in the band, or fully right of them.
-    // Nearest-to-centred wins, so the bar shifts as little as the collision demands.
-    const left = Math.min(...active.map((b) => b.left)) - gap - bar.w;
-    const right = Math.max(...active.map((b) => b.right)) + gap;
-    const tries = [left, right].sort((a, c) => Math.abs(a - centred) - Math.abs(c - centred));
-    for (const x of tries) {
-      if (x < pad || x > maxX) continue;
-      if (!active.some((b) => hits(x, y, b))) return x;
-    }
-    return null;
-  }
-
-  const aboveY = sel.top - gap - bar.h;
-  if (aboveY >= pad) {
-    const x = xInBand(aboveY);
-    if (x != null) return { left: Math.round(x), top: Math.round(aboveY), placement: 'above' };
-  }
-  const insideY = Math.min(Math.max(sel.top + gap, pad), Math.max(pad, stage.h - bar.h - pad));
-  const insideX = xInBand(insideY);
-  if (insideX != null) return { left: Math.round(insideX), top: Math.round(insideY), placement: 'inside' };
-  // Under the whole occupied top band. Only the blockers that were actually in the way
-  // set the floor, so an empty top-right corner never pushes the bar down the stage.
-  const inWay = blockers.filter((b) => insideY < b.bottom + gap && insideY + bar.h > b.top - gap);
-  const belowY = Math.min(
-    Math.max(insideY, ...inWay.map((b) => b.bottom + gap)),
-    Math.max(pad, stage.h - bar.h - pad),
-  );
-  const belowX = xInBand(belowY);
-  return { left: Math.round(belowX ?? clampX(wantX)), top: Math.round(belowY), placement: 'below' };
+/**
+ * Centre a bar of width `bw` in the band. A bar wider than the band pins to `lo` — its
+ * own `overflow-x` scrolls the rest of its controls into reach — so it never pushes past
+ * `hi` into the chrome on the right.
+ */
+export function centreCtxBar(bw: number, band: CtxTopBand): { left: number; top: number } {
+  const room = band.hi - band.lo;
+  const left = bw >= room ? band.lo : band.lo + (room - bw) / 2;
+  return { left: Math.round(left), top: Math.round(band.top) };
 }
 
 /**
@@ -1014,12 +998,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // than to a stale snapshot.
   let penDraft: AuthoredPath | null = null;      // nodes in NATIVE px; null = not drawing
   let penCursor: Point | null = null;            // live end of the segment under the cursor
-  // `path` is the contour being edited and `rest` is every other contour in the same field
-  // (a boolean with a hole is several). `rest` is carried rather than dropped for two
-  // reasons: the write has to re-encode ALL of them or editing one loop would delete the
-  // others, and the frame has to be fitted to ALL of them or editing one would clip the
-  // others. Both are DENORMALISED to box-local px.
-  let penEdit: { id: string; path: AuthoredPath; rest: AuthoredPath[]; frame: PenFrame } | null = null;
+  // ALL of a field's contours are edited at once (a boolean with a hole, or outlined text
+  // that is one path box of many glyph contours). They share ONE box-local coordinate space
+  // (one frame), so `path` is a COMBINED AuthoredPath whose `nodes` are every contour's nodes
+  // concatenated in order — every position op (move / drag a handle / align / distribute /
+  // continuity / hit-test / marquee) runs on it unchanged, and `penSel` indexes into it flat.
+  // `parts` records how to split that flat run back into real per-contour paths (each keeps
+  // its own kind + closed): the write re-encodes every contour, the frame fits every contour,
+  // and render / insert / delete are the only part-AWARE ops. `path.kind` is the first part's
+  // kind (uniform across the contours every producer here makes — all cubic — so it governs
+  // handle display + default continuity correctly). A single-contour box has one part and is
+  // byte-identical to the old single-`path` model. All DENORMALISED to box-local px.
+  let penEdit: { id: string; path: AuthoredPath; parts: PenPart[]; frame: PenFrame } | null = null;
   let penSel = new Set<number>();                // selected node indices while editing
   // Selected CONTROL POINTS (handles) while editing — keys `${nodeIndex}:in` / `:out`.
   // Built by shift-clicking a handle; align/distribute operate on nodes ∪ these. Kept
@@ -1363,6 +1353,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (connectCfg.headField) ne[connectCfg.headField] = connectCfg.defaultHead;
     if (connectCfg.widthField && connectCfg.defaultWidth != null) ne[connectCfg.widthField] = connectCfg.defaultWidth;
     commitEdges([...edges, ne]);
+  }
+  // Create a line/arrow edge between two endpoints, each a box id OR an `@x,y` free point
+  // (the Line tool). Unlike toggleEdge this NEVER removes an existing pair — you draw as
+  // many as you like — and returns the new edge id so the caller can select it.
+  function createLine(fromEnd: string, toEnd: string): string | null {
+    if (!connectCfg) return null;
+    const edges = getEdges();
+    const ff = connectCfg.fromField!, tf = connectCfg.toField!;
+    const id = freshEdgeId(edges);
+    const ne: Box = { id, [ff]: fromEnd, [tf]: toEnd };
+    if (connectCfg.styleField) ne[connectCfg.styleField] = connectCfg.defaultStyle;
+    if (connectCfg.arrowField) ne[connectCfg.arrowField] = connectCfg.defaultArrow;
+    if (connectCfg.dashField) ne[connectCfg.dashField] = 'solid';
+    if (connectCfg.colorField) ne[connectCfg.colorField] = connectCfg.defaultColor;
+    if (connectCfg.headField) ne[connectCfg.headField] = connectCfg.defaultHead;
+    if (connectCfg.widthField && connectCfg.defaultWidth != null) ne[connectCfg.widthField] = connectCfg.defaultWidth;
+    commitEdges([...edges, ne]);
+    return id;
   }
   const gridRound = (v: number): number => Math.round(v / gridSize) * gridSize;
 
@@ -1765,8 +1773,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let arrangeBtn: HTMLButtonElement | null = null;   // popover anchor (captured, not by index)
   /** The mode buttons, captured by buildToolbar — see syncModeUI. Absent ones stay null:
    *  pen and connect are opt-in, so not every tool has all four. */
-  const modeBtns: Record<'select' | 'create' | 'pen' | 'connect', HTMLButtonElement | null> =
-    { select: null, create: null, pen: null, connect: null };
+  const modeBtns: Record<'select' | 'create' | 'pen' | 'connect' | 'line', HTMLButtonElement | null> =
+    { select: null, create: null, pen: null, connect: null, line: null };
   let nodeToolBtn: HTMLButtonElement | null = null;   // the Node tool (opt-in, cv.pathField)
   function closePopover() { popover?.remove(); popover = null; }
   buildToolbar();   // after arrangeBtn exists (buildToolbar assigns it)
@@ -1952,6 +1960,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (connectCfg) {
       modeBtns.connect = toolBtn(t('Connect cards — click a card, then the ones it links to'), SVG.connect,
         () => { mode === 'connect' ? toPointer() : setMode('connect'); }, 'fc-btn-connect');
+      // Line tool — drag anywhere to draw a line/arrow; ends snap to a card or float free.
+      modeBtns.line = toolBtn(t('Line — drag to draw a line or arrow'), SVG.line,
+        () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line');
       toolBtn(t('Auto-arrange the connected cards'), SVG.tidy, () => autoLayout());
     }
     // One "Arrange" menu — align + distribute + stacking order + group + clip
@@ -3868,6 +3879,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const scy = num(src[cfg.yField], 0) + num(src[cfg.hField], 0) / 2;
       const made: Box[] = [];
       let failed = false;
+      // Outlining now yields one box PER GLYPH, so the letters are GROUPED to stay a word:
+      // keep the source's own group if it had one (respect existing structure), else mint a
+      // fresh shared group when there is more than one box. A lone glyph needs no group.
+      const madeGroup = cfg.groupField
+        ? (src[cfg.groupField] ? String(src[cfg.groupField]) : (groups.length > 1 ? freshGroupId(next) : ''))
+        : '';
       for (const g of groups) {
         const pb = pathToBox(g.path, src, { cfg: vectorCfg, id: freshId(next.concat(made)) });
         // Only the node ceiling gets here (finite, non-empty geometry by construction)
@@ -3896,11 +3913,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           }
         }
         for (const f of timeCarry) if (src[f] !== undefined) pb[f] = src[f];
-        // Group membership carries onto every result, so both the replace and the
-        // keep-source branches match replaceBoxes (which only fills group when unset):
-        // outlining a grouped, background-painting text box keeps its glyphs in the
-        // group instead of orphaning them when the group later moves.
-        if (cfg.groupField && src[cfg.groupField] !== undefined) pb[cfg.groupField] = src[cfg.groupField];
+        // Group membership: every glyph box of one source shares `madeGroup` (its old group
+        // if it had one, else a fresh one for the word), so the letters move together and
+        // the replace/keep-source branches match replaceBoxes (which only fills group when
+        // unset) instead of orphaning glyphs when the group later moves.
+        if (cfg.groupField && madeGroup) pb[cfg.groupField] = madeGroup;
         if (rot) {
           const cx = num(pb[cfg.xField], 0) + num(pb[cfg.wField], 0) / 2;
           const cy = num(pb[cfg.yField], 0) + num(pb[cfg.hField], 0) / 2;
@@ -4371,6 +4388,38 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** Enter node editing on a path box. Entered like `startTextEdit` — a double-click or an
    *  explicit affordance — and left just as explicitly, so ordinary selection behaviour is
    *  never silently different. */
+  // ── Multi-contour node editing: combined flat view ↔ per-contour split ─────────
+  // Join per-contour paths into ONE combined path (nodes concatenated) + the parts
+  // descriptor that splits it back. The combined kind is the first part's — see the
+  // penEdit declaration for why that is correct for every producer here.
+  function penJoin(paths: AuthoredPath[]): { path: AuthoredPath; parts: PenPart[] } {
+    const parts: PenPart[] = paths.map((p) => ({ count: p.nodes.length, kind: p.kind, closed: p.closed }));
+    const first = paths[0]!;
+    return { path: { kind: first.kind, closed: first.closed, nodes: paths.flatMap((p) => [...p.nodes]) }, parts };
+  }
+  // Split a flat run of nodes back into per-contour paths by the given parts. Used to turn a
+  // position-op result (same node count, same parts) back into real contours for the write.
+  function penSplitWith(flat: AuthoredPath, parts: PenPart[]): AuthoredPath[] {
+    const out: AuthoredPath[] = [];
+    let i = 0;
+    for (const part of parts) {
+      out.push({ kind: part.kind, closed: part.closed, nodes: flat.nodes.slice(i, i + part.count) });
+      i += part.count;
+    }
+    return out;
+  }
+  // The current edit's contours as real per-contour paths (render / insert / delete read this).
+  function penContours(): AuthoredPath[] {
+    return penEdit ? penSplitWith(penEdit.path, penEdit.parts) : [];
+  }
+  // Cumulative flat start index of each part, and the part a flat node index falls in.
+  function penPartStarts(parts: PenPart[]): number[] {
+    const starts: number[] = [];
+    let acc = 0;
+    for (const p of parts) { starts.push(acc); acc += p.count; }
+    return starts;
+  }
+
   function startPenEdit(id: string): void {
     if (!cfg.pathField) return;
     if (editing) commitTextEdit();
@@ -4382,7 +4431,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!decoded.length) { flash(t('That shape has no editable path.')); return; }
     const frame = penFrame(boxes[i], cfg);
     const local = decoded.map((p) => denormNodes(p, frame.w, frame.h));
-    penEdit = { id, frame, path: local[0]!, rest: local.slice(1) };
+    const joined = penJoin(local);
+    penEdit = { id, frame, path: joined.path, parts: joined.parts };
     penSel = new Set<number>();
     penHandleSel = new Set<string>();
     penWarm = null;
@@ -4418,7 +4468,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!decoded.length) { endPenEdit(); return; }
     const frame = penFrame(boxes[i], cfg);
     const local = decoded.map((p) => denormNodes(p, frame.w, frame.h));
-    penEdit = { id: penEdit.id, frame, path: local[0]!, rest: local.slice(1) };
+    const joined = penJoin(local);
+    penEdit = { id: penEdit.id, frame, path: joined.path, parts: joined.parts };
     const n = penEdit.path.nodes.length;
     if ([...penSel].some((k) => k >= n)) penSel = new Set([...penSel].filter((k) => k < n));
     // Handle-selection keys reference node indices; a structural change (insert/delete)
@@ -4444,10 +4495,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * hidden, so nothing clips in between.
    *
    * Every contour is re-encoded, not just the edited one — see `penEdit`.
+   *
+   * `next` is the COMBINED path (all contours' nodes flat) that a position op returned — same
+   * node count and same parts as `penEdit.path`, so it splits cleanly by the current parts.
+   * A STRUCTURAL op (insert/delete/close/convert) that changes the parts calls
+   * `penEditWritePaths` directly with the new per-contour array instead.
    */
   function penEditWrite(next: AuthoredPath): void {
-    if (!penEdit || !cfg.pathField) return;
-    const all = [next, ...penEdit.rest];
+    if (!penEdit) return;
+    penEditWritePaths(penSplitWith(next, penEdit.parts));
+  }
+  function penEditWritePaths(all: AuthoredPath[]): void {
+    if (!penEdit || !cfg.pathField || !all.length) return;
     // No refit when there is no curve to fit (an unlowerable kind): the old frame is then
     // the only frame there is, and it is better than a frame invented from nothing.
     const fit = refitFrame(all, penEdit.frame, penWarm);
@@ -4455,7 +4514,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const paths = fit ? fit.paths : all;
     const value = encodePathFields(paths.map((p) => normNodes(p, frame.w, frame.h)));
     if (!value) { flash(t('That edit could not be saved, so nothing was changed.')); return; }
-    penEdit = { ...penEdit, frame, path: paths[0]!, rest: paths.slice(1) };
+    const joined = penJoin(paths);
+    penEdit = { ...penEdit, frame, path: joined.path, parts: joined.parts };
     const boxes = getBoxes();
     const i = indexOfId(boxes, penEdit.id);
     if (i < 0) { endPenEdit(); return; }
@@ -4486,25 +4546,58 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /** Insert a node where the pointer met the curve. Exact for `cubic` (a de Casteljau
-   *  split), on-curve-but-reshaping for the derived kinds — see `insertNodeOnCurve`. */
+   *  split), on-curve-but-reshaping for the derived kinds — see `insertNodeOnCurve`.
+   *  Part-aware: the click may land on any contour, so each is tried and the nearest wins;
+   *  the insert reshapes only THAT contour, and the new node's flat index is offset by the
+   *  contour's start so the selection lands on it. */
   function penInsertAt(x: number, y: number): void {
     if (!penEdit) return;
-    const res = insertNodeOnCurve(penEdit.path, x, y, penWarm);
-    if (!res) return;
+    const contours = penContours();
+    const starts = penPartStarts(penEdit.parts);
+    let best: InsertResult | null = null;
+    let bestPart = -1;
+    for (let pi = 0; pi < contours.length; pi++) {
+      // The warm hyperbezier start belongs to a single active contour; it is only valid
+      // when there IS one contour. Multi-contour boxes are cubic, which needs no warm start.
+      const res = insertNodeOnCurve(contours[pi]!, x, y, contours.length === 1 ? penWarm : null);
+      if (res && (!best || res.distance < best.distance)) { best = res; bestPart = pi; }
+    }
+    if (!best || bestPart < 0) return;
     penWarm = null;                             // one more node → the warm start is stale
-    penSel = new Set([res.index]);
+    penSel = new Set([starts[bestPart]! + best.index]);
     penHandleSel = new Set<string>();           // indices shifted; drop stale handle picks
-    penEditWrite(res.path);
+    penEditWritePaths(contours.map((c, pi) => (pi === bestPart ? best!.path : c)));
   }
 
   function penDeleteSelected(): void {
     if (!penEdit || !penSel.size) return;
-    const next = deleteNodes(penEdit.path, penSel);
-    if (!next) { flash(t('A path needs at least two points, so those were kept.')); return; }
+    const contours = penContours();
+    const starts = penPartStarts(penEdit.parts);
+    // Bucket the flat selection into each contour's own local index set.
+    const perPart: Array<Set<number>> = contours.map(() => new Set<number>());
+    for (const g of penSel) {
+      for (let pi = contours.length - 1; pi >= 0; pi--) {
+        if (g >= starts[pi]!) { perPart[pi]!.add(g - starts[pi]!); break; }
+      }
+    }
+    const out: AuthoredPath[] = [];
+    let anyDeleted = false;
+    for (let pi = 0; pi < contours.length; pi++) {
+      const sel = perPart[pi]!;
+      const c = contours[pi]!;
+      if (!sel.size) { out.push(c); continue; }
+      // A wholly-selected contour is dropped outright (an intentional per-glyph erase), as
+      // long as another survives (`out.length` guard below). A PARTIAL selection that would
+      // orphan a contour under two points keeps it whole instead — the same floor as before.
+      if (sel.size >= c.nodes.length) { anyDeleted = true; continue; }
+      const nd = deleteNodes(c, sel);
+      if (nd) { out.push(nd); anyDeleted = true; } else out.push(c);
+    }
+    if (!out.length || !anyDeleted) { flash(t('A path needs at least two points, so those were kept.')); return; }
     penWarm = null;
     penSel = new Set<number>();
     penHandleSel = new Set<string>();
-    penEditWrite(next);
+    penEditWritePaths(out);
   }
 
   /**
@@ -4613,7 +4706,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function penToggleClosed(): void {
     if (!penEdit) return;
     penWarm = null;                             // open↔closed changes the segment count
-    penEditWrite({ ...penEdit.path, closed: !penEdit.path.closed });
+    // Flip every contour to the SAME new state (based on the first), so a multi-contour box
+    // toggles deterministically rather than leaving a mix. Single-contour is the old behaviour.
+    const contours = penContours();
+    const closed = !contours[0]!.closed;
+    penEditWritePaths(contours.map((p) => ({ ...p, closed })));
   }
 
   /**
@@ -4627,11 +4724,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function penSetKind(to: SplineKind): void {
     if (!penEdit) return;
     const apply = (): void => {
-      const res = convertKind(penEdit!.path, to, penWarm);
+      const warm = penWarm;
       penWarm = null;
-      penEditWrite(res.path);
+      // Convert every contour. The warm start belongs to a single active contour, so it is
+      // only passed when there is exactly one; multi-contour boxes are cubic and need none.
+      const contours = penContours();
+      penEditWritePaths(contours.map((p, pi) => convertKind(p, to, (pi === 0 && contours.length === 1) ? warm : null).path));
     };
-    if (!convertKind(penEdit.path, to).lossy) { apply(); return; }
+    if (!penContours().some((p) => convertKind(p, to).lossy)) { apply(); return; }
     askConfirm({
       at: penCtxAnchorPoint(),
       title: t('Discard the handles?'),
@@ -4698,13 +4798,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const d = penPathD(preview);
       if (d) body += `<path d="${escape(d)}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
     } else if (penEdit) {
-      // The edited contour keeps the warm start; the others are lowered cold, because a
-      // solution belongs to the run it was solved for. All of them are drawn: the box's own
-      // `<svg>` is hidden for the gesture, so a contour left out here would just vanish.
-      const ds = [penPathD(penEdit.path), ...penEdit.rest.map((p) => {
+      // Every contour is lowered and drawn (the box's own `<svg>` is hidden for the gesture,
+      // so any contour left out would just vanish). A LONE contour keeps the warm hyperbezier
+      // start for a smooth live drag; with several they are cubic and lower cold, and a warm
+      // solution belongs to a single run anyway. Each keeps its OWN kind + closed via penPathD/
+      // the cold lower, so a curve is never drawn ACROSS a contour boundary.
+      const contours = penContours();
+      const ds = contours.map((p) => {
+        if (contours.length === 1) return penPathD(p);
         const low = lowerAuthored(p);
         return low.cubics.length ? cubicsToD(low.cubics, p.closed) : '';
-      })].filter(Boolean);
+      }).filter(Boolean);
       const fr = penEdit.frame;
       if (ds.length) {
         const tf = `translate(${cf2(fr.x)} ${cf2(fr.y)})` + (fr.rot ? ` rotate(${cf2(fr.rot)} ${cf2(fr.w / 2)} ${cf2(fr.h / 2)})` : '');
@@ -4940,36 +5044,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }));
   }
 
-  /** Above the edited box, or above the draft's own extent — the same perch the object bar
-   *  takes, so the bar does not jump when a draw becomes a selection. */
+  /** Pinned to the top chrome row, centred between the back pill and zoom HUD — the same
+   *  perch the object bar takes, so the bar does not jump when a draw becomes a selection
+   *  and never sits over the path the user is shaping. */
   function positionPenCtxBar(): void {
     const m = metrics();
-    let minX = 0, minY = 0, maxX = 0, maxY = 0;
-    if (penEdit) {
-      const fr = penEdit.frame;
-      minX = fr.x; minY = fr.y; maxX = fr.x + fr.w; maxY = fr.y + fr.h;
-    } else if (penDraft && penDraft.nodes.length) {
-      minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
-      for (const n of penDraft.nodes) {
-        minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
-        minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
-      }
-    } else {
-      const wh = canvasWH();
-      minX = 0; minY = 0; maxX = wh.w; maxY = wh.h;
-    }
-    const tl = nativeToStage(minX, minY, m);
-    const br = nativeToStage(maxX, maxY, m);
+    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr));
+    ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
     const bw = ctxbar.offsetWidth || 0;
     if (bw <= 0) return;   // not laid out yet — next frame, rather than a half-width-off jump
-    // Same placement rule (and the same "never under the zoom HUD or the back pill")
-    // as the object bar: the pen bar takes the object bar's perch by design.
-    const pos = placeCtxBar(
-      { left: tl.x, top: tl.y, right: br.x, bottom: br.y },
-      { w: bw, h: ctxbar.offsetHeight || 40 },
-      { w: m.sr.width, h: m.sr.height },
-      ctxBarBlockers(m.sr),
-    );
+    const pos = centreCtxBar(bw, band);
     ctxbar.style.left = pos.left + 'px';
     ctxbar.style.top = pos.top + 'px';
   }
@@ -4996,6 +5080,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function setMode(next: EditorMode, o: { kind?: AddKind; draft?: 'commit' | 'discard' } = {}): void {
     if (next === 'connect' && !connectCfg) return;
+    if (next === 'line' && !connectCfg) return;   // the line tool writes to the connectors input
     if (next === 'pen' && !cfg.pathField) return;
     if (next === 'create' && !o.kind && !armedKind) return;
     if (next !== 'select') nodeToolActive = false;   // any other tool exits the Node tool
@@ -5004,11 +5089,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (from === 'pen' && penDraft) { if (o.draft === 'discard') penCancelDraw(); else penFinishDraw(); }
     mode = next;
     if (from !== next) {
+      // A mode switch while a create/line DRAG is still in flight (Escape's discard rung, or
+      // a V/P/N tool shortcut pressed mid-draw) ABORTS that gesture, so its eventual
+      // pointerup can't commit a box/line against the discard — both tools committed on
+      // release and neither ended the gesture here (plan 90 verify LENS 3). endGesture()
+      // nulls `gesture`, so onGestureEnd early-returns on release; the browser auto-releases
+      // the pointer capture. Scoped to these two so select-mode move/resize/rotate is
+      // untouched (those never coexist with a tool switch), as is pen's own draft handling.
+      if (gesture && (gesture.type === 'create' || gesture.type === 'line')) endGesture();
       if (from === 'create') exitCreate();
       else if (from === 'pen') exitPen();
       else if (from === 'connect') exitConnect();
+      else if (from === 'line') exitLine();
       if (next === 'pen') enterPen();
       else if (next === 'connect') enterConnect();
+      else if (next === 'line') enterLine();
     }
     if (next === 'create') enterCreate(o.kind);
     syncModeUI();
@@ -5076,6 +5171,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     stageEl.classList.remove('fc-connecting');
     hideConnectLayer();
   }
+  // The Line tool (plan 90) — like Connect, but a drag draws ONE line whose ends snap to a
+  // card or float as a free point. No pending source: the gesture carries both ends.
+  function enterLine(): void {
+    deselectEdge();
+    hideConnectLayer();
+    selection = new Set<string>();
+    stageEl.classList.add('fc-lining');
+    setHoverEdge(null);
+    announce(t('Line tool — drag on the canvas to draw a line or arrow. Release on a card to attach it. Esc to finish.'));
+    renderChrome();
+  }
+  function exitLine(): void {
+    stageEl.classList.remove('fc-lining');
+    hideConnectLayer();
+  }
 
   /**
    * The rail's one job: say which tool is live. Attributes only, on buttons captured at
@@ -5092,6 +5202,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     flag(modeBtns.create, mode === 'create');
     flag(modeBtns.pen, mode === 'pen');
     flag(modeBtns.connect, mode === 'connect');
+    flag(modeBtns.line, mode === 'line');
     flag(nodeToolBtn, nodeToolActive);
   }
 
@@ -6039,6 +6150,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     rubber.hidden = false;
     return true;
   }
+  // Line tool press: start a line from the pressed point — a card under it (attach) or a
+  // free `@x,y` point. The drag previews the rubber; release commits (see onGestureEnd).
+  function tryLineDrawAt(e: PointerEvent, nat: Point): boolean {
+    if (mode !== 'line' || !connectCfg) return false;
+    const boxes = getBoxes();
+    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+    const fromEnd = hit >= 0 ? idOf(boxes[hit], hit) : formatEdgePoint(nat.x, nat.y);
+    beginGesture(e, { type: 'line', origin: nat, fromEnd });
+    drawLineRubber(fromEnd, nat);
+    return true;
+  }
 
   function onCanvasPointerDown(e: PointerEvent): void {
     if (e.button > 0) return;                 // primary button / touch only
@@ -6074,6 +6196,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       e.stopPropagation(); e.preventDefault();
       return;
     }
+
+    // Line tool: press starts a line (drag → release attaches to a card or floats free).
+    if (tryLineDrawAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
 
     // Pen — DRAWING. Click places a node; the drag that follows pulls its handles out
     // symmetrically; a click on the first node closes the path. Nothing about the box
@@ -6121,9 +6246,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         e.stopPropagation(); e.preventDefault();
         return;
       }
-      const { cubics } = lowerAuthored(penEdit.path, penWarm);
-      const hit = nearestOnPath(cubics, loc.x, loc.y);
-      if (hit && hit.distance <= PEN_CURVE_PX / penScale()) {
+      // Is the click on ANY contour's curve? Lower each on its own (lowering the combined run
+      // as one path would draw — and hit — a phantom segment joining one glyph to the next),
+      // and take the nearest across all. penInsertAt then reshapes whichever contour that was.
+      const contours = penContours();
+      let hitD = Infinity;
+      for (const p of contours) {
+        const low = lowerAuthored(p, contours.length === 1 ? penWarm : null);
+        const h = low.cubics.length ? nearestOnPath(low.cubics, loc.x, loc.y) : null;
+        if (h && h.distance < hitD) hitD = h.distance;
+      }
+      if (hitD <= PEN_CURVE_PX / penScale()) {
         penInsertAt(loc.x, loc.y);
         e.stopPropagation(); e.preventDefault();
         return;
@@ -6208,6 +6341,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const natBd = clientToNative(e.clientX, e.clientY);
     if (tryPenDrawAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
     if (tryArmedCreateAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
+    if (tryLineDrawAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
     // Clicking right off the artboard is the natural "I'm done" for a node-edit session,
     // and it matches what the same click already does to a selection. (A pen DRAFT is no
     // longer finished here — an off-frame click extends it, handled above.)
@@ -6360,6 +6494,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       drawRubber(gesture.origin, corner);
       return;
     }
+    if (gesture.type === 'line') {
+      const boxes = getBoxes();
+      const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+      const hoverId = hit >= 0 ? idOf(boxes[hit], hit) : null;
+      gesture.toEnd = hoverId != null ? hoverId : formatEdgePoint(nat.x, nat.y);
+      drawLineRubber(gesture.fromEnd, nat, hoverId);
+      return;
+    }
     if (gesture.type === 'move') {
       let mdx = dxN, mdy = dyN;
       if (gesture.selAABB && !e.altKey) {
@@ -6458,6 +6600,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
 
     const nat = clientToNative(e.clientX, e.clientY);
+    if (g.type === 'line') {
+      const boxes = getBoxes();
+      const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
+      const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+      const toEnd = hit >= 0 ? idOf(boxes[hit], hit) : formatEdgePoint(nat.x, nat.y);
+      endGesture();
+      hideConnectLayer();   // BEFORE selectEdge, which draws its own highlight into the layer
+      // A tap (no drag) or a self-loop back onto the same card draws nothing.
+      if (moved < 6 || (!isEdgePoint(g.fromEnd) && g.fromEnd === toEnd)) return;
+      const newId = createLine(g.fromEnd, toEnd);
+      toPointer();
+      if (newId) selectEdge(newId);   // exits line mode + opens the connector inspector
+      return;
+    }
     const boxes = getBoxes();
 
     // Pen: placing a node commits NOTHING — the draft is a draft until the path ends, which
@@ -6700,8 +6856,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── connector preview layer ───────────────────────────────────────────────────
   // The routing math (edgeWaypoints / roundedEdgePath / smoothEdgePath / edgeBorderPt /
   // edgeNested) lives in free-canvas-math.ts so it is unit-tested (tests/connector-
-  // geometry.test.ts) and stays in sync with tools/org-chart/hooks.js. Preview lines
-  // omit the arrowheads/dashes (the real hook adds those on commit).
+  // geometry.test.ts) and stays in sync with tools/org-chart/hooks.js. Arrowheads render
+  // live too (edgeArrowHead, plan 90 thread B) with the same gap + inset pullback as the
+  // committed render, so nothing jumps on commit; dashes stay preview-only (throwaway
+  // stroke-dasharray) since the committed layer draws real <line> segments.
   const cf2 = (v: number): number => Math.round(v * 100) / 100;
   const cAttr = (s: string): string => String(s == null ? '' : s).replace(/[<>"]/g, '');
   // Size + place a preview <svg> to cover the artboard in stage px (native viewBox), so
@@ -6738,6 +6896,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const r = boxRect(boxes[i], cfg);
     return { x: r.x, y: r.y, w: r.w, h: r.h };
   }
+  // Pull the shaft back off an arrow end and build the head fragment(s) for the preview —
+  // mirrors the gap + headInset logic in drawConnector() (org-chart/hooks.js) so the live
+  // line matches the committed render and nothing jumps on release. Returns the (copied)
+  // shaft points to draw through, plus the heads SVG to append. End direction is the last
+  // shaft segment (exact for straight/elbow, a close sample for arc/curved).
+  function previewHeads(src: Point[], arrow: string, head: string, headSize: number, col: string): { pts: Point[]; heads: string } {
+    const pts = src.map((p) => ({ x: p.x, y: p.y }));
+    const n = pts.length;
+    if (n < 2 || arrow === 'none' || head === 'none') return { pts, heads: '' };
+    const d2 = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y);
+    const along = (from: Point, toward: Point, d: number): Point => {
+      const L = d2(from, toward); if (L < 1e-4) return { x: from.x, y: from.y };
+      const t = Math.min(d, L) / L; return { x: from.x + (toward.x - from.x) * t, y: from.y + (toward.y - from.y) * t };
+    };
+    const gap = Math.max(8, headSize * 0.8);
+    const inset = edgeHeadInset(head, headSize);
+    const last = { x: pts[n - 1]!.x, y: pts[n - 1]!.y }, first = { x: pts[0]!.x, y: pts[0]!.y };
+    const lastNbr = pts[n - 2]!, firstNbr = pts[1]!;
+    let heads = '';
+    if (arrow === 'end' || arrow === 'both') {
+      const ge = Math.min(gap, d2(last, lastNbr) * 0.55);
+      const endTip = along(last, lastNbr, ge);
+      pts[n - 1] = along(last, lastNbr, Math.min(ge + inset, d2(last, lastNbr) * 0.9));
+      const L = d2(last, lastNbr) || 1;
+      heads += edgeArrowHead(endTip, (last.x - lastNbr.x) / L, (last.y - lastNbr.y) / L, headSize, col, head);
+    }
+    if (arrow === 'both') {
+      const gs = Math.min(gap, d2(first, firstNbr) * 0.55);
+      const startTip = along(first, firstNbr, gs);
+      pts[0] = along(first, firstNbr, Math.min(gs + inset, d2(first, firstNbr) * 0.9));
+      const seg = pts[1]!;   // reversed first drawn segment = direction OUT of the source
+      const L = d2(startTip, seg) || 1;
+      heads += edgeArrowHead(startTip, (startTip.x - seg.x) / L, (startTip.y - seg.y) / L, headSize, col, head);
+    }
+    return { pts, heads };
+  }
   // Redraw every edge from the current (possibly live) box rects. Called each frame of a
   // drag involving connected cards, so the lines track the boxes in real time.
   function drawLiveConnectors(): void {
@@ -6768,16 +6962,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     let body = '';
     for (const e of edges) {
       if (!e) continue;
-      const a = rectById.get(String(e[connectCfg.fromField!]));
-      const b = rectById.get(String(e[connectCfg.toField!]));
-      if (!a || !b || edgeNested(a, b)) continue;   // nested pair draws no line (mirrors hooks.js)
+      // An endpoint is a box id OR a free point (`@x,y`); edgeEndRect resolves either (a
+      // point → a 0×0 rect the routing already handles). A dangling id → null → no line.
+      const fromV = String(e[connectCfg.fromField!]);
+      const toV = String(e[connectCfg.toField!]);
+      const a = edgeEndRect(fromV, rectById);
+      const b = edgeEndRect(toV, rectById);
+      if (!a || !b) continue;
+      // Nested pair draws no line (mirrors hooks.js) — but ONLY when both ends are nodes;
+      // a free point inside a box is a deliberate endpoint, not an overlap to suppress.
+      if (!isEdgePoint(fromV) && !isEdgePoint(toV) && edgeNested(a, b)) continue;
       const style = String((connectCfg.styleField && e[connectCfg.styleField]) || connectCfg.defaultStyle);
       const col = cAttr(String((connectCfg.colorField && e[connectCfg.colorField]) || connectCfg.defaultColor));
       const w = Math.min(20, Math.max(0.5, Number((connectCfg.widthField && e[connectCfg.widthField]) ?? connectCfg.defaultWidth) || 2.5));
-      const pts = edgeWaypoints(a, b, style);
-      if (pts.length < 2) continue;
+      const arrow = String((connectCfg.arrowField && e[connectCfg.arrowField]) || connectCfg.defaultArrow || 'none');
+      const head = String((connectCfg.headField && e[connectCfg.headField]) || connectCfg.defaultHead || 'triangle');
+      const raw = edgeWaypoints(a, b, style);
+      if (raw.length < 2) continue;
+      const { pts, heads } = previewHeads(raw, arrow, head, Math.max(9, w * 4), col);
       const d = style === 'curved' ? smoothEdgePath(pts) : roundedEdgePath(pts, Math.min(16, w * 4 + 6));
-      body += `<path d="${d}" fill="none" stroke="${col}" stroke-width="${cf2(w)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+      body += `<path d="${d}" fill="none" stroke="${col}" stroke-width="${cf2(w)}" stroke-linejoin="round" stroke-linecap="round"/>` + heads;
     }
     connectLayer.innerHTML = body;
     connectLayer.style.display = '';
@@ -6792,11 +6996,62 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const a = { cx: r.x + r.w / 2, cy: r.y + r.h / 2, hw: r.w / 2, hh: r.h / 2 };
     const p = edgeBorderPt(a, cursorNative.x, cursorNative.y);
     const col = cAttr(connectCfg.defaultColor || '#94a3b8');
+    // Preview the default arrowhead at the cursor so the pending link shows what it becomes;
+    // the dashed shaft stops an inset short so a filled head isn't pierced.
+    const arrow = String(connectCfg.defaultArrow || 'end');
+    const head = String(connectCfg.defaultHead || 'triangle');
+    const w = Math.min(20, Math.max(0.5, Number(connectCfg.defaultWidth) || 2.5));
+    const headSize = Math.max(9, w * 4);
+    const dirL = Math.hypot(cursorNative.x - p.x, cursorNative.y - p.y) || 1;
+    const ux = (cursorNative.x - p.x) / dirL, uy = (cursorNative.y - p.y) / dirL;
+    const showHead = arrow !== 'none' && head !== 'none';
+    const inset = showHead ? edgeHeadInset(head, headSize) : 0;
+    const tipMark = showHead
+      ? edgeArrowHead(cursorNative, ux, uy, headSize, col, head)
+      : `<circle cx="${cf2(cursorNative.x)}" cy="${cf2(cursorNative.y)}" r="5" fill="${col}"/>`;
     placeConnectLayer(metrics());
     connectLayer.innerHTML =
       `<rect x="${cf2(r.x - 3)}" y="${cf2(r.y - 3)}" width="${cf2(r.w + 6)}" height="${cf2(r.h + 6)}" rx="10" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="6 5"/>` +
-      `<path d="M${cf2(p.x)} ${cf2(p.y)}L${cf2(cursorNative.x)} ${cf2(cursorNative.y)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="8 6" stroke-linecap="round"/>` +
-      `<circle cx="${cf2(cursorNative.x)}" cy="${cf2(cursorNative.y)}" r="5" fill="${col}"/>`;
+      `<path d="M${cf2(p.x)} ${cf2(p.y)}L${cf2(cursorNative.x - ux * inset)} ${cf2(cursorNative.y - uy * inset)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="8 6" stroke-linecap="round"/>` +
+      tipMark;
+    connectLayer.style.display = '';
+  }
+  // The Line tool's rubber (plan 90): a dashed shaft from the start endpoint (a card border
+  // OR a free point) to the cursor, with the default arrowhead previewed at the cursor.
+  // Modeled on drawConnectRubber but the START resolves via edgeEndRect (id | @x,y), not a
+  // pending connectSource; `hoverId` outlines the card a release would attach to.
+  function drawLineRubber(fromEnd: string, cursorNative: Point, hoverId?: string | null): void {
+    if (!connectCfg) return;
+    const boxes = getBoxes();
+    const rectById = new Map<string, EdgeRect>();
+    for (let i = 0; i < boxes.length; i++) {
+      const r = boxRect(boxes[i], cfg);
+      rectById.set(idOf(boxes[i], i), { x: r.x, y: r.y, w: r.w, h: r.h });
+    }
+    const fromRect = edgeEndRect(fromEnd, rectById);
+    if (!fromRect) { hideConnectLayer(); return; }
+    const fa = { cx: fromRect.x + fromRect.w / 2, cy: fromRect.y + fromRect.h / 2, hw: fromRect.w / 2, hh: fromRect.h / 2 };
+    const p = edgeBorderPt(fa, cursorNative.x, cursorNative.y);
+    const col = cAttr(connectCfg.defaultColor || '#94a3b8');
+    const head = String(connectCfg.defaultHead || 'triangle');
+    const arrow = String(connectCfg.defaultArrow || 'end');
+    const w = Math.min(20, Math.max(0.5, Number(connectCfg.defaultWidth) || 2.5));
+    const headSize = Math.max(9, w * 4);
+    const dirL = Math.hypot(cursorNative.x - p.x, cursorNative.y - p.y) || 1;
+    const ux = (cursorNative.x - p.x) / dirL, uy = (cursorNative.y - p.y) / dirL;
+    const showHead = arrow !== 'none' && head !== 'none';
+    const inset = showHead ? edgeHeadInset(head, headSize) : 0;
+    const tip = showHead
+      ? edgeArrowHead(cursorNative, ux, uy, headSize, col, head)
+      : `<circle cx="${cf2(cursorNative.x)}" cy="${cf2(cursorNative.y)}" r="5" fill="${col}"/>`;
+    const hoverRect = hoverId != null ? rectById.get(hoverId) : null;
+    const hoverOutline = hoverRect
+      ? `<rect x="${cf2(hoverRect.x - 3)}" y="${cf2(hoverRect.y - 3)}" width="${cf2(hoverRect.w + 6)}" height="${cf2(hoverRect.h + 6)}" rx="10" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="6 5"/>`
+      : '';
+    placeConnectLayer(metrics());
+    connectLayer.innerHTML = hoverOutline +
+      `<path d="M${cf2(p.x)} ${cf2(p.y)}L${cf2(cursorNative.x - ux * inset)} ${cf2(cursorNative.y - uy * inset)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="8 6" stroke-linecap="round"/>` +
+      tip;
     connectLayer.style.display = '';
   }
   function hideConnectLayer(): void {
@@ -7444,34 +7699,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function positionCtxBar(boxes: Box[], idx: number[], liveRects: Map<number, Rect> | null, m: Metrics): void {
     if (editing) { hideCtxBar(); return; }   // hidden while typing in a box
     showCtxBar();
-    // The selection's union AABB. groupAABBNative computes the same rotation-aware
-    // corner union over `idx` (preferring liveRects) WITHOUT the per-frame whole-canvas
-    // `boxes.map(...)` allocation — and reuses the exact math used for the group handles
-    // above, so the two can't drift.
-    const aabb = groupAABBNative(idx, boxes, liveRects);
-    const tl = nativeToStage(aabb.minX, aabb.minY, m);
-    const br = nativeToStage(aabb.maxX, aabb.maxY, m);
-    // Measured AFTER the bar is shown, so `offsetWidth` reflects a laid-out bar rather
-    // than the zero a `hidden` element reports — a zero here paints the first frame off
-    // by half the bar's width and then snaps, which reads as the bar jumping into place.
-    // If it still measures zero (nothing laid out yet) leave the last position alone and
-    // come back next frame rather than commit to a position built from a zero.
+    // Pinned to the top chrome row (never over the selection, whose artwork the user is
+    // looking at), centred in the band between the back pill and the zoom HUD and capped
+    // to it — a bar too wide for a narrow phone row scrolls inside that width (see the
+    // `.fc-ctxbar` overflow) instead of dropping down over the canvas.
+    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr));
+    ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
+    // Measured AFTER the bar is shown and its max-width is set, so `offsetWidth` reflects
+    // a laid-out, capped bar rather than the zero a `hidden` element reports. A zero here
+    // would paint the first frame off-centre and then snap; leave the last position alone
+    // and come back next frame instead.
     const bw = ctxbar.offsetWidth || 0;
-    const bh = ctxbar.offsetHeight || 0;
     if (bw > 0) {
-      // Frozen for the duration of a box gesture. The bar is a dozen buttons sitting
-      // right under the cursor, and re-centring it on a moving selection slides every
-      // one of them out from under the pointer — the readout alone widening from
-      // "241, -235" to "113, -92 · 1920×1080" walked the fill swatch ~275px across the
-      // stage mid-drag. It re-places on release, when nothing is being aimed at.
-      const pos = liveRects && ctxFrozen
-        ? ctxFrozen
-        : placeCtxBar(
-            { left: tl.x, top: tl.y, right: br.x, bottom: br.y },
-            { w: bw, h: bh || 40 },
-            { w: m.sr.width, h: m.sr.height },
-            ctxBarBlockers(m.sr),
-          );
+      // Frozen for the life of a box gesture: the transform readout grows mid-drag
+      // ("241, -235" → "113, -92 · 1920×1080"), which would re-centre the bar and walk
+      // its controls sideways. It re-places on release; the readout itself keeps updating.
+      const pos = liveRects && ctxFrozen ? ctxFrozen : centreCtxBar(bw, band);
       ctxFrozen = liveRects ? pos : null;
       ctxbar.style.left = pos.left + 'px';
       ctxbar.style.top = pos.top + 'px';
