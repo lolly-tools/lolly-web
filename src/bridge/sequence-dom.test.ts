@@ -355,3 +355,57 @@ test('the ease reaches the driver too — a live take is eased like the preview'
   assert.equal(runAt(null), riseTransform(null));
   assert.equal(runAt('linear'), riseTransform('linear'));
 });
+
+// ── frames AS scenes: the applier gates [data-pdf-page] frame pages too (plan 92) ──────
+// A sequenced Layout Studio frame doc has NO `.lolly-box` on the seq lane — its scenes are
+// [data-pdf-page] frame pages carrying data-t-start/data-t-dur. The SAME generic
+// [data-t-start] applier gates them: the page whose [start,start+dur) holds t stays
+// visible, the others get `.seq-off` — a slide at a time. There is no [data-sequence]
+// stage in a frames doc, so this also exercises the sequenceStageOf → root fallback.
+
+function framesStage(): HTMLElement {
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="lolly-frames">
+      <div class="lolly-frame-page" data-pdf-page data-t-start="0" data-t-dur="3000" data-t-lane="seq"
+           style="position:absolute;left:0px;top:0px;width:800px;height:600px"></div>
+      <div class="lolly-frame-page" data-pdf-page data-t-start="3000" data-t-dur="3000" data-t-lane="seq"
+           style="position:absolute;left:1000px;top:0px;width:800px;height:600px"></div>
+    </div>`;
+  return root;
+}
+const pageAt = (root: HTMLElement, i: number): HTMLElement =>
+  [...root.querySelectorAll<HTMLElement>('[data-pdf-page]')][i]!;
+
+test('applySequenceTime gates frame pages: the inactive page gets seq-off, the active one does not', () => {
+  const root = framesStage();
+  const a = pageAt(root, 0), b = pageAt(root, 1);
+
+  applySequenceTime(root, 1500);   // inside frame A [0,3000)
+  assert.equal(off(a), false, 'frame A is active at t=1.5s');
+  assert.equal(off(b), true, 'frame B is hidden (its window starts at 3s)');
+
+  applySequenceTime(root, 4500);   // inside frame B [3000,6000)
+  assert.equal(off(a), true, 'frame A is now hidden');
+  assert.equal(off(b), false, 'frame B is active at t=4.5s');
+
+  // Half-open boundary: at exactly 3000 the cut belongs to B, not A.
+  applySequenceTime(root, 3000);
+  assert.equal(off(a), true, 'A ends at its half-open boundary');
+  assert.equal(off(b), false, 'B owns the frame at exactly its start');
+
+  restoreSequenceTime(root);
+  assert.equal(off(a), false, 'restore lifts seq-off from every page');
+  assert.equal(off(b), false);
+});
+
+test('an untimed (spatial) frame page is never gated', () => {
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="lolly-frames">
+      <div class="lolly-frame-page" data-pdf-page style="position:absolute;left:0px;top:0px;width:800px;height:600px"></div>
+    </div>`;
+  applySequenceTime(root, 5000);
+  assert.equal(off(pageAt(root, 0)), false, 'a page with no data-t-start is never selected or hidden');
+  restoreSequenceTime(root);
+});

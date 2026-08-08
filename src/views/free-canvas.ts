@@ -55,7 +55,8 @@ import {
   snapMove, snapPoint, scaleGroup, rotateGroup, num,
   edgeBorderPt, edgeWaypoints, edgeNested, roundedEdgePath, smoothEdgePath,
   edgeArrowHead, edgeHeadInset, isEdgePoint, edgeEndRect, formatEdgePoint,
-  gradientLine, gradientPosAt, gradientAngleAt,
+  gradientLine, gradientPosAt, gradientAngleAt, resolveFrame, renumberFrameOrder,
+  sequenceFramesInOrder, framesAreSequenced,
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
 import {
@@ -289,6 +290,14 @@ interface InitFreeCanvasOpts {
    *  control on the rail. Values name the number-input ids the geometry is read
    *  from / written to via runtime. Absent for single-page editors (Layout Studio). */
   pages?: PagesCfg;
+  /** Frame-primitive mode (plan 93 F1b). When present, the box array may include
+   *  `kind === frameKind` boxes that render as free-placed `[data-pdf-page]` pages
+   *  (the tool's hook emits them at authored x/y). The overlay then (a) drives live
+   *  gestures in frame-local space via each frame's DOM offset — the same math the
+   *  carousel uses, and (b) re-buckets a moved/created/resized box into the frame its
+   *  centre lands in, on drop. Absent for tools whose canvas declares no `frameField`,
+   *  so every frame-aware path below is dead for them (no-frames byte-identity). */
+  frame?: FrameCfg;
 }
 
 interface PagesCfg {
@@ -297,6 +306,17 @@ interface PagesCfg {
   heightField: string;  // input id: page height (px)
   min: number;
   max: number;
+}
+
+/** `canvas.frameField`/… — the frame-primitive field names (plan 93). `frameKind`
+ *  is the `kind` value that marks a box as a page container; `frameField` is where a
+ *  member box stores its owning frame id. order/clip are read by the hook, not yet by
+ *  the overlay (cascade + clip toggles are later F1b slices). */
+interface FrameCfg {
+  frameField: string;
+  frameKind: string;
+  orderField?: string;
+  clipChildrenField?: string;
 }
 
 /** Primary tool actions surfaced as prominent icons in the editor rail (chromeless
@@ -420,6 +440,13 @@ const SVG = {
   size: '<path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M15 21h4a2 2 0 0 0 2-2v-4"/><path d="M9 21H5a2 2 0 0 1-2-2v-4"/>',
   // Pages/carousel — a centre "page" card flanked by two peeking page edges.
   pages: '<rect x="8" y="4" width="8" height="16" rx="2"/><path d="M4.5 7v10"/><path d="M19.5 7v10"/>',
+  // Frame add-kind + the Frames reorder rail button — the Figma artboard "#" (two
+  // pairs of ledger lines running past the edges).
+  frame: '<path d="M8 3v18M16 3v18M3 8h18M3 16h18"/>',
+  // Drag handle in the Frames reorder list — the classic six-dot grip.
+  grip: '<circle cx="9" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="17" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="1.2" fill="currentColor" stroke="none"/>',
+  chevUp: '<polyline points="6 15 12 9 18 15"/>',
+  chevDown: '<polyline points="6 9 12 15 18 9"/>',
   minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
   editText: '<path d="M4 7V5h16v2"/><path d="M9 19h6"/><path d="M12 5v14"/>',
   // Pencil — the "edit text" action (replaces the old 'T' glyph on the object bar).
@@ -753,7 +780,7 @@ const H_JUSTIFY: Record<string, string> = { left: 'flex-start', center: 'center'
 const V_ALIGN: Record<string, string> = { top: 'flex-start', middle: 'center', bottom: 'flex-end' };
 
 export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
-  const { viewEl, stageEl, canvasEl, runtime, host, input, nativeW, nativeH, onDirty, editTool, setCanvasSize, info, history, actions, pages } = opts;
+  const { viewEl, stageEl, canvasEl, runtime, host, input, nativeW, nativeH, onDirty, editTool, setCanvasSize, info, history, actions, pages, frame: frameCfg } = opts;
   let dirtyObserver: MutationObserver | null = null;   // mirrors the Save icon's unsaved cue (see buildToolbar/actions)
   // The artboard is resizable, so read its CURRENT declared size (not the mount-time
   // nativeW/H) everywhere geometry depends on the canvas dimensions.
@@ -1077,6 +1104,68 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     runtime.setInput(blockId, nextBoxes);
   }
 
+  // ── frame containment-on-drop (plan 93 F1b-1) ────────────────────────────────
+  // Re-bucket the boxes TOUCHED by a gesture (by array index) into the frame their
+  // centre now falls inside — the drop half of the frame primitive. Pure + gated on
+  // `frameCfg`: dead (returns nextBoxes unchanged) for every tool whose canvas
+  // declares no frameField, so no-frames documents are untouched. A frame-kind box
+  // never gets a `frame` membership here (its own move/cascade is a later slice);
+  // resolveFrame is idempotent, so a box that didn't change frames keeps its identity
+  // (no spurious new object → no needless re-render churn). `touched` are indices into
+  // `nextBoxes`; every gesture that calls this preserves index alignment (append for
+  // create, in-place map for move/resize/scale), so indices stay valid.
+  function assignFrames(nextBoxes: Box[], touched: Set<number>): Box[] {
+    if (!frameCfg) return nextBoxes;
+    const ff = frameCfg.frameField;
+    const fk = frameCfg.frameKind;
+    const frameBoxes = nextBoxes.filter((b) => String(b?.[cfg.kindField]) === fk);
+    return nextBoxes.map((b, i) => {
+      if (!touched.has(i) || !b) return b;
+      if (String(b[cfg.kindField]) === fk) return b;   // a frame keeps frame='' (no self-nesting)
+      const fid = resolveFrame(b, frameBoxes);
+      return String(b[ff] ?? '') === fid ? b : { ...b, [ff]: fid };
+    });
+  }
+
+  // F1b-2 frame-move cascade: when a gesture directly moves a frame-kind box, its members
+  // must travel with it in the SAME commit (one undo step). `prev` is the pre-gesture
+  // model, `next` the post-transform model — both index-aligned with `sel` (no commit
+  // happens mid-gesture, so getBoxes()/startBoxes and the transform output share indices).
+  // For every frame box whose index is in `sel` we read its OWN top-left delta (next−prev)
+  // and shift each member (frame === frame.id) that the gesture did NOT already move
+  // directly (index NOT in `sel`). This is why we compose the delta here rather than call
+  // cascadeFrameMove(next, id, dx, dy): moveBoxes/scaleGroup/rotateGroup already shifted the
+  // frame box AND any selected children, so re-running cascadeFrameMove over the frame id
+  // would double-apply to both. A frame box is never cascaded as a member (never
+  // self-nests). Deriving the delta from prev/next covers move (exact d.dx/d.dy) and the
+  // group transforms (each frame's own top-left translation) with one path. No-op without
+  // frameCfg. assignFrames then runs on the touched `sel` only — the cascaded members keep
+  // their frame because they moved with it (frame-local position unchanged), so they must
+  // NOT be in the touched set, which is what keeps cascade-then-assign consistent.
+  function cascadeFrameChildren(prev: Box[], next: Box[], sel: number[]): Box[] {
+    if (!frameCfg) return next;
+    const ff = frameCfg.frameField;
+    const fk = frameCfg.frameKind;
+    const selSet = new Set(sel);
+    const deltas = new Map<string, { dx: number; dy: number }>();
+    for (const i of sel) {
+      const nb = next[i];
+      const pb = prev[i];
+      if (!nb || !pb || String(nb[cfg.kindField]) !== fk) continue;
+      const fid = nb[cfg.idField] == null ? '' : String(nb[cfg.idField]);
+      if (!fid) continue;
+      const dx = num(nb[cfg.xField]) - num(pb[cfg.xField]);
+      const dy = num(nb[cfg.yField]) - num(pb[cfg.yField]);
+      if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) deltas.set(fid, { dx, dy });
+    }
+    if (deltas.size === 0) return next;
+    return next.map((b, i) => {
+      if (!b || selSet.has(i) || String(b[cfg.kindField]) === fk) return b;
+      const d = deltas.get(String(b[ff] ?? ''));
+      return d ? withRect(b, { x: num(b[cfg.xField]) + d.dx, y: num(b[cfg.yField]) + d.dy }, cfg) : b;
+    });
+  }
+
   // ── timeline panel (opt-in: canvas time-model fields → `timeCfg`) ─────────────
   // Every branch below is dead on a tool without `timeCfg`: no rail button, no lazy
   // chunk fetch, no stage reserve, no listener.
@@ -1161,7 +1250,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   async function ensureTimeline(open: boolean): Promise<void> {
     if (!timeCfg || disposed) return;
     timelineWantOpen = open;
-    if (timelinePanel) { timelinePanel.setOpen(open); syncTimelineBtn(); return; }
+    if (timelinePanel) {
+      timelinePanel.setOpen(open); syncTimelineBtn();
+      if (open) maybePromptSequenceFrames(); else hideSeqPrompt();
+      return;
+    }
     if (!open || timelineLoading) return;
     timelineLoading = true;
     try {
@@ -1189,6 +1282,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         reserve: reserveBottom,
       });
       timelinePanel.setOpen(timelineWantOpen);   // the intent may have flipped mid-load
+      if (timelineWantOpen) maybePromptSequenceFrames(); else hideSeqPrompt();
     } catch (err) {
       console.error('[free-canvas] timeline panel failed to load:', err);
     } finally {
@@ -1408,12 +1502,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // offsetTop off the live frame keeps this immune to the frame-gap constant (the frame
   // sits wherever the template laid it out). Returns {0,0} when the element isn't inside
   // a page frame — so a single-page editor (Layout Studio) is completely unaffected.
+  // A [data-pdf-page] frame's offsetLeft/offsetTop does NOT change while a BOX is dragged —
+  // only the box moves. But reading them forces a synchronous layout, and applyLiveRect +
+  // the live chrome re-sync call this per box PER pointermove, so a drag with frames present
+  // thrashed layout (the reported lag, even for an empty-frame drag whose chrome re-syncs).
+  // A gesture-scoped cache keyed by the frame element reads each frame's offset at most ONCE
+  // per gesture; every later read in the same drag returns the cached value with no reflow.
+  // beginGesture arms it, endGesture clears it.
+  let frameOffCache: Map<HTMLElement, Point> | null = null;
   const frameOffsetOfEl = (el: Element): Point => {
-    // No pages config ⇒ no [data-pdf-page] frames exist, so skip the ancestor walk
-    // entirely (single-page editors like Layout Studio hit this every gesture frame).
-    if (!pages) return { x: 0, y: 0 };
+    // No pages AND no frame primitive ⇒ no [data-pdf-page] frames exist, so skip the
+    // ancestor walk entirely (a plain single-page editor hits this every gesture frame).
+    // A frame-primitive tool (frameCfg) emits [data-pdf-page] pages at authored x/y even
+    // with no `pages` config, so it must walk too — offsetLeft/offsetTop then report the
+    // frame's own position and the frame-local drag math below works unchanged.
+    if (!pages && !frameCfg) return { x: 0, y: 0 };
     const f = el.closest?.('[data-pdf-page]') as HTMLElement | null;
-    return f ? { x: f.offsetLeft, y: f.offsetTop } : { x: 0, y: 0 };
+    if (!f) return { x: 0, y: 0 };
+    if (frameOffCache) {
+      let c = frameOffCache.get(f);
+      if (!c) { c = { x: f.offsetLeft, y: f.offsetTop }; frameOffCache.set(f, c); }
+      return c;
+    }
+    return { x: f.offsetLeft, y: f.offsetTop };
   };
 
   // ── DOM: overlay + toolbar ──────────────────────────────────────────────────
@@ -1537,6 +1648,90 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function hideOffPlayhead(): void {
     if (!offPlayheadEl.hidden) offPlayheadEl.hidden = true;
     lastOffPlayheadKey = '';
+  }
+
+  // ── frames-as-scenes: the "play in order" invitation (plan 92) ───────────────
+  // A one-shot, non-blocking prompt shown when the timeline OPENS on a frame doc whose
+  // frames are NOT yet sequenced: "Play your N frames in order?" [Place in order][Not now].
+  // Accepting lays the frames end-to-end in time on the scenes lane (one commit, one undo
+  // step) so the clock gates the canvas to one frame at a time; declining dismisses for the
+  // session. Gated on frameCfg + timeCfg both present — dead on any tool without frames or
+  // without a time model. Built node-by-node (static text, `btn` recipes) like the
+  // off-playhead chip; a stage sibling of #tool-canvas carrying [data-export-hide], so no
+  // export path sees it.
+  let seqPromptDismissed = false;
+  const seqPromptEl = document.createElement('div');
+  seqPromptEl.className = 'fc-frameseq';
+  seqPromptEl.hidden = true;
+  seqPromptEl.setAttribute('role', 'status');
+  const seqPromptTxt = document.createElement('span');
+  seqPromptTxt.className = 'fc-frameseq-txt';
+  const seqPromptPlace = document.createElement('button');
+  seqPromptPlace.type = 'button';
+  seqPromptPlace.className = 'btn btn--primary btn--sm fc-frameseq-go';
+  seqPromptPlace.textContent = t('Place in order');
+  const seqPromptSkip = document.createElement('button');
+  seqPromptSkip.type = 'button';
+  seqPromptSkip.className = 'btn btn--sm';
+  seqPromptSkip.textContent = t('Not now');
+  seqPromptEl.append(seqPromptTxt, seqPromptPlace, seqPromptSkip);
+  overlay.appendChild(seqPromptEl);
+
+  function hideSeqPrompt(): void {
+    if (!seqPromptEl.hidden) seqPromptEl.hidden = true;
+  }
+
+  /** The frames-as-scenes field config, or null when this tool has no frames/time model. */
+  function frameSeqCfg(): {
+    kindField: string; frameKind: string; startField: string; durField: string;
+  } | null {
+    if (!frameCfg || !timeCfg) return null;
+    return {
+      kindField: cfg.kindField, frameKind: frameCfg.frameKind,
+      startField: timeCfg.startField, durField: timeCfg.durField,
+    };
+  }
+
+  function frameCount(boxes: Box[]): number {
+    if (!frameCfg) return 0;
+    let n = 0;
+    for (const b of boxes) if (b && String(b[cfg.kindField]) === frameCfg.frameKind) n++;
+    return n;
+  }
+
+  seqPromptPlace.addEventListener('click', () => {
+    if (!frameCfg || !timeCfg) { hideSeqPrompt(); return; }
+    commit(sequenceFramesInOrder(getBoxes(), {
+      defaultDurMs: 3000,
+      lane: 'seq',
+      defaultEnter: 'fade',
+      defaultExit: 'fade',
+      startField: timeCfg.startField, durField: timeCfg.durField, laneField: timeCfg.laneField,
+      enterField: timeCfg.enterField, exitField: timeCfg.exitField,
+      orderField: frameCfg.orderField || 'order',
+      kindField: cfg.kindField, frameKind: frameCfg.frameKind,
+    }));
+    hideSeqPrompt();
+    announce(t('Frames placed in order. Scrub the playhead to preview your slideshow.'));
+  });
+  seqPromptSkip.addEventListener('click', () => { seqPromptDismissed = true; hideSeqPrompt(); });
+
+  /**
+   * Offer to sequence the frames when the timeline is open — but only when frames exist and
+   * NONE are timed yet (never nag once sequenced), and only once per session (a decline
+   * sticks). Positioned by CSS at the top-centre of the overlay, out of the toolbar's way.
+   */
+  function maybePromptSequenceFrames(): void {
+    if (disposed || seqPromptDismissed) return;
+    const sc = frameSeqCfg();
+    if (!sc || !timelinePanel?.isOpen()) { hideSeqPrompt(); return; }
+    const boxes = getBoxes();
+    const n = frameCount(boxes);
+    if (n < 1 || framesAreSequenced(boxes, sc)) { hideSeqPrompt(); return; }
+    seqPromptTxt.textContent = n === 1
+      ? t('Play this frame in the timeline?')
+      : tRaw('Play your {n} frames in order?').replace('{n}', String(n));
+    seqPromptEl.hidden = false;
   }
 
   // Connector preview layer (opt-in): the "rubber" line while linking two cards, and a
@@ -1954,6 +2149,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         () => toggleTimeline(), 'fc-btn-timeline');
       timelineBtn.setAttribute('data-tip', t('Timeline — arrange clips over time'));
       timelineBtn.setAttribute('aria-pressed', String(!!timelinePanel?.isOpen()));
+    }
+    // Frames reorder (opt-in via canvas.orderField — the frame primitive's page-order
+    // field). A tool with nowhere to store `order` has no frame sequence to sort, so the
+    // button is absent for carousel/deck and every non-frame tool. Toggles the panel.
+    if (frameCfg?.orderField) {
+      const framesBtn = toolBtn(t('Frames — reorder pages'), SVG.frame,
+        (b) => { if (morePanel?.classList.contains('fc-frames-panel')) closeMorePanel(); else openFramesPanel(b); }, 'fc-btn-frames');
+      framesBtn.setAttribute('data-tip', t('Frames — reorder pages'));
     }
     // Connect mode (opt-in): link cards with routed connector lines. Click a source
     // card, then each target; click a card twice or hit Esc to stop.
@@ -2413,6 +2616,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     image: SVG.image, text: SVG.type, box: SVG.boxKind, lottie: SVG.anim, video: SVG.video,
     // Sequence Studio's kinds — without these all three fell back to the generic "+".
     clip: SVG.clipKind, card: SVG.boxKind, audio: SVG.audioKind, tool: SVG.toolKind,
+    // The frame primitive (plan 93) — the artboard "#" rather than a bare "+".
+    frame: SVG.frame,
   };
   function openAddMenu(anchor: HTMLElement): void {
     spawnPopover(anchor, addKinds.map((k) => ({
@@ -3129,6 +3334,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!idx.length) return;
     const b: Box = boxes[idx[0]!] || {};
     const opt = (v: string, label: string, cur: any): string => `<option value="${v}"${String(cur) === v ? ' selected' : ''}>${label}</option>`;
+    // Frame-only "Clip children" toggle — shown only when a SINGLE frame-kind box is
+    // selected. Dead for non-frame tools (frameCfg is null there) and for a mixed/multi
+    // selection, so no-frames documents and ordinary boxes are byte-identical. The hook
+    // defaults an unset clipChildren to ON (boolVal(fb.clipChildren, true)), so reflect
+    // that here. Writes through setField → one commit → the render honours overflow.
+    const isFrame = !!frameCfg && idx.length === 1 && String(b[cfg.kindField]) === frameCfg.frameKind;
+    const showClip = isFrame && !!frameCfg!.clipChildrenField;
+    const clipCur = showClip ? boolOf(b[frameCfg!.clipChildrenField!], true) : true;
     const shapeCur = b[cfg.shapeField] || 'rect';
     const fitCur = b[cfg.fitField] || 'contain';
     const posCur = String(b[cfg.imgPosField] || 'center');
@@ -3148,6 +3361,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel';
     p.innerHTML = `
+      ${showClip ? `<label class="fc-row fc-row-toggle field-toggle"><span class="fc-row-lbl" title="${escape(t('Clip children'))}">${icon(SVG.clip)}<span>${t('Clip children')}</span></span><input type="checkbox" class="field-check" data-mp-clip${clipCur ? ' checked' : ''}></label>` : ''}
       ${cfg.shapeField && shapeChoices.length ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, shapeChoices)) : ''}
       ${cfg.radiusField ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" class="field-range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
       ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" class="field-range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
@@ -3175,12 +3389,106 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       setField(MP_FIELD[rng.dataset.mp!], Number(rng.value));
     }));
     if (cfg.shadowColorField) wireColorField(p, { onChange: (id, val) => { if (id === 'fc-shadow') setField(cfg.shadowColorField, unwrapColor(val)); } });
+    if (showClip) p.querySelector<HTMLInputElement>('input[data-mp-clip]')?.addEventListener('change', (e) => setField(frameCfg!.clipChildrenField, (e.currentTarget as HTMLInputElement).checked));
     stageEl.appendChild(p);
     morePanel = p;
     const ar = anchor.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8) + 'px';
     p.style.top = (ar.bottom - sr.top + 8) + 'px';
+  }
+
+  /**
+   * ── Frames reorder panel (plan 93 F1b-3) ──────────────────────────────────────
+   *
+   * A floating list of the document's frame-kind boxes in page order — drag a row (or
+   * use its up/down steppers) to change the sequence. A reorder renumbers the `order`
+   * field densely 0..n-1 through renumberFrameOrder in ONE commit, and the hook re-sorts
+   * pages/export by (order asc, then x asc), so writing `order` is sufficient.
+   *
+   * Gated entirely on frameCfg?.orderField: the rail button that opens it is only built
+   * for a tool whose canvas declares an orderField, so carousel/deck (render.paged, no
+   * frameCfg) and every no-frames document never see this surface. It reuses the
+   * `morePanel` slot so the shared outside-click / rebuild dismissal takes it down.
+   */
+  function openFramesPanel(anchor: HTMLElement): void {
+    closeMorePanel();
+    if (!frameCfg?.orderField) return;
+    const of = frameCfg.orderField;
+    const fk = frameCfg.frameKind;
+    const fkFields = { kindField: cfg.kindField, idField: cfg.idField, orderField: of, frameKind: fk };
+    let dragging: HTMLElement | null = null;
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-frames-panel';
+
+    // Frames in the SAME page order the hook uses: order asc, x asc tie-break.
+    const framesInOrder = (): Box[] => getBoxes()
+      .filter((b) => String(b?.[cfg.kindField]) === fk)
+      .sort((a, b) => (num(a?.[of]) - num(b?.[of])) || (num(a?.[cfg.xField]) - num(b?.[cfg.xField])));
+    const fidOf = (b: Box): string => (b?.[cfg.idField] == null ? '' : String(b[cfg.idField]));
+    const seqFromDom = (): string[] => [...p.querySelectorAll<HTMLElement>('.fc-frame-row')].map((r) => r.dataset.fid || '');
+    const commitSeq = (seq: string[]): void => { commit(renumberFrameOrder(getBoxes(), seq, fkFields)); };
+
+    function render(): void {
+      const frames = framesInOrder();
+      if (!frames.length) {
+        p.innerHTML = `<div class="fc-panel-head">${escape(t('Frames'))}</div><div class="fc-frames-empty">${escape(t('No frames yet — draw one with the Frame tool.'))}</div>`;
+        return;
+      }
+      p.innerHTML = `<div class="fc-panel-head">${escape(t('Frames'))}</div>` +
+        `<div class="fc-frames-list">` + frames.map((b, i) => {
+          const fid = fidOf(b);
+          return `<div class="fc-frame-row" draggable="true" data-fid="${escape(fid)}" title="${escape(t('Drag to reorder'))}">
+            <span class="fc-frame-grip" aria-hidden="true">${icon(SVG.grip)}</span>
+            <span class="fc-frame-name">${escape(t('Frame'))} ${i + 1}</span>
+            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="up" title="${escape(t('Move up'))}" aria-label="${escape(t('Move up'))}"${i === 0 ? ' disabled' : ''}>${icon(SVG.chevUp)}</button>
+            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="down" title="${escape(t('Move down'))}" aria-label="${escape(t('Move down'))}"${i === frames.length - 1 ? ' disabled' : ''}>${icon(SVG.chevDown)}</button>
+          </div>`;
+        }).join('') + `</div>`;
+      wireRows();
+    }
+
+    function wireRows(): void {
+      p.querySelectorAll<HTMLElement>('.fc-frame-row').forEach((row) => {
+        row.addEventListener('dragstart', (e) => {
+          dragging = row;
+          row.classList.add('is-dragging');
+          if ((e as DragEvent).dataTransfer) { (e as DragEvent).dataTransfer!.effectAllowed = 'move'; (e as DragEvent).dataTransfer!.setData('text/plain', row.dataset.fid || ''); }
+        });
+        row.addEventListener('dragend', () => { row.classList.remove('is-dragging'); dragging = null; });
+        row.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          if ((e as DragEvent).dataTransfer) (e as DragEvent).dataTransfer!.dropEffect = 'move';
+          if (!dragging || dragging === row) return;
+          const list = row.parentElement!;
+          const rect = row.getBoundingClientRect();
+          const after = (e as DragEvent).clientY > rect.top + rect.height / 2;
+          list.insertBefore(dragging, after ? row.nextSibling : row);
+        });
+        row.addEventListener('drop', (e) => { e.preventDefault(); commitSeq(seqFromDom()); render(); });
+      });
+      p.querySelectorAll<HTMLButtonElement>('[data-fmove]').forEach((btn) => btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const row = btn.closest<HTMLElement>('.fc-frame-row');
+        if (!row) return;
+        const seq = seqFromDom();
+        const at = seq.indexOf(row.dataset.fid || '');
+        const to = at + (btn.dataset.fmove === 'up' ? -1 : 1);
+        if (at < 0 || to < 0 || to >= seq.length) return;
+        [seq[at], seq[to]] = [seq[to]!, seq[at]!];
+        commitSeq(seq);
+        render();
+      }));
+    }
+
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    render();
+    stageEl.appendChild(p);
+    morePanel = p;
+    const ar = anchor.getBoundingClientRect();
+    const sr = stageEl.getBoundingClientRect();
+    p.style.left = Math.min(ar.right - sr.left + 8, sr.width - p.offsetWidth - 8) + 'px';
+    p.style.top = Math.max(6, Math.min(ar.top - sr.top, sr.height - p.offsetHeight - 8)) + 'px';
   }
 
   /**
@@ -5412,9 +5720,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // fully visible under the cursor; the next paint re-buckets it and restores the clip.
   // No-op for single-page editors (no [data-pdf-page] frames).
   function setFramesClipped(clipped: boolean): void {
-    if (!pages) return;
+    if (!pages && !frameCfg) return;
     canvasEl.querySelectorAll<HTMLElement>('[data-pdf-page]').forEach((f) => {
-      f.style.overflow = clipped ? '' : 'visible';
+      if (!clipped) {
+        // Stash the inline overflow before lifting the clip so we can restore it
+        // EXACTLY. Carousel `.cm-page` clips from the stylesheet (inline ''), but the
+        // frames path bakes `overflow:hidden` INLINE on clipChildren frames — blanket
+        // resetting to '' there would delete the only clip source, so restore verbatim.
+        f.dataset.fcOverflow = f.style.overflow;
+        f.style.overflow = 'visible';
+      } else {
+        f.style.overflow = f.dataset.fcOverflow ?? '';
+        delete f.dataset.fcOverflow;
+      }
     });
     // When restoring the clip at gesture end, also drop the drag-time z-index hoist
     // (applyLiveRect set it) so box paint order returns to array order. A committed edit
@@ -5429,6 +5747,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     setHoverEdge(null);   // drop any hover highlight/cursor when a drag begins
     document.body.classList.add('fc-manipulating');
     setFramesClipped(false);
+    frameOffCache = new Map();   // frame offsets are stable during a drag — cache to avoid per-move reflow
   }
   function endGesture(): void {
     document.body.classList.remove('fc-manipulating');
@@ -5436,6 +5755,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     rubber.hidden = true;
     clearGuides();
     setFramesClipped(true);
+    frameOffCache = null;   // release the gesture-scoped frame-offset cache
     // The ctx bar's live state dies WITH the gesture: the frozen placement, the cached
     // chrome rects, and — the visible one — the drag readout. Its values come from
     // `liveRects`, so without a repaint of its own the bar keeps showing the coordinates
@@ -6711,7 +7031,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const addAtMs = pendingAddAtMs;
       toPointer();                  // the gesture consumed the armed kind — back to the pointer
       endGesture();
-      commit([...boxes, box]);
+      // Containment-on-create: the new box lands in whatever frame its centre falls in
+      // (dead unless frameCfg). It is the last element of the array, so index boxes.length.
+      commit(assignFrames([...boxes, box], new Set([boxes.length])));
       // Added from the timeline, so it lands TIMED at the playhead instead of as scenery
       // (the rail's plus keeps that default). The panel's promote() owns the write — one
       // commit through moveOverlay + setDuration — so no timing arithmetic lives here.
@@ -6756,21 +7078,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     if (g.type === 'move') {
       const d = g.moveDelta || { dx: 0, dy: 0 };
+      const sel = g.sel;
       endGesture();
-      if (Math.abs(d.dx) > 0.5 || Math.abs(d.dy) > 0.5) commit(moveBoxes(boxes, [...g.sel], d.dx, d.dy, cfg));
+      // Containment-on-drop: the moved boxes re-bucket into the frame their centre now
+      // lands in. moveBoxes preserves index order, so g.sel indices stay valid.
+      if (Math.abs(d.dx) > 0.5 || Math.abs(d.dy) > 0.5) commit(assignFrames(cascadeFrameChildren(boxes, moveBoxes(boxes, [...sel], d.dx, d.dy, cfg), sel), new Set(sel)));
       else renderChrome();
       return;
     }
     if (g.type === 'resize' || g.type === 'rotate') {
       const live = g.liveRect || g.startRect;
+      const idx = g.index;
       endGesture();
-      commit(boxes.map((b, i) => (i === g.index ? withRect(b, live, cfg) : b)));
+      // Containment-on-resize: a resize/rotate can move the box's centre across a frame
+      // edge, so re-bucket the single edited box.
+      commit(assignFrames(boxes.map((b, i) => (i === idx ? withRect(b, live, cfg) : b)), new Set([idx])));
       return;
     }
     if (g.type === 'gscale' || g.type === 'grotate') {
       const next = g.liveBoxes;
+      const sel = g.sel;
       endGesture();
-      if (next) commit(next); else renderChrome();
+      // Containment-on-group-transform: every scaled/rotated box re-buckets. g.liveBoxes
+      // is a full index-aligned array, so g.sel indices stay valid.
+      if (next) commit(assignFrames(cascadeFrameChildren(boxes, next, sel), new Set(sel))); else renderChrome();
       return;
     }
     endGesture();
@@ -6794,7 +7125,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // stacking context, tree order). A positive z-index hoists the live box above every
     // later frame for the duration of the drag; endGesture clears it (and the next paint
     // rebuilds the element clean). No-op for single-page editors (Layout Studio).
-    if (pages) el.style.zIndex = '9999';
+    if (pages || frameCfg) el.style.zIndex = '9999';
   }
 
   function drawRubber(origin: Point, nat: Point): void {
@@ -7940,7 +8271,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const step = (e.shiftKey ? 10 : 1);
       const [ux, uy] = nudges[e.key]!;
       const boxes = getBoxes();
-      commit(moveBoxes(boxes, selIndices(boxes), ux * step, uy * step, cfg));
+      // Same containment+cascade path as the pointer-drag move (see g.type === 'move'):
+      // nudging a frame-kind box must carry its members in the SAME commit, and any box
+      // whose centre crosses a frame edge must re-bucket. cascadeFrameChildren + assignFrames
+      // over the selected indices only — no-op on frameless tools (Layout Studio), so a
+      // no-frame nudge stays byte-identical to the old moveBoxes-only path.
+      const idx = selIndices(boxes);
+      commit(assignFrames(cascadeFrameChildren(boxes, moveBoxes(boxes, idx, ux * step, uy * step, cfg), idx), new Set(idx)));
     }
   }
 

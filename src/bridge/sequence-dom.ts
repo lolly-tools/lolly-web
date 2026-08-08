@@ -366,6 +366,14 @@ export function releaseShotBorrow(el: HTMLElement): void {
  * Exported taking an explicit element list so the whole visual contract — the
  * half-open window, the composition with authored styles, the restore on leaving a
  * transition — is unit-testable without a clock, an AudioContext or a live canvas.
+ *
+ * ELEMENT-KIND AGNOSTIC. Every element handed in is gated the same way — a `.lolly-box`
+ * object clip and a `[data-pdf-page]` frame page (Layout Studio's frames-as-scenes: each
+ * frame carries `data-t-start`/`data-t-dur` once sequenced) are both just "an element with
+ * timing". The frame whose [start, start+dur) contains `tMs` keeps its pixels; every other
+ * TIMED frame gets `.seq-off` → display:none, so the canvas shows one slide at a time. This
+ * function must NEVER filter by class or tag: an untimed (spatial) frame is excluded purely
+ * by having no `data-t-start`, so it is never in the caller's list and is never hidden.
  */
 export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyCtx): void {
   for (const el of els) {
@@ -456,6 +464,11 @@ export interface SequenceTimeSession {
  */
 export function createSequenceTime(root: HTMLElement, opts: { media?: ApplyCtx['media'] } = {}): SequenceTimeSession {
   const store = createAuthoredStore();
+  // ANY element carrying `data-t-start` — deliberately NOT restricted to `.lolly-box`, so a
+  // sequenced `[data-pdf-page]` frame page (frames-as-scenes) is gated by the exact same
+  // pass, and its `.seq-off` is the same class sequence-render.ts strips before it
+  // photographs a frame. A frames doc has no `[data-sequence]` stage, so `sequenceStageOf`
+  // falls back to `root` and still finds the pages.
   const boxes = (): HTMLElement[] => {
     const stage = sequenceStageOf(root) ?? root;
     return [...stage.querySelectorAll<HTMLElement>('[data-t-start]')];

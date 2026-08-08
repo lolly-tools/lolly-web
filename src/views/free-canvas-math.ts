@@ -657,3 +657,223 @@ export function gradientAngleAt(w: number, h: number, px: number, py: number, sn
   if (snap > 0) deg = Math.round(deg / snap) * snap;
   return ((deg % 360) + 360) % 360;
 }
+
+// ── Frame primitive — membership + cascade geometry (plan 93 §5/§10) ──────────
+//
+// A "frame" is an ordinary box (kind === 'frame') that OWNS the boxes whose centre
+// falls inside it. Membership is derived here, DOM-free, so the carousel strip is
+// reproducible as N side-by-side frames: a frame at global x is the reference
+// origin for its members' local coordinates. Pure — geometry read via `num`, no
+// mutation of inputs, no assumption beyond flat x/y/w/h + kind/id/frame fields.
+
+/** id of the LAST (topmost, z = array order) frame whose rect contains `box`'s centre; '' if none. A frame box never nests, so it resolves to ''. */
+export function resolveFrame(box: Box | undefined, frameBoxes: Box[]): string {
+  if (!box || box.kind === 'frame') return '';
+  const cx = num(box.x) + num(box.w) / 2;
+  const cy = num(box.y) + num(box.h) / 2;
+  let hit = '';
+  for (const f of frameBoxes) {
+    const fx = num(f?.x), fy = num(f?.y);
+    if (cx >= fx && cx <= fx + num(f?.w) && cy >= fy && cy <= fy + num(f?.h)) {
+      hit = f?.id == null ? '' : String(f.id);
+    }
+  }
+  return hit;
+}
+
+/** A box's position expressed relative to its frame's origin (the frame-local coordinate). */
+export function frameLocalXY(box: Box | undefined, frame: Box | undefined): Point {
+  return { x: num(box?.x) - num(frame?.x), y: num(box?.y) - num(frame?.y) };
+}
+
+/** New boxes array with the frame (id === frameId) AND every member (frame === frameId) shifted by (dx,dy); others untouched, input not mutated. */
+export function cascadeFrameMove(boxes: Box[], frameId: string, dx: number, dy: number): Box[] {
+  const fid = String(frameId);
+  return boxes.map((b) => {
+    const moves = (b?.id != null && String(b.id) === fid) || (b?.frame != null && String(b.frame) === fid);
+    return moves ? { ...b, x: num(b.x) + dx, y: num(b.y) + dy } : b;
+  });
+}
+
+/** New frame copies with `order` (0-based) assigned left→right by ascending x, stable for ties; input not mutated. */
+export function seedFrameOrder(frameBoxes: Box[]): Box[] {
+  const ranked = frameBoxes.map((b, i) => ({ i, x: num(b?.x) }));
+  ranked.sort((a, b) => a.x - b.x || a.i - b.i);
+  const order: number[] = new Array(frameBoxes.length);
+  ranked.forEach((r, rank) => { order[r.i] = rank; });
+  return frameBoxes.map((b, i) => ({ ...b, order: order[i] }));
+}
+
+/**
+ * Renumber the `order` field of frame-kind boxes densely 0..n-1 to match `seq` — an
+ * ordered list of frame ids (the new page sequence). Non-frame boxes, and frame boxes
+ * whose id is absent from `seq`, are returned unchanged; a frame already carrying its
+ * target rank keeps its identity (no needless re-render churn). Field names are injected
+ * so the shell's configurable canvas fields drive it. Input is never mutated.
+ *
+ * Renumbering densely (not sparsely) is deliberate: the hook sorts pages by
+ * (order asc, then x asc), so a gap-free 0..n-1 sequence means the x tie-break can never
+ * fight the explicit order the user just chose.
+ */
+export function renumberFrameOrder(
+  boxes: Box[],
+  seq: string[],
+  fields: { kindField: string; idField: string; orderField: string; frameKind: string },
+): Box[] {
+  const { kindField, idField, orderField, frameKind } = fields;
+  const rank = new Map<string, number>();
+  seq.forEach((id, i) => rank.set(String(id), i));
+  return boxes.map((b) => {
+    if (!b || String(b[kindField]) !== frameKind) return b;
+    const id = b[idField] == null ? '' : String(b[idField]);
+    const r = rank.get(id);
+    if (r == null) return b;
+    const cur = b[orderField];
+    // Write when unset (so 0..n-1 is dense) or when the stored rank differs; otherwise
+    // keep the existing object so an unchanged frame doesn't force a re-render.
+    if (cur != null && cur !== '' && Number(cur) === r) return b;
+    return { ...b, [orderField]: r };
+  });
+}
+
+// ── Frames AS scenes — turn frame order into a timeline sequence (plan 92 §Frames) ─
+//
+// "Frames are scenes": the frame ORDER is a slideshow. Sequencing a frame doc lays every
+// frame end-to-end in TIME on a scenes lane, so the sequence clock can gate the canvas to
+// ONE frame at the playhead (a slide at a time) while spatial view still shows them side
+// by side. Pure — reads the frame boxes, returns a NEW boxes array, never mutates. Writes
+// ONLY the timeline fields (start/dur/lane/enter/exit); the committed geometry
+// (x/y/w/h/order) is untouched, so a sequenced deck still exports as the same pages.
+//
+// UNITS: the timeline fields store SECONDS — the same contract timeline-math.ts and the
+// tool hook's startSeconds/seqDurationMs read (a frame's start*1000 becomes its
+// data-t-start ms). `defaultDurMs` is expressed in MILLISECONDS for the caller's
+// convenience and converted to seconds here, so a 3000 ms default is 3 s in the field and
+// 3000 in the emitted data-t-dur. Storing ms straight into the field would read back as
+// 3000 s and clamp to the hour ceiling — the conversion is load-bearing, not cosmetic.
+
+/** Ceiling for an authored time value, seconds. Mirrors timeline-math.ts MAX_TIME_S. */
+const FRAME_MAX_TIME_S = 3600;
+/** Floor for a scene's length, seconds. Mirrors timeline-math.ts MIN_DUR. */
+const FRAME_MIN_DUR_S = 0.1;
+/** ms grid for accumulated starts — mirrors timeline-math.ts r3 / packOrder. */
+const r3s = (v: number): number => Math.round(v * 1000) / 1000;
+
+/** Field names + defaults for {@link sequenceFramesInOrder}. */
+export interface FrameSeqOpts {
+  /** Default scene length, MILLISECONDS, for a frame with no authored dur (e.g. 3000). */
+  defaultDurMs?: number;
+  /** The scenes lane value written to every frame's lane field (e.g. 'seq'). */
+  lane: string;
+  /** Default enter transition when a frame has none authored (e.g. 'fade'). Omit to leave enter alone. */
+  defaultEnter?: string;
+  /** Default exit transition when a frame has none authored (e.g. 'fade'). Omit to leave exit alone. */
+  defaultExit?: string;
+  startField: string;
+  durField: string;
+  laneField: string;
+  enterField: string;
+  exitField: string;
+  orderField: string;
+  kindField: string;
+  frameKind: string;
+}
+
+/** The subset of {@link FrameSeqOpts} that {@link framesAreSequenced} reads. */
+export interface FramesSequencedCfg {
+  kindField: string;
+  frameKind: string;
+  startField: string;
+  durField: string;
+}
+
+/** Absent / empty / 'none' — the three spellings of "no transition authored". */
+function noTransition(v: InputValue | undefined): boolean {
+  return v == null || v === '' || v === 'none';
+}
+
+/** Does `v` parse to a finite number at all (an authored start, vs an empty field)? */
+function finiteField(v: InputValue | undefined): boolean {
+  if (v == null || v === '') return false;
+  const x = typeof v === 'number' ? v : parseFloat(v as string);
+  return Number.isFinite(x);
+}
+
+/**
+ * Are the doc's frames already SEQUENCED — i.e. has any frame been given timing? A frame
+ * counts as sequenced once it carries a scene length (dur>0) OR an authored start. Used to
+ * decide whether to OFFER "play in order": offer only when frames exist and none are timed
+ * yet, so the prompt never nags once the user has sequenced (or declined) them.
+ */
+export function framesAreSequenced(boxes: Box[], cfg: FramesSequencedCfg): boolean {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  for (const b of rows) {
+    if (!b || String(b[cfg.kindField]) !== cfg.frameKind) continue;
+    if (num(b[cfg.durField], 0) > 0) return true;
+    if (finiteField(b[cfg.startField])) return true;
+  }
+  return false;
+}
+
+/**
+ * Sequence every FRAME box end-to-end in time, in play order (order asc, then x asc — the
+ * exact key frameGroupsFor / seedFrameOrder use, so the timeline order matches the editor's
+ * frame numbering). Each frame gets:
+ *   • start = cumulative sum of the prior frames' durations (gapless from 0),
+ *   • dur   = its existing dur when >0, else the default scene length,
+ *   • lane  = the scenes lane,
+ *   • enter/exit = its existing transition, else the default (only when a default is given).
+ * Non-frame boxes are returned untouched (same reference). The input is never mutated, and a
+ * frame already at its target timing keeps object identity (no re-render churn), so the
+ * operation is idempotent in value.
+ */
+export function sequenceFramesInOrder(boxes: Box[], opts: FrameSeqOpts): Box[] {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const { startField, durField, laneField, enterField, exitField, orderField, kindField, frameKind, lane } = opts;
+  const clampDur = (s: number): number => (s < FRAME_MIN_DUR_S ? FRAME_MIN_DUR_S : s > FRAME_MAX_TIME_S ? FRAME_MAX_TIME_S : s);
+  const clampTime = (s: number): number => (s < 0 ? 0 : s > FRAME_MAX_TIME_S ? FRAME_MAX_TIME_S : s);
+  const defaultDurS = clampDur(r3s(num(opts.defaultDurMs, 3000) / 1000));
+  const defEnter = opts.defaultEnter;
+  const defExit = opts.defaultExit;
+
+  // Frame indices in play order: order asc, ties broken by x asc, then array index.
+  const frames: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i] && String(rows[i]![kindField]) === frameKind) frames.push(i);
+  }
+  frames.sort((a, b) => {
+    const oa = num(rows[a]![orderField], 0), ob = num(rows[b]![orderField], 0);
+    if (oa !== ob) return oa - ob;
+    const xa = num(rows[a]!.x, 0), xb = num(rows[b]!.x, 0);
+    return xa !== xb ? xa - xb : a - b;
+  });
+
+  const starts = new Map<number, number>();
+  const durs = new Map<number, number>();
+  let cursor = 0;
+  for (const i of frames) {
+    const existing = num(rows[i]![durField], 0);
+    const d = existing > 0 ? clampDur(existing) : defaultDurS;
+    const room = FRAME_MAX_TIME_S - cursor;
+    // ONE rounding grid (packOrder's discipline): advance the cursor by the STORED dur so
+    // start[i] === start[i-1] + dur[i-1] exactly, else a gapless row grows sub-ms seams.
+    const dr = clampDur(r3s(Math.min(d, room)));
+    starts.set(i, cursor);
+    durs.set(i, dr);
+    cursor = clampTime(r3s(cursor + dr));
+  }
+
+  return rows.map((b, i) => {
+    if (!b || !starts.has(i)) return b;
+    const patch: Record<string, InputValue> = {
+      [startField]: starts.get(i)!,
+      [durField]: durs.get(i)!,
+      [laneField]: lane,
+    };
+    if (defEnter != null && noTransition(b[enterField])) patch[enterField] = defEnter;
+    if (defExit != null && noTransition(b[exitField])) patch[exitField] = defExit;
+    let changed = false;
+    for (const k of Object.keys(patch)) { if (b[k] !== patch[k]) { changed = true; break; } }
+    return changed ? { ...b, ...patch } : b;
+  });
+}

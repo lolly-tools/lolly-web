@@ -2725,6 +2725,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // reorder), and a paused timeline emits no ticks at all. Gated by the same signature
     // as the tick path, so a sync that changed nothing visible still fires nothing.
     emitTime(clock.t());
+    // Re-gate the freshly-rebuilt canvas at the current playhead. A commit rebuilds the
+    // tool DOM (new nodes → the sequence gate's `.seq-off` is gone), and while playback's
+    // rAF loop reapplies every frame, a PAUSED timeline emits no ticks — so without this a
+    // scenery→timed edit (promote, or frames-as-scenes "Place in order", whose frame pages
+    // get no thumbnail shot to ride the shot-settle reapply) would leave every element on
+    // screen until the next scrub. `reapply()` is one class/style pass and is exactly the
+    // "canvas was rebuilt" entry point (sequence-clock.ts).
+    clock.reapply();
   }
 
   // ── gestures ────────────────────────────────────────────────────────────────

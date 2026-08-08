@@ -23,6 +23,21 @@
   background-position: 0 0, 12px 12px;
 }
 
+/* Figma-style page boundary — a soft drop-shadow + a hairline ring so a frame
+   ([data-pdf-page]) AND the default single artboard (.artboard) read as a board on
+   the canvas. Every layer is a box-shadow (OUTSIDE the element's border box), so the
+   per-page / per-canvas export capture — dom-to-image sizes the output to the box, the
+   SVG/PDF walkers draw only box content — clips them out: an editor affordance, never
+   in an exported PNG/SVG/PDF. Both selectors share the treatment so the default artboard
+   and a newly-created frame look identical (Andy, 2026-08-08). */
+.tool-layout.is-editor #tool-canvas [data-pdf-page],
+.tool-layout.is-editor #tool-canvas .artboard {
+  box-shadow:
+    0 0 0 1px hsl(var(--foreground) / 0.07),
+    0 2px 6px hsl(var(--foreground) / 0.10),
+    0 14px 34px hsl(var(--foreground) / 0.09);
+}
+
 /* Editor mode surfaces Export/Save/Copy/Share as prominent icons in the toolbar
    rail (see .fc-action), so the floating bottom Export|Save pill is removed. The
    #render-fab / #render-save buttons stay in the DOM (hidden) — the rail icons
@@ -440,6 +455,25 @@
    the focus ring — never restate them here). All that is local is the pill shape, to
    match the chip it sits in. */
 .fc-offplayhead-go { border-radius: 999px; font-weight: 600; }
+/* Frames-as-scenes invitation — the "Play your N frames in order?" prompt shown when the
+   timeline opens on an un-sequenced frame doc (free-canvas.ts). Top-centre so it never
+   sits over the docked timeline panel (bottom) or fights the object bar; a pointer-
+   receiving child of the otherwise pointer-transparent overlay (its buttons are its whole
+   point). Same frosted chip as the off-playhead reconciliation, above the frame scrim. */
+.fc-frameseq {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 24;
+  pointer-events: auto; display: flex; align-items: center; gap: 10px;
+  max-width: min(460px, 92%);
+  padding: 8px 10px 8px 14px; border-radius: 999px;
+  font-size: calc(12px * var(--a11y-fs)); line-height: 1.4; text-wrap: pretty;
+  background: hsl(var(--card) / 0.94); color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border)); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.fc-frameseq[hidden] { display: none; }
+.fc-frameseq-txt { flex: 1 1 auto; }
+/* The buttons ARE `.btn` (buttons.css owns fill/hover/focus); only the pill shape is local. */
+.fc-frameseq .btn { border-radius: 999px; font-weight: 600; white-space: nowrap; }
 /* The connector preview <svg> (rubber line + live-drag lines) never eats pointers. */
 .fc-connect-layer { pointer-events: none; }
 
@@ -889,6 +923,26 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-more-panel .fc-row .color-picker-field { width: 100%; height: auto; display: block; }
 .fc-more-panel .fc-row .color-trigger { justify-content: flex-start; padding: 5px 10px; border-radius: var(--radius); }
 .fc-more-panel .fc-row .color-trigger-name { display: inline; }
+
+/* Frames reorder panel (plan 93 F1b-3) — a drag-sortable list of the document's
+   frames in page order. Each row: a grip, a "Frame N" label, up/down steppers. */
+.fc-frames-panel { min-width: 230px; max-height: min(72vh, 540px); overflow-y: auto; }
+.fc-frames-list { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.fc-frame-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 7px; border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.4);
+  cursor: grab; user-select: none;
+  font-size: calc(12.5px * var(--a11y-fs));
+}
+.fc-frame-row:hover { background: hsl(var(--muted)); }
+.fc-frame-row.is-dragging { opacity: 0.5; cursor: grabbing; }
+.fc-frame-grip { display: inline-flex; color: hsl(var(--muted-foreground)); flex: none; }
+.fc-frame-grip svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.fc-frame-name { flex: 1 1 auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-frame-mv { min-width: 26px; }
+.fc-frames-empty { margin-top: 8px; color: hsl(var(--muted-foreground)); font-size: calc(12px * var(--a11y-fs)); }
 
 /* Position & size panel — each concept (position / size / rotation) on its own
    icon-led row: two labelled number cells (X·Y, W·H) or a number + drag slider. */

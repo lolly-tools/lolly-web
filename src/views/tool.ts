@@ -465,6 +465,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
+  // `?template=<id>` launches straight into a manifest `templates[]` starting point,
+  // SKIPPING the "New from template" chooser — the on-ramp for a retired tool id or a
+  // deep link. Reserved (so it's never a tool input and never counts toward the blank
+  // check below); the seed itself is read in-process from the loaded manifest, never
+  // packed into the URL. An unknown id is a null lookup → falls through to the normal
+  // fresh-open flow (chooser or blank).
+  const templateParam = urlFlags.get('template');
   // Reached via a link when the boot URL carried ANY tool configuration — a share,
   // a bookmark, an `?options`/`?full` deep link. The cost panel keys its degrade on
   // this (money-policy `selectionFromUrl`): a link always opens on counts, and money
@@ -491,10 +498,46 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Consumed generically — tool.ts knows nothing about PSD. URL/saved values
   // still win per key: the seed route always arrives on a bare hash, so in
   // practice the seed applies whole; a crafted link's own params keep priority.
+  let seededDirect = false;
   {
     const { takePendingToolSeed } = await import('../lib/drop-router.ts');
     const seed = takePendingToolSeed(toolId);
-    if (seed) initialValues = { ...(seed as Record<string, InputValue>), ...initialValues };
+    if (seed) { initialValues = { ...(seed as Record<string, InputValue>), ...initialValues }; seededDirect = true; }
+  }
+
+  // ── "New from template" on-ramp (plans/94) ───────────────────────────────────
+  // A tool can declare `templates[]` starting points. Two ways they seed a fresh
+  // session — both in-process (a real frame template serialises to many KB, so it is
+  // never packed into the URL):
+  //   1. `?template=<id>` seeds that entry directly and skips the chooser.
+  //   2. otherwise, a BLANK fresh open shows the chooser and awaits a pick.
+  // Emptiness is keyed off the parsed URL `values` (not `initialValues`, which the
+  // profile-fill loop below mutates), so the check stays honest; a chosen/parameterised
+  // seed still gets profile-filled on top because this runs BEFORE that loop. Skipped
+  // entirely on a resume (`slot`), a URL-seeded open, or an in-process direct seed
+  // (`seededDirect`) — those all carry their own intent.
+  //
+  // "URL-seeded" must include RESERVED params: `values` holds only tool inputs, so a
+  // deep link carrying just reserved params (`?format=png&export=1`, `?full`, `?options`
+  // …) has empty `values` yet clearly carries its own intent — `reachedViaLink` (any boot
+  // param at all, or `?full`) is what captures that. Because the chooser is AWAITED before
+  // createRuntime/autoExport, gating on it too is what keeps an auto-export or `?full`
+  // embed link from hanging on a modal no human is there to dismiss. `?template=<id>`
+  // still seeds directly (it also sets `reachedViaLink`, so it's handled here, not below).
+  const hasTemplates = Array.isArray(tool.manifest.templates) && tool.manifest.templates.length > 0;
+  if (hasTemplates && !slot && !seededDirect && Object.keys(values).length === 0) {
+    if (templateParam) {
+      const { templateValuesById } = await import('./template-chooser.ts');
+      const seed = templateValuesById(tool.manifest.templates, templateParam);
+      if (seed) initialValues = { ...seed, ...initialValues };
+    } else if (!reachedViaLink) {
+      const { openTemplateChooser, parseTemplates } = await import('./template-chooser.ts');
+      const templates = parseTemplates(tool.manifest.templates);
+      if (templates.length) {
+        const chosen = await openTemplateChooser({ toolName: tool.manifest.name, templates });
+        initialValues = { ...chosen, ...initialValues };
+      }
+    }
   }
 
   // "+ New tool" from the Projects view leaves a sessionStorage marker so the first
@@ -701,6 +744,18 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // across all frames; export fans out to a multi-page PDF or one still image per page.
   const pagesCfg = (editorLayout && canvasEditInput) ? tool.manifest.render.pages : undefined;
   const pagesMode = !!pagesCfg;
+  // Frame-primitive editor (plan 93 F1b): an editor-layout tool whose canvas block
+  // declares `frameField` (Layout Studio). kind:'frame' boxes render as free-placed
+  // [data-pdf-page] pages and the overlay drives frame-local drag + containment-on-drop.
+  // The fields live on the blocks input's `canvas`, not on render.*; null for every tool
+  // without a frameField so the overlay's frame-aware paths stay dead.
+  const frameCanvas = (canvasEditInput as { canvas?: { frameField?: string; frameKind?: string; orderField?: string; clipChildrenField?: string } } | null)?.canvas;
+  const frameCfg = (editorLayout && frameCanvas?.frameField) ? {
+    frameField: frameCanvas.frameField,
+    frameKind: frameCanvas.frameKind || 'frame',
+    orderField: frameCanvas.orderField,
+    clipChildrenField: frameCanvas.clipChildrenField,
+  } : undefined;
   // A fixed-size editor canvas (no resize control): the canvas input opts in via
   // canvas.fixedCanvas. Connector tools (Org Chart) set this so their rendered
   // connector <svg>'s viewBox stays 1:1 with box coordinates (a resized canvas would
@@ -2048,6 +2103,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           countField: pagesCfg.count, widthField: pagesCfg.width, heightField: pagesCfg.height,
           min: pagesCfg.min ?? 1, max: pagesCfg.max ?? 6,
         } : undefined,
+        // Frame-primitive mode (plan 93 F1b): frame field names so the overlay renders
+        // frame-local + re-buckets on drop. Absent unless the canvas declares frameField.
+        frame: frameCfg,
         // Document-info panel: read/write the export/save name, plus at-a-glance
         // details. Name binds to the export bar's filename field (the canonical
         // save name); last-edited reads the resumed session's timestamp if any.
