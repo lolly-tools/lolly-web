@@ -729,8 +729,13 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'csv':
     case 'ics':
     case 'vcf':
+    case 'css':
+    case 'scss':
+    case 'gpl':
       // Engine already hydrated the payload (runtime.export → buildDataPayload);
-      // the host just wraps it with the right MIME.
+      // the host just wraps it with the right MIME. (`ase` is binary and never
+      // reaches here — the tool's exportStill hook returns its bytes upstream in
+      // runtime.export, short-circuiting before host.export.render.)
       return new Blob([opts.dataText ?? ''], { type: opts.dataMime ?? 'text/plain' });
     case 'ico':
       return await renderIco(node, opts);

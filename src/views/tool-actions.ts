@@ -79,6 +79,10 @@ export const exportTargetNode = (c: HTMLElement | null): HTMLElement | null =>
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
 const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
   emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
+  // Palette exchange (color-palette): a design-tokens JSON, CSS/SCSS variable
+  // blocks, a GIMP palette, and a binary Adobe swatch file. extFor falls back to
+  // the format id for each (blob MIME isn't mp4/webm/zip), so no FMT_EXT entry.
+  css: 'CSS', scss: 'SCSS', gpl: 'GIMP palette', ase: 'Adobe swatches',
   // Audio only. Opus ships in a WebM container, so the label says so rather than
   // leaving a download named .webm looking like a video.
   wav: 'WAV', mp3: 'MP3', m4a: 'M4A (AAC)', opus: 'Opus (WebM)' };
