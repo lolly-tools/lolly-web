@@ -4841,6 +4841,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       fitPending = true;
       sync();
       clock.reapply();
+      // The synchronous reapply above gates the canvas AS IT IS NOW, but `reserve()` at
+      // :4839 re-fits (and may re-render) the artboard AFTER this returns — a plain re-fit
+      // that does not move the clock fires no further gate, so a template whose clips are
+      // already timed on first render (sequence-studio "Video") would keep every clip
+      // visible at rest until the user first scrubs/plays. Re-assert the gate one frame
+      // later, once the re-fit has settled. Idempotent: on a steady frame reapply() writes
+      // zero styles and only re-adds/removes `.seq-off`. Fires only on open, never per tick.
+      requestAnimationFrame(() => {
+        if (disposed || !open) return;
+        clock.reapply();
+      });
       root.focus?.();
     } else {
       // A hidden panel has no visible mic button, no meter and no elapsed clock, so a

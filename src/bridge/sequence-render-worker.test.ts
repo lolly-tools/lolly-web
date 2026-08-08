@@ -92,7 +92,7 @@ function layer(over: Partial<SeqJobLayer> = {}): SeqJobLayer {
     enter: null, enterMs: 0, exit: null, exitMs: 0, enterEase: '', exitEase: '',
     lane: 'seq', kind: 'static',
     rect: { x: 0, y: 0, w: 100, h: 100, rot: 0 },
-    opacity: 1, blend: '', radius: '', clipPath: '', openEnded: false,
+    opacity: 1, blend: '', radius: '', clipPath: '', openEnded: false, frameScene: false,
   });
   return { ...base, ...over };
 }

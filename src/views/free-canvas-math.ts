@@ -863,6 +863,13 @@ export function sequenceFramesInOrder(boxes: Box[], opts: FrameSeqOpts): Box[] {
     cursor = clampTime(r3s(cursor + dr));
   }
 
+  // The first frame in play order (cumulative start === 0) is the slide the deck OPENS on.
+  // A slideshow's first slide must appear IMMEDIATELY at t=0 — transitions happen BETWEEN
+  // slides — so it takes enter "none" (full opacity at local=0) rather than the default
+  // "fade" that would leave it mid fade-in (opacity 0) and open the deck on a blank frame.
+  // Later frames keep the default enter; the first frame still gets `defExit` so it fades
+  // OUT into the second. An explicitly-authored enter is untouched (noTransition guard).
+  const firstFrame = frames.length ? frames[0]! : -1;
   return rows.map((b, i) => {
     if (!b || !starts.has(i)) return b;
     const patch: Record<string, InputValue> = {
@@ -870,7 +877,7 @@ export function sequenceFramesInOrder(boxes: Box[], opts: FrameSeqOpts): Box[] {
       [durField]: durs.get(i)!,
       [laneField]: lane,
     };
-    if (defEnter != null && noTransition(b[enterField])) patch[enterField] = defEnter;
+    if (defEnter != null && noTransition(b[enterField])) patch[enterField] = i === firstFrame ? 'none' : defEnter;
     if (defExit != null && noTransition(b[exitField])) patch[exitField] = defExit;
     let changed = false;
     for (const k of Object.keys(patch)) { if (b[k] !== patch[k]) { changed = true; break; } }

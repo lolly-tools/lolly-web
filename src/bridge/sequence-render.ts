@@ -72,6 +72,7 @@ import {
   frameTimestamps,
   activeFrameWindow,
   crossfadeJunctions,
+  normalizeFrameScene,
   sequenceError,
   toCodedError,
   SequenceError,
@@ -676,8 +677,16 @@ export async function renderSequence(
   }
 
   const stageEl = ((node as HTMLElement).matches?.('[data-sequence]') ? node : node.querySelector('[data-sequence]')) as HTMLElement;
-  const nativeW = Math.max(1, stageEl.offsetWidth || 1920);
-  const nativeH = Math.max(1, stageEl.offsetHeight || 1080);
+  // A frames-as-scenes slideshow ("Design", plan 92) sizes to a SLIDE, not the stage:
+  // the [data-sequence] element spans the whole side-by-side pasteboard of every frame,
+  // so its offsetWidth is the strip, not one slide. Size the output to the first timed
+  // frame's own box; combined with normalizeFrameScene (which re-anchors each slide's
+  // draw rect to (0,0,nativeW,nativeH)) every slide then fills this slide-sized canvas
+  // at the origin. Object-clip Video / Sequence Studio docs carry no frameScene layer,
+  // so they keep the stageEl.offsetWidth path byte-for-byte.
+  const frameScene0 = stage.layers.find((l) => l.frameScene && l.rect.w > 0 && l.rect.h > 0);
+  const nativeW = frameScene0 ? frameScene0.rect.w : Math.max(1, stageEl.offsetWidth || 1920);
+  const nativeH = frameScene0 ? frameScene0.rect.h : Math.max(1, stageEl.offsetHeight || 1080);
   const wantW = Number(opts.width);
   const wantH = Number(opts.height);
   // Even dimensions: H.264 chroma subsampling refuses an odd width or height. The
@@ -780,7 +789,18 @@ export async function renderSequence(
     const restoreBlobs = await swapBlobUrls(stageEl);
     try {
       if (!transparent) {
-        bgRaster = await rasterBox(stageEl, S, [...stageEl.querySelectorAll('.lolly-box')]);
+        // Hide every planned layer while photographing the stage background: the
+        // `.lolly-box` clips (object-clip Video / Sequence Studio) AND the timed
+        // `[data-pdf-page]` frame pages (frames-as-scenes). rasterBox strips `.seq-off`
+        // from the stage + all descendants for its shot, so without hiding the frames a
+        // frames-as-scenes bg plate would capture EVERY slide un-gated and paint them,
+        // stacked, under every output frame — the "stuck on slide 1" bug. Each timed
+        // frame is instead photographed as its own per-layer plate below, gated to its
+        // window. Harmless in object-clip mode: the frame selector matches nothing there.
+        bgRaster = await rasterBox(stageEl, S, [
+          ...stageEl.querySelectorAll('.lolly-box'),
+          ...stageEl.querySelectorAll('[data-pdf-page][data-t-start]'),
+        ]);
       }
       for (const L of stage.layers) {
         const w = win.get(L.idx)!;
@@ -819,7 +839,12 @@ export async function renderSequence(
           }
         }
         plates.push({ idx: L.idx, under, over });
-        wire.push(toJobLayer(L, {
+        // Re-anchor a timed frame-page scene to the output viewport so a side-by-side
+        // slideshow stacks each slide into the frame (ISSUE 1). No-op for a `.lolly-box`
+        // (frameScene=false → returned verbatim), so object-clip export is unchanged.
+        // The plate above is the frame's OWN picture at scale S; the normalized rect
+        // (0,0,nativeW,nativeH) draws it over the full outW×outH at the origin.
+        wire.push(toJobLayer(normalizeFrameScene(L, nativeW, nativeH), {
           // The inline style, exactly as the old in-draw read took it.
           objectFit: media?.style?.objectFit ?? '',
           objectPosition: media?.style?.objectPosition ?? '',

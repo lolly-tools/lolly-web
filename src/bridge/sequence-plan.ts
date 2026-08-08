@@ -110,6 +110,18 @@ export interface SeqLayer {
    * stable tail to fade into), and `durMs` alone cannot express that.
    */
   openEnded: boolean;
+  /**
+   * True when this layer is a timed FRAME PAGE ([data-pdf-page]) — a "Design"
+   * frames-as-scenes slide, photographed whole. A frames slideshow places its pages
+   * side by side on the pasteboard (x = 0, 1120, 2240 …), but the video output is one
+   * slide wide: without normalisation slides 2..N draw off-canvas and only slide 1
+   * ever shows. `normalizeFrameScene` rewrites a frameScene layer's DRAW rect to the
+   * output viewport so every slide fills its window at the origin — a compositor-only
+   * re-anchor; the committed geometry (the frame's real x/y, its exported PDF page) is
+   * never touched. An object-clip `.lolly-box` carries no [data-pdf-page] → false →
+   * keeps its authored position within the single artboard.
+   */
+  frameScene: boolean;
 }
 
 export interface SequenceStage {
@@ -164,6 +176,11 @@ function hasClass(el: HTMLElement, cls: string): boolean {
  * div and nothing else, and must never fall through to `static`.
  */
 export function layerKind(el: HTMLElement): SeqLayer['kind'] {
+  // A frames-as-scenes page ([data-pdf-page]) is photographed WHOLE — one still per
+  // slide — so it is a STATIC scene layer even when it contains a <video>/lottie
+  // child. Checked first, before the descendant probes below, so the frame is never
+  // mis-classified by what it holds. (Layout Studio "Design", plan 92.)
+  if (el.getAttribute?.('data-pdf-page') != null) return 'static';
   if (hasClass(el, 'lolly-box-audio') || el.querySelector?.('[data-audio-src]')) return 'audio';
   if (hasClass(el, 'lolly-box-lottie') || el.querySelector?.('[data-lottie-src]')) return 'lottie';
   if (el.querySelector?.('video') || hasClass(el, 'lolly-box-video')) return 'video';
@@ -216,7 +233,33 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     radius: styleProp(el, 'border-radius'),
     clipPath: styleProp(el, 'clip-path'),
     openEnded,
+    frameScene: el.getAttribute?.('data-pdf-page') != null,
   };
+}
+
+/**
+ * Re-anchor a timed FRAME-PAGE scene layer to the OUTPUT viewport (ISSUE 1).
+ *
+ * A "Design" frames slideshow places its pages side by side on the pasteboard, so a
+ * page's authored `left`/`top` (the rect readLayer read) sends slides 2..N off the
+ * one-slide-wide output canvas — the "only slide 1 shows" bug. For a frameScene layer
+ * this rewrites the DRAW rect to `(0, 0, nativeW, nativeH)`, where nativeW/nativeH are
+ * the output's pre-scale native size (a frame's own size — see renderSequence's
+ * frames-mode branch). `drawItem` then translates to the viewport centre and draws the
+ * plate over the full `outW × outH`, so each slide fills its window regardless of the
+ * frame's spatial x/y.
+ *
+ * PURE and compositor-only: it returns a COPY with a new rect and leaves the committed
+ * model (the frame's real x/y, its [data-pdf-page] export page) untouched, so the
+ * carousel still lays out side by side in the editor and still exports as multi-page
+ * PDF. A non-frameScene layer (every object-clip `.lolly-box`) is returned verbatim,
+ * so the object-clip Video / Sequence Studio path is byte-identical.
+ */
+export function normalizeFrameScene(layer: SeqLayer, nativeW: number, nativeH: number): SeqLayer {
+  if (!layer.frameScene) return layer;
+  const w = Number.isFinite(nativeW) && nativeW > 0 ? nativeW : layer.rect.w;
+  const h = Number.isFinite(nativeH) && nativeH > 0 ? nativeH : layer.rect.h;
+  return { ...layer, rect: { x: 0, y: 0, w, h, rot: 0 } };
 }
 
 /**
@@ -239,7 +282,21 @@ export function parseSequenceStage(node: HTMLElement): SequenceStage | null {
       ?? (node.querySelector?.('[data-seq-ms]') as HTMLElement | null);
   const rawMs = num(msEl?.getAttribute?.('data-seq-ms') ?? null, 0);
   const totalMs = rawMs > 0 ? Math.min(rawMs, MAX_TIME_MS) : 0;
-  const els = stage.querySelectorAll ? [...stage.querySelectorAll<HTMLElement>('.lolly-box')] : [];
+  // Frames-as-scenes (Layout Studio "Design", plan 92): a doc can time whole FRAME
+  // PAGES end-to-end (`data-t-start` on each `[data-pdf-page]`) instead of individual
+  // `.lolly-box` clips. When any timed frame page exists, the scene layers ARE those
+  // pages — each photographed whole and gated so exactly one shows at the playhead —
+  // and their `.lolly-box` children are NOT separate layers (they belong to the frame's
+  // picture), nor are the pasteboard scratch boxes (which the paged export excludes
+  // too). This is a mode branch, not a selector swap: an object-clip Video / Sequence
+  // Studio doc carries no `[data-pdf-page]`, so it falls through to the `.lolly-box`
+  // enumeration byte-for-byte, keeping its timed clips AND its open-ended scenery.
+  const frames = stage.querySelectorAll
+    ? [...stage.querySelectorAll<HTMLElement>('[data-pdf-page][data-t-start]')]
+    : [];
+  const els = frames.length > 0
+    ? frames
+    : (stage.querySelectorAll ? [...stage.querySelectorAll<HTMLElement>('.lolly-box')] : []);
   return { layers: els.map((el, i) => readLayer(el, i, totalMs)), totalMs };
 }
 

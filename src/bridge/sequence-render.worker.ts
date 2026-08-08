@@ -173,6 +173,8 @@ export interface SeqJobLayer {
   radius: string;
   clipPath: string;
   openEnded: boolean;
+  /** True for a timed frame-page scene layer — see SeqLayer.frameScene. */
+  frameScene: boolean;
   /** Computed object-fit of the layer's media element ('' when it has none). */
   objectFit: string;
   /** Computed object-position of the layer's media element. */
@@ -197,6 +199,7 @@ export function toJobLayer(
     rect: { x: L.rect.x, y: L.rect.y, w: L.rect.w, h: L.rect.h, rot: L.rect.rot },
     opacity: L.opacity, blend: L.blend, radius: L.radius, clipPath: L.clipPath,
     openEnded: L.openEnded,
+    frameScene: L.frameScene,
     objectFit: extra.objectFit ?? '',
     objectPosition: extra.objectPosition ?? '',
     needsLiveRaster: extra.needsLiveRaster ?? false,
@@ -221,6 +224,7 @@ export function hydrateJobLayer(w: SeqJobLayer): SeqLayer {
     enterEase: w.enterEase || '', exitEase: w.exitEase || '',
     lane: w.lane, kind: w.kind, rect: { ...w.rect }, opacity: w.opacity, blend: w.blend,
     radius: w.radius, clipPath: w.clipPath, openEnded: w.openEnded,
+    frameScene: w.frameScene ?? false,
   };
 }
 

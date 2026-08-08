@@ -1089,6 +1089,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return (soloBox || !g) ? [idOf(boxes[i], i)] : groupMemberIds(boxes, g);
   }
 
+  /**
+   * Frame-aware selection pick (plan 92, ISSUE 2a). Two passes over the SAME hitTest:
+   * first the topmost NON-frame box under the point, and only when none is hit does the
+   * topmost frame (artboard) take the click. So clicking a child selects the child, and
+   * clicking an artboard's own empty area / edge selects the artboard — regardless of
+   * array order, which fixes the appended-frame-swallows-its-children bug (an Add-menu
+   * frame is pushed last → topmost → a plain hitTest would let it eat every child click).
+   * Frame-agnostic docs (no frameCfg) fall straight through to the ordinary hitTest, and
+   * the shared hitTest used by connect/line/node modes is deliberately NOT routed here.
+   */
+  function selectHit(boxes: Box[], px: number, py: number): number {
+    const skip = seqHiddenSkip(boxes);
+    if (!frameCfg) return hitTest(boxes, px, py, cfg, skip);
+    const fk = frameCfg.frameKind;
+    const isFrame = (i: number): boolean => String(boxes[i]?.[cfg.kindField]) === fk;
+    const nonFrame = hitTest(boxes, px, py, cfg, (i) => (skip ? skip(i) : false) || isFrame(i));
+    if (nonFrame >= 0) return nonFrame;
+    return hitTest(boxes, px, py, cfg, skip);
+  }
+
   let idSeq = 0;
   function freshId(boxes: Box[]): string {
     // Short, collision-checked id (Math.random is fine in the browser shell).
@@ -2154,9 +2174,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // field). A tool with nowhere to store `order` has no frame sequence to sort, so the
     // button is absent for carousel/deck and every non-frame tool. Toggles the panel.
     if (frameCfg?.orderField) {
-      const framesBtn = toolBtn(t('Frames — reorder pages'), SVG.frame,
+      const framesBtn = toolBtn(t('Artboards — reorder'), SVG.frame,
         (b) => { if (morePanel?.classList.contains('fc-frames-panel')) closeMorePanel(); else openFramesPanel(b); }, 'fc-btn-frames');
-      framesBtn.setAttribute('data-tip', t('Frames — reorder pages'));
+      framesBtn.setAttribute('data-tip', t('Artboards — reorder'));
     }
     // Connect mode (opt-in): link cards with routed connector lines. Click a source
     // card, then each target; click a card twice or hit Esc to stop.
@@ -2600,7 +2620,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (penEdit) { openPenNodeMenu(clientX, clientY); return; }
     const nat = clientToNative(clientX, clientY);
     const boxes = getBoxes();
-    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+    const hit = selectHit(boxes, nat.x, nat.y);   // artboard-aware: child over frame; frame on empty area
     if (hit >= 0 && !selection.has(idOf(boxes[hit], hit))) {
       selection = new Set(selectionForHit(boxes, hit, soloBox));
       renderChrome();
@@ -3432,15 +3452,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     function render(): void {
       const frames = framesInOrder();
       if (!frames.length) {
-        p.innerHTML = `<div class="fc-panel-head">${escape(t('Frames'))}</div><div class="fc-frames-empty">${escape(t('No frames yet — draw one with the Frame tool.'))}</div>`;
+        p.innerHTML = `<div class="fc-panel-head">${escape(t('Artboards'))}</div><div class="fc-frames-empty">${escape(t('No artboards yet — draw one with the Artboard tool.'))}</div>`;
         return;
       }
-      p.innerHTML = `<div class="fc-panel-head">${escape(t('Frames'))}</div>` +
+      p.innerHTML = `<div class="fc-panel-head">${escape(t('Artboards'))}</div>` +
         `<div class="fc-frames-list">` + frames.map((b, i) => {
           const fid = fidOf(b);
           return `<div class="fc-frame-row" draggable="true" data-fid="${escape(fid)}" title="${escape(t('Drag to reorder'))}">
             <span class="fc-frame-grip" aria-hidden="true">${icon(SVG.grip)}</span>
-            <span class="fc-frame-name">${escape(t('Frame'))} ${i + 1}</span>
+            <span class="fc-frame-name">${escape(t('Artboard'))} ${i + 1}</span>
             <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="up" title="${escape(t('Move up'))}" aria-label="${escape(t('Move up'))}"${i === 0 ? ' disabled' : ''}>${icon(SVG.chevUp)}</button>
             <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="down" title="${escape(t('Move down'))}" aria-label="${escape(t('Move down'))}"${i === frames.length - 1 ? ' disabled' : ''}>${icon(SVG.chevDown)}</button>
           </div>`;
@@ -5802,7 +5822,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (editing && editing.el.contains(e.target as Node)) { refreshFmtStates(); return; }
     const nat = clientToNative(e.clientX, e.clientY);
     const boxes = getBoxes();
-    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+    const hit = selectHit(boxes, nat.x, nat.y);   // artboard-aware (a frame has no editable text → startTextEdit no-ops)
     if (hit < 0) return;
     e.preventDefault();
     selection = new Set([idOf(boxes[hit], hit)]);
@@ -6602,7 +6622,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
     }
 
-    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+    const hit = selectHit(boxes, nat.x, nat.y);    // artboard-aware: a child over a frame wins; the frame takes an empty-area/edge click
     if (hit >= 0) {
       deselectEdge();                              // picking a card drops any connector selection
       const id = idOf(boxes[hit], hit);
