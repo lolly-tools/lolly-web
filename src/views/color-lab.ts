@@ -66,12 +66,14 @@ import '../styles/parts/platform.css';     // the .plat-client-* device cards at
 import '../lib/oklch-slice.css';           // the .okls-* chart rules (see oklch-slice.ts)
 import {
   describeColor, contrastVsExtremes, wcagLevel, oklchToHex, formatOklch, rampOklab,
-  apcaVerdict, APCA_SRGB_ONLY,
+  apcaVerdict, apcaContrast, apcaUse, APCA_BANDS, APCA_SRGB_ONLY,
+  simulateCvdHex, toGrayscaleHex,
   gamutSolid, projectGamutSolid, projectSolidPoint, contrastRatio, GAMUTS,
   parseColor, colorToHexString, interpolateColor, chromaAxisMax,
-  gamutSourceId, resolveGamutSource, fastRgbContains, inGamut, maxChroma, convertColor,
+  gamutSourceId, resolveGamutSource, fastRgbContains, inGamut, maxChroma, clipToGamut, deltaEOk, convertColor,
   iccRoundTripDeltaE, iccRoundTripDecides, ICC_GAMUT_DELTA_E, encodeOklch,
   projectSolidPoints, imageColorCloud,
+  gamutSolidToSvg, P3_SOURCE, REC2020_SOURCE,
 } from '@lolly/engine';
 import type {
   EncodeSpace, ImageCloud,
@@ -113,13 +115,41 @@ import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { t, tRaw } from '../i18n.ts';
 
+/**
+ * One brand colour as `host.tokens.colors()` hands it over. `value` is ALWAYS an
+ * sRGB hex (the engine bakes the canonical value down in `tokens.ts` `toSwatch`);
+ * the only place a wider-gamut value survives is an authored `faces` override
+ * (v1.77 — keyed by a CSS space name like `display-p3`/`rec2020`, or a profile id),
+ * which is what lets a display-gamut badge ever be meaningful (see `renderBrand`).
+ */
+interface LabSwatchInput {
+  id?: string;
+  name?: string;
+  value?: string;
+  faces?: Record<string, string | number[]>;
+}
+
+/** A brand swatch resolved once at mount, then re-badged as the target moves. */
+interface BrandSwatch {
+  /** What a click seeds — the token's own sRGB hex, so picking is unchanged. */
+  pick: string;
+  /** The guaranteed-parseable sRGB hex, painted as the fallback fill and shown in the tip. */
+  hex: string;
+  /** The richest CSS value available (a wide face, else `hex`) — painted on top so a
+   *  wide-gamut brand colour shows as itself, and the basis for the gamut verdict. */
+  real: string;
+  name: string;
+  /** The OKLCH of `real`, or null if it would not parse. The badge decision reads this. */
+  oklch: { l: number; c: number; h: number } | null;
+}
+
 /** The host surface this view needs — only the brand palette, and optionally. */
 export interface ColorLabHost {
   /** Only what the theme toggle persists through — the profile is the canonical
    *  theme store. Optional: without it the switch still applies and still sings,
    *  it just is not remembered. */
   profile?: { get(): Promise<object>; set?(profile: object): Promise<unknown> };
-  tokens?: { colors?(): Promise<Array<{ id?: string; name?: string; value?: string }>> | Array<{ id?: string; name?: string; value?: string }> };
+  tokens?: { colors?(): Promise<LabSwatchInput[]> | LabSwatchInput[] };
   /** The user-asset rail, only for the stored ICC profiles (lib/color-profiles.ts).
    *  Optional: a host without it simply has no print pill and no `+` affordance. */
   assets?: ColorProfilesHost['assets'];
@@ -269,6 +299,18 @@ const DEFAULT_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
  */
 const CONTROL_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
 
+/**
+ * The contrast matrix is N×N over the palette (plus white and black), and N is
+ * capped so the grid stays readable and the O(N²) APCA recompute stays cheap. A
+ * cap that bites is SURFACED — `renderCvdMatrix` logs it and shows a "first N of M"
+ * note — never silently swallowed (the no-silent-caps rule).
+ */
+const MATRIX_MAX = 12;
+
+/** The five vision-preview modes the diagnostic panel offers. `normal` is the
+ *  identity; the rest map to engine simulations (see {@link simulatePalette}). */
+export type CvdMode = 'normal' | 'grayscale' | 'protan' | 'deutan' | 'tritan';
+
 /** A press profile mounted as the Lab's comparison target. */
 interface ActiveProfile {
   entry: ProfileEntry;
@@ -331,6 +373,22 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   let activeProfile: ActiveProfile | null = null;
   /** A `&limit=icc:…` from a link whose profile is not on this device. */
   let absentLimit: string | null = null;
+  /** The brand rail's swatches, resolved once (see the brand-swatch block near the
+   *  end of mount) and re-badged by `renderBrand` whenever the comparison target moves. */
+  let brandSwatches: BrandSwatch[] = [];
+  /**
+   * The vision-preview mode driving the contrast matrix AND the brand rail — a
+   * read-only diagnostic that never writes a token. `normal` is the identity;
+   * `grayscale`/`protan`/`deutan`/`tritan` recolour the swatches through the engine
+   * (Machado 2009 / Rec.709) and RESCORE the matrix's APCA on the simulated colours,
+   * which is the point: to see how the palette's contrasts hold up for that vision.
+   */
+  let cvdMode: CvdMode = 'normal';
+  /** Simulation severity as a percentage (0–100). Only the three graded CVD types
+   *  read it; grayscale and normal ignore it. 100% = full dichromacy, 0% = identity. */
+  let cvdSeverity = 100;
+  /** Logged at most once when the palette is capped — the no-silent-caps rule. */
+  let cvdCapLogged = false;
 
   // A link that names a profile is resolved BEFORE the first paint: it is one
   // keyed IDB read and a parse measured in microseconds, and doing it later would
@@ -648,6 +706,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     limitPinned = param != null;   // a chosen target travels with the link
     renderLimitSeg();
     renderReadouts();              // the ceilings list and the press card follow the target
+    renderBrand();                 // re-badge the brand rail against the new target (cheap, so eager)
     syncUrl();
     const heavy = fastRgbContains(resolveGamutSource(next)) == null
       && typeof requestAnimationFrame === 'function';
@@ -669,6 +728,125 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     buildCharts();
     paintCharts();
     paintSolid();
+    refreshVectors();   // the single-solid still tracks the current limit
+  }
+
+  /**
+   * (Re)paint the brand rail, badging every swatch whose TRUE colour cannot fit
+   * the CURRENT comparison target.
+   *
+   * A read-only diagnostic: it INDICATES, it never writes — a click still seeds
+   * the swatch's own colour verbatim (`pick`), and nothing here mutates the token.
+   * The badge is a corner dot (no border on the rounded tile — house rule) plus a
+   * `title`/`aria-label` naming the target, the sRGB hex the colour would clip to,
+   * and the ΔE of that clip. The verdict is `swatchGamutState`, which asks the
+   * ACTUAL gamut (never an ordering — P3 ⊄ Rec.2020), so a press profile narrower
+   * than sRGB lights up its plain-hex brand colours, and a display gamut only
+   * badges a swatch that carries a genuinely wider face.
+   *
+   * A no-op until the swatches are resolved; the click delegation is wired once,
+   * in the brand-swatch block, so rewriting `innerHTML` here keeps it live.
+   */
+  function renderBrand(): void {
+    const mount = $('[data-lab-brand]');
+    if (!mount || !brandSwatches.length) return;
+    const gName = limitTitle(limit);
+    const sev = cvdSeverity / 100;
+    mount.innerHTML = brandSwatches.map((sw) => {
+      const g = sw.oklch ? swatchGamutState(sw.oklch, limit) : null;
+      const oog = !!g?.outOfGamut;
+      const badge = oog ? '<span class="lab-brand-badge" aria-hidden="true"></span>' : '';
+      // The tip's extra line explains the badge — "clamped" alone means nothing,
+      // the same reasoning as the notation table's fit note. The gamut verdict is on
+      // the TRUE colour, so it is unaffected by the vision preview.
+      const tip = oog
+        ? `${sw.name} ${sw.hex}\n${tRaw('Outside {gamut} — clips to {hex} (ΔE {de})', {
+            gamut: gName, hex: g!.clippedHex, de: g!.deltaE.toFixed(2),
+          })}`
+        : `${sw.name} ${sw.hex}`;
+      const label = oog
+        ? tRaw('Inspect {name} — outside {gamut}', { name: sw.name, gamut: gName })
+        : tRaw('Inspect {name}', { name: sw.name });
+      // Normal mode paints exactly as before: --sw the sRGB hex fallback, --sw-real
+      // the richest value the CSS layers on top. A vision preview replaces BOTH with
+      // the simulated sRGB hex (the simulation is sRGB-only), so the rail shows the
+      // palette as that vision type sees it — a diagnostic overlay, never a token edit.
+      const fill = cvdMode === 'normal' ? sw.hex : simulatePalette(sw.hex, cvdMode, sev);
+      const real = cvdMode === 'normal' ? sw.real : fill;
+      return `<button type="button" class="lab-brand-sw"${oog ? ' data-oog="true"' : ''} data-lab-brand-pick="${escape(sw.pick)}"
+        style="--sw:${escape(fill)};--sw-real:${escape(real)}" title="${escape(tip)}" aria-label="${escape(label)}">${badge}</button>`;
+    }).join('');
+  }
+
+  /**
+   * The APCA contrast matrix and, above it, the vision-preview segmented control.
+   *
+   * A diagnostic panel — it never writes a token. The grid is every axis colour as
+   * TEXT over every axis colour as BACKGROUND, where the axis is [white, black, …the
+   * brand palette]. APCA is polarity-dependent and asymmetric, so cell(row, col) is
+   * `apcaContrast(text = row, bg = col)`: the diagonal (a colour on itself) reads ~0,
+   * and cell(i,j) generally differs from cell(j,i). Each cell is painted in the
+   * pairing's own colours — background the column colour, the |Lc| number in the row
+   * colour — so the readability is legible at a glance as well as numerically.
+   *
+   * When a vision mode is active every axis colour is simulated FIRST and the whole
+   * grid is rescored on the simulated colours — the point of the panel is to see how
+   * the palette's contrasts survive that vision, not merely how it looks.
+   *
+   * Independent of the subject and the comparison target (APCA is sRGB-only), so it
+   * is rebuilt only when the palette resolves or the vision mode/severity changes —
+   * never on a subject drag.
+   */
+  function renderCvdMatrix(): void {
+    const mount = $('[data-lab-matrix]');
+    if (!mount) return;
+    const shown = brandSwatches.slice(0, MATRIX_MAX);
+    const capped = brandSwatches.length > MATRIX_MAX;
+    const sev = cvdSeverity / 100;
+    // White and black first — the ceilings of what any colour can carry — then the
+    // (capped) palette. Each axis entry keeps its NAME for the cell tooltips and its
+    // SIMULATED paint for both the fill and the rescore.
+    const axis = [
+      { name: t('White'), hex: '#ffffff' },
+      { name: t('Black'), hex: '#000000' },
+      ...shown.map((s) => ({ name: s.name, hex: s.hex })),
+    ].map((a) => ({ ...a, paint: simulatePalette(a.hex, cvdMode, sev) }));
+
+    const grid = contrastMatrix(axis.map((a) => a.paint));
+    const chip = (paint: string, name: string): string =>
+      `<span class="lab-mx-chip" style="background:${escape(paint)}"></span><span class="lab-mx-name">${escape(name)}</span>`;
+    const head = `<tr><th class="lab-mx-corner" scope="col"><span class="sr-only">${escape(t('Text over background'))}</span></th>`
+      + axis.map((a) => `<th scope="col" class="lab-mx-h">${chip(a.paint, a.name)}</th>`).join('')
+      + '</tr>';
+    const body = axis.map((rowA, i) => {
+      const cells = axis.map((colA, j) => {
+        const cell = grid[i]![j]!;
+        const lc = Math.round(Math.abs(cell.lc));
+        const bandLabel = APCA_BANDS.find((b) => b.use === cell.band)?.label ?? cell.band;
+        const tip = tRaw('{text} on {bg} · Lc {lc} · {use}', {
+          text: rowA.name, bg: colA.name, lc: String(lc), use: t(bandLabel),
+        });
+        // Background is the COLUMN colour (the ground), the number the ROW colour (the
+        // text) — the pairing painted as itself. `data-use` carries the APCA band for
+        // the cue strip; the number is already integer, so it needs no escaping.
+        return `<td class="lab-mx-cell" data-use="${escape(cell.band)}" title="${escape(tip)}"
+          style="background:${escape(colA.paint)};color:${escape(rowA.paint)}">${lc}</td>`;
+      }).join('');
+      return `<tr><th scope="row" class="lab-mx-h">${chip(rowA.paint, rowA.name)}</th>${cells}</tr>`;
+    }).join('');
+    mount.innerHTML = `<table class="lab-mx-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+
+    const note = $('[data-lab-matrix-note]');
+    if (note) {
+      note.hidden = !capped;
+      note.textContent = capped
+        ? tRaw('Showing the first {n} of {m} palette colours.', { n: String(MATRIX_MAX), m: String(brandSwatches.length) })
+        : '';
+    }
+    if (capped && !cvdCapLogged) {
+      cvdCapLogged = true;
+      console.info(`[color-lab] contrast matrix capped to ${MATRIX_MAX} of ${brandSwatches.length} palette colours`);
+    }
   }
 
   /**
@@ -1223,6 +1401,92 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   };
   cleanups.push(() => { if (solidFrame) cancelAnimationFrame(solidFrame); });
 
+  // ── Vector (SVG) stills: a snapshot of the current solid, and a P3-vs-Rec.2020
+  //    side-by-side comparison ────────────────────────────────────────────────
+  //
+  // The canvas above is the live turntable; these are STILLS, in vector. They
+  // exist for two reasons. First the house docs-are-vector rule: a screenshot of
+  // the solid should be an SVG of real polygons, not a raster of a canvas. Second,
+  // two screen gamuts genuinely cannot be read as overlapping wire cages in the
+  // live view — see the "scribble" reasoning in `paintSolid`; drawn side by side
+  // at one shared angle and scale, the fact that Display-P3 is NOT contained by
+  // Rec.2020 reads as SHAPE instead.
+  //
+  // Painted with `gamutSolidToSvg`'s default sRGB encode: a static SVG can only
+  // show colours the viewer's browser can render, so it shows the hull's STRUCTURE
+  // in sRGB rather than faking wide-gamut colour. The captions say so.
+  const SNAP_SVG_SIZE = 480;
+
+  /** One solid → a self-contained SVG string at the CURRENT orientation. Default
+   *  (sRGB-safe) fills; the SAME `solidView` the canvas uses, so a still matches
+   *  the turntable's angle exactly. */
+  const svgForSolid = (solid: GamutSolid): string =>
+    gamutSolidToSvg(projectGamutSolid(solid, solidView), { size: SNAP_SVG_SIZE });
+
+  /**
+   * A MODERATE mesh for a comparison gamut — coarser than the main canvas solid on
+   * purpose. The compare panel is about silhouette, not surface detail, and a fine
+   * mesh would inject tens of thousands of `<polygon>` nodes per hull. Cached by
+   * source id + embedding, in the same map as the canvas meshes.
+   */
+  const compareSolidFor = (source: GamutSource): GamutSolid => {
+    const key = `compare|${gamutSourceId(source)}|${solidEmbed}`;
+    let s = solidCache.get(key);
+    if (!s) { s = gamutSolid(source, 96, 40, solidEmbed); solidCache.set(key, s); }
+    return s;
+  };
+
+  /** Repaint the single-solid still — only while its panel is open. `solidFor` is
+   *  the SAME cached mesh the canvas draws, so the still is geometrically identical
+   *  to the turntable, just frozen and in vector. */
+  function renderSolidSvg(): void {
+    const panel = $<HTMLDetailsElement>('[data-lab-solid-svg-panel]');
+    const box = $('[data-lab-solid-svg]');
+    if (!panel?.open || !box) return;
+    box.innerHTML = svgForSolid(solidFor(limit));
+  }
+
+  /** Repaint the Display-P3 vs Rec.2020 comparison — only while its panel is open. */
+  function renderCompare(): void {
+    const panel = $<HTMLDetailsElement>('[data-lab-compare-panel]');
+    const body = $('[data-lab-compare-body]');
+    if (!panel?.open || !body) return;
+    // ONE write, so the panel carries a single R10 sink. The SVG strings are
+    // engine-produced (numeric polygons, no user text); the two labels are the
+    // constant gamut titles, still routed through escape() per the house rule.
+    const cell = (name: string, source: GamutSource): string =>
+      '<figure class="lab-compare-cell">'
+      + `<figcaption class="lab-compare-cap">${escape(name)}</figcaption>`
+      + `<div class="lab-compare-svg" data-lab-compare-svg="${escape(gamutSourceId(source))}">`
+      + `${svgForSolid(compareSolidFor(source))}</div></figure>`;
+    body.innerHTML = cell(GAMUT_TITLE.p3, P3_SOURCE) + cell(GAMUT_TITLE.rec2020, REC2020_SOURCE);
+  }
+
+  /** rAF-throttled: rebuild whichever vector stills are open. Called on a turn
+   *  commit, an embedding change and a target change — never per drag frame (these
+   *  are stills, not a second live view), and a no-op when both panels are closed. */
+  let vectorFrame = 0;
+  function refreshVectors(): void {
+    if (vectorFrame) return;
+    vectorFrame = requestAnimationFrame(() => { vectorFrame = 0; renderSolidSvg(); renderCompare(); });
+  }
+  cleanups.push(() => { if (vectorFrame) cancelAnimationFrame(vectorFrame); });
+
+  // Render each still the moment its panel opens (and rebuild on later opens, so it
+  // reflects any turning done while it was closed).
+  const solidSvgPanel = $<HTMLDetailsElement>('[data-lab-solid-svg-panel]');
+  if (solidSvgPanel) {
+    const onToggle = (): void => renderSolidSvg();
+    solidSvgPanel.addEventListener('toggle', onToggle);
+    cleanups.push(() => solidSvgPanel.removeEventListener('toggle', onToggle));
+  }
+  const comparePanel = $<HTMLDetailsElement>('[data-lab-compare-panel]');
+  if (comparePanel) {
+    const onToggle = (): void => renderCompare();
+    comparePanel.addEventListener('toggle', onToggle);
+    cleanups.push(() => comparePanel.removeEventListener('toggle', onToggle));
+  }
+
   /**
    * Point the turn gesture at `next` when the canvas node has been swapped.
    *
@@ -1337,6 +1601,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       // hanging the pick on that would move the subject every time someone let go
       // of a rotation.
       if (Math.hypot(e.clientX - startX, e.clientY - startY) < AXIS_SLOP) pickFromCloud(e, el);
+      else refreshVectors();   // a turn ended — bring any open still up to the new angle
     };
     // Keyboard equivalent: a drag-only control is unusable without one.
     const onKey = (e: KeyboardEvent): void => {
@@ -1348,6 +1613,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       else return;
       e.preventDefault();
       scheduleSolid();
+      refreshVectors();   // keyboard turns are discrete — refresh the open stills
     };
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
@@ -1535,9 +1801,46 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
       embedSeg.querySelectorAll<HTMLElement>('[data-val]')
         .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
       paintSolid();
+      refreshVectors();   // the stills follow the embedding too
     };
     embedSeg.addEventListener('click', onEmbed);
     cleanups.push(() => embedSeg.removeEventListener('click', onEmbed));
+  }
+
+  // ── Vision preview (CVD / grayscale) ──────────────────────────────────────
+  // Diagnostic only: it recolours the matrix and the brand rail and rescores the
+  // grid, and writes nothing. A plain `.view-seg` like the embedding row above —
+  // no jelly, because the choice is not on a hot path.
+  const cvdSeg = $('[data-lab-cvd]');
+  const cvdSevRow = $('[data-lab-cvd-sev]');
+  const cvdSevInput = $<HTMLInputElement>('[data-lab-cvd-sev-input]');
+  const cvdSevOut = $('[data-lab-cvd-sev-out]');
+  if (cvdSeg) {
+    const onCvd = (e: Event): void => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
+      const next = btn?.dataset.val as CvdMode | undefined;
+      if (!next || next === cvdMode) return;
+      cvdMode = next;
+      cvdSeg.querySelectorAll<HTMLElement>('[data-val]')
+        .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      const graded = next === 'protan' || next === 'deutan' || next === 'tritan';
+      if (cvdSevRow) cvdSevRow.hidden = !graded;
+      renderCvdMatrix();
+      renderBrand();
+      announce(tRaw('Vision preview: {mode}', { mode: btn!.textContent?.trim() ?? next }));
+    };
+    cvdSeg.addEventListener('click', onCvd);
+    cleanups.push(() => cvdSeg.removeEventListener('click', onCvd));
+  }
+  if (cvdSevInput) {
+    const onSev = (): void => {
+      cvdSeverity = Math.max(0, Math.min(100, Math.round(Number(cvdSevInput.value) || 0)));
+      if (cvdSevOut) cvdSevOut.textContent = `${cvdSeverity}%`;
+      renderCvdMatrix();
+      renderBrand();
+    };
+    cvdSevInput.addEventListener('input', onSev);
+    cleanups.push(() => cvdSevInput.removeEventListener('input', onSev));
   }
 
   // ── Ramps: tones, and a blend to a second colour ─────────────────────────
@@ -2352,20 +2655,39 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     const list = Array.isArray(colors) ? colors : [];
     const mount = $('[data-lab-brand]');
     const section = $('[data-lab-brand-section]');
-    if (mount && list.length) {
-      mount.innerHTML = list.slice(0, 64).map((c) => {
-        const hex = describeColor(String(c.value ?? ''))?.srgbHex;
-        if (!hex) return '';
-        const name = String(c.name ?? c.id ?? hex);
-        // --sw carries the hex; --sw-real the authored token value, which the CSS
-        // layers on top so a wide-gamut brand colour shows as itself.
-        return `<button type="button" class="lab-brand-sw" data-lab-brand-pick="${escape(String(c.value))}"
-          style="--sw:${escape(hex)};--sw-real:${escape(String(c.value))}" title="${escape(`${name} ${hex}`)}" aria-label="${escape(tRaw('Inspect {name}', { name }))}"></button>`;
-      }).join('');
+    // Resolve each swatch's TRUE colour ONCE, then `renderBrand` re-badges from
+    // this list on every target change without re-reading tokens.
+    brandSwatches = list.slice(0, 64).map((c): BrandSwatch | null => {
+      const value = String(c.value ?? '');           // ALWAYS an sRGB hex (tokens.ts bakes it)
+      const real = widestFace(c) ?? value;           // the richest value we actually have
+      const desc = describeColor(real) ?? describeColor(value);
+      const hex = describeColor(value)?.srgbHex ?? desc?.srgbHex;
+      if (!hex) return null;
+      return { pick: value, hex, real, name: String(c.name ?? c.id ?? hex), oklch: desc?.oklch ?? null };
+    }).filter((s): s is BrandSwatch => s != null);
+    if (mount && brandSwatches.length) {
+      renderBrand();
+      // The contrast matrix is a PALETTE diagnostic, so it only has something to say
+      // once a palette resolved: reveal the panel and fill the grid here (it is
+      // independent of the subject, so it is not touched again on a subject change).
+      const diag = $('[data-lab-diag]');
+      if (diag) diag.hidden = false;
+      renderCvdMatrix();
+      // Delegated once — `renderBrand` rewrites innerHTML, so a per-swatch listener
+      // would be lost on every re-badge. Click still SEEDS the colour; the badge is
+      // a read-only overlay and does not touch this path.
       mount.addEventListener('click', (e) => {
         const b = (e.target as HTMLElement).closest<HTMLElement>('[data-lab-brand-pick]');
         if (b?.dataset.labBrandPick) setSubject(b.dataset.labBrandPick);
       });
+      // Honest about the limits of the data: `value` is always an sRGB hex, and
+      // Display-P3/Rec.2020 both CONTAIN sRGB, so a palette with no wide-gamut faces
+      // can only ever badge against a press profile narrower than sRGB — never P3 or
+      // Rec.2020. That is correct, not a bug; don't fake a badge to fill the gap.
+      if (!brandSwatches.some((s) => s.real !== s.hex)) {
+        console.info('[color-lab] brand palette is sRGB-sourced (no wide-gamut faces); ' +
+          'display-gamut targets (Display-P3/Rec.2020) will not badge — only a narrower press profile can.');
+      }
     } else if (section) {
       section.hidden = true; // no brand mounted — say nothing rather than show an empty rail
     }
@@ -2425,6 +2747,95 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * The gamut verdict for ONE swatch against ONE comparison target — the whole
+ * badge decision, pure and in one testable place.
+ *
+ * `clippedHex` is what the colour BECOMES inside `limit`: chroma given up at
+ * constant lightness/hue (CSS Color 4 §14.2, via `clipToGamut`), rendered to an
+ * sRGB hex. `deltaE` is the perceptual distance (ΔEOK) between the swatch and
+ * that clip — so a badge can say not just "outside" but "outside, by THIS much";
+ * it is exactly 0 when the colour already fits, where `clipToGamut` returns the
+ * input untouched and so `clippedHex === oklchToHex(oklch)`.
+ *
+ * Membership is asked of the ACTUAL gamut (`inGamut`), never inferred from an
+ * area ordering: sRGB ⊂ Display-P3 holds, but Display-P3 ⊄ Rec.2020 (P3's red sits
+ * outside the Rec.2020 triangle — see the engine's `inGamut`), and a press profile
+ * can be narrower than sRGB. Works for a display gamut NAME or any `GamutSource`
+ * (an ICC print profile) alike.
+ */
+export function swatchGamutState(
+  oklch: { l: number; c: number; h: number },
+  limit: GamutLimit,
+): { outOfGamut: boolean; clippedHex: string; deltaE: number } {
+  const inside = inGamut(oklch.l, oklch.c, oklch.h, limit);
+  const clippedHex = oklchToHex(clipToGamut(oklch, limit));
+  return {
+    outOfGamut: !inside,
+    clippedHex,
+    deltaE: inside ? 0 : deltaEOk(formatOklch(oklch), clippedHex),
+  };
+}
+
+/**
+ * The full asymmetric APCA grid over `colors` — the whole matrix, pure and
+ * testable in one place.
+ *
+ * `cell[i][j]` scores `colors[i]` as TEXT on `colors[j]` as BACKGROUND. APCA is
+ * polarity-dependent, so this is deliberately NOT symmetric — white-on-black and
+ * black-on-white have opposite-signed Lc — and the diagonal (a colour on itself)
+ * is ~0, because the engine returns 0 when text and background luminance coincide.
+ * `lc` is the SIGNED engine value (`apcaContrast`); `band` is its APCA use-band
+ * (`apcaUse`) — the existing band interpretation, not a reinvented threshold. The
+ * caller prepends white and black to `colors`.
+ */
+export function contrastMatrix(colors: string[]): { lc: number; band: string }[][] {
+  return colors.map((text) =>
+    colors.map((bg) => {
+      const lc = apcaContrast(text, bg);
+      return { lc, band: apcaUse(lc) };
+    }),
+  );
+}
+
+/**
+ * A palette colour as it appears under one vision-preview mode.
+ *
+ *   · `normal`    → identity (the string is returned unchanged).
+ *   · `grayscale` → `toGrayscaleHex` (Rec.709 luma).
+ *   · CVD type    → `simulateCvdHex` at `severity` (Machado 2009; 1 = full
+ *                   dichromacy, 0 = identity).
+ *
+ * The engine wrappers are hex-only and return null for an unreadable input; this
+ * falls back to the input string so a caller can paint SOMETHING rather than an
+ * empty fill. Pure and DOM-free.
+ */
+export function simulatePalette(hex: string, mode: CvdMode, severity = 1): string {
+  if (mode === 'normal') return hex;
+  if (mode === 'grayscale') return toGrayscaleHex(hex) ?? hex;
+  return simulateCvdHex(hex, mode, severity) ?? hex;
+}
+
+/**
+ * The widest-gamut authored face on a brand swatch as a CSS colour string, or
+ * null when it has none we can read.
+ *
+ * `faces` (engine `color-faces.ts`) are per-target overrides; only the STRING
+ * ones are colours (an ICC face is four ink numbers, not a paintable value). This
+ * is the ONLY place a swatch carries a value wider than its baked sRGB `value`, so
+ * it is what makes a Display-P3/Rec.2020 badge meaningful when the brand authored
+ * one. Rec.2020 before Display-P3, so the richest available value wins.
+ */
+function widestFace(c: LabSwatchInput): string | null {
+  const f = c.faces;
+  if (!f) return null;
+  for (const key of ['rec2020', 'display-p3'] as const) {
+    const v = f[key];
+    if (typeof v === 'string' && describeColor(v)) return v;
+  }
+  return null;
+}
 
 /** `?c=<any css colour>` from the route params. */
 function seedFrom(params: string): string | null {
@@ -2717,9 +3128,30 @@ function shellHtml(): string {
             </div>
             <p class="lab-cloud-stats" data-lab-cloud-stats hidden></p>
             <p class="lab-chart-at"><strong data-lab-solid-note></strong></p>
+            ${/* A STILL of the same solid, in vector. The canvas is the turntable;
+                  this is what a docs screenshot captures (real polygons, not a
+                  raster) and what you take away. Folded, and rendered on open —
+                  see renderSolidSvg. Painted in sRGB, so it shows structure, not
+                  colour beyond sRGB. */''}
+            <details class="lab-vecsnap" data-lab-solid-svg-panel>
+              <summary>${escape(t('Vector snapshot (SVG)'))}</summary>
+              <div class="lab-vecsnap-body" data-lab-solid-svg role="img"
+                aria-label="${escape(t('The current gamut solid as a still vector image, at the angle shown above.'))}"></div>
+              <p class="lab-vecsnap-note">${escape(t('A still SVG of the shape above, painted in sRGB — it shows the hull’s structure, not colours beyond sRGB.'))}</p>
+            </details>
           </figcaption>
         </figure>
       </div>
+      ${/* The two-shell comparison. Deliberately SIDE BY SIDE, not overlaid: two
+            translucent screen gamuts over each other read as one muddy shape and
+            lie about which is in front (see paintSolid). At one shared angle and
+            scale, Display-P3 NOT being contained by Rec.2020 shows up as SHAPE.
+            Folded; rendered on open — see renderCompare. */''}
+      <details class="lab-compare" data-lab-compare-panel>
+        <summary>${escape(t('Compare gamuts: Display-P3 vs Rec.2020'))}</summary>
+        <p class="lab-section-note">${escape(t('The two widest screen gamuts, side by side at the same angle and scale — turn the solid above and reopen this to match it. Display-P3 is not contained by Rec.2020, which is why the shapes differ. Painted in sRGB: these stills show the hulls’ structure, not colours beyond sRGB.'))}</p>
+        <div class="lab-compare-grid" data-lab-compare-body></div>
+      </details>
     </section>
 
     <!-- 3 · EVERY NOTATION. -->
@@ -2888,6 +3320,40 @@ function shellHtml(): string {
         ${contrastCardShell('ink', t('Your surface'), true)}
       </div>
       <p class="lab-contrast-note" data-lab-contrast-note></p>
+
+      ${/* A foldable diagnostic: the palette's APCA contrasts as a grid, plus a
+            vision-preview toggle that recolours the grid AND the brand rail above
+            and rescores every pairing for that vision. Shown only when a brand
+            palette resolved (unhidden in the brand-swatch block); a palette
+            diagnostic with no palette has nothing to say. Never writes a token. */''}
+      <details class="lab-diag" data-lab-diag hidden>
+        <summary class="lab-diag-summary">
+          <h3 class="lab-h3">${escape(t('Palette contrast & vision preview'))}</h3>
+          <span class="lab-diag-hint">${escape(t('An APCA grid, and how it reads for colour-vision deficiency'))}</span>
+        </summary>
+        <div class="lab-diag-body">
+          <p class="lab-section-note">${escape(t('Every palette colour as TEXT (down the rows) over every palette colour as BACKGROUND (across the columns), plus white and black. APCA is polarity-dependent, so a cell and its mirror differ and the diagonal — a colour on itself — reads ~0. Pick a vision mode to recolour the grid and the brand rail and rescore each pairing for that vision.'))}</p>
+          <div class="lab-cvd">
+            <div class="view-seg lab-seg" role="group" aria-label="${escape(t('Vision preview'))}" data-lab-cvd>
+              <button type="button" class="view-seg-btn" data-val="normal" aria-pressed="true">${escape(t('Normal'))}</button>
+              <button type="button" class="view-seg-btn" data-val="grayscale" aria-pressed="false">${escape(t('Grayscale'))}</button>
+              <button type="button" class="view-seg-btn" data-val="protan" aria-pressed="false">${escape(t('Protanopia'))}</button>
+              <button type="button" class="view-seg-btn" data-val="deutan" aria-pressed="false">${escape(t('Deuteranopia'))}</button>
+              <button type="button" class="view-seg-btn" data-val="tritan" aria-pressed="false">${escape(t('Tritanopia'))}</button>
+            </div>
+            ${/* Severity only bites the three GRADED CVD types (Machado interpolates the
+                  matrices); Grayscale and Normal ignore it, so the row is hidden for them. */''}
+            <label class="lab-cvd-sev" data-lab-cvd-sev hidden>
+              <span class="lab-field-label">${escape(t('Severity'))}</span>
+              <input type="range" class="lab-cvd-sev-input" min="0" max="100" step="5" value="100"
+                data-lab-cvd-sev-input aria-label="${escape(t('Simulation severity'))}">
+              <output class="lab-cvd-sev-out" data-lab-cvd-sev-out>100%</output>
+            </label>
+          </div>
+          <div class="lab-mx" data-lab-matrix></div>
+          <p class="lab-section-note lab-mx-note" data-lab-matrix-note hidden></p>
+        </div>
+      </details>
     </section>
 
     ${/* 6 · WHAT YOU ARE JUDGING IT ON. Deliberately unnumbered and last: every

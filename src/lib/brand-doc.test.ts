@@ -13,12 +13,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createTokenSet } from '@lolly/engine';
+import {
+  createTokenSet, deriveBrandTokens, defaultColorCurve, serializeCurve, deserializeCurve,
+  sampleCurve, bakeCurve, apcaContrast, solveLightnessForApca,
+  generateAnalogous, hexToOklch, oklchToHex, inGamut, clipToGamut,
+} from '@lolly/engine';
 import {
   walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, leafAt,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
   getExcludedSwatches, setSwatchExcluded,
+  getRampCurve, setRampCurve, seedRampCurve, reanchorCurve, overlayRampCurves,
+  contrastTargets, contrastLockCurve, rotateCurveHue,
+  nudgeSwatch, NUDGE_STEP, NUDGE_BIG,
 } from './brand-doc.ts';
+import type { ContrastLockPreset } from './brand-doc.ts';
 
 const BRAND = fileURLToPath(
   new URL('../../../../brands/lolly-start/catalog/assets/lolly/tokens/brand.json', import.meta.url),
@@ -391,4 +399,376 @@ test('a "Roles" displayGroup tag follows the CURRENT theme’s Roles section', (
   const legacy = addSwatch(doc, 'custom', 'Old tag', '#446622', { displayGroup: 'Roles · Light' })!;
   const l = walkSwatches(doc, 'dark', resolverFor(doc, 'dark')).find(x => x.path.join('.') === legacy.join('.'))!;
   assert.equal(l.group, 'Roles · Dark');
+});
+
+// ── Per-ramp tonal curves ─────────────────────────────────────────────────────
+
+/** The primary ramp's step $values (`base.color.ramp.<ramp>.<i>`), in step order. */
+const rampStepValues = (doc: unknown, ramp: string): string[] => {
+  const group = leafAt(doc, ['base', 'color', 'ramp', ramp])!;
+  return Object.keys(group).filter(k => /^\d+$/.test(k)).map(Number).sort((a, b) => a - b)
+    .map(i => String((group[String(i)] as { $value: unknown }).$value));
+};
+
+test('setRampCurve ⇄ getRampCurve round-trips the stored ColorCurveJSON, and null clears it', () => {
+  const doc = load();
+  const curve = defaultColorCurve({ l: 0.6, c: 0.12, h: 250 }, 9);
+  assert.equal(getRampCurve(doc, 'primary'), null, 'starter brand carries no ramp curve');
+
+  assert.equal(setRampCurve(doc, 'primary', curve), true);
+  const json = getRampCurve(doc, 'primary');
+  assert.ok(json, 'the curve reads back');
+  // Stored as the canonical serialized OBJECT, so it round-trips exactly.
+  assert.equal(JSON.stringify(json), serializeCurve(curve));
+  assert.deepEqual(deserializeCurve(json!), curve);
+
+  // The curve rides in the ramp GROUP node's vendor $extensions (not a step).
+  const group = leafAt(doc, ['base', 'color', 'ramp', 'primary'])!;
+  const ext = group.$extensions as Record<string, { curve?: unknown }>;
+  assert.ok(ext['com.suse.lolly']!.curve, 'stored under the vendor namespace on the group');
+
+  // Clearing removes the curve and the now-empty extension scaffolding, but the
+  // group's own $description survives (cleanupExt only touches $extensions).
+  assert.equal('$description' in group, true);
+  assert.equal(setRampCurve(doc, 'primary', null), true);
+  assert.equal(getRampCurve(doc, 'primary'), null);
+  assert.equal(group.$extensions, undefined, 'empty $extensions cleaned up');
+  assert.equal('$description' in group, true, 'the group description is untouched');
+});
+
+test('a group-level $extensions.curve is NEVER surfaced as a swatch', () => {
+  const doc = load();
+  const before = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
+  setRampCurve(doc, 'primary', defaultColorCurve({ l: 0.6, c: 0.12, h: 250 }, 9));
+  const after = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
+  // The walker skips every $-prefixed key, so the curve adds no phantom swatch.
+  assert.equal(after.length, before.length);
+  assert.ok(!after.some(s => s.path.includes('$extensions') || s.path.includes('curve')));
+  // The primary ramp still shows exactly its 9 steps.
+  assert.equal(after.filter(s => s.kind === 'ramp' && s.group === 'Primary').length, 9);
+});
+
+test('seedRampCurve of an untouched derived ramp re-bakes byte-identical to its step $values', () => {
+  // A DERIVED doc: its ramp step literals are formatOklch(v), the exact form the
+  // overlay regenerates, so seed → overlay is a fixed point (parseOklch full
+  // precision, never a hex round-trip).
+  for (const ramp of ['primary', 'neutral', 'secondary'] as const) {
+    for (const steps of [3, 9, 20]) {
+      const doc = deriveBrandTokens({ primary: '#4f83cc', steps, name: 'x' }) as Record<string, unknown>;
+      const before = rampStepValues(doc, ramp);
+      const curve = seedRampCurve(doc, ramp, steps);
+      overlayRampCurves(doc, { [ramp]: curve }, steps);
+      assert.deepEqual(rampStepValues(doc, ramp), before, `${ramp} @ ${steps} steps: seed re-bakes byte-identically`);
+    }
+  }
+});
+
+test('an empty curves map makes overlayRampCurves a deep-equal no-op (byte-identity guard)', () => {
+  const doc = deriveBrandTokens({ primary: '#4f83cc', steps: 9, name: 'x' }) as Record<string, unknown>;
+  const clone = structuredClone(doc);
+  overlayRampCurves(doc, {}, 9);
+  assert.deepEqual(doc, clone, 'a curve-less brand is untouched by the overlay');
+  // And no ramp gains a curve extension.
+  assert.equal(getRampCurve(doc, 'primary'), null);
+  assert.equal(getRampCurve(doc, 'neutral'), null);
+  assert.equal(getRampCurve(doc, 'secondary'), null);
+});
+
+test('a ramp curve SURVIVES a "Use this colour" re-derive (the forbidden failure)', () => {
+  const steps = 9;
+  const doc = deriveBrandTokens({ primary: '#4f83cc', steps, name: 'x' }) as Record<string, unknown>;
+  // Hand-tune the primary curve so it differs from the pure derive.
+  const curve = seedRampCurve(doc, 'primary', steps);
+  curve.L.points[2]!.v = Math.min(1, curve.L.points[2]!.v + 0.1);
+  overlayRampCurves(doc, { primary: curve }, steps);
+  const edited = rampStepValues(doc, 'primary');
+
+  // Simulate the derive handler: a FRESH derive (no extension) with the curve
+  // carried forward in editor state and overlaid — exactly what brand-editor does.
+  const next = deriveBrandTokens({ primary: '#4f83cc', steps, name: 'x' }) as Record<string, unknown>;
+  overlayRampCurves(next, { primary: curve }, steps);
+
+  // The curve is re-stamped (recoverable) AND the edited literals are reproduced,
+  // not silently reset to the pure derive.
+  assert.ok(getRampCurve(next, 'primary'), 'the curve survives the re-derive');
+  assert.deepEqual(rampStepValues(next, 'primary'), edited, 'the edited ramp is reproduced');
+  // The untouched neutral/secondary ramps carry no curve after the re-derive.
+  assert.equal(getRampCurve(next, 'neutral'), null);
+});
+
+test('reanchorCurve shifts by the primary delta: H wraps, L and C clamp', () => {
+  const curve = {
+    L: { points: [{ t: 0, v: 0.2 }, { t: 1, v: 0.8 }] },
+    C: { points: [{ t: 0, v: 0.05 }, { t: 1, v: 0.2 }] },
+    H: { points: [{ t: 0, v: 5 }, { t: 1, v: 355 }] },
+  };
+  // H: 350° → 10° is a +20° rotation across 0 (dH = -340 ≡ +20 mod 360).
+  // L: +0.4 (0.5 → 0.9) pushes 0.8 past 1 → clamps.
+  // C: -0.08 (0.1 → 0.02) pushes 0.05 below 0 → clamps.
+  const out = reanchorCurve(
+    curve,
+    { l: 0.5, c: 0.1, h: 350 },
+    { l: 0.9, c: 0.02, h: 10 },
+  );
+  assert.deepEqual(out.H.points.map(p => p.v), [25, 15], 'hue rotates mod 360 (wrap-safe)');
+  assert.deepEqual(out.L.points.map(p => Number(p.v.toFixed(4))), [0.6, 1], 'lightness additive, clamped to [0,1]');
+  assert.deepEqual(out.C.points.map(p => Number(p.v.toFixed(4))), [0, 0.12], 'chroma additive, clamped ≥ 0');
+  // The input is not mutated (a fresh curve is returned).
+  assert.equal(curve.L.points[1]!.v, 0.8);
+});
+
+// ── Rotate hue (whole-ramp hue rotation as a curve transform) ──────────────────
+
+test('rotateCurveHue shifts every H point by degrees (mod 360), leaving L and C untouched', () => {
+  const curve = {
+    L: { points: [{ t: 0, v: 0.2 }, { t: 0.5, v: 0.5 }, { t: 1, v: 0.85 }] },
+    C: { points: [{ t: 0, v: 0.03 }, { t: 0.5, v: 0.12 }, { t: 1, v: 0.05 }] },
+    H: { points: [{ t: 0, v: 10 }, { t: 0.5, v: 200 }, { t: 1, v: 350 }] },
+  };
+  const out = rotateCurveHue(curve, 40);
+  // Every H control point shifts by +40, wrapping mod 360 (350 + 40 = 390 → 30).
+  assert.deepEqual(out.H.points.map(p => p.v), [50, 240, 30], 'hue rotates mod 360 (wrap-safe)');
+  assert.deepEqual(out.H.points.map(p => p.t), [0, 0.5, 1], 'tone positions unchanged (no resample)');
+  // L and C are byte-identical — only the hue turns.
+  assert.deepEqual(out.L.points, curve.L.points);
+  assert.deepEqual(out.C.points, curve.C.points);
+  // A negative rotation wraps the other way (10 - 40 = -30 → 330).
+  const back = rotateCurveHue(curve, -40);
+  assert.deepEqual(back.H.points.map(p => p.v), [330, 160, 310]);
+  // One control point per existing point — no resample.
+  assert.equal(out.H.points.length, curve.H.points.length);
+  // The input is never mutated (a fresh curve is returned).
+  assert.deepEqual(curve.H.points.map(p => p.v), [10, 200, 350]);
+});
+
+test('rotateCurveHue: a full ±360° turn is an identity on the control points', () => {
+  const curve = {
+    L: { points: [{ t: 0, v: 0.3 }, { t: 1, v: 0.7 }] },
+    C: { points: [{ t: 0, v: 0.04 }, { t: 1, v: 0.1 }] },
+    H: { points: [{ t: 0, v: 0 }, { t: 0.5, v: 137 }, { t: 1, v: 359 }] },
+  };
+  for (const deg of [360, -360]) {
+    const out = rotateCurveHue(curve, deg);
+    assert.deepEqual(out.H.points.map(p => p.v), curve.H.points.map(p => p.v), `${deg}° is a hue identity`);
+    assert.deepEqual(out.L.points, curve.L.points);
+    assert.deepEqual(out.C.points, curve.C.points);
+  }
+});
+
+test('a rotated curve is an ordinary ColorCurve — round-trips through set/getRampCurve', () => {
+  const doc = load();
+  const steps = 9;
+  const base = seedRampCurve(doc, 'primary', steps);
+  const curve = rotateCurveHue(base, 120);
+  // Its shape (L/C) matches the seed; only the hues moved.
+  assert.deepEqual(curve.L.points, base.L.points);
+  assert.deepEqual(curve.C.points, base.C.points);
+
+  assert.equal(setRampCurve(doc, 'primary', curve), true);
+  const json = getRampCurve(doc, 'primary');
+  assert.ok(json, 'the rotated curve reads back');
+  assert.deepEqual(deserializeCurve(json!), curve, 'exact round-trip — it is just a curve');
+  // And overlaying it bakes the ramp steps + re-stamps the curve (same machinery
+  // every other curve rides), so the rotation persists like any hand edit.
+  overlayRampCurves(doc, { primary: curve }, steps);
+  assert.ok(getRampCurve(doc, 'primary'), 'the curve survives overlay + re-stamp');
+});
+
+// ── Parametric analogous (the harmony picker's Analogous mode generator) ───────
+
+test('generateAnalogous yields `count` accents whose hues step by `angle` (the panel generator path)', () => {
+  const primary = '#4f83cc';
+  const norm = (h: number): number => ((h % 360) + 360) % 360;
+  const pH = hexToOklch(primary)!.h;
+  for (const [count, angle] of [[2, 15], [3, 30], [5, 45]] as const) {
+    const accents = generateAnalogous(primary, { count, angle });
+    assert.equal(accents.length, count, `${count} accents produced`);
+    for (let i = 0; i < accents.length; i++) {
+      // Accent i (1-indexed) sits at primary + (i+1)·angle around the wheel.
+      assert.ok(Math.abs(accents[i]!.hue - norm(pH + angle * (i + 1))) < 1e-9,
+        `accent ${i}: hue steps by ${angle}° from the primary`);
+    }
+    // Consecutive accents differ by exactly `angle` (mod 360).
+    for (let i = 1; i < accents.length; i++) {
+      const d = norm(accents[i]!.hue - accents[i - 1]!.hue);
+      assert.ok(Math.abs(d - norm(angle)) < 1e-9, `step ${i}: consecutive hue delta is ${angle}°`);
+    }
+  }
+});
+
+// ── Contrast-lock ─────────────────────────────────────────────────────────────
+// A faithful port of community/color-palette/hooks.js `_targets`/`_fitTargets`/
+// `_parseLc`, so `contrastTargets` is proved to speak the SAME numbers the
+// Palette Lab tool does — a drift here means the two surfaces disagree.
+const TOOL_SPANS: Record<ContrastLockPreset, [number, number]> = { even: [15, 90], text: [45, 100], ui: [8, 66] };
+const toolR1 = (n: number): number => Math.round(n * 10) / 10;
+function toolParseLc(s: string): number[] {
+  if (s == null) return [];
+  return String(s).split(',').map(x => Number(String(x).trim())).filter(n => Number.isFinite(n) && n >= 0);
+}
+function toolFit(list: number[], steps: number): number[] {
+  if (list.length === 1) { const flat: number[] = []; for (let i = 0; i < steps; i++) flat.push(list[0]!); return flat; }
+  const out: number[] = [];
+  for (let j = 0; j < steps; j++) {
+    const t = steps <= 1 ? 0 : j / (steps - 1);
+    const pos = t * (list.length - 1);
+    const lo = Math.floor(pos), hi = Math.min(list.length - 1, lo + 1);
+    out.push(toolR1(list[lo]! + (list[hi]! - list[lo]!) * (pos - lo)));
+  }
+  return out;
+}
+function toolTargets(preset: ContrastLockPreset, steps: number, custom: string): number[] {
+  // The one deliberate correction to the literal port: an empty/whitespace custom
+  // falls through to the preset (the tool's `_parseLc('')` returns [0], zeroing the
+  // ramp — see contrastTargets' note). All non-empty numeric parsing is identical.
+  const list = custom.trim() ? toolParseLc(custom) : [];
+  if (list.length) return toolFit(list, steps);
+  const ends = TOOL_SPANS[preset] || TOOL_SPANS.even;
+  const out: number[] = [];
+  for (let i = 0; i < steps; i++) { const t = steps <= 1 ? 0 : i / (steps - 1); out.push(toolR1(ends[0] + (ends[1] - ends[0]) * t)); }
+  return out;
+}
+
+test('contrastTargets speaks the Palette Lab tool numbers (presets × steps, and custom-list fit)', () => {
+  // Concrete anchors — the exact spans + one-decimal rounding, pinned so a change
+  // to the shared table is caught here and not only via the port below.
+  assert.deepEqual(contrastTargets('even', 5), [15, 33.8, 52.5, 71.3, 90]);
+  assert.deepEqual(contrastTargets('text', 3), [45, 72.5, 100]);
+  assert.deepEqual(contrastTargets('ui', 5), [8, 22.5, 37, 51.5, 66]);
+  assert.deepEqual(contrastTargets('even', 1), [15], 'n === 1 samples the dark end only');
+
+  // Full parity against the tool's own algorithm across presets, ramp lengths and
+  // custom lists (incl. junk-dropping, single-value fill, and up/down resampling).
+  const customs = ['', '50', '15,30,45,60,75,90', 'abc, 40, , 80', '10,90'];
+  for (const preset of ['even', 'text', 'ui'] as ContrastLockPreset[]) {
+    for (const steps of [1, 3, 5, 7, 9, 11]) {
+      for (const custom of customs) {
+        assert.deepEqual(
+          contrastTargets(preset, steps, custom), toolTargets(preset, steps, custom),
+          `${preset} @ ${steps} steps, custom="${custom}"`,
+        );
+      }
+    }
+  }
+  // A single custom value fills every step; a comma list resamples to `steps`.
+  assert.deepEqual(contrastTargets('even', 4, '50'), [50, 50, 50, 50]);
+  assert.deepEqual(contrastTargets('ui', 3, '20,40,60,80'), [20, 50, 80]);
+});
+
+test('contrastLockCurve retones each step to its APCA target (or caps it), preserving hue', () => {
+  const steps = 9;
+  const doc = deriveBrandTokens({ primary: '#4f83cc', steps, name: 'x' }) as Record<string, unknown>;
+  const base = seedRampCurve(doc, 'primary', steps);
+  const baseStops = sampleCurve(base, steps);
+  const bg = '#ffffff';
+  const TOL = 3; // Lc — the solver's continuous bisection then 8-bit-hex quantisation.
+
+  for (const preset of ['even', 'text', 'ui'] as ContrastLockPreset[]) {
+    const targets = contrastTargets(preset, steps);
+    const { curve, unreachable } = contrastLockCurve(base, steps, targets, bg);
+    const stops = sampleCurve(curve, steps);
+    const hexes = bakeCurve(curve, steps);
+    let capped = 0;
+    for (let i = 0; i < steps; i++) {
+      // Hue is the base stop's hue, passed through the solver unchanged (normalised).
+      const wantH = ((baseStops[i]!.h % 360) + 360) % 360;
+      assert.ok(Math.abs(stops[i]!.h - wantH) < 1e-9, `${preset} step ${i}: hue preserved`);
+      // Chroma never exceeds the base stop's (gamut-clamped at the solved lightness).
+      assert.ok(stops[i]!.c <= baseStops[i]!.c + 1e-9, `${preset} step ${i}: chroma not raised`);
+      // Re-measure the baked tone's APCA against bg with the REAL engine metric:
+      // within tolerance of its target, OR the solver flagged it unreachable.
+      const r = solveLightnessForApca(baseStops[i]!.h, baseStops[i]!.c, targets[i]!, bg);
+      const lc = Math.abs(apcaContrast(hexes[i]!, bg));
+      if (r.reachable) assert.ok(Math.abs(lc - targets[i]!) <= TOL, `${preset} step ${i}: Lc ${lc} ≈ target ${targets[i]}`);
+      else { capped++; assert.ok(lc <= targets[i]! + TOL, `${preset} step ${i}: unreachable → capped below target`); }
+    }
+    assert.equal(unreachable, capped, `${preset}: the reported unreachable count matches the solver`);
+  }
+  // An impossible target (Lc 999 exceeds the APCA ceiling of ~106) makes EVERY
+  // step unreachable — exercises the capped branch + the count deterministically,
+  // regardless of hue.
+  assert.equal(contrastLockCurve(base, steps, contrastTargets('even', steps, '999'), bg).unreachable, steps);
+});
+
+test('a contrast-locked curve is an ordinary ColorCurve — round-trips through set/getRampCurve', () => {
+  const steps = 7;
+  const doc = deriveBrandTokens({ primary: '#c0392b', steps, name: 'x' }) as Record<string, unknown>;
+  const base = seedRampCurve(doc, 'secondary', steps);
+  const { curve } = contrastLockCurve(base, steps, contrastTargets('even', steps), '#ffffff');
+
+  assert.equal(setRampCurve(doc, 'secondary', curve), true);
+  const json = getRampCurve(doc, 'secondary');
+  assert.ok(json, 'the locked curve reads back');
+  assert.deepEqual(deserializeCurve(json!), curve, 'exact round-trip — it is just a curve');
+  // And overlaying it bakes the ramp steps to those exact tones (same machinery
+  // every other curve rides), so the transform is persisted like any hand edit.
+  overlayRampCurves(doc, { secondary: curve }, steps);
+  assert.ok(getRampCurve(doc, 'secondary'), 'the curve survives overlay + re-stamp');
+});
+
+// ── nudgeSwatch — keyboard OKLCH channel nudging (palette grid) ──────────────────
+
+// Circular hue distance (degrees), so a wrap across 360 reads as "close".
+const hueDelta = (a: number, b: number): number => {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+};
+
+test('nudgeSwatch: L moves lightness by the step and holds hue/chroma', () => {
+  const base = '#808080'; // near-neutral, comfortably inside sRGB
+  const before = hexToOklch(base)!;
+  const up = hexToOklch(nudgeSwatch(base, 'L', 1, false))!;
+  const down = hexToOklch(nudgeSwatch(base, 'L', -1, false))!;
+  assert.ok(Math.abs(up.l - (before.l + NUDGE_STEP.L)) < 0.01, `L up ≈ +${NUDGE_STEP.L}`);
+  assert.ok(Math.abs(down.l - (before.l - NUDGE_STEP.L)) < 0.01, `L down ≈ -${NUDGE_STEP.L}`);
+});
+
+test('nudgeSwatch: C moves chroma by the step (staying in gamut)', () => {
+  const base = oklchToHex({ l: 0.6, c: 0.08, h: 250 }); // low chroma → +0.01 stays in sRGB
+  const before = hexToOklch(base)!;
+  const up = hexToOklch(nudgeSwatch(base, 'C', 1, false))!;
+  assert.ok(up.c > before.c, 'chroma increased');
+  assert.ok(Math.abs(up.c - (before.c + NUDGE_STEP.C)) < 0.006, `C up ≈ +${NUDGE_STEP.C}`);
+  assert.ok(hueDelta(up.h, before.h) < 1.5, 'hue held while chroma moves');
+});
+
+test('nudgeSwatch: H rotates hue by the step', () => {
+  const base = oklchToHex({ l: 0.6, c: 0.1, h: 120 });
+  const before = hexToOklch(base)!;
+  const up = hexToOklch(nudgeSwatch(base, 'H', 1, false))!;
+  assert.ok(hueDelta(up.h, before.h + NUDGE_STEP.H) < 1.0, `H up ≈ +${NUDGE_STEP.H}°`);
+});
+
+test('nudgeSwatch: Shift (big) multiplies the step by NUDGE_BIG', () => {
+  const base = '#808080';
+  const before = hexToOklch(base)!;
+  const big = hexToOklch(nudgeSwatch(base, 'L', 1, true))!;
+  assert.ok(Math.abs(big.l - (before.l + NUDGE_STEP.L * NUDGE_BIG)) < 0.01, `big L ≈ +${NUDGE_STEP.L * NUDGE_BIG}`);
+});
+
+test('nudgeSwatch: the result is always a real sRGB colour', () => {
+  // Push a saturated stop further out — clipToGamut + oklchToHex must land in sRGB.
+  const base = oklchToHex({ l: 0.7, c: 0.25, h: 30 });
+  const out = hexToOklch(nudgeSwatch(base, 'C', 1, true))!;
+  assert.ok(inGamut(out.l, out.c, out.h, 'srgb'), 'nudged colour fits sRGB');
+  // clipToGamut is idempotent on it (already inside → same object, chroma unchanged).
+  assert.equal(clipToGamut(out, 'srgb').c, out.c, 'no further chroma to give up');
+});
+
+test('nudgeSwatch: hue wraps across 360 rather than clamping', () => {
+  const base = oklchToHex({ l: 0.6, c: 0.1, h: 1 }); // just past 0°
+  const out = hexToOklch(nudgeSwatch(base, 'H', -1, false))!; // 1 - 2 → -1 → 359
+  assert.ok(out.h >= 355, `wrapped to ~359°, got ${out.h.toFixed(1)}`);
+});
+
+test('nudgeSwatch: L clamps to [0,1] and C clamps at 0', () => {
+  const white = hexToOklch(nudgeSwatch('#ffffff', 'L', 1, true))!;
+  assert.ok(white.l <= 1, 'L never exceeds 1');
+  const gray = nudgeSwatch('#808080', 'C', -1, false); // c≈0 already → max(0, …)
+  const g = hexToOklch(gray)!;
+  assert.ok(g.c >= 0, 'chroma never goes negative');
+});
+
+test('nudgeSwatch: an unparseable colour is returned unchanged', () => {
+  assert.equal(nudgeSwatch('not-a-colour', 'L', 1, false), 'not-a-colour');
 });

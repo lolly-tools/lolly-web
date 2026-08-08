@@ -19,7 +19,7 @@
  * it stays testable under `node --test` — see the note in oklch-slice.ts.
  */
 
-import { inGamut, maxChroma, oklchToHex, gamutTierProbe, BEYOND_TIER, chromaAxisMax } from '@lolly/engine';
+import { inGamut, clipToGamut, oklchToHex, gamutTierProbe, BEYOND_TIER, chromaAxisMax } from '@lolly/engine';
 import type { GamutLimit } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 
@@ -252,8 +252,9 @@ export function clampIntoGamut(
   o: { l: number; c: number; h: number },
   limit: GamutLimit,
 ): { l: number; c: number; h: number } {
-  if (inGamut(o.l, o.c, o.h, limit)) return o;
-  return { ...o, c: Math.min(o.c, maxChroma(o.l, o.h, limit)) };
+  // Delegates to the engine primitive (same behaviour: hold L+H, yield chroma to
+  // maxChroma's ceiling; in-gamut input returned unchanged).
+  return clipToGamut(o, limit);
 }
 
 export interface GamutSliderHandlers {

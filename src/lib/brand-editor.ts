@@ -40,14 +40,14 @@
 
 import '../styles/parts/brand-studio.css'; // every .be-* rule — rides this module's lazy chunk
 import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
-import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents,
+import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, formatOklch, parseOklch, deserializeCurve, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents, generateAnalogous,
   // `formatColor` is ALIASED: this module already imports a different one from
   // ./color-formats.ts (`formatColor('cmyk', hex)`), and letting the two share a
   // name is how a call silently gets the wrong function.
   gamutMapSrgb, colorToSrgb, formatColor as formatCssColor, colorFaces } from '@lolly/engine';
 import type { StoredFace } from '@lolly/engine';
 import { parseProfileLimit, profileFor, mountedSources } from './color-profiles.ts';
-import type { BrandDeriveOptions, SchemeKind } from '@lolly/engine';
+import type { BrandDeriveOptions, SchemeKind, Oklch, ColorCurve } from '@lolly/engine';
 import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
 import type { HostV1, TokenSet } from '@lolly-tools/core/host-v1';
@@ -56,10 +56,14 @@ import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
   isRec, prettify, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
-  getSwatchFaces, setSwatchFace,
+  getSwatchFaces, setSwatchFace, leafAt,
   getExcludedSwatches, setSwatchExcluded,
+  getRampCurve, setRampCurve, seedRampCurve, reanchorCurve, overlayRampCurves, RAMP_IDS,
+  contrastTargets, contrastLockCurve, rotateCurveHue, nudgeSwatch,
 } from './brand-doc.ts';
-import type { BrandSwatch, PrintLock } from './brand-doc.ts';
+import type { BrandSwatch, PrintLock, RampCurves, RampId, ContrastLockPreset } from './brand-doc.ts';
+import { mountCurveEditor } from './curve-editor.ts';
+import type { CurveEditorHandle } from './curve-editor.ts';
 import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
 import type { SpotColor, FinishKind } from '@lolly-tools/core/host-v1';
 import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
@@ -203,7 +207,18 @@ async function ensureGoogleFontsConsent(): Promise<boolean> {
   return true;
 }
 
-function rampRow(set: TokenSet, ramp: string, label: string, steps: number, selected?: number): string {
+/** Per-ramp state of the tonal-curve affordance rendered on each ramp row:
+ *  whether the ramp carries a user-tuned curve, and whether its editor is open. */
+interface CurveMark { edited: boolean; open: boolean; }
+type CurveMarks = Partial<Record<RampId, CurveMark>>;
+// A small tonal-curve glyph (a rising ease). Inline so it themes with currentColor.
+const CURVE_GLYPH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 13c4 0 4-10 12-10"/></svg>';
+
+function rampRow(
+  set: TokenSet, ramp: string, label: string, steps: number,
+  opts: { selected?: number; curve?: CurveMark } = {},
+): string {
+  const selected = opts.selected;
   let cells = '';
   for (let i = 1; i <= steps; i++) {
     const v = set.resolve(`color.ramp.${ramp}.${i}`);
@@ -215,7 +230,17 @@ function rampRow(set: TokenSet, ramp: string, label: string, steps: number, sele
            title="${escape(title)}" data-be-ramp="${escape(ramp)}" data-be-step="${i}"
            aria-pressed="${i === selected}" aria-label="${escape(title)}"></button>`;
   }
-  return `<div class="be-ramp-row"><span class="be-ramp-label">${escape(label)}</span><div class="be-ramp" role="${selected === undefined ? 'img' : 'group'}" aria-label="${escape(tRaw('{label} ramp', { label }))}">${cells}</div></div>`;
+  // The curve-edit toggle (all three ramps). `is-edited` = a curve is stored;
+  // `is-open` = this ramp's editor is showing. Its click is handled by the
+  // preview's own [data-be-curve] delegate, never the step-pick one.
+  const cm = opts.curve;
+  const curveBtn = cm
+    ? `<button type="button" class="be-ramp-curve${cm.edited ? ' is-edited' : ''}${cm.open ? ' is-open' : ''}"
+         data-be-curve="${escape(ramp)}" aria-pressed="${cm.open}"
+         title="${escape(tRaw('Edit the {label} tonal curve', { label }))}"
+         aria-label="${escape(tRaw('Edit the {label} tonal curve', { label }))}">${CURVE_GLYPH}</button>`
+    : '';
+  return `<div class="be-ramp-row"><span class="be-ramp-label">${escape(label)}</span><div class="be-ramp" role="${selected === undefined ? 'img' : 'group'}" aria-label="${escape(tRaw('{label} ramp', { label }))}">${cells}</div>${curveBtn}</div>`;
 }
 /**
  * The primary→secondary hue bridge: `rampOklab` through the two semantic
@@ -255,11 +280,12 @@ function specCard(name: string, set: TokenSet): string {
 function deriveSafe(opts: BrandDeriveOptions): Record<string, unknown> | null {
   try { return deriveBrandTokens(opts) as Record<string, unknown>; } catch { return null; }
 }
-function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secondary: number; steps: number }): string {
+function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secondary: number; steps: number; curves?: CurveMarks }): string {
   const light = createTokenSet(doc, { theme: 'light' });
   const dark = createTokenSet(doc, { theme: 'dark' });
+  const cm = sel.curves ?? {};
   return `
-    <div class="be-ramps">${rampRow(light, 'primary', t('Primary'), sel.steps)}${rampRow(light, 'neutral', t('Neutral'), sel.steps, sel.neutral)}${rampRow(light, 'secondary', t('Secondary'), sel.steps, sel.secondary)}${blendRow(light, sel.steps)}</div>
+    <div class="be-ramps">${rampRow(light, 'primary', t('Primary'), sel.steps, { curve: cm.primary })}${rampRow(light, 'neutral', t('Neutral'), sel.steps, { selected: sel.neutral, curve: cm.neutral })}${rampRow(light, 'secondary', t('Secondary'), sel.steps, { selected: sel.secondary, curve: cm.secondary })}${blendRow(light, sel.steps)}</div>
     <div class="be-specs">${specCard(t('Light'), light)}${specCard(t('Dark'), dark)}</div>`;
 }
 
@@ -885,11 +911,65 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const p = primaryAnchorPath(doc);
     return p ? getSwatchPrintOverride(doc, p) : null;
   };
-  // The colour-harmony the "Build your palette" generator suggests accents from.
-  let schemeKind: SchemeKind = 'adjacent-3';
+  // The colour-harmony the "Build your palette" generator suggests accents from —
+  // either a fixed SchemeKind (complement/adjacent/triad/tetrad) or the parametric
+  // 'analogous' mode (its own count + angle controls, generateAnalogous instead of
+  // generateSchemeAccents). One value because the Harmony control is a single
+  // mutually-exclusive segmented group. Persisted in panel state like any input.
+  type HarmonyKind = SchemeKind | 'analogous';
+  let harmonyKind: HarmonyKind = 'adjacent-3';
+  // Parametric-analogous params — only read when harmonyKind === 'analogous'.
+  let analogCount = 3;   // number of accents (2–5)
+  let analogAngle = 30;  // hue step in degrees between consecutive accents (10–45)
   const currentTheme = document.documentElement.dataset.theme || 'light';
 
+  // ── Per-ramp tonal curves — the editable master behind each ramp's steps ─────
+  // Loaded from the installed doc's ramp-group $extensions; ABSENT on a curve-less
+  // brand, which then stays byte-identical to today's pure derive (overlay is a
+  // no-op for a ramp with no curve). Draft-until-"Use this colour", exactly like
+  // the other derive inputs — overlaid onto every derived preview below, and onto
+  // the fresh `next` in the derive handler so a curve survives a re-derive.
+  const curves: RampCurves = {};
+  for (const ramp of RAMP_IDS) {
+    const stored = getRampCurve(doc, ramp);
+    if (stored) curves[ramp] = deserializeCurve(stored);
+  }
+  // The primary the live curves are currently anchored to — a primary edit shifts
+  // them by the per-channel delta from here (see reanchorCurvesTo below).
+  let curveAnchorPrimary = primary;
+  // Which ramp's curve editor is open (null = none). Its state, plus whether each
+  // ramp carries a curve, drives the affordance rendered on every ramp row.
+  let editingCurveRamp: RampId | null = null;
+  const curveMarks = (): CurveMarks => ({
+    primary: { edited: !!curves.primary, open: editingCurveRamp === 'primary' },
+    neutral: { edited: !!curves.neutral, open: editingCurveRamp === 'neutral' },
+    secondary: { edited: !!curves.secondary, open: editingCurveRamp === 'secondary' },
+  });
+
+  // The brand's resolved surface role — the default background contrast-lock
+  // measures against (what a step will actually sit on). Falls back to white on a
+  // tokenless / unresolvable doc, exactly like the Palette Lab tool's `bg`.
+  const surfaceHex = (): string => {
+    try {
+      const v = createTokenSet(doc, { theme: currentTheme === 'dark' ? 'dark' : 'light' }).resolve('color.semantic.surface');
+      return colorToHex(v) ?? '#ffffff';
+    } catch { return '#ffffff'; }
+  };
+  // Contrast-lock presets — labels only; the [low,high] Lc spans live in
+  // brand-doc's contrastTargets (shared verbatim with the Palette Lab tool).
+  const CONTRAST_LOCK_PRESETS: ReadonlyArray<{ id: ContrastLockPreset; label: string }> = [
+    { id: 'even', label: t('Even') },
+    { id: 'text', label: t('Text-first') },
+    { id: 'ui', label: t('UI states') },
+  ];
+
+  // The default contrast-lock background, seeded once for the control's initial
+  // value (the user can re-pick it any time; Apply reads the live input).
+  const contrastLockBg = surfaceHex();
+
   const initialDraft = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
+  // Reflect any stored curves in the very first paint (a no-op when curve-less).
+  if (initialDraft) overlayRampCurves(initialDraft, curves, steps);
 
   root.innerHTML = `
     <div class="be" data-brand-editor>
@@ -943,7 +1023,67 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
             <button type="button" class="be-cta" data-be-derive>${t('Use this colour')}</button>
             <button type="button" class="be-cta" data-be-save hidden>${t('Save colour')}</button>
           </div>
-          <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep, steps }) : ''}</div>
+          <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() }) : ''}</div>
+          <!-- Inline tonal-curve editor — opened from a ramp row's curve toggle;
+               sits under the preview (the Shades slider above resamples it). -->
+          <div class="be-curve" data-be-curve-editor hidden>
+            <div class="be-curve-head">
+              <span class="be-curve-title" data-be-curve-title></span>
+              <div class="be-curve-head-actions">
+                <button type="button" class="be-btn be-btn--sm be-curve-rebuild" data-be-curve-rebuild>${t('Rebuild from colour')}</button>
+                <button type="button" class="be-curve-close" data-be-curve-close aria-label="${escape(t('Close the curve editor'))}" title="${escape(t('Close'))}">✕</button>
+              </div>
+            </div>
+            <p class="be-curve-hint">${t('Drag a point to reshape this ramp. Lightness, chroma and hue each have their own curve — switch with L / C / H. The shades below rebake live; the number of shades follows the slider above.')}</p>
+            <div class="be-curve-mount" data-be-curve-mount></div>
+            <!-- Rotate hue: a one-shot curve transform. It shifts every step's hue
+                 by a fixed angle, keeping each step's lightness + chroma, turning
+                 the whole ramp bodily around the wheel — then hands the result to
+                 the SAME curve machinery (drag / re-anchor / Rebuild all apply). -->
+            <div class="be-hr" data-be-hr>
+              <div class="be-hr-head">
+                <span class="be-hr-title">${t('Rotate hue')}</span>
+                <span class="be-hr-sub">${t('Turn this whole ramp around the hue wheel. Every shade keeps its lightness and chroma.')}</span>
+              </div>
+              <div class="be-hr-controls">
+                <div class="be-field be-hr-deg-field">
+                  <span class="be-field-label">${t('Degrees')} <span class="be-hr-val" data-be-hr-val>0°</span></span>
+                  <input type="range" class="field-range be-hr-slider" data-be-hr-deg min="-180" max="180" step="1" value="0" aria-label="${escape(t('Hue rotation in degrees'))}">
+                </div>
+                <button type="button" class="be-btn be-btn--sm be-hr-apply" data-be-hr-apply>${t('Apply rotation')}</button>
+              </div>
+            </div>
+            <!-- Contrast-lock: a one-shot curve transform. It retones every step
+                 to hit an APCA target against a background, keeping each step's
+                 hue + chroma, then hands the result to the SAME curve machinery
+                 (drag / re-anchor / Rebuild all apply as-is afterwards). -->
+            <div class="be-cl" data-be-cl>
+              <div class="be-cl-head">
+                <span class="be-cl-title">${t('Contrast-lock')}</span>
+                <span class="be-cl-sub">${t('Retone this ramp to hit APCA contrast targets against a background — each step keeps its hue and chroma.')}</span>
+              </div>
+              <div class="be-cl-controls">
+                <label class="be-field be-cl-bg-field">
+                  <span class="be-field-label">${t('Background')}</span>
+                  <input type="color" class="be-cl-bg" data-be-cl-bg value="${escape(contrastLockBg)}" aria-label="${escape(t('Contrast-lock background colour'))}">
+                </label>
+                <label class="be-field be-cl-preset-field">
+                  <span class="be-field-label">${t('Targets')}</span>
+                  <select class="field-select field-select--auto field-select--sm be-cl-preset" data-be-cl-preset aria-label="${escape(t('Contrast target preset'))}">
+                    ${CONTRAST_LOCK_PRESETS.map(p => `<option value="${escape(p.id)}">${escape(p.label)}</option>`).join('')}
+                  </select>
+                </label>
+                <label class="be-field be-cl-custom-field">
+                  <span class="be-field-label">${t('Custom Lc')} <em>${t('(optional)')}</em></span>
+                  <input type="text" class="field-input field-input--sm be-cl-custom" data-be-cl-custom placeholder="15, 45, 75, 90" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="${escape(t('Custom APCA Lc targets, comma-separated'))}">
+                </label>
+              </div>
+              <div class="be-cl-actions">
+                <button type="button" class="be-btn be-btn--sm be-cl-apply" data-be-cl-apply>${t('Apply contrast-lock')}</button>
+                <span class="be-cl-readout" data-be-cl-readout aria-live="polite"></span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -956,9 +1096,28 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
                 reference them) and the default stays adjacent-3. `data-kind` is
                 this group's own value hook, kept because its click delegate below
                 keys off it; segHtml emits `data-val` alongside either way. */''}
-          ${segHtml('schemekind', SCHEME_KINDS.filter(k => !k.id.startsWith('free-')), schemeKind, t('Colour harmony'), {
+          ${/* "Analogous" is appended UI-side as an ADDITIONAL parametric mode; the
+                fixed engine schemes (incl. adjacent-3) are untouched. Its own count
+                + angle controls appear below only while it is the active kind. */''}
+          ${segHtml('schemekind', [
+            ...SCHEME_KINDS.filter(k => !k.id.startsWith('free-')),
+            { id: 'analogous', label: t('Analogous') },
+          ], harmonyKind, t('Colour harmony'), {
             attr: 'data-kind', extraClass: 'be-schemekinds', groupAttr: 'data-be-schemekind',
           })}
+        </div>
+        <!-- Parametric-analogous controls — N accents at a variable hue step.
+             Hidden unless the Analogous harmony is picked (shown/hidden by the
+             segmented-control delegate below). -->
+        <div class="be-analogous" data-be-analogous${(harmonyKind as HarmonyKind) === 'analogous' ? '' : ' hidden'}>
+          <div class="be-field be-analog-field">
+            <span class="be-field-label">${t('Accents')} <span class="be-analog-val" data-be-analog-count-val>${analogCount}</span></span>
+            <input type="range" class="field-range be-analog-slider" data-be-analog-count min="2" max="5" step="1" value="${analogCount}" aria-label="${escape(t('Number of analogous accents'))}">
+          </div>
+          <div class="be-field be-analog-field">
+            <span class="be-field-label">${t('Angle')} <span class="be-analog-val" data-be-analog-angle-val>${analogAngle}°</span></span>
+            <input type="range" class="field-range be-analog-slider" data-be-analog-angle min="10" max="45" step="1" value="${analogAngle}" aria-label="${escape(t('Hue step between analogous accents in degrees'))}">
+          </div>
         </div>
         <div class="be-candidates" data-be-candidates aria-live="polite"></div>
         <div class="be-previews-wrap">
@@ -1120,6 +1279,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // ── Palette state + persistence ─────────────────────────────────────────────
   let swatches: BrandSwatch[] = [];
   let selected = -1;
+  // The OKLCH channel the palette grid's keyboard nudging steps (huetone-style).
+  // A mode that persists across tiles; L by default, re-armed with l/c/h.
+  let armedChannel: 'L' | 'C' | 'H' = 'L';
   // The tile/dot the open swatch popover is anchored to — repositioning on
   // side-pane scroll needs it (the popover positions in `.be` space, so the
   // sticky pane's own scroll would otherwise drift it off its tile).
@@ -1277,7 +1439,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const renderPreview = (): void => {
     const next = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
     if (!next) return; // a half-typed hex mid-edit — keep the last good preview
-    if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep, steps });
+    // The tonal curves are AUTHORITATIVE in the editor: overlay them onto the
+    // pure derive (a byte-identical no-op for any ramp without a curve).
+    overlayRampCurves(next, curves, steps);
+    if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() });
     applyDraftChrome(next);
     broadcastDraft(next);
     setDeriveActive(true); // a derive input changed → invite the user to apply it
@@ -1295,12 +1460,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     neutralStep = Math.min(neutralStep, steps);
     secondaryStep = Math.min(secondaryStep, steps);
     renderPreview();
+    syncCurveEditor(); // the curve is the master; the slider only resamples it
   });
   const onPrimaryFieldChange = (id: string, value: string | { value: string }): void => {
     if (id !== 'be-primary') return;
     const raw = typeof value === 'string' ? value : value.value;
     if (!raw || raw === 'transparent') return;
-    primary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
+    const nextPrimary = /^#[0-9a-fA-F]{8}$/.test(raw) ? raw.slice(0, 7) : raw;
+    reanchorCurvesTo(nextPrimary); // shift live curves by the primary delta (never discard)
+    primary = nextPrimary;
     renderPreview();
     renderScreen();
     primaryLock?.render();
@@ -1311,6 +1479,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    *  visual field (fresh render + wire — no setter exists on the component) and
    *  run the same fan-out a manual pick runs. */
   const setPrimaryTo = (hex: string): void => {
+    reanchorCurvesTo(hex); // keep any live curves anchored to the moving primary
     primary = hex;
     const wrap = $('[data-be-primary-field]') as HTMLElement | null;
     if (wrap) {
@@ -1323,6 +1492,202 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     primaryLock?.render();
     renderGenerator();
   };
+
+  // ── Tonal-curve editor wiring ───────────────────────────────────────────────
+  // Curve edits are DRAFT (preview + chrome), committed into `doc` only by "Use
+  // this colour" (the derive handler overlays the curves) — the same contract as
+  // every other derive input. So an unsaved curve can never reach persist without
+  // first passing through the derive handler, which keeps byte-identity honest.
+  const curveEditorMount = $('[data-be-curve-editor]') as HTMLElement | null;
+  const curveMountEl = $('[data-be-curve-mount]') as HTMLElement | null;
+  const curveTitleEl = $('[data-be-curve-title]') as HTMLElement | null;
+  let curveHandle: CurveEditorHandle | null = null;
+  const RAMP_LABEL: Record<RampId, string> = { primary: t('Primary'), neutral: t('Neutral'), secondary: t('Secondary') };
+
+  /** Any CSS colour → OKLCH: exact for oklch()/lch() literals, else via hex. */
+  const colorToOklch = (s: string): Oklch | null => {
+    const direct = parseOklch(s);
+    if (direct) return direct;
+    const hex = colorToHex(s);
+    return hex ? hexToOklch(hex) : null;
+  };
+  /** Re-anchor every live curve by the primary's per-channel delta (old anchor →
+   *  new primary), so a primary edit carries an edited palette with it rather
+   *  than dropping it. Cumulative — the anchor tracks each step, so composed
+   *  deltas sum. A no-op (bar bookkeeping) when no ramp carries a curve. */
+  const reanchorCurvesTo = (nextPrimary: string): void => {
+    if (!RAMP_IDS.some(r => curves[r])) { curveAnchorPrimary = nextPrimary; return; }
+    const pOld = colorToOklch(curveAnchorPrimary);
+    const pNew = colorToOklch(nextPrimary);
+    if (pOld && pNew) {
+      for (const r of RAMP_IDS) { const c = curves[r]; if (c) curves[r] = reanchorCurve(c, pOld, pNew); }
+      syncCurveEditor();
+    }
+    curveAnchorPrimary = nextPrimary;
+  };
+  /** Push the current curve + step count into an open editor (Shades slider,
+   *  re-anchor). No-op when nothing is open. */
+  const syncCurveEditor = (): void => {
+    if (!editingCurveRamp || !curveHandle) return;
+    curveHandle.render({ curve: curves[editingCurveRamp], steps });
+  };
+  const closeCurveEditor = (repaint = true): void => {
+    editingCurveRamp = null;
+    curveHandle?.teardown(); curveHandle = null;
+    if (curveEditorMount) curveEditorMount.hidden = true;
+    if (repaint) renderPreview(); // clear the row's open state (skipped in reload)
+  };
+  const openCurveEditor = (ramp: RampId): void => {
+    if (editingCurveRamp === ramp) { closeCurveEditor(); return; }
+    editingCurveRamp = ramp;
+    // Seed on first open from the LIVE draft derive (so it matches the visible
+    // preview even after an uncommitted primary/scheme/shade change), at full
+    // OKLCH precision — an untouched ramp re-bakes byte-identically until the
+    // user actually drags. Falls back to the committed doc if the derive fails.
+    if (!curves[ramp]) {
+      const draft = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
+      curves[ramp] = seedRampCurve(draft ?? doc, ramp, steps);
+    }
+    curveAnchorPrimary = primary; // curves are now anchored to today's primary
+    if (curveEditorMount) curveEditorMount.hidden = false;
+    if (curveTitleEl) curveTitleEl.textContent = tRaw('{label} tonal curve', { label: RAMP_LABEL[ramp] });
+    if (curveMountEl) {
+      curveHandle?.teardown();
+      curveHandle = mountCurveEditor(curveMountEl, {
+        curve: curves[ramp]!, steps,
+        onChange: (next) => {
+          // The open ramp can change under a re-anchor; always write the LIVE one.
+          if (!editingCurveRamp) return;
+          curves[editingCurveRamp] = next;
+          renderPreview();
+        },
+      });
+    }
+    renderPreview(); // reflect the open + edited state on the ramp rows
+  };
+  /** "Rebuild from colour": drop this ramp's curve and re-bake ONLY its steps
+   *  from the pure derive (other ramps + manual palette edits untouched), then
+   *  commit into the draft. Never a silent discard — it's an explicit reset. */
+  const rebuildRampFromColour = (): void => {
+    const ramp = editingCurveRamp;
+    if (!ramp || !isRec(doc)) return;
+    delete curves[ramp];
+    setRampCurve(doc, ramp, null); // clear the stored curve on the committed doc
+    // Copy this ramp's pure-derive step literals back over the committed doc so
+    // the palette + a subsequent save reflect the reset immediately.
+    const fresh = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
+    if (fresh) copyRampLiterals(fresh, ramp);
+    closeCurveEditor(); // re-renders the preview → pure derive for this ramp
+    repaintPalette();
+    applyDraftChrome(doc); broadcastDraft(doc);
+    setDirty(true); notify('color');
+    announce(tRaw('{label} ramp rebuilt from your colour', { label: RAMP_LABEL[ramp] }));
+  };
+  /** Copy one ramp's numeric step `$value`s from `src` into the committed `doc`. */
+  const copyRampLiterals = (src: Record<string, unknown>, ramp: string): void => {
+    if (!isRec(doc)) return;
+    const sBase = (isRec(src.base) ? src.base : src) as Record<string, unknown>;
+    const dBase = (isRec(doc.base) ? doc.base : doc) as Record<string, unknown>;
+    const sGroup = leafAt(sBase, ['color', 'ramp', ramp]);
+    const dGroup = leafAt(dBase, ['color', 'ramp', ramp]);
+    if (!sGroup || !dGroup) return;
+    for (const k of Object.keys(dGroup)) {
+      if (!/^\d+$/.test(k)) continue;
+      const sv = sGroup[k], dv = dGroup[k];
+      if (isRec(sv) && isRec(dv) && typeof (sv as Record<string, unknown>).$value === 'string') {
+        (dv as Record<string, unknown>).$value = (sv as Record<string, unknown>).$value;
+      }
+    }
+  };
+  curveEditorMount?.querySelector('[data-be-curve-rebuild]')?.addEventListener('click', () => rebuildRampFromColour());
+  curveEditorMount?.querySelector('[data-be-curve-close]')?.addEventListener('click', () => closeCurveEditor());
+  cleanups.push(() => { curveHandle?.teardown(); curveHandle = null; });
+
+  // ── Contrast-lock (a curve TRANSFORM over the open ramp) ─────────────────────
+  // Builds a fresh curve that hits per-step APCA targets against a background,
+  // KEEPING each step's hue + chroma, then hands it to the SAME curve machinery
+  // every other curve rides. The commit shape mirrors the sibling "Rebuild from
+  // colour" button (rebuildRampFromColour): write curves[ramp], overlay onto the
+  // committed doc (so "Save colour" actually persists the lock — setDirty is only
+  // ever honest when doc carries the change), re-render the editor + preview,
+  // repaint the palette, setDirty. One-shot: afterwards the ramp is an ordinary
+  // curve (drag / re-anchor on primary edit / Rebuild-from-colour all apply as-is).
+  const clBgInput = $('[data-be-cl-bg]') as HTMLInputElement | null;
+  const clPresetSel = $('[data-be-cl-preset]') as HTMLSelectElement | null;
+  const clCustomInput = $('[data-be-cl-custom]') as HTMLInputElement | null;
+  const clReadout = $('[data-be-cl-readout]') as HTMLElement | null;
+  const applyContrastLock = (): void => {
+    const ramp = editingCurveRamp;
+    if (!ramp || !isRec(doc)) return;
+    const rawPreset = clPresetSel?.value;
+    const preset: ContrastLockPreset = rawPreset === 'text' || rawPreset === 'ui' ? rawPreset : 'even';
+    const custom = clCustomInput?.value ?? '';
+    // A valid picked colour wins; anything unreadable falls back to the resolved
+    // surface (never an empty bg, which the solver can't measure against).
+    const bg = (clBgInput?.value ? colorToHex(clBgInput.value) : null) ?? surfaceHex();
+    const targets = contrastTargets(preset, steps, custom);
+    // Seed a curve when this ramp has none yet — from the LIVE draft derive so it
+    // matches the visible preview, exactly like openCurveEditor's first-open seed.
+    const base = curves[ramp]
+      ?? seedRampCurve(deriveSafe({ primary, scheme, surface, contrast, steps, foreground }) ?? doc, ramp, steps);
+    const { curve, unreachable } = contrastLockCurve(base, steps, targets, bg);
+    curves[ramp] = curve;
+    curveAnchorPrimary = primary;           // the locked curve is anchored to today's primary
+    overlayRampCurves(doc, { [ramp]: curve }, steps); // bake steps + stamp the curve on the committed doc
+    curveHandle?.render({ curve, steps });  // reflect the new curve in the open editor (stays open to hand-tune)
+    renderPreview();                        // live app preview + repaint the ramp rows
+    repaintPalette();                       // the Palette panel shows the retoned steps
+    applyDraftChrome(doc); broadcastDraft(doc);
+    setDirty(true); notify('color');
+    if (clReadout) {
+      clReadout.textContent = unreachable === 0
+        ? t('All shades reached their target.')
+        : unreachable === 1
+          ? t('1 shade could not reach its target (capped at the closest tone).')
+          : tRaw('{n} shades could not reach their target (capped at the closest tone).', { n: unreachable });
+    }
+    announce(tRaw('{label} ramp contrast-locked', { label: RAMP_LABEL[ramp] }));
+    playSfx('click');
+  };
+  curveEditorMount?.querySelector('[data-be-cl-apply]')?.addEventListener('click', () => applyContrastLock());
+
+  // ── Rotate hue (a curve TRANSFORM over the open ramp) ────────────────────────
+  // Shifts every step's hue by a fixed angle (L + C untouched, gamut-mapped at
+  // bake by oklchToHex), rotating the whole ramp bodily around the wheel. The
+  // commit shape is the SAME as contrast-lock / Rebuild-from-colour: write
+  // curves[ramp], overlay onto the committed doc (so "Save colour" persists it),
+  // re-render the editor + preview, repaint the palette, setDirty. One-shot: the
+  // slider resets to 0 afterwards and the ramp is an ordinary curve (further
+  // rotation composes; drag / re-anchor / Rebuild all apply as-is).
+  const hrDegInput = $('[data-be-hr-deg]') as HTMLInputElement | null;
+  const hrDegVal = $('[data-be-hr-val]') as HTMLElement | null;
+  hrDegInput?.addEventListener('input', () => {
+    if (hrDegVal) hrDegVal.textContent = `${Number(hrDegInput.value) || 0}°`;
+  });
+  const applyHueRotate = (): void => {
+    const ramp = editingCurveRamp;
+    if (!ramp || !isRec(doc)) return;
+    const degrees = Number(hrDegInput?.value) || 0;
+    if (!degrees) return; // 0° is a no-op — nothing to commit
+    // Seed a curve when this ramp has none yet — from the LIVE draft derive so it
+    // matches the visible preview, exactly like applyContrastLock's seed.
+    const base = curves[ramp]
+      ?? seedRampCurve(deriveSafe({ primary, scheme, surface, contrast, steps, foreground }) ?? doc, ramp, steps);
+    const curve = rotateCurveHue(base, degrees);
+    curves[ramp] = curve;
+    curveAnchorPrimary = primary;           // the rotated curve is anchored to today's primary
+    overlayRampCurves(doc, { [ramp]: curve }, steps); // bake steps + stamp the curve on the committed doc
+    curveHandle?.render({ curve, steps });  // reflect the new curve in the open editor (stays open to hand-tune)
+    renderPreview();                        // live app preview + repaint the ramp rows
+    repaintPalette();                       // the Palette panel shows the rotated steps
+    applyDraftChrome(doc); broadcastDraft(doc);
+    setDirty(true); notify('color');
+    if (hrDegInput) hrDegInput.value = '0'; // reset — the transform is applied, further turns compose
+    if (hrDegVal) hrDegVal.textContent = '0°';
+    announce(tRaw('{label} ramp hue rotated', { label: RAMP_LABEL[ramp] }));
+    playSfx('click');
+  };
+  curveEditorMount?.querySelector('[data-be-hr-apply]')?.addEventListener('click', () => applyHueRotate());
 
   /** The last primary that resolved to a real hex — what an unreadable primary
    *  falls back to, so the generator never sees a broken string. */
@@ -1365,7 +1730,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const renderCandidates = (): void => {
     if (!candidatesEl) return;
     let accents: ReturnType<typeof generateSchemeAccents> = [];
-    try { accents = generateSchemeAccents(primaryHex(), schemeKind); } catch { accents = []; }
+    try {
+      accents = harmonyKind === 'analogous'
+        ? generateAnalogous(primaryHex(), { count: analogCount, angle: analogAngle })
+        : generateSchemeAccents(primaryHex(), harmonyKind);
+    } catch { accents = []; }
     candidatesEl.innerHTML = accents.map(a => {
       const name = nameColor(a.hex);
       const added = isInPalette(a.hex);
@@ -1390,10 +1759,27 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     previewsEl.innerHTML = scenes.map(s => `<figure class="be-pv"><div class="be-pv-art">${s.svg}</div><figcaption class="be-pv-cap">${escape(s.label)}</figcaption></figure>`).join('');
   };
   const renderGenerator = (): void => { renderCandidates(); renderPreviews(); };
+  // The parametric-analogous count/angle controls, shown only in that mode.
+  const analogWrap = $('[data-be-analogous]') as HTMLElement | null;
+  const analogCountInput = $('[data-be-analog-count]') as HTMLInputElement | null;
+  const analogAngleInput = $('[data-be-analog-angle]') as HTMLInputElement | null;
+  const analogCountVal = $('[data-be-analog-count-val]') as HTMLElement | null;
+  const analogAngleVal = $('[data-be-analog-angle-val]') as HTMLElement | null;
   $('[data-be-schemekind]')?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-kind]'); if (!btn) return;
-    schemeKind = btn.dataset.kind as SchemeKind;
+    harmonyKind = btn.dataset.kind as HarmonyKind;
     root.querySelectorAll<HTMLElement>('[data-be-schemekind] [data-kind]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    if (analogWrap) analogWrap.hidden = harmonyKind !== 'analogous';
+    renderCandidates();
+  });
+  analogCountInput?.addEventListener('input', () => {
+    analogCount = Number(analogCountInput.value) || analogCount;
+    if (analogCountVal) analogCountVal.textContent = String(analogCount);
+    renderCandidates();
+  });
+  analogAngleInput?.addEventListener('input', () => {
+    analogAngle = Number(analogAngleInput.value) || analogAngle;
+    if (analogAngleVal) analogAngleVal.textContent = `${analogAngle}°`;
     renderCandidates();
   });
   candidatesEl?.addEventListener('click', (e) => {
@@ -1486,12 +1872,25 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     else return;
     renderPreview();
   });
+  // The per-ramp tonal-curve toggle (a separate attribute → never swept up by
+  // the step-pick delegate above, which keys off [data-be-ramp] on the cells).
+  preview?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-be-curve]');
+    if (!btn) return;
+    const ramp = btn.dataset.beCurve;
+    if (ramp === 'primary' || ramp === 'neutral' || ramp === 'secondary') openCurveEditor(ramp);
+  });
   $('[data-be-derive]')?.addEventListener('click', async () => {
     let next: Record<string, unknown>;
     try { next = deriveBrandTokens({ primary, scheme, surface, contrast, steps, foreground, name: 'My brand' }) as Record<string, unknown>; }
     catch (err) { announce(tRaw("Couldn't derive from {primary}: {error}", { primary, error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true }); return; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);
+    // Re-apply any tonal curves onto the fresh derive — this is what makes an
+    // edited ramp SURVIVE a re-derive (the curve is regenerated from its control
+    // points, and its extension re-stamped on the new doc). A no-op for a ramp
+    // with no curve, so a curve-less re-derive is byte-identical to before.
+    overlayRampCurves(next, curves, steps);
     // Read the lock LIVE off the pre-derive `doc` — whichever surface (Colour
     // panel or the Palette panel's swatch popover) set it last, since both write
     // straight to `doc` — so re-deriving never silently drops a lock the other
@@ -1697,24 +2096,37 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * sliders catch up; NOT when the field itself did, mid-drag).
    */
   function applyEditedHex(rawHex: string, opts: { rerenderField?: boolean } = {}): void {
-    const cur = selected >= 0 ? swatches[selected] : null; if (!cur) return;
+    if (selected < 0) return;
+    writeSwatchHex(selected, rawHex, storedFmt, opts);
+  }
+
+  /**
+   * The doc-write half of applyEditedHex, parameterised by swatch index + storage
+   * format so BOTH the popover (the open `selected` swatch, LCH/hex per its "Stored
+   * as" toggle) and the keyboard nudge (any FOCUSED tile, in the swatch's own
+   * notation) land through one path — the tile repaints in place and it persists on
+   * Save exactly like a popover edit. The popover-only touches (chip, value field,
+   * the alias-detach row) fire only when `idx` IS the open swatch.
+   */
+  function writeSwatchHex(idx: number, rawHex: string, fmt: StorageFormat, opts: { rerenderField?: boolean } = {}): void {
+    const cur = swatches[idx]; if (!cur) return;
     if (!rawHex || rawHex === 'transparent') return;
     const hex = rawHex; // keep #rrggbbaa alpha — brand swatches may be translucent
     // The doc stores the swatch's chosen notation ("Stored as" — LCH default);
     // the tile/UI keep working in resolved hex. Recolouring an alias role
     // detaches it to a literal, which is when the storage toggle starts to bite.
-    const stored = serializeColor(colorToHex(hex) ?? hex, storedFmt);
+    const stored = serializeColor(colorToHex(hex) ?? hex, fmt);
     setSwatchValue(doc, cur.path, stored);
     cur.hex = colorToHex(hex) ?? hex; cur.raw = stored;
-    if (cur.isAlias) { cur.isAlias = false; if (storedRow) storedRow.hidden = false; }
-    const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${selected}"]`);
+    if (cur.isAlias) { cur.isAlias = false; if (idx === selected && storedRow) storedRow.hidden = false; }
+    const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`);
     if (tile) {
       tile.style.setProperty('--sw', cur.hex);
       tile.classList.remove('is-empty');
       syncTileMeta(tile, cur);
     }
-    if (editorChip) editorChip.style.setProperty('--sw', cur.hex);
-    if (opts.rerenderField) renderEditField(cur.hex);
+    if (idx === selected && editorChip) editorChip.style.setProperty('--sw', cur.hex);
+    if (idx === selected && opts.rerenderField) renderEditField(cur.hex);
     persist();
   }
 
@@ -1820,6 +2232,63 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const tileEl = (e.target as HTMLElement).closest<HTMLElement>('[data-be-tile]');
     if (tileEl) openEditor(Number(tileEl.dataset.beTile), tileEl);
   });
+
+  // ── Palette grid: keyboard channel nudging (huetone-style) ──────────────────
+  // With a swatch TILE focused (a native <button>, so Tab reaches it and Enter/
+  // click still opens the popover), l/c/h ARM an OKLCH channel and Arrow Up/Down
+  // nudge it (Shift = coarse). Shift+H copies the hex, Shift+C the oklch() string.
+  // We only ever act when the tile itself is the focused element — a text input in
+  // the popover (a separate element outside palMount) never reaches this listener,
+  // so no browser default is hijacked. The one deviation from the brief's "c
+  // copies hex": bare `c` ARMS Chroma (keeping the L/C/H channel model whole), so
+  // copy-hex moved to Shift+H (H = Hex) — the model reads "letter arms, Shift+
+  // letter copies", and Cmd/Ctrl+C is never touched, which was the real rule.
+  const CHANNEL_NAME: Record<'L' | 'C' | 'H', string> = { L: t('Lightness'), C: t('Chroma'), H: t('Hue') };
+  const channelValueStr = (ch: 'L' | 'C' | 'H', hex: string): string => {
+    const o = hexToOklch(hex);
+    if (!o) return hex;
+    return ch === 'L' ? `L ${o.l.toFixed(2)}` : ch === 'C' ? `C ${o.c.toFixed(3)}` : `H ${Math.round(o.h)}°`;
+  };
+  const nudgeFmtOf = (s: BrandSwatch): StorageFormat => (s.isAlias ? 'lch' : storageFormatOf(s.raw));
+  const copyTileText = (text: string, spoken: string): void => {
+    void Promise.resolve(host.clipboard?.writeText?.(text)).then(
+      () => announce(spoken),
+      () => announce(t('Copy failed — your browser blocked clipboard access'), { assertive: true }),
+    );
+  };
+  palMount?.addEventListener('keydown', (e) => {
+    const tile = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-be-tile]') ?? null;
+    // Only when the tile BUTTON itself holds focus — never a nested/other control.
+    if (!tile || tile !== (e.target as HTMLElement) || e.altKey || e.metaKey || e.ctrlKey) return;
+    const idx = Number(tile.dataset.beTile);
+    const s = Number.isInteger(idx) ? swatches[idx] : undefined;
+    if (!s || !s.hex) return;
+    const k = e.key;
+    // Arm a channel (bare l/c/h) — a live readout via the shared aria-live region.
+    if (!e.shiftKey && (k === 'l' || k === 'c' || k === 'h')) {
+      e.preventDefault();
+      armedChannel = k.toUpperCase() as 'L' | 'C' | 'H';
+      announce(tRaw('{channel} armed · {value}', { channel: CHANNEL_NAME[armedChannel], value: channelValueStr(armedChannel, s.hex) }));
+      return;
+    }
+    // Copy — Shift+C the oklch() string, Shift+H the hex.
+    if (e.shiftKey && (k === 'C' || k === 'H')) {
+      e.preventDefault();
+      const o = hexToOklch(s.hex);
+      if (k === 'C' && o) copyTileText(formatOklch(o), tRaw('Copied {value}', { value: formatOklch(o) }));
+      else copyTileText(s.hex, tRaw('Copied {value}', { value: s.hex }));
+      return;
+    }
+    // Nudge the armed channel (Shift = coarse ×5), written through the same doc
+    // path a popover edit uses, so it persists on Save identically.
+    if (k === 'ArrowUp' || k === 'ArrowDown') {
+      e.preventDefault();
+      const next = nudgeSwatch(s.hex, armedChannel, k === 'ArrowUp' ? 1 : -1, e.shiftKey);
+      writeSwatchHex(idx, next, nudgeFmtOf(s));
+      announce(tRaw('{channel} {value}', { channel: CHANNEL_NAME[armedChannel], value: channelValueStr(armedChannel, next) }));
+    }
+  });
+
   editorEl?.querySelector('[data-be-editor-name]')?.addEventListener('input', (e) => {
     if (selected < 0) return;
     const cur = swatches[selected]; if (!cur) return;
@@ -2651,6 +3120,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     } catch { /* tokenless/malformed doc — keep the previous seeds */ }
     if (stepsSlider) stepsSlider.value = String(steps);
     if (stepsVal) stepsVal.textContent = String(steps);
+    // Re-load per-ramp tonal curves from the freshly installed doc (a pack import
+    // may carry them; a plain brand won't, leaving curves empty → pure derive).
+    // Any open editor described the OLD brand, so close it first — without a
+    // preview repaint (reload owns the repaint below, sans chrome broadcast).
+    closeCurveEditor(false);
+    for (const ramp of RAMP_IDS) { delete curves[ramp]; const st = getRampCurve(doc, ramp); if (st) curves[ramp] = deserializeCurve(st); }
+    curveAnchorPrimary = primary;
     const wrap = $('[data-be-primary-field]') as HTMLElement | null;
     if (wrap) {
       wrap.innerHTML = colorFieldHtml('be-primary', primary, { inline: true, modes: true });
@@ -2658,9 +3134,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
     // Refresh the decorative ramp preview WITHOUT applyDraftChrome/broadcast —
     // the imported doc's real accents just landed via applyChromeBrandVars, and
-    // a derive draft would immediately paint over them.
+    // a derive draft would immediately paint over them. Overlay the re-loaded
+    // curves so the preview matches the installed (curve-baked) ramp literals.
     const fresh = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
-    if (preview && fresh) preview.innerHTML = previewHtml(fresh, { neutral: neutralStep, secondary: secondaryStep, steps });
+    if (fresh) overlayRampCurves(fresh, curves, steps);
+    if (preview && fresh) preview.innerHTML = previewHtml(fresh, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() });
     renderScreen();
     primaryLock?.render();
     renderGenerator();

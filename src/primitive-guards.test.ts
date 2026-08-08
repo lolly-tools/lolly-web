@@ -674,6 +674,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'lib/audio-transport.ts': 2,
   'lib/brand-editor.ts': 22,
   'lib/brand-studio-tabs.ts': 9,
+  // The tonal-curve editor's one sink is draw()'s full panel re-render. Reviewed
+  // 2026-08-08: every interpolated value is either a constant (channel labels,
+  // the curve glyph, viewBox numbers, role/tabindex), a NUMBER (aria-valuemin/max/
+  // now, cx/cy), or escape()d (baked hex backgrounds, point titles, the aria
+  // label/valuetext) — no user markup reaches the sink unescaped. The keyboard-
+  // operability pass (feature #6) added the per-point ARIA slider attributes here
+  // but no new sink: the roving tabindex + value changes go through setAttribute.
+  'lib/curve-editor.ts': 1,
   'lib/catalog-summary.ts': 2,
   // Two provably-safe sinks: the two head buttons' glyphs (constant icon() strings,
   // no interpolation) and the resize grips (constant panelGripsHtml(), like float-panel).
@@ -714,7 +722,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup is static; every interpolated value is escape()d (the image src, the
   // format radio value/label, and the Format/Cancel/Download crop t() strings).
   'views/catalog.ts': 10,
-  'views/color-lab.ts': 18,
+  // 21 as of 2026-08-08: +2 for the Colour Lab's vector (SVG) stills (feature #7).
+  // renderSolidSvg writes ONE engine-produced gamutSolidToSvg string (numeric
+  // <polygon>s only, no user text) into the snapshot panel; renderCompare writes
+  // ONE string of two <figure> cells — each an escape()d constant gamut title plus
+  // an engine SVG — into the compare body. No user markup reaches either sink.
+  // (19 previously: +1 for renderCvdMatrix, feature #4 — the APCA contrast matrix,
+  // whose only interpolations are escape()d hexes/names/title/band plus a Number Lc.)
+  'views/color-lab.ts': 21,
   'views/components-data.ts': 1,
   'views/components.ts': 7,
   // The cost card's body replace. Reviewed — costBodyHtml (views/cost-panel.ts)

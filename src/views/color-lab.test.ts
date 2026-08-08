@@ -18,7 +18,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
-import { describeColor } from '@lolly/engine';
+import {
+  describeColor, inGamut, clipToGamut, oklchToHex, hexToOklch,
+  apcaContrast, apcaUse, simulateCvdHex, toGrayscaleHex,
+} from '@lolly/engine';
+import type { GamutSource } from '@lolly/engine';
 
 const dom = new JSDOM('<!doctype html><html><body><main id="view"></main></body></html>', {
   url: 'http://localhost/#/lab',
@@ -62,7 +66,7 @@ Object.defineProperty(globalThis, 'navigator', {
   value: { clipboard: { writeText: (v: string) => { copied.push(v); return Promise.resolve(); } } },
 });
 
-const { mountColorLab } = await import('./color-lab.ts');
+const { mountColorLab, swatchGamutState, contrastMatrix, simulatePalette } = await import('./color-lab.ts');
 const { contrastText } = await import('../components/color-field.ts');
 
 const view = document.getElementById('view')!;
@@ -926,6 +930,52 @@ test('no surface re-implements the ink inversion', async () => {
   }
 });
 
+test('the single-solid vector snapshot is a polygon SVG of the current limit', async () => {
+  // The canvas is the turntable; this is the STILL a docs screenshot captures —
+  // real polygons, not a raster. Folded by default (a diagnostic), rendered on open.
+  await mount();   // the default limit is Rec.2020
+  const panel = view.querySelector<HTMLDetailsElement>('[data-lab-solid-svg-panel]');
+  assert.ok(panel, 'the vector-snapshot panel is present');
+  assert.equal(view.querySelector('[data-lab-solid-svg] svg'), null, 'nothing rendered while folded');
+
+  panel!.open = true;
+  panel!.dispatchEvent(new dom.window.Event('toggle'));
+  const svg = view.querySelector('[data-lab-solid-svg] svg');
+  assert.ok(svg, 'a still SVG is emitted on open');
+  assert.ok(svg!.querySelectorAll('polygon').length > 0, 'it is built from real polygons');
+  assert.match(svg!.getAttribute('viewBox') ?? '', /^0 0 \d+ \d+$/, 'a well-formed square viewBox');
+});
+
+test('the compare panel emits Display-P3 and Rec.2020 hulls side by side at one scale', async () => {
+  // This is where P3 ⊄ Rec.2020 becomes visible as SHAPE: two hulls, no overlap,
+  // one shared angle and scale. Both reuse the view's own orientation.
+  await mount('?c=%23c0392b');
+  const panel = view.querySelector<HTMLDetailsElement>('[data-lab-compare-panel]');
+  assert.ok(panel, 'the compare panel is present');
+  // It lives WITH the charts (step 2), the block that governs it.
+  assert.ok(view.querySelectorAll('.lab-step-block')[1]!.contains(panel!),
+    'the compare panel is in the charts block');
+  assert.equal(view.querySelectorAll('[data-lab-compare-svg] svg').length, 0, 'folded until opened');
+
+  panel!.open = true;
+  panel!.dispatchEvent(new dom.window.Event('toggle'));
+
+  const p3 = view.querySelector('[data-lab-compare-svg="p3"] svg');
+  const rec = view.querySelector('[data-lab-compare-svg="rec2020"] svg');
+  assert.ok(p3 && rec, 'both hulls are present and labelled by gamut id');
+  assert.equal(view.querySelectorAll('[data-lab-compare-svg] svg').length, 2, 'exactly two, no overlay');
+  for (const svg of [p3!, rec!]) {
+    assert.ok(svg.querySelectorAll('polygon').length > 0, 'each hull is real polygons');
+    assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 \d+ \d+$/, 'well-formed viewBox');
+    // Same viewBox as the P3 hull → same scale, so the two shapes compare directly.
+    assert.equal(svg.getAttribute('viewBox'), p3!.getAttribute('viewBox'), 'one shared scale');
+  }
+  // Each cell carries its gamut's name as escaped text.
+  const caps = [...view.querySelectorAll('.lab-compare-cell .lab-compare-cap')]
+    .map(c => (c.textContent ?? '').trim());
+  assert.deepEqual(caps, ['Display-P3', 'Rec.2020']);
+});
+
 test('the charts open on Rec.2020, whatever the display claims', async () => {
   // The tab is a COMPARISON TARGET — the question the reader is asking — so it opens
   // at the widest gamut we classify and nothing narrows it for them. It was briefly
@@ -1429,4 +1479,215 @@ test('"This screen" hydrates from the same device probe the Dashboard uses', asy
 
   const link = sec.querySelector<HTMLAnchorElement>('.lab-device-link');
   assert.equal(link?.getAttribute('href'), '#/d?tab=device', 'a quick link to the full readout');
+});
+
+// ── Per-swatch gamut badges (feature #3) ──────────────────────────────────────
+
+test('swatchGamutState: out of gamut yields an in-gamut clip and a positive ΔE', () => {
+  // P3 green is more saturated than sRGB green reaches, so it is genuinely outside sRGB.
+  const wide = describeColor('color(display-p3 0 1 0)')!.oklch;
+  const s = swatchGamutState(wide, 'srgb');
+  assert.equal(s.outOfGamut, true, 'reported outside sRGB');
+  assert.ok(s.deltaE > 0, `the clip moved the colour: ΔE ${s.deltaE}`);
+  // The clip actually fits — asserted of the ACTUAL gamut, via the returned hex.
+  const clipped = hexToOklch(s.clippedHex)!;
+  assert.ok(inGamut(clipped.l, clipped.c, clipped.h, 'srgb'), `clippedHex ${s.clippedHex} is inside sRGB`);
+});
+
+test('swatchGamutState: an in-gamut colour is unclipped, ΔE 0, hex == oklchToHex', () => {
+  const mid = describeColor('#3366cc')!.oklch;
+  const s = swatchGamutState(mid, 'srgb');
+  assert.equal(s.outOfGamut, false);
+  assert.equal(s.deltaE, 0, 'no clip, so exactly zero — never a round-trip epsilon');
+  assert.equal(s.clippedHex, oklchToHex(mid), 'the clip is identity, so the hex is the plain render');
+});
+
+test('swatchGamutState: fires against a gamut narrower than sRGB (the press-profile case)', () => {
+  // A synthetic press-narrow source: inside sRGB AND low chroma. A saturated brand
+  // red is a plain sRGB hex, yet it still falls outside — which is the whole reason
+  // the badge exists for an sRGB-sourced palette.
+  const narrow: GamutSource = {
+    id: 'test:narrow',
+    label: 'Test narrow',
+    contains: (l, c, h) => inGamut(l, c, h, 'srgb') && c <= 0.05,
+  };
+  const brandRed = describeColor('#c02020')!.oklch;
+  const s = swatchGamutState(brandRed, narrow);
+  assert.equal(s.outOfGamut, true, 'an in-sRGB colour is outside a narrower press gamut');
+  assert.ok(s.deltaE > 0, `and the clip moved it: ΔE ${s.deltaE}`);
+});
+
+test('swatchGamutState: membership is by inGamut, not by area ordering (P3 ⊄ Rec.2020)', () => {
+  // P3's red primary is inside Display-P3 but OUTSIDE Rec.2020, even though Rec.2020
+  // is the wider gamut by area. Ordering would call it safe in the wider one; the
+  // actual membership test does not.
+  const p3red = describeColor('color(display-p3 1 0 0)')!.oklch;
+  assert.equal(swatchGamutState(p3red, 'p3').outOfGamut, false, 'inside Display-P3');
+  assert.equal(swatchGamutState(p3red, 'rec2020').outOfGamut, true,
+    'outside Rec.2020 despite it being the wider gamut — proves it is not an ordering');
+});
+
+test('the brand rail badges an out-of-gamut swatch and clears it when the target widens', async () => {
+  // A one-colour brand whose sole swatch carries a Display-P3 face beyond sRGB.
+  // `value` is the sRGB bake (what a click seeds); `faces['display-p3']` is the
+  // richer truth the badge reasons about.
+  const host = {
+    tokens: {
+      colors: () => [{
+        id: 'brand.green', name: 'Brand Green',
+        value: '#00c04a',
+        faces: { 'display-p3': 'color(display-p3 0 1 0)' },
+      }],
+    },
+  };
+  // Mount pinned to sRGB so the wide face is out of gamut from the first paint.
+  (view as HTMLElement & { _cleanup?: () => void })._cleanup?.();
+  delete (view as HTMLElement & { _cleanup?: () => void })._cleanup;
+  view.innerHTML = '';
+  await mountColorLab(view, host, '?limit=srgb');
+
+  const sw = view.querySelector<HTMLElement>('[data-lab-brand] .lab-brand-sw');
+  assert.ok(sw, 'the brand swatch rendered');
+  assert.equal(sw!.dataset.oog, 'true', 'it is flagged out of gamut against sRGB');
+  assert.ok(sw!.querySelector('.lab-brand-badge'), 'the corner badge is present');
+  assert.match(sw!.getAttribute('title') ?? '', /Outside/, 'the tip explains the clip');
+  // Clicking must still SEED the colour, not the badge — the pick is the sRGB hex.
+  assert.equal(sw!.dataset.labBrandPick, '#00c04a', 'the click target is the token value, unchanged');
+
+  // Widen the comparison target to Rec.2020, which contains the P3 green — the badge clears.
+  const rec = view.querySelector<HTMLElement>('[data-lab-limit] [data-val="rec2020"]');
+  assert.ok(rec, 'the Rec.2020 target button is present');
+  rec!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  const after = view.querySelector<HTMLElement>('[data-lab-brand] .lab-brand-sw');
+  assert.notEqual(after!.dataset.oog, 'true', 'inside Rec.2020, so no longer badged');
+  assert.equal(after!.querySelector('.lab-brand-badge'), null, 'and the corner badge is gone');
+});
+
+// ── APCA contrast matrix + CVD/grayscale preview (feature #4) ──────────────────
+
+test('contrastMatrix: each cell is apcaContrast(row=text, col=bg), signed', () => {
+  const colors = ['#ffffff', '#000000', '#c0392b'];
+  const m = contrastMatrix(colors);
+  assert.equal(m.length, 3);
+  assert.equal(m[0]!.length, 3);
+  // A known pair equals the engine primitive exactly (sign and all).
+  assert.equal(m[2]![0]!.lc, apcaContrast('#c0392b', '#ffffff'), 'row=red text on col=white bg');
+  assert.equal(m[0]![1]!.lc, apcaContrast('#ffffff', '#000000'), 'row=white text on col=black bg');
+  // The band comes from the shared APCA band logic, not a reinvented threshold.
+  assert.equal(m[2]![0]!.band, apcaUse(apcaContrast('#c0392b', '#ffffff')));
+});
+
+test('contrastMatrix: the diagonal — a colour on itself — is ~0', () => {
+  const m = contrastMatrix(['#ffffff', '#000000', '#3366cc', '#c0392b']);
+  for (let i = 0; i < 4; i++) {
+    assert.ok(Math.abs(m[i]![i]!.lc) < 1e-9, `diagonal cell ${i} is ~0, got ${m[i]![i]!.lc}`);
+  }
+});
+
+test('contrastMatrix: APCA is polarity-dependent, so the grid is asymmetric', () => {
+  // White and black are the extreme polar pair: dark-on-light is positive, the
+  // mirror is negative — a symmetric matrix would collapse the two.
+  const m = contrastMatrix(['#ffffff', '#000000']);
+  assert.notEqual(m[0]![1]!.lc, m[1]![0]!.lc, 'cell(i,j) != cell(j,i) for a polar pair');
+  assert.ok(m[0]![1]!.lc < 0, 'white text on black is reverse polarity (negative)');
+  assert.ok(m[1]![0]!.lc > 0, 'black text on white is normal polarity (positive)');
+});
+
+test('simulatePalette: Normal is identity; the modes match the engine wrappers', () => {
+  const hex = '#c0392b';
+  assert.equal(simulatePalette(hex, 'normal'), hex, 'Normal returns the input unchanged');
+  assert.equal(simulatePalette(hex, 'grayscale'), toGrayscaleHex(hex), 'Grayscale is toGrayscaleHex');
+  for (const type of ['protan', 'deutan', 'tritan'] as const) {
+    assert.equal(simulatePalette(hex, type, 1), simulateCvdHex(hex, type, 1),
+      `${type} at severity 1 is simulateCvdHex`);
+  }
+  // Severity 0 is an exact identity (the engine's severity-0 matrix is the identity).
+  assert.equal(simulatePalette(hex, 'deutan', 0), hex, 'severity 0 is identity');
+});
+
+/** A three-colour brand host, so the matrix has a real palette to grid. */
+const paletteHost = {
+  tokens: {
+    colors: () => [
+      { id: 'c.red', name: 'Red', value: '#c0392b' },
+      { id: 'c.green', name: 'Green', value: '#27ae60' },
+      { id: 'c.blue', name: 'Blue', value: '#2980b9' },
+    ],
+  },
+};
+
+test('the matrix panel appears with a palette and grids white + black + the palette', async () => {
+  await mountWithHost(paletteHost, '?c=%23c0392b');
+  // The brand block is async (host.tokens.colors) — let it resolve.
+  await new Promise(r => setTimeout(r, 0));
+  const diag = $('[data-lab-diag]') as HTMLDetailsElement;
+  assert.ok(diag, 'the diagnostic panel is in the markup');
+  assert.equal(diag.hidden, false, 'and is revealed once a palette resolved');
+  // 2 references (white, black) + 3 palette = a 5×5 grid of scored cells.
+  const cells = view.querySelectorAll('[data-lab-matrix] .lab-mx-cell');
+  assert.equal(cells.length, 25, `5×5 cells, got ${cells.length}`);
+  // Every cell carries an APCA band cue and an integer |Lc|.
+  for (const c of cells) {
+    assert.ok((c as HTMLElement).dataset.use, 'a band cue on data-use');
+    assert.match((c.textContent ?? '').trim(), /^\d+$/, 'a rounded |Lc|');
+  }
+});
+
+test('the matrix stays hidden when there is no brand palette', async () => {
+  await mount('?c=%23c0392b');
+  const diag = $('[data-lab-diag]') as HTMLDetailsElement | null;
+  // Present in the markup but never revealed — a palette diagnostic with no palette.
+  assert.ok(diag, 'the panel markup is always present');
+  assert.equal(diag!.hidden, true, 'but hidden without a palette');
+});
+
+test('a vision mode recolours the matrix and rescores it on the simulated colours', async () => {
+  await mountWithHost(paletteHost, '?c=%23c0392b');
+  await new Promise(r => setTimeout(r, 0));
+  const cellAt = (r: number, c: number): HTMLElement =>
+    view.querySelectorAll<HTMLElement>('[data-lab-matrix] tbody tr')[r]!
+      .querySelectorAll<HTMLElement>('.lab-mx-cell')[c]!;
+  // Row 2 = the first palette colour (red) as text; col 2 = red as background.
+  const bgBefore = cellAt(2, 2).style.background;
+  const wholeBefore = ($('[data-lab-matrix]')?.textContent ?? '');
+  const railBefore = view.querySelector<HTMLElement>('[data-lab-brand] .lab-brand-sw')!
+    .getAttribute('style');
+
+  // Switch to Deuteranopia — a saturated palette shifts, so both the fills and the
+  // scores move.
+  view.querySelector<HTMLElement>('[data-lab-cvd] [data-val="deutan"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+
+  assert.notEqual(cellAt(2, 2).style.background, bgBefore, 'a coloured cell repaints for the vision');
+  assert.notEqual(($('[data-lab-matrix]')?.textContent ?? ''), wholeBefore,
+    'and at least one Lc recomputes on the simulated colours');
+  // The brand rail above is transformed too — the same diagnostic, scoped to it.
+  assert.notEqual(view.querySelector<HTMLElement>('[data-lab-brand] .lab-brand-sw')!.getAttribute('style'),
+    railBefore, 'the brand rail recolours with the matrix');
+  // The severity slider is offered only for the graded CVD types.
+  assert.equal(($('[data-lab-cvd-sev]') as HTMLElement).hidden, false, 'severity appears for a CVD type');
+
+  // Back to Normal restores the original fills (byte-identical paths).
+  view.querySelector<HTMLElement>('[data-lab-cvd] [data-val="normal"]')!
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(cellAt(2, 2).style.background, bgBefore, 'Normal restores the true colour');
+  assert.equal(($('[data-lab-cvd-sev]') as HTMLElement).hidden, true, 'and hides severity again');
+});
+
+test('the palette is capped to a readable N and the truncation is surfaced', async () => {
+  const many = {
+    tokens: {
+      colors: () => Array.from({ length: 20 }, (_, i) => ({
+        id: `c.${i}`, name: `C${i}`, value: `hsl(${i * 18} 70% 50%)`,
+      })),
+    },
+  };
+  await mountWithHost(many, '?c=%23c0392b');
+  await new Promise(r => setTimeout(r, 0));
+  // 2 references + 12 (the cap) = 14 axis entries → 14×14.
+  const rows = view.querySelectorAll('[data-lab-matrix] tbody tr');
+  assert.equal(rows.length, 14, `capped to 12 palette rows + white + black, got ${rows.length}`);
+  const note = $('[data-lab-matrix-note]') as HTMLElement;
+  assert.equal(note.hidden, false, 'the cap is shown, not silent');
+  assert.match(note.textContent ?? '', /12.*20/, `the note names first-N-of-M: ${note.textContent}`);
 });

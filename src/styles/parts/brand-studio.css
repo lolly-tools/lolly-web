@@ -170,7 +170,7 @@
 
 .be-preview { display: grid; gap: .9rem; align-content: start; }
 .be-ramps { display: grid; gap: .5rem; }
-.be-ramp-row { display: grid; grid-template-columns: 5.2rem 1fr; align-items: center; gap: .6rem; }
+.be-ramp-row { display: grid; grid-template-columns: 5.2rem 1fr auto; align-items: center; gap: .6rem; }
 .be-ramp-label { font-size: calc(.72rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground)); }
 /* flex, not a fixed-column grid — the ramp can be 3 to 20 steps (the Shades
    slider), so cells must always share the full row width equally, not just 9/9ths
@@ -194,6 +194,13 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
       chips (each + Add to officiate into the brand) → "applied" preview scenes. */
 .be-generate { display: grid; gap: 1.1rem; }
 .be-schemekinds { flex-wrap: wrap; }
+/* Parametric-analogous count + angle sliders — shown only in Analogous mode.
+   Two side-by-side range fields; the value readout mirrors the Shades slider. */
+.be-analogous { display: flex; flex-wrap: wrap; gap: .55rem .9rem; margin-top: -.4rem; }
+.be-analog-field { flex: 1 1 9rem; min-width: 8rem; }
+.be-analog-field .be-field-label { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.be-analog-val { font-family: var(--font-mono); font-size: calc(.8rem * var(--a11y-fs)); font-weight: 700; color: hsl(var(--foreground)); }
+.be-analog-slider { width: 100%; cursor: pointer; }
 .be-candidates { display: grid; gap: .55rem; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 .be-cand {
   display: flex; align-items: center; gap: .6rem; min-width: 0;
@@ -1277,4 +1284,110 @@ background-image:
    squeeze the readout on the narrow popover, and the input needs the width more
    than the row needs to stay one line. */
 .be-face-in { grid-column: 1 / -1; font-family: var(--font-mono); font-size: calc(0.7rem * var(--a11y-fs)); }
+
+/* ── Tonal-curve editor (lib/curve-editor.ts) — the inline per-ramp curve panel,
+      opened from a ramp row's curve toggle. Full-width under the derive preview.
+      No dashed borders, no accent-tinted card borders (house rules). */
+/* The per-ramp curve toggle sits in the ramp row's third column; it collapses to
+   nothing (auto column) on the ramps that don't render one. */
+.be-ramp-curve {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: calc(1.7rem * var(--a11y-fs)); height: calc(1.7rem * var(--a11y-fs));
+  padding: 0; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45);
+  background: hsl(var(--background)); color: hsl(var(--muted-foreground));
+  cursor: pointer; transition: color .12s, background .12s, border-color .12s;
+}
+.be-ramp-curve:hover { color: hsl(var(--foreground)); background: hsl(var(--muted) / .5); }
+.be-ramp-curve.is-edited { color: hsl(var(--primary)); }
+/* Open state reads as a filled control (a background swap, not an accent border —
+   that's the pill/card border rule). */
+.be-ramp-curve.is-open { background: hsl(var(--primary) / .14); color: hsl(var(--primary)); border-color: hsl(var(--border)); }
+.be-ramp-curve:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.be-ramp-curve svg { display: block; }
+@media (prefers-reduced-motion: reduce) { .be-ramp-curve { transition: none; } }
+html[data-a11y-motion="reduce"] .be-ramp-curve { transition: none; }
+
+.be-curve {
+  grid-column: 1 / -1; display: grid; gap: .55rem;
+  padding: .75rem .8rem; border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * .7); background: hsl(var(--muted) / .35);
+}
+.be-curve-head { display: flex; align-items: center; gap: .6rem; }
+.be-curve-title { font-size: calc(.78rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .01em; color: hsl(var(--foreground)); margin-inline-end: auto; }
+.be-curve-head-actions { display: flex; align-items: center; gap: .4rem; }
+.be-curve-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: calc(1.5rem * var(--a11y-fs)); height: calc(1.5rem * var(--a11y-fs));
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45);
+  background: hsl(var(--background)); color: hsl(var(--muted-foreground));
+  font-size: calc(.8rem * var(--a11y-fs)); line-height: 1; cursor: pointer;
+}
+.be-curve-close:hover { color: hsl(var(--foreground)); background: hsl(var(--muted) / .5); }
+.be-curve-close:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.be-curve-hint { margin: 0; font-size: calc(.68rem * var(--a11y-fs)); line-height: 1.45; color: hsl(var(--muted-foreground)); }
+.be-curve-mount { display: grid; gap: .5rem; }
+
+/* Channel toggle (L / C / H) + the axis-range readout. */
+.be-curve-toolbar { display: flex; align-items: center; gap: .3rem; }
+.be-curve-ch {
+  min-width: calc(1.9rem * var(--a11y-fs)); padding: .2rem .5rem;
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45);
+  background: hsl(var(--background)); color: hsl(var(--muted-foreground));
+  font: inherit; font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700; cursor: pointer;
+}
+.be-curve-ch:hover { color: hsl(var(--foreground)); }
+.be-curve-ch.is-active { background: hsl(var(--primary) / .14); color: hsl(var(--primary)); }
+.be-curve-ch:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.be-curve-axis { margin-inline-start: auto; font-family: var(--font-mono); font-size: calc(.64rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+
+/* The plot: fixed CSS height, viewBox stretched to it (preserveAspectRatio=none),
+   so a drag maps cleanly through the element's own box. */
+.be-curve-plot {
+  width: 100%; height: 120px; display: block; touch-action: none;
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45);
+  background: hsl(var(--card)); cursor: crosshair;
+}
+.be-curve-grid { stroke: hsl(var(--border) / .7); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.be-curve-line { fill: none; stroke: hsl(var(--primary)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.be-curve-pt { fill: hsl(var(--card)); stroke: hsl(var(--primary)); stroke-width: 2; cursor: grab; vector-effect: non-scaling-stroke; }
+.be-curve-plot.is-animated .be-curve-pt { transition: r .1s ease; }
+.be-curve-plot.is-dragging { cursor: grabbing; }
+.be-curve-plot.is-dragging .be-curve-pt { cursor: grabbing; }
+
+/* Live baked-swatch strip — the ramp the curve currently makes. */
+.be-curve-strip { display: flex; height: 1.6rem; border-radius: calc(var(--radius) * .45); overflow: hidden; box-shadow: 0 0 0 1px hsl(var(--border)); }
+.be-curve-cell { flex: 1 1 0; min-width: 0; }
+
+/* Contrast-lock — a one-shot curve transform under the plot. A hairline top rule
+   sets it apart from the curve editor above; deliberately NOT a bordered/accent
+   card (house rule: no accent-coloured border on rounded cards). */
+.be-cl { display: grid; gap: .5rem; padding-top: .6rem; border-top: 1px solid hsl(var(--border)); }
+.be-cl-head { display: grid; gap: .15rem; }
+.be-cl-title { font-size: calc(.74rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .02em; color: hsl(var(--foreground)); }
+.be-cl-sub { font-size: calc(.66rem * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.be-cl-controls { display: flex; flex-wrap: wrap; gap: .55rem .7rem; align-items: end; }
+.be-cl-controls .be-field { gap: .3rem; }
+.be-cl-custom-field { flex: 1 1 9rem; min-width: 8rem; }
+.be-cl-bg {
+  width: calc(2.4rem * var(--a11y-fs)); height: calc(1.9rem * var(--a11y-fs));
+  padding: 0; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .45);
+  background: hsl(var(--background)); cursor: pointer;
+}
+.be-cl-bg::-webkit-color-swatch-wrapper { padding: 2px; }
+.be-cl-bg::-webkit-color-swatch { border: none; border-radius: calc(var(--radius) * .3); }
+.be-cl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.be-cl-readout { font-size: calc(.66rem * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); }
+
+/* Rotate hue — a one-shot curve transform under the plot, same hairline-rule
+   treatment as contrast-lock (deliberately NOT a bordered/accent card). */
+.be-hr { display: grid; gap: .5rem; padding-top: .6rem; border-top: 1px solid hsl(var(--border)); }
+.be-hr-head { display: grid; gap: .15rem; }
+.be-hr-title { font-size: calc(.74rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .02em; color: hsl(var(--foreground)); }
+.be-hr-sub { font-size: calc(.66rem * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.be-hr-controls { display: flex; flex-wrap: wrap; gap: .55rem .7rem; align-items: end; }
+.be-hr-controls .be-field { gap: .3rem; }
+.be-hr-deg-field { flex: 1 1 10rem; min-width: 9rem; }
+.be-hr-deg-field .be-field-label { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.be-hr-val { font-family: var(--font-mono); font-size: calc(.8rem * var(--a11y-fs)); font-weight: 700; color: hsl(var(--foreground)); }
+.be-hr-slider { width: 100%; cursor: pointer; }
 }
