@@ -198,7 +198,35 @@
 .pdfx-font-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .pdfx-font-name { font-weight: 600; }
 .pdfx-font-sub { font-size: calc(0.8rem * var(--a11y-fs)); opacity: 0.7; }
-.pdfx-font-save { margin-inline-start: auto; }
+/* The row's actions (Download, and Add to the design system where the bytes are
+   a whole installable file) travel as a pair. The auto margin that used to sit
+   on the download button moves here: inside a flex row it would have pushed the
+   two buttons apart rather than pushing the pair to the end. */
+.pdfx-font-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-inline-start: auto; }
+/* Added is a state, not an offer: the face is installed, so the button stops
+   soliciting a second press and reads as a note that it worked. It is marked
+   aria-disabled rather than disabled — a disabled button drops the focus that
+   just pressed it — so the resting look is spelled out here. */
+.pdfx-font-actions .btn.is-added { opacity: 0.7; }
+.pdfx-result .btn[aria-disabled="true"] { cursor: default; }
+.pdfx-result .btn[aria-disabled="true"]:hover { border-color: hsl(var(--border)); }
+/* 44px on every width — the floor the studio's own copy of this hand-off holds
+   to (.ds-pdf-add / .ds-pdf-logos in start.css). `.btn` is 5px padding on a 13px
+   line, which lands near 29px, and the same feature must not ship two different
+   touch targets depending on which door the person came in by. Applied to the
+   ACTION ROWS rather than to the three controls M5 added: "Send to Logos" sits
+   beside Download SVG and Add to catalogue, and a row of buttons at two heights
+   reads as a mistake. The reading column's inline controls are left alone —
+   they are prose furniture, not a row of targets. */
+.pdfx-bar-actions .btn,
+.pdfx-asset-actions .btn,
+.pdfx-font-actions .btn,
+.pdfx-att .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
 /* The caveats are the honest half of this panel, so they are readable body text
    rather than fine print hidden behind a tooltip. */
 .pdfx-font-caveat { margin: 0.5rem 0 0; font-size: calc(0.83rem * var(--a11y-fs)); line-height: 1.5; opacity: 0.8; }

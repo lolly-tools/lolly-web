@@ -100,6 +100,28 @@ test('an asset missing from the index simply does not match, rather than throwin
   assert.equal(matchesQuery(A('never-indexed'), 'x', new Map()), false);
 });
 
+// The lib/search migration (plans/99 M3) — the two semantic changes, pinned:
+// multi-word queries AND across tokens (order-free), and both sides fold
+// diacritics. Before this the query was one literal substring of the haystack.
+
+test('multi-word queries AND across tokens, in any order', () => {
+  const a = A('brand/mark', { meta: { name: 'Primary Mark', tags: ['hero'] } } as Partial<AssetRef>);
+  const hay = buildSearchHaystack([a], cat);
+  // Both terms present (name + tag) → match, even though "primary hero" is not
+  // a contiguous substring of the haystack — and word order does not matter.
+  assert.equal(matchesQuery(a, 'primary hero', hay), true);
+  assert.equal(matchesQuery(a, 'hero primary', hay), true);
+  // One term missing zeroes the whole match — adding a word narrows.
+  assert.equal(matchesQuery(a, 'primary missing', hay), false);
+});
+
+test('diacritics fold on both sides — "cafe" finds "Café" and the reverse', () => {
+  const a = A('photo/cafe', { meta: { name: 'Café Interior' } } as Partial<AssetRef>);
+  const hay = buildSearchHaystack([a], cat);
+  assert.equal(matchesQuery(a, 'cafe', hay), true);
+  assert.equal(matchesQuery(a, 'café', hay), true);
+});
+
 test('search falls back to type when an asset has no format', () => {
   const a = A('a', { format: undefined, type: 'audio' } as Partial<AssetRef>);
   const hay = buildSearchHaystack([a], cat);
@@ -141,11 +163,21 @@ const userA = A('u1', { source: 'user' });
 const userB = A('u2', { source: 'user', type: 'vector' });
 const libA = A('c1', { source: 'library' });
 
-test('only user-owned assets are selectable — catalog assets cannot be bulk-deleted', () => {
+test("the default 'uploads' scope keeps catalog assets out — bulk delete safety", () => {
   const visible = [userA, libA];
   const hay = buildSearchHaystack(visible, cat);
   const ids = selectableIds(visible, { query: '', haystack: hay, typeFilter: 'all' });
   assert.deepEqual([...ids], ['u1']);
+});
+
+test("scope 'all' admits catalog assets too — every tile selects; destructive actions gate per-kind instead", () => {
+  const visible = [userA, libA];
+  const hay = buildSearchHaystack(visible, cat);
+  const ids = selectableIds(visible, { query: '', haystack: hay, typeFilter: 'all', scope: 'all' });
+  assert.deepEqual([...ids].sort(), ['c1', 'u1']);
+  // The search still narrows the widened scope — invisibility safety is scope-independent.
+  const narrowed = selectableIds(visible, { query: 'c1', haystack: hay, typeFilter: 'all', scope: 'all' });
+  assert.deepEqual([...narrowed], ['c1']);
 });
 
 test('a search narrows what is selectable, so a bulk action cannot touch what is hidden', () => {

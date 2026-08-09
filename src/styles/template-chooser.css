@@ -122,6 +122,15 @@
 }
 .tmpl-chooser-tile:active { transform: translateY(1px); }
 
+/* Media slot: holds the category glyph on open, then the live-rendered preview <img>
+   (renderPreviews swaps one for the other in place). Full width so a swapped-in preview
+   fills the tile; the glyph inside stays its own 40x40 box, left-aligned as before. */
+.tmpl-chooser-tile-media {
+  display: block;
+  width: 100%;
+}
+.tmpl-chooser-tile[aria-busy="true"] { opacity: 0.6; pointer-events: none; }
+
 .tmpl-chooser-tile-icon {
   display: flex;
   align-items: center;

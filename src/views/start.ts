@@ -1,55 +1,109 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * #/start — the brand studio, and the product's first impression for an
- * unbranded install. This is THE place brand primitives are set, saved,
- * edited and deleted; the Dashboard's Design-system tab renders the result
- * read-only, and user preferences (theme, sound) live on Profile. The studio
- * itself is lib/brand-editor.ts, mounted once with every panel wired; this
- * view owns what sits around it:
+ * #/start — the Design System studio (plan 97). This is THE place the design
+ * system is set, saved, edited and deleted; the Dashboard's Design-system tab
+ * renders the result read-only, and user preferences (theme, sound) live on
+ * Profile. Five of the six rooms are lib/brand-editor.ts's panels, mounted once
+ * with everything wired; this view owns what sits around them:
  *
- *   - the STEP TABS (Logos → Colours → Type → Tokens → Catalogue) — the editor
- *     renders all five panels and this view flips `data-active-tab` on it, so
- *     switching tabs never re-mounts anything;
- *   - the TOP-RIGHT CLUSTER, on the language selector's line: Import… (a
- *     W3C/Tokens-Studio JSON, a Penpot file, an SVG's colours, or a Lolly brand
- *     file — a modal carrying the one drop card) and Export. Both act on the
- *     whole brand rather than the open step, which is why they sit in the chrome
- *     and not in the page;
- *   - the ACTION ROW, which appears only when it has something to carry: the
- *     primary "Save & continue" the moment anything changes (walking the user to
- *     the next step) and the transient export/error note;
- *   - the FINISH card — after the last step, the three ways onward
- *     (Profile, or Tools / Projects / Dashboard).
+ *   - the RAIL of rooms (Overview · Colours · Type · Logos · Tokens · Files) —
+ *     independent areas, not steps: nothing is numbered, nothing gates on
+ *     anything else, and arriving anywhere is legitimate. The editor renders
+ *     all five of its panels and this view flips `data-active-tab` on it, so
+ *     changing room never re-mounts anything. `overview` is not one of the
+ *     editor's panels — parking that key on the same attribute hides all five,
+ *     which is exactly what the Overview room wants. On a phone the rail
+ *     becomes a horizontal chip strip pinned under the header;
+ *   - the RAIL FOOT: "Add from…" (the source picker — a design file: a
+ *     W3C/Tokens-Studio JSON, a Penpot file, an SVG's colours or a Lolly brand
+ *     file; a PDF, read here for its colours, marks and embedded faces; an image;
+ *     a font file), Export, and Versions (plan 97 §6a — publish, activate,
+ *     restore; hidden until the studio has something of its own to publish, and
+ *     mounted the first time it is opened). All three act on the whole design
+ *     system rather than the open room, which is why they sit in the chrome and
+ *     not in a room;
+ *   - the OVERVIEW room itself (lib/design-system/rooms/overview.ts) — the hub
+ *     and the completion state. There is no finish card: Overview is always
+ *     reachable and always reflects exactly what exists.
  *
  * Everything persists to the one `user/tokens/brand` install via the bridge's
- * single write chokepoint (installUserTokens → bust). A LOCKED catalog owns its
- * brand and can't be adjusted, so the route degrades to a read-only note.
- * Esc or the back pill returns to the view the user came from — the pill wears
- * that view's name (lib/back-nav.ts), falling back to "Tools" (the gallery)
- * when there's no history. `?tab=<key>` deep-links a step.
+ * single write chokepoint (installUserTokens → bust); a source install takes a
+ * checkpoint first (lib/design-system/studio-state.ts), so "revert to before
+ * the import" is one restore rather than a lost afternoon. A LOCKED catalog
+ * owns its brand and can't be adjusted, so the route degrades to a read-only
+ * note. Esc or the back pill returns to the view the user came from — the pill
+ * wears that view's name (lib/back-nav.ts), falling back to "Tools" (the
+ * gallery) when there's no history. `?area=<key>` deep-links a room (`?tab=` is
+ * its kept alias — see lib/design-system/start-route.ts for the whole table).
  */
 
 import '../styles/parts/start.css';       // this view's shell/layout (lazy chunk)
-import { coerceTokensDoc, summarizeTokensDoc, extractPenpotProject, extractSvgColors, deriveBrandTokens, scanPenpotUsage, scanPenpotAppliedTokens } from '@lolly/engine';
-import type { PenpotUsage } from '@lolly/engine';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
+import { summarizeTokensDoc, extractPenpotProject, extractSvgColors, deriveBrandTokens, scanPenpotUsage, scanPenpotAppliedTokens, imageColorCloud, hexToOklch } from '@lolly/engine';
+import type { PenpotUsage, TokensExtraction } from '@lolly/engine';
 import { installUserTokens } from '../bridge/tokens.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
-import { mountBrandEditor, BRAND_TABS } from '../lib/brand-editor.ts';
+import { mountBrandEditor } from '../lib/brand-editor.ts';
 import type { BrandTabKey, BrandEditorHandle } from '../lib/brand-editor.ts';
 import { setupMobileSheet } from '../lib/mobile-sheet.ts';
-import { wireTabs } from '../lib/tabs.ts';
 import type { MobileSheetHandle } from '../lib/mobile-sheet.ts';
-import { carryUserFontTokens, installGoogleFont } from '../user-fonts.ts';
+import { carryUserFontTokens, installGoogleFont, installFontFromBytes } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
+import { detectFontFormat } from '../lib/font-utils.ts';
 import { proposeBrandRoles, proposeFonts, buildBrandDocFromUsage, proposeRolesFromTokens, proposeFontsFromTokens, withRoleAliases } from '../lib/brand-propose.ts';
+import type { TokenRoleProposal } from '../lib/brand-propose.ts';
 import { bustFontRegistry } from '../bridge/font-registry.ts';
-import { unzipBrandBytes } from '../brand-transfer.ts';
 import { addSwatch } from '../lib/brand-doc.ts';
-import { markWelcomeDismissed, closeWelcomeDialog } from '../components/welcome-dialog.ts';
+import { resolveStartRoute, isStartArea, START_ROOMS } from '../lib/design-system/start-route.ts';
+import type { StartArea, StartRoom, StartSource } from '../lib/design-system/start-route.ts';
+import { createStudioState } from '../lib/design-system/studio-state.ts';
+import { mountOverviewRoom } from '../lib/design-system/rooms/overview.ts';
+import type { OverviewRoom } from '../lib/design-system/rooms/overview.ts';
+// Versions (plan 97 §6a, M7): a foot-pinned panel, not a room — it acts on the
+// whole design system, and it stays hidden until there is something to publish.
+import { mountVersionsRoom, hasPublishableSystem } from '../lib/design-system/rooms/versions.ts';
+import type { VersionsRoom } from '../lib/design-system/rooms/versions.ts';
+// The M2 source framework: one census type, one persistent tray, one file router.
+// This view owns the copy, the markup and the install; those modules own the
+// sniffing, the shapes and the model (plan 97 §8).
+import { createTray, candidatesFromCensus } from '../lib/design-system/tray.ts';
+import type { Tray } from '../lib/design-system/tray.ts';
+import { mountTrayUi } from '../lib/design-system/tray-ui.ts';
+import type { TrayUi } from '../lib/design-system/tray-ui.ts';
+import { censusFromSvgColors, censusFromImageCloud } from '../lib/design-system/census.ts';
+import type { DesignCensus } from '../lib/design-system/census.ts';
+import {
+  routeDesignFile, designFileLimit, docNeedsMappingReview, applyMappingChoice, censusFromTokensDoc,
+  colorTokenRows, chooserRows, followRoles,
+} from '../lib/design-system/sources/file.ts';
+import type { ColorTokenRow, DesignFileRoute, RoleFollow } from '../lib/design-system/sources/file.ts';
+// The PDF source (M5). The scanner itself is imported on demand — it reaches
+// views/pdf-import.ts, and with it pdf-lib and the whole PDF interpreter, which
+// the studio must not carry until a PDF actually arrives. Only its SHAPES are
+// named here, and a type import is erased.
+import type { PdfFontCandidate, PdfLogoPick } from '../lib/design-system/sources/pdf.ts';
+// The website source (M6). Imported statically, unlike the PDF one: the picker
+// has to know AT MOUNT whether a transport exists, because that decides whether
+// the tile is rendered at all (plan 97 §9) — and the module it pulls in is the
+// pure HTML/CSS reader plus a transport probe, not a parser library. Its own
+// heavy leg (the image decoder, for a screenshot census) is lazy inside it.
+import {
+  detectSiteTransport, scanWebsite, normalizeSiteUrl, SITE_MAX_URL_CHARS,
+} from '../lib/design-system/sources/website.ts';
+import type { SiteScanPhase, SiteScanResult, SiteScanWarning } from '../lib/design-system/sources/website.ts';
+import { siteIngestSupport } from '../capabilities.ts';
+import { readSystemName } from '../lib/design-system/type-compare.ts';
+import { hasPendingLogoFiles, stashPendingLogoFiles } from '../lib/design-system/pending-files.ts';
+import { takePendingDesignSystemFile } from '../lib/drop-router.ts';
+import type { ColorEntry } from '../lib/design-system/add-color.ts';
+import { saveBlob } from '../pro/zip.ts';
+import { markWelcomeDismissed } from '../components/welcome-dialog.ts';
 import { mountModal, type ModalHandle } from '../components/modal.ts';
 import { applyTheme } from '../theme.ts';
 import { announce } from '../a11y.ts';
 import { escape } from '../utils.ts';
+import { icon } from '../lib/icons.ts';
+import type { IconName } from '../lib/icons.ts';
 import { swatchTile } from '../lib/swatches.ts';
 import { t, tRaw } from '../i18n.ts';
 import type { LangSwitchHost } from '../i18n.ts';
@@ -57,7 +111,6 @@ import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { backPillHtml, mountBackPill, resolveBackTarget } from '../components/back-pill.ts';
 import { navigateTo } from '../nav.ts';
-import { strFromU8 } from 'fflate';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
 type ViewElement = HTMLElement & { _cleanup?: () => void };
@@ -66,7 +119,17 @@ type ViewElement = HTMLElement & { _cleanup?: () => void };
  *  plus the profile slice the language switcher persists its choice through. */
 type StartHost = Parameters<typeof installUserTokens>[0] & LangSwitchHost;
 
-const TAB_KEYS = new Set<string>(BRAND_TABS.map(t => t.id));
+// Compile-time pin: every room but Overview IS one of the editor's panel keys,
+// which is what lets a room key be written straight onto `data-active-tab`. If
+// either list drifts, this stops compiling instead of silently opening a room
+// with no panel behind it. START_ROOMS, not START_AREAS: `versions` is a
+// foot-pinned panel this view renders itself, and parking its key on the same
+// attribute is exactly how the editor hides — the same trick `overview` uses.
+type RoomsArePanels = Exclude<StartRoom, 'overview'> extends BrandTabKey
+  ? (BrandTabKey extends Exclude<StartRoom, 'overview'> ? true : never)
+  : never;
+const ROOMS_ARE_PANELS: RoomsArePanels = true;
+void ROOMS_ARE_PANELS;
 
 // ── The import card's format marks ───────────────────────────────────────────
 // Recognition beats description: the four accepted formats lead the card as
@@ -84,6 +147,149 @@ const IMPORT_FORMATS: ReadonlyArray<{ icon: string; name: string; ext: string }>
   { icon: TOKENS_ICON, name: 'Token Studio', ext: '.json' },
   { icon: SVG_ICON, name: 'Plain SVG', ext: '.svg' },
 ];
+
+/** The rail's glyphs, from the one registry (lib/icons.ts). Every AREA, not just
+ *  the rooms: the foot's Versions entry wears its own from the same table. */
+const ROOM_ICONS: Record<StartArea, IconName> = {
+  overview: 'dashboard', color: 'palette', type: 'font', logos: 'shapes', tokens: 'tokens', catalogue: 'folder',
+  versions: 'tag',
+};
+
+// ── The source picker (plan 97 §8) ───────────────────────────────────────────
+// Stage 1 of the modal: WHAT you have, not what format it is. Four tiles are
+// always here; the Website tile joins them ONLY on a device that can actually
+// read a page (plan 97 §9 — see the website source below). A disabled tile or a
+// "coming soon" line would be advertising something nobody can press, so the
+// gate is presence, not state: with no transport the tile does not exist, and
+// `?source=url` lands on this plain list exactly as it did before M6.
+type PickerSource = Extract<StartSource, 'file' | 'pdf' | 'image' | 'font' | 'url'>;
+
+const SOURCE_TILES: ReadonlyArray<{ id: PickerSource; icon: IconName }> = [
+  { id: 'file', icon: 'upload' },
+  { id: 'pdf', icon: 'document' },
+  { id: 'image', icon: 'image' },
+  { id: 'font', icon: 'font' },
+];
+
+/** The capability-gated one, kept out of the list above so the gate reads as a
+ *  gate: it is spliced in at the front only when a transport answered. */
+const WEBSITE_TILE: { id: PickerSource; icon: IconName } = { id: 'url', icon: 'globe' };
+
+/** A screenshot or a photo. Bigger than a token file by a lot, and still far
+ *  under what a decode of a phone panorama costs. */
+const IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+
+/** What the image source names its own kind of file — the router's own test, so
+ *  a drag anywhere on the studio and the picker's Image stage agree. SVG is
+ *  excluded: a mark's colours are read as a colour LIST, not as painted pixels. */
+const IMAGE_NAME = /\.(png|jpe?g|webp|gif|avif|bmp)$/i;
+const FONT_NAME = /\.(ttf|otf|woff2?)$/i;
+/** What the PDF source claims. `.ai` is a PDF wearing another extension, and
+ *  the reader opens it as one — the drop router's own sniff says the same. */
+const PDF_NAME = /\.(pdf|ai)$/i;
+
+/** How many embedded faces the PDF stage offers to install in the dialog. The
+ *  candidates arrive installable-first, so a longer list is the tail: rarely the
+ *  brand's own type, and a dialog is not the place to scroll thirty rows. The
+ *  rest are named as a count, with the way to see them all beside it. */
+const MAX_PDF_FONT_ROWS = 6;
+
+/** One embedded face as the PDF stage shows it.
+ *
+ *  `format` is THIS DEVICE's reading of the bytes (the magic number, through the
+ *  same `detectFontFormat` the install itself uses), and it is the only honest
+ *  way to know whether the one action the row offers can succeed:
+ *  `PdfFontCandidate.chips` report what the DOCUMENT stated, and a raw `cff`/
+ *  `pfb` font program is not a file anything can install. A row that cannot act
+ *  says so instead of wearing a button guaranteed to answer "could not add". */
+interface PdfFontRow {
+  family: string;
+  /** The document's own spelling, kept for the stored file's name. */
+  raw: string;
+  chips: string[];
+  bytes: Uint8Array;
+  subset: boolean;
+  format: ReturnType<typeof detectFontFormat>;
+}
+
+/** A source's own vocabulary, in words. `describeFaceSource` reports what the
+ *  DOCUMENT stated about the bytes, so each chip is translated and nothing is
+ *  softened: `unknown` stays unknown, and an unrecognised token is repeated
+ *  verbatim rather than guessed at. A switch, not a table, so an attacker-shaped
+ *  token can never reach an inherited key. */
+function faceChipText(chip: string): string {
+  switch (chip) {
+    case 'SUBSET': return t('subset');
+    case 'installable': return t('no stated restriction');
+    case 'restricted': return t('reuse forbidden');
+    case 'preview-print': return t('preview and print only');
+    case 'editable': return t('embedding for editing');
+    case 'unknown': return t('embedding unknown');
+    default: return chip;
+  }
+}
+
+/** Fold perceptually-identical colours together before they become candidates.
+ *
+ * A quantised photo cloud reports one wall as dozens of adjacent buckets, so the
+ * heaviest twelve would be twelve shades of the same paint. Greedy and
+ * deterministic: heaviest first, and a later colour within `minDistance` in
+ * OKLab of one already kept folds into it (weights sum; the heavier evidence
+ * keeps its hex). Sources that already report DISTINCT colours — an SVG's list,
+ * a token document — are untouched at this threshold.
+ *
+ * INTERIM HOME. Plan 97 §2d puts this in lib/design-system/census.ts as
+ * `condenseCensus`, beside the adapters it serves; it lives here only because
+ * this milestone's shell work must not reach into that file. Move it, keep the
+ * behaviour.
+ */
+function condenseColors(census: DesignCensus, opts: { minDistance?: number; max?: number } = {}): DesignCensus {
+  const minDistance = opts.minDistance ?? 0.06;
+  const max = opts.max ?? 24;
+  const rows = [...census.colors].sort((a, b) => b.weight - a.weight || (a.hex < b.hex ? -1 : a.hex > b.hex ? 1 : 0));
+  const kept: Array<{ row: (typeof rows)[number]; l: number; a: number; b: number }> = [];
+  for (const row of rows) {
+    const o = hexToOklch(row.hex);
+    if (!o) continue;
+    const a = o.c * Math.cos((o.h * Math.PI) / 180);
+    const b = o.c * Math.sin((o.h * Math.PI) / 180);
+    const near = kept.find(k => Math.hypot(k.l - o.l, k.a - a, k.b - b) < minDistance);
+    if (near) near.row.weight += row.weight;
+    else if (kept.length < max) kept.push({ row: { ...row }, l: o.l, a, b });
+  }
+  return { ...census, colors: kept.map(k => k.row) };
+}
+
+// ── The website source's transport (plan 97 §9, M6) ──────────────────────────
+
+/**
+ * How long the studio waits for a page read before it stops waiting.
+ *
+ * It has to exceed the EXTENSION's own budget, which is 30s for the page to
+ * load, a settle, then up to 20s to read it: a shorter one here gives up while
+ * the extension is still working, and the person pays with a re-press of a
+ * consent button. The native fetch has its own, much shorter, Rust-side
+ * deadline (and clamps anything longer than 60s to 60s), so this is only ever
+ * the backstop for a transport that dies without answering.
+ */
+const SITE_READ_BUDGET_MS = 90_000;
+
+/** What the Logos room will actually take (its own `LOGO_ACCEPT_TYPES`). A
+ *  favicon is very often an `.ico` or a `.gif`, and offering to send marks the
+ *  room then refuses would be a button that promises a count it cannot keep. */
+const LOGO_ROOM_MIME = /^image\/(?:png|jpeg|svg\+xml|webp)$/;
+
+/** The file extension for a mark the room accepts. A switch, not a lookup: the
+ *  same rule faceChipText follows, so no inherited key can ever answer. */
+function markExtension(mime: string): string | null {
+  switch (mime) {
+    case 'image/png': return 'png';
+    case 'image/jpeg': return 'jpg';
+    case 'image/svg+xml': return 'svg';
+    case 'image/webp': return 'webp';
+    default: return null;
+  }
+}
 
 export async function mountStart(viewEl: HTMLElement, host: StartHost, params = ''): Promise<void> {
   document.title = 'Make it yours · Lolly';
@@ -105,6 +311,10 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // skip the whole studio and say why, rather than dead-ending on an error.
   if (await host.tokens?.isLocked?.().catch(() => false)) {
     document.title = 'Brand · Lolly';
+    // Nothing here can accept a file the front door handed over (lib/drop-router.ts),
+    // so the stash is spent rather than left holding a document's bytes for the
+    // rest of the session.
+    takePendingDesignSystemFile();
     viewEl.innerHTML = `
       <div class="start">
         <div class="gallery-topright">${langFabHtml()}</div>
@@ -120,67 +330,98 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     return;
   }
 
-  const startSearch = new URLSearchParams(params);
-  const tabParam = startSearch.get('tab') ?? '';
-  // Read-only deep-link flag: `#/start?tab=color&wheel` opens the OKLCH Colour
-  // chart on mount. Consumed here; never propagated into a generated share link.
-  const wantWheel = startSearch.has('wheel');
-  // The importer is a MODAL now (it used to be a panel folded open under the
-  // action row, which spent a third of the first screen on it before anyone had
-  // asked). So `?import` opens the dialog on arrival — for a link that hands off
-  // straight into "bring your brand across" — and the resting state is the glowing
-  // Import button in the top-right cluster. `?import=0` keeps meaning "shut", so
-  // the links that carried it still land where they always did.
-  const importOpen = startSearch.has('import') && startSearch.get('import') !== '0';
-  let activeTab: BrandTabKey = (TAB_KEYS.has(tabParam) ? tabParam : 'logos') as BrandTabKey;
+  // Read-only deep-link flags, consumed on mount and never propagated into a
+  // generated link: which room, whether the OKLCH colour chart opens with it,
+  // and whether the source modal is open on arrival (`?import=0` still means
+  // shut, so the links that carried it land where they always did).
+  const route = resolveStartRoute(params);
+  const wantWheel = route.wheel;
+  const importOpen = route.importOpen;
+  // `?source=url&u=<address>` PREFILLS the website source's field and does
+  // nothing else — the fetch button is the consent, so a link somebody sends
+  // must never be able to start a read (plan 97 §9). Read here rather than in
+  // resolveStartRoute because it is the only param that belongs to one stage
+  // rather than to the route; it should move there the next time that file is
+  // open, with the same "prefill, never act" contract written on it.
+  let urlPrefill = new URLSearchParams(params.startsWith('?') ? params.slice(1) : params).get('u') ?? '';
+  if (urlPrefill.length > SITE_MAX_URL_CHARS) urlPrefill = '';
+  let activeArea: StartArea = isStartArea(route.area) ? route.area : 'overview';
+
+  // Rooms are peers: one flat list, no order to obey. Built at mount so every
+  // label resolves against the language in force right now.
+  const ROOM_LABELS: Record<StartArea, string> = {
+    overview: t('Overview'), color: t('Colours'), type: t('Type'),
+    logos: t('Logos'), tokens: t('Tokens'), catalogue: t('Files'),
+    versions: t('Versions'),
+  };
 
   viewEl.innerHTML = `
     <div class="start start--studio">
-      <!-- Brand-file actions ride the top-right chrome cluster, on the language
-           selector's line: they belong to the studio as a whole rather than to any
-           one step, and the row they used to sit in cost a band of vertical space
-           on every step for two buttons. Import opens a modal (below). -->
-      <div class="gallery-topright start-topright">
-        <button type="button" class="be-btn start-import-cta" data-start-import aria-haspopup="dialog"
-          aria-label="${escape(t('Import…'))}" title="${escape(t('Import…'))}"><span class="start-import-cta-ic" aria-hidden="true">↓</span> <span class="start-act-label">${t('Import…')}</span></button>
-        <button type="button" class="be-btn start-export-btn" data-start-export data-sfx="whoosh"
-          aria-label="${escape(t('Export'))}" title="${escape(t('Export'))}"><span aria-hidden="true">↑</span> <span class="start-act-label">${t('Export')}</span></button>
-        ${langFabHtml()}
-      </div>
+      <div class="gallery-topright start-topright">${langFabHtml()}</div>
       ${backPill}
       <header class="start-head">
-        <p class="start-eyebrow">${t('Brand setup')}</p>
+        <p class="start-eyebrow">${t('Design system')}</p>
         <h1 class="start-title">${t('Make it yours')}</h1>
-        <p class="start-sub">${t('Work through the steps — logos, colours, type, the other tokens, your files. Everything stays on this device, and every tool, page and export follows it.')}</p>
+        <p class="start-sub">${t('Colours, type, logos, tokens and files. Everything stays on this device, and every tool, page and export follows it.')}</p>
       </header>
 
-      <!-- Step tabs: numbered, in working order. The next step nudges once the
-           current one has changes, so the path forward is always visible. -->
-      <nav class="start-tabs" role="tablist" aria-label="${escape(t('Brand setup steps'))}">
-        ${BRAND_TABS.map((tab, i) => `
-          <button type="button" class="start-tab${tab.id === activeTab ? ' is-active' : ''}" role="tab"
-            aria-selected="${tab.id === activeTab}" aria-controls="start-panel-${tab.id}" tabindex="${tab.id === activeTab ? 0 : -1}"
-            data-start-tab="${tab.id}" id="start-tab-${tab.id}">
-            <span class="start-tab-icon" aria-hidden="true">${tab.icon}</span>
-            <span class="start-tab-content">
-              <span class="start-tab-n">${i + 1}</span>
-              <span class="start-tab-label">${escape(tab.label)}</span>
-            </span>
-          </button>`).join('')}
-      </nav>
+      <div class="ds-shell">
+        <!-- The rail: independent rooms, in no order. A phone gets the same list
+             as a horizontal chip strip pinned under the header. -->
+        <nav class="ds-rail" aria-label="${escape(t('Design system rooms'))}">
+          <ul class="ds-rooms" role="list">
+            ${START_ROOMS.map(area => `
+              <li>
+                <button type="button" class="ds-room" id="ds-room-${area}" data-ds-room="${area}"${area === activeArea ? ' aria-current="page"' : ''}>
+                  <span class="ds-room-ic" aria-hidden="true">${icon(ROOM_ICONS[area])}</span>
+                  <span class="ds-room-label">${escape(ROOM_LABELS[area])}</span>
+                </button>
+              </li>`).join('')}
+          </ul>
+          <!-- Foot: whole-system actions. They belong to the studio rather than
+               to any one room, and the transient note rides with them. -->
+          <div class="ds-rail-actions">
+            <button type="button" class="be-btn start-import-cta" data-start-import aria-haspopup="dialog">
+              <span class="start-import-cta-ic" aria-hidden="true">↓</span> <span>${t('Add from…')}</span></button>
+            <!-- Hidden until a scan actually keeps something: an empty concept is
+                 never advertised (plan 97 §9). The count rides the subscription. -->
+            <button type="button" class="be-btn ds-tray-toggle" data-start-tray aria-expanded="false" hidden>
+              <span class="ds-tray-toggle-ic" aria-hidden="true">${icon('dock')}</span>
+              <span>${t('Tray')}</span>
+              <span class="ds-tray-toggle-n" data-start-tray-n></span></button>
+            <button type="button" class="be-btn start-export-btn" data-start-export data-sfx="whoosh">
+              <span aria-hidden="true">↑</span> <span>${t('Export')}</span></button>
+            <!-- The pack zip carries fonts, logos and a theme preference; this is
+                 the plain document, for a repo or another tool that reads DTCG. -->
+            <button type="button" class="be-btn start-export-tokens" data-start-export-tokens>
+              <span aria-hidden="true">↑</span> <span>${t('Tokens (.json)')}</span></button>
+            <!-- Versions (plan 97 §6a). Hidden until the studio has something of
+                 its own to publish, or until a link asks for the panel by name:
+                 a system that never publishes must never be shown the machinery.
+                 It carries data-ds-room, so the rail's existing click delegate
+                 routes it with no second listener. -->
+            <button type="button" class="be-btn ds-versions-toggle" id="ds-room-versions" data-ds-room="versions" hidden>
+              <span class="ds-versions-toggle-ic" aria-hidden="true">${icon(ROOM_ICONS.versions)}</span>
+              <span>${escape(ROOM_LABELS.versions)}</span></button>
+            <span class="ds-rail-note" data-start-note aria-live="polite"></span>
+          </div>
+        </nav>
 
-      <!-- The action row now carries ONLY what the current step has to say: the
-           primary Save & continue and the transient note. Empty means gone (hidden
-           by syncActionRow), so a step at rest spends no vertical space on chrome
-           — Import/Export moved to the top-right cluster above. -->
-      <div class="start-actions" role="toolbar" aria-label="${escape(t('Brand actions'))}" data-start-actions hidden>
-        <span class="start-actions-note" data-start-note aria-live="polite"></span>
-        <button type="button" class="be-cta start-save" data-start-save hidden></button>
+        <div class="ds-main">
+          <section class="ds-panel" id="start-panel-overview" data-ds-panel="overview"
+            role="region" aria-labelledby="ds-room-overview" hidden></section>
+          <section class="ds-panel" id="start-panel-versions" data-ds-panel="versions"
+            role="region" aria-labelledby="ds-room-versions" hidden></section>
+          <div class="start-editor-wrap">
+            <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">${t('Loading your brand…')}</p></div>
+          </div>
+        </div>
       </div>
+
       <!-- The import card lives here at rest, inside a hidden holder, and is MOVED
-           into the modal when Import is clicked (and back on close) — so the file
-           input, the drop target and every delegated listener below are wired once
-           against nodes that outlive any one dialog. -->
+           into the modal when "Add from…" is clicked (and back on close) — so the
+           file input, the drop target and every delegated listener below are wired
+           once against nodes that outlive any one dialog. -->
       <div class="start-import-home" data-start-import-home hidden>
       <div class="start-import-panel" data-start-import-panel>
         <!-- The whole card is the control: click anywhere (it's the file input's
@@ -199,26 +440,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           <span class="be-btn start-import-btn" aria-hidden="true">${t('Choose a design or brand file…')}</span>
           <span class="start-import-drophint">${t('or drag & drop it here')}</span>
         </label>
-        <div class="start-import-result" hidden></div>
+        <!-- tabindex="-1": the result is a status message with controls in it, so
+             it takes focus when it appears rather than being announced whole. -->
+        <div class="start-import-result" tabindex="-1" hidden></div>
       </div>
       </div>
-
-      <div class="start-editor-wrap">
-        <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">${t('Loading your brand…')}</p></div>
-      </div>
-
-      <!-- The way onward — revealed by finishing the last step. -->
-      <section class="start-finish" data-start-finish hidden aria-label="${escape(t('All set'))}">
-        <h2 class="start-finish-title">${t('Your brand is in force')}</h2>
-        <p class="start-finish-sub">${t('Every tool, page and export now follows it. Where to next?')}</p>
-        <div class="start-finish-links">
-          <a class="be-cta start-finish-primary" href="#/profile" data-sfx="click">${t('Set up your Profile')} &rarr;</a>
-          <span class="start-finish-or">${t('or visit')}</span>
-          <a class="be-btn" href="#/">${t('Tools')}</a>
-          <a class="be-btn" href="#/p">${t('Projects')}</a>
-          <a class="be-btn" href="#/d" data-sfx="dashboard">${t('Dashboard')}</a>
-        </div>
-      </section>
     </div>`;
 
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
@@ -229,131 +455,235 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // mounted view" must be asked of a node THIS mount created.
   const shell = viewEl.querySelector<HTMLElement>('.start')!;
   const importResult = viewEl.querySelector<HTMLElement>('.start-import-result')!;
-  const showImportResult = (html: string): void => {
+  /**
+   * The one result sink: what a picked or dropped file turned out to be, and the
+   * controls that act on it.
+   *
+   * It is a STATUS MESSAGE in the WCAG 4.1.3 sense — new content that answers
+   * something the person just did, in a place their focus is not. It is not a
+   * live region: the card is a whole panel (stats, warnings, a question, two or
+   * three buttons) and reading all of it aloud on every render is noise. So each
+   * caller says its one fact through `say`, and focus moves to the card, which
+   * is where the buttons are and where a screen reader then reads from.
+   */
+  const showImportResult = (html: string, opts: { say?: string; assertive?: boolean } = {}): void => {
     importResult.innerHTML = html;
     importResult.hidden = false;
+    if (opts.say) announce(opts.say, { assertive: !!opts.assertive });
+    importResult.focus();
+  };
+  /** A refusal, in the card and out loud. `text` is PLAIN text: the card escapes
+   *  it, the announcement must not (a live region is a text sink, and entities
+   *  are read out as entities there). */
+  const showImportError = (text: string): void => {
+    showImportResult(`<p class="start-import-err">${escape(text)}</p>`, { say: text, assertive: true });
   };
 
-  // ── The studio (all five tab panels, mounted once) ───────────────────────────
+  // ── The studio (all five editor panels, mounted once) ────────────────────────
   const editorMount = viewEl.querySelector<HTMLElement>('[data-start-editor]')!;
-  const saveBtn = viewEl.querySelector<HTMLButtonElement>('[data-start-save]')!;
   const noteEl = viewEl.querySelector<HTMLElement>('[data-start-note]');
-  const finishEl = viewEl.querySelector<HTMLElement>('[data-start-finish]')!;
-  const actionsRow = viewEl.querySelector<HTMLElement>('[data-start-actions]')!;
+  const overviewPanel = viewEl.querySelector<HTMLElement>('[data-ds-panel="overview"]')!;
+  const versionsPanel = viewEl.querySelector<HTMLElement>('[data-ds-panel="versions"]')!;
+  const versionsBtn = viewEl.querySelector<HTMLButtonElement>('[data-ds-room="versions"]');
+  const railEl = viewEl.querySelector<HTMLElement>('.ds-rail')!;
+  const roomBtns = [...viewEl.querySelectorAll<HTMLButtonElement>('[data-ds-room]')];
 
-  /** The row exists only while it has something in it — no empty sticky bar. */
-  const syncActionRow = (): void => {
-    actionsRow.hidden = saveBtn.hidden && !noteEl?.textContent;
+  // The save discipline's substrate (plan 97 §6): used here for the checkpoint a
+  // source install takes before it lands, so "revert to before the import" is a
+  // restore rather than an apology. The rooms adopt the rest in M1.
+  //
+  // `afterInstall` fires only on studio.install, which nothing but the Versions
+  // panel calls today — so an unversioned studio never runs it. It exists because
+  // activating a version changes what the CHROME resolves against
+  // (applyChromeBrandVars reads active-or-latest), and a repaint nobody triggers
+  // would leave the app painted in the version the page opened with.
+  const studio = createStudioState(host as unknown as Parameters<typeof createStudioState>[0], {
+    label: t('My brand'),
+    afterInstall: () => applyChromeBrandVars(host),
+  });
+  const checkpointBeforeInstall = async (): Promise<void> => {
+    // Best-effort by design: a first-ever install has no head to snapshot, and a
+    // storage failure must never stop the tokens the user asked for from landing.
+    try { await studio.load(); await studio.checkpoint(t('Before import')); }
+    catch { /* nothing to go back to */ }
   };
 
-  const tabIndex = (key: BrandTabKey): number => BRAND_TABS.findIndex(t => t.id === key);
-  const nextTab = (key: BrandTabKey): BrandTabKey | null => BRAND_TABS[tabIndex(key) + 1]?.id ?? null;
+  // ── The candidate tray (plan 97 §8) ──────────────────────────────────────────
+  // A source scans material into a census, the census becomes typed candidates,
+  // and NOTHING joins the design system until someone presses Add. The model is
+  // persistent and outlives the view (lib/design-system/tray.ts); its surface
+  // and its two commit paths are wired further down, once the editor exists.
+  //
+  // Created HERE, before the editor, because there must be exactly ONE live tray
+  // per mounted studio. The tray persists its whole candidate list on every
+  // write, so two instances on the same key each save their own in-memory list
+  // and the later write erases whatever the other one added. The Logos room
+  // hands the colours a mark carries to a tray too — it gets this one.
+  const tray: Tray = createTray(host as unknown as Parameters<typeof createTray>[0]);
+  try { await tray.load(); } catch { /* an unreadable tray simply starts empty */ }
 
-  // "Save & continue" appears the moment a step reports a change (the editor's
-  // onChange), labelled for where it goes; on the last step it becomes Finish.
-  const syncSaveBtn = (show?: boolean): void => {
-    if (show !== undefined) saveBtn.hidden = !show;
-    const next = nextTab(activeTab);
-    saveBtn.textContent = next ? t('Save & continue') : t('Save & finish');
-    syncActionRow();
-  };
-  const nudge = (tab: BrandTabKey): void => {
-    const next = nextTab(tab);
-    viewEl.querySelectorAll('.start-tab.is-nudge').forEach(t => t.classList.remove('is-nudge'));
-    if (next && tab === activeTab) viewEl.querySelector(`[data-start-tab="${next}"]`)?.classList.add('is-nudge');
-  };
+  // A hand-off is waiting (the #/pdf exploder's Send to Logos, or this view's own
+  // send across the remount). Read BEFORE the editor mounts, because the Logos
+  // room's paint drains the stash: after that the answer is always false. It
+  // decides one thing — whether the room this mount opens on takes focus, so a
+  // keyboard user who pressed a button that navigated lands somewhere.
+  const marksArriving = hasPendingLogoFiles();
 
-  let editor: Awaited<ReturnType<typeof mountBrandEditor>> | null = null;
+  let editor: BrandEditorHandle | null = null;
+  let overview: OverviewRoom | null = null;
+  let versions: VersionsRoom | null = null;
   try {
     editor = await mountBrandEditor(editorMount, host as unknown as Parameters<typeof mountBrandEditor>[1], {
-      onChange: (tab) => {
+      tray,
+      onChange: () => {
         if (!shell.isConnected) return;
-        syncSaveBtn(true);
-        nudge(tab);
+        // Only a VISIBLE Overview re-reads — the same rule the room applies to
+        // its own palette subscription (lib/design-system/rooms/overview.ts).
+        // An edit lands here on every commit, and one refresh walks the whole
+        // system: the tokens doc, its colours, four font-family reads, and a
+        // logo listing that mints and revokes an object URL per slot. A hidden
+        // panel is caught by the refresh selectRoom() runs on entry.
+        if (overviewPanel.hidden) return;
+        overview?.refresh();
+      },
+      // The durable half of the room's undo (plan 97 §6): the editor's own stack
+      // is session-only, so a destructive action also asks the host for a named
+      // checkpoint. Same shape as checkpointBeforeInstall, with the label the
+      // room supplies. Best-effort — a first-ever edit has no head to snapshot.
+      checkpoint: async (label) => {
+        try { await studio.load(); await studio.checkpoint(label); }
+        catch { /* nothing to go back to */ }
       },
     });
   } catch (err) {
     editorMount.innerHTML = `<p class="be-err">${t('Couldn’t open the brand editor: {error}', { error: String((err as { message?: unknown })?.message ?? err) })}</p>`;
   }
   const editorRoot = editorMount.querySelector<HTMLElement>('[data-brand-editor]');
-  // Complete the ARIA tabs contract on the editor's panel wrappers (the editor
-  // renders them; only this view knows they're driven as tabs).
+  // Name each editor panel after the rail item that opens it (the editor renders
+  // the panels; only this view knows what navigates to them).
   editorRoot?.querySelectorAll<HTMLElement>('[data-be-tab-panel]').forEach(panel => {
     const key = panel.dataset.beTabPanel!;
     panel.id = `start-panel-${key}`;
-    panel.setAttribute('role', 'tabpanel');
-    panel.setAttribute('aria-labelledby', `start-tab-${key}`);
+    panel.setAttribute('role', 'region');
+    panel.setAttribute('aria-labelledby', `ds-room-${key}`);
   });
 
-  // ── Mobile palette sheet (≤640px) — mounted only while the Colour tab shows,
+  // ── Mobile palette sheet (≤640px) — mounted only while the Colours room shows,
   // and only when the editor actually mounted (a locked build renders no studio;
   // a failed mount leaves editor null / editorRoot missing — nothing to mirror).
-  // Torn down on every tab switch away and on view unmount.
+  // Torn down on every room change away and on view unmount.
   let paletteSheet: PaletteSheet | null = null;
+  let trayUi: TrayUi | null = null;
   const syncPaletteSheet = (): void => {
-    const want = activeTab === 'color' && editor !== null && !!editorRoot;
+    // Single owner of the phone's bottom edge: the tray and the palette sheet are
+    // both fixed sheets there, and two of them stacked is one of them unreachable.
+    // The tray is the transient one, so it wins while it is open and the palette
+    // mirror comes back the moment it closes (onOpenChange calls this).
+    const want = activeArea === 'color' && editor !== null && !!editorRoot && !(trayUi?.isOpen() ?? false);
     if (want && !paletteSheet) paletteSheet = mountPaletteSheet(shell, editor!, editorRoot!);
     else if (!want && paletteSheet) { paletteSheet.teardown(); paletteSheet = null; }
   };
 
-  // ── Tabs — lib/tabs.ts's shared roving-tabindex machinery (component audit
-  // rec 1); `onSelect` owns everything view-specific (the editor's active panel,
-  // the mobile palette sheet, the nudge cue, Save-button label, URL mirroring,
-  // and — click only, matching the pre-extraction behaviour — the click sfx). ──
-  const tabsNav = viewEl.querySelector<HTMLElement>('.start-tabs');
-  const selectTab = tabsNav ? wireTabs(tabsNav, {
-    key: 'startTab',
-    onSelect: (key, { reason }) => {
-      activeTab = key as BrandTabKey;
-      editor?.closeOverlays(); // a popover anchored to the outgoing tab must not linger
-      editorRoot?.setAttribute('data-active-tab', key);
-      syncPaletteSheet();
-      tabsNav.querySelector<HTMLElement>(`[data-start-tab="${key}"]`)?.classList.remove('is-nudge');
-      syncSaveBtn();
-      // Keep the URL shareable without spamming history.
-      try { history.replaceState(null, '', `#/start?tab=${key}`); } catch { /* sandboxed */ }
-      if (reason === 'click') playSfx('click');
-    },
-  }) : ((key: string, _opts?: { focus?: boolean }) => { activeTab = key as BrandTabKey; });
-  selectTab(activeTab);
+  // ── Rooms ────────────────────────────────────────────────────────────────────
+  // A rail item is navigation, not a tab in a tablist: it carries aria-current,
+  // and the panel it opens is a region named after it. `overview` on the editor's
+  // data-active-tab matches none of its five panels, which is how the editor
+  // hides itself while the Overview room shows.
+  // Whether the foot's Versions entry is offered at all. Two ways in: the studio
+  // has something of its own to publish (resolved once, below), or the panel was
+  // asked for by name — a `?area=versions` link must never land on a control that
+  // is not there.
+  //
+  // Once shown it STAYS shown for the session. Hiding it again the moment the
+  // user opens another room made the deep link one-way: the panel's own empty
+  // state invites you to go and add colours first, `selectRoom` replaceStates the
+  // URL so Back cannot recover it either, and the way home was to retype the
+  // link. A latch is cheaper than a second door, and it cannot make the entry
+  // appear for somebody who never asked for it.
+  let versionsOffered = false;
+  const syncVersionsEntry = (): void => {
+    if (activeArea === 'versions') versionsOffered = true;
+    if (versionsBtn) versionsBtn.hidden = !versionsOffered;
+  };
+  /** Mount-on-first-open, then refresh. Reassigned once the panel's context
+   *  exists further down; until then opening the area is simply a no-op panel,
+   *  which is what the very first selectRoom() call needs. The laziness is the
+   *  point: reading the ledger, hashing the pinned assets and totting up storage
+   *  are the panel's costs, and a studio that never opens it must never pay them. */
+  let openVersions: () => void = () => { /* wired below */ };
 
-  // Deep-link: `#/start?tab=color&wheel` opens the OKLCH Colour chart on mount —
-  // the same folded card the Colours tab reveals on click. Reuses the editor's
+  const selectRoom = (area: StartArea, opts: { focus?: boolean; sfx?: boolean } = {}): void => {
+    activeArea = area;
+    editor?.closeOverlays(); // a popover anchored in the outgoing room must not linger
+    syncVersionsEntry();     // before the focus loop: a hidden button cannot take it
+    for (const btn of roomBtns) {
+      const on = btn.dataset.dsRoom === area;
+      if (on) btn.setAttribute('aria-current', 'page');
+      else btn.removeAttribute('aria-current');
+      if (on && opts.focus) btn.focus();
+    }
+    overviewPanel.hidden = area !== 'overview';
+    versionsPanel.hidden = area !== 'versions';
+    editorRoot?.setAttribute('data-active-tab', area);
+    if (area === 'overview') overview?.refresh();
+    if (area === 'versions') openVersions();
+    syncPaletteSheet();
+    // Keep the URL shareable without spamming history.
+    try { history.replaceState(null, '', `#/start?area=${area}`); } catch { /* sandboxed */ }
+    if (opts.sfx) playSfx('click');
+  };
+
+  railEl.addEventListener('click', (e) => {
+    const area = (e.target as HTMLElement).closest<HTMLElement>('[data-ds-room]')?.dataset.dsRoom ?? '';
+    if (isStartArea(area)) selectRoom(area, { sfx: true });
+  });
+
+  // The room is selected BEFORE the Overview room mounts, so the panel's hidden
+  // state is already true/false when the room takes its first reading (and the
+  // arrival doesn't read the design system twice).
+  //
+  // Marks arriving from a hand-off take the focus with them. The send navigates
+  // (or remounts), which destroys the control that was pressed along with the
+  // dialog that restored focus to it, so without this a keyboard user is
+  // returned to the top of the document. The rail item is the landing: it is a
+  // real control, it names the room the marks arrive in, and the queue is the
+  // next stop from there.
+  selectRoom(activeArea, { focus: marksArriving });
+  overview = mountOverviewRoom(overviewPanel, {
+    host: host as unknown as Parameters<typeof mountOverviewRoom>[1]['host'],
+    editor: () => editor,
+    goto: (area) => { if (isStartArea(area)) selectRoom(area, { focus: true, sfx: true }); },
+    // The Overview's "Start from a file" door means exactly that, so it skips the
+    // source list and opens on the file stage. OverviewCtx.openImport stays a
+    // bare `() => void` — the room never learns the picker has stages.
+    openImport: () => { openImport('file'); playSfx('click'); },
+  });
+
+  // Deep-link: `#/start?area=color&wheel` opens the OKLCH Colour chart on mount —
+  // the same folded card the Colours room reveals on click. Reuses the editor's
   // own opener (it repaints the wheel via its toggle handler). A no-op when the
   // editor didn't mount (failed/locked) or the chart card is absent (openColorChart
   // returns false), so a locked/degraded studio deep-links gracefully. The flag
-  // is consumed here — selectTab's replaceState above already dropped it from the URL.
-  if (activeTab === 'color' && wantWheel) editor?.openColorChart();
+  // is consumed here — selectRoom's replaceState above already dropped it from the URL.
+  if (activeArea === 'color' && wantWheel) editor?.openColorChart();
 
-  // ── Save & continue / finish ─────────────────────────────────────────────────
-  const finish = (): void => {
-    markWelcomeDismissed();
-    closeWelcomeDialog();
-    finishEl.hidden = false;
-    finishEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    playSfx('saveProfile');
-    announce(t('Brand saved — pick where to go next'));
-  };
-  saveBtn.addEventListener('click', () => {
-    editor?.saveDraft();
-    saveBtn.hidden = true;
-    syncActionRow();
-    const next = nextTab(activeTab);
-    if (next) { selectTab(next, { focus: true }); playSfx('click'); }
-    else finish();
-  });
+  // Deep-link: `#/start?area=color&focus=<wing>` opens that wing of the Colours
+  // room (`chart` is the colour chart, the same target as `?wheel`). Same
+  // consume-on-mount, no-op-when-degraded contract as the wheel flag.
+  if (activeArea === 'color' && route.focus) {
+    if (route.focus === 'chart') editor?.openColorChart();
+    else editor?.openWing?.(route.focus);
+  }
 
   // ── Export (always on) ───────────────────────────────────────────────────────
   const showNote = (msg: string, isError = false): void => {
     if (!noteEl) return;
     noteEl.textContent = msg;
     noteEl.classList.toggle('is-error', isError);
-    syncActionRow();
     if (msg) {
       setTimeout(() => {
         if (!noteEl.isConnected || noteEl.textContent !== msg) return;
         noteEl.textContent = '';
-        syncActionRow();
       }, 4000);
     }
   };
@@ -366,58 +696,1271 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     btn.disabled = false;
   });
 
-  // ── Import: a modal, carrying the one card ───────────────────────────────────
-  // The card itself is NOT rebuilt per open — it's moved out of its hidden holder
-  // into the dialog and back again, so the file input, the drop target and the
-  // delegated result handlers below stay wired to the same nodes for the life of
-  // the view. Everything else is the shared modal primitive: Escape, backdrop
-  // dismissal, focus containment and restore come free (components/modal.ts).
+  // The tray's surface (lib/design-system/tray-ui.ts) and its two commit paths.
+  // The model itself was created above the editor mount — see the note there.
+  const isRec = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+
+  // The head document, kept in step with what is installed — the source of the
+  // plain-tokens export below, which re-reads it at the press either way.
+  //
+  // NOTHING WRITES THROUGH THIS. A view-held snapshot of the installed document
+  // is only ever safe to READ from: the Colours room edits its own live copy and
+  // installs it, so writing into a snapshot and installing that reverts every
+  // edit made since it was taken. Adds go through `editor.addColors`.
+  let headDoc: Record<string, unknown> | null = null;
+  const refreshHead = async (): Promise<void> => {
+    try { await studio.load(); const doc = studio.doc(); headDoc = isRec(doc) ? doc : null; }
+    catch { headDoc = null; }
+  };
+  await refreshHead();
+
+  // The plain document, beside the pack. The pack zip carries fonts, logos and a
+  // theme preference and verifies its own integrity map (brand-transfer.ts); this
+  // is what a repo, a CI step or another tokens tool actually reads, and it is
+  // the head document verbatim — the same precedence host.tokens.raw() applies.
+  viewEl.querySelector<HTMLButtonElement>('[data-start-export-tokens]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      await refreshHead();
+      if (!headDoc) showNote(t('There are no tokens to export yet.'), true);
+      else {
+        saveBlob(new Blob([JSON.stringify(headDoc, null, 2)], { type: 'application/json' }), 'tokens.json');
+        showNote(tRaw('Exported {filename}', { filename: 'tokens.json' }));
+        playSfx('whoosh');
+      }
+    } catch (err) { showNote(String((err as { message?: unknown })?.message ?? err), true); }
+    btn.disabled = false;
+  });
+
+  // ── Versions (plan 97 §6a, M7) ───────────────────────────────────────────────
+  // The panel writes the head through THIS studio, so publish, activate and
+  // restore land on the same undo stack as every other edit and repaint chrome
+  // through the same afterInstall. Version payloads never come through here —
+  // they go to installUserTokens with an explicit slug, which is where
+  // immutability is enforced (lib/design-system/versions-io.ts).
+  const versionsCtx = {
+    host: host as unknown as Parameters<typeof mountVersionsRoom>[1]['host'],
+    // load() first, every time. The rooms install through their own path, so the
+    // studio's in-memory head goes stale the moment a colour is edited — and the
+    // undo entry is a snapshot of THAT. Without the re-read, undoing a publish
+    // would step back to the document this view mounted with and quietly drop
+    // every edit made since.
+    install: async (doc: unknown, action: string) => {
+      await studio.load();
+      await studio.install(doc, action);
+    },
+    // No `label`: every head write here goes through `install` above, and a
+    // hard-coded name on the fallback path would rename whatever the user calls
+    // their design system on the next publish or activate. The chokepoint keeps
+    // the existing name when a write does not supply one (bridge/tokens.ts).
+    undo: () => studio.undo(),
+    notify: showNote,
+  };
+  // The panel is built the first time it is opened, and it reads on mount — so
+  // this is both the lazy mount and the re-entry refresh.
+  openVersions = (): void => {
+    if (versions) versions.refresh();
+    else versions = mountVersionsRoom(versionsPanel, versionsCtx);
+  };
+  if (activeArea === 'versions') openVersions();   // arrived by deep link
+  // Whether to OFFER the entry, resolved once. The head document is already
+  // memoised by the tokens bridge, so this is a single keyed blob read, and it
+  // never touches a render or an export path.
+  void hasPublishableSystem(versionsCtx).then(offered => {
+    if (!shell.isConnected) return;
+    // ||=, not =: a `?area=versions` arrival has already latched the entry on,
+    // and a late "nothing to publish yet" must not take it away underneath.
+    versionsOffered ||= offered;
+    syncVersionsEntry();
+  }).catch(() => { /* undiscoverable storage — the entry stays hidden */ });
+
+  /**
+   * One token per colour, through the Colours room's own write (plan 97 §2b).
+   *
+   * The room's `addColors` writes into the LIVE document the editor is holding
+   * — the only correct target. This view once kept its own `headDoc` snapshot
+   * and wrote into that when the room had no add path: a snapshot taken at mount
+   * and refreshed only by this view's own installs, so a tray Add made after any
+   * edit in the room reinstalled the pre-edit document and reverted it. There is
+   * one document; the room owns it, and there is no second way in.
+   *
+   * The tray is mounted only when the editor mounted (see below), so the absent
+   * case is a degraded studio rather than a state a person can press their way
+   * into — it still says so instead of going quiet, because a press that reports
+   * nothing added reads exactly like a dead button.
+   */
+  const addColorsToSystem = (entries: ColorEntry[]): number => {
+    const own = editor?.addColors;
+    if (!own) {
+      showNote(t('The brand editor didn’t open — reload the page and try again.'), true);
+      return 0;
+    }
+    return own(entries);
+  };
+
+  let unsubTray: (() => void) | null = null;
+  const trayToggle = viewEl.querySelector<HTMLButtonElement>('[data-start-tray]');
+  const trayCountEl = viewEl.querySelector<HTMLElement>('[data-start-tray-n]');
+  const syncTrayToggle = (): void => {
+    if (!trayToggle) return;
+    const n = trayUi?.count() ?? 0;
+    trayToggle.hidden = n === 0;           // an empty concept is never advertised
+    trayToggle.setAttribute('aria-expanded', String(trayUi?.isOpen() ?? false));
+    if (trayCountEl) trayCountEl.textContent = n ? String(n) : '';
+  };
+
+  // A locked build never reaches here (the route returned above) and a failed
+  // editor mount has nothing to repaint an add into, so the tray is mounted only
+  // where its Adds can actually land.
+  if (editor) {
+    trayUi = mountTrayUi(shell, {
+      tray,
+      // The disclosure pair: the panel is a fixed dock appended after the whole
+      // studio, so `aria-controls` and the focus hand-back are the only things
+      // tying it to the control that opens it.
+      toggle: trayToggle ?? undefined,
+      addColors: addColorsToSystem,
+      // Only families we hold a fetchable source for get an Add at all (the tray
+      // checks that itself); this is what happens when one is pressed. The face
+      // becomes the primary only when nothing else claims that role yet.
+      installFont: async (family) => {
+        await installGoogleFont(host as unknown as UserFontsHost, family);
+        bustFontRegistry();
+        await editor?.reload();
+      },
+      onOpenChange: (open) => {
+        syncPaletteSheet();
+        syncTrayToggle();
+        // A tray that closes by EMPTYING also hides the toggle it would hand
+        // focus back to, so there is nothing left in the panel's own story to
+        // return to. Rather than leave a keyboard user at the top of the
+        // document, put them on the rail action that starts the next scan — and
+        // only when focus was actually dropped, so this can never be a steal.
+        // Queried here, not captured: this fires long after mount either way.
+        if (!open && trayToggle?.hidden && document.activeElement === document.body) {
+          viewEl.querySelector<HTMLElement>('[data-start-import]')?.focus();
+        }
+      },
+    });
+    unsubTray = tray.subscribe(syncTrayToggle);
+    syncTrayToggle();
+    trayToggle?.addEventListener('click', () => { trayUi?.toggle(); syncTrayToggle(); playSfx('click'); });
+  }
+
+  /** A finished census into the tray, opened on what it found. Every source ends
+   *  here — there is no second path that skips the tray. */
+  const keepInTray = async (census: DesignCensus, note?: (msg: string, isError?: boolean) => void): Promise<number> => {
+    // One sink per message: `note` writes into an aria-live region of its own, so
+    // announce() on top of it says everything twice. It is the fallback for a
+    // call that passed no note, never a second voice for one that did.
+    const say = (msg: string, isError = false): void => {
+      if (note) note(msg, isError);
+      else announce(msg, { assertive: isError });
+    };
+    const candidates = candidatesFromCensus(census);
+    if (!candidates.length) {
+      say(tRaw('Nothing to keep from {source}.', { source: census.source.label }), true);
+      return 0;
+    }
+    let n = 0;
+    try { n = await tray.add(candidates); }
+    catch (err) { say(String((err as { message?: unknown })?.message ?? err), true); return 0; }
+    // No `focus`: a scan can land while the source dialog is still open, and the
+    // tray sits outside it. The panel refuses to open on an empty list itself.
+    trayUi?.open();     // fires onOpenChange → the rail toggle and the sheet resync
+    syncTrayToggle();   // …and again for the count, which the open didn't change
+    // A rescan of the same source adds nothing, because the tray dedupes on
+    // type+value — say so rather than reporting "0 kept". Which "already" it is
+    // matters: a candidate still pending is IN the tray, one already added is in
+    // the design system and will never come back to the tray, and telling
+    // someone to look in a tray that is empty (and whose toggle is hidden) is
+    // the more confusing of the two by a distance.
+    const stillPending = new Set(tray.list().filter(c => c.state === 'pending').map(c => c.id));
+    const msg = n === 0
+      ? (candidates.some(c => stillPending.has(c.id)) ? t('Already in the tray.') : t('Already added to the design system.'))
+      : n === 1 ? t('1 kept in the tray')
+        : tRaw('{n} kept in the tray', { n });
+    say(msg);
+    return n;
+  };
+
+  /** A screenshot or a photo as colour candidates. The decoder is imported on
+   *  demand — it drags in the bitmap/codec chunk, which has no business in the
+   *  studio's entry chunk (the Colour Lab does the same, for the same reason). */
+  const scanImageFile = async (file: File, note?: (msg: string, isError?: boolean) => void): Promise<void> => {
+    if (file.size > IMAGE_MAX_BYTES) {
+      note?.(tRaw('{filename} is too large (max {n} MB).', { filename: file.name, n: Math.round(IMAGE_MAX_BYTES / (1024 * 1024)) }), true);
+      return;
+    }
+    // The decode is the only step that can fail because of the FILE, so it is the
+    // only step inside this catch — a storage failure keeping candidates must not
+    // report back as "that image could not be read".
+    let census: DesignCensus;
+    try {
+      const { sampleImageFile } = await import('../lib/image-sample.ts');
+      const img = await sampleImageFile(file);
+      const cloud = imageColorCloud(img.data, img.width, img.height, { space: img.space, maxPoints: 256 });
+      census = condenseColors(censusFromImageCloud(cloud, file.name));
+    } catch {
+      note?.(tRaw('{filename} could not be read as an image.', { filename: file.name }), true);
+      return;
+    }
+    await keepInTray(census, note);
+  };
+
+  // ── The PDF source (plan 97 §8 gap 2, M5) ────────────────────────────────────
+  // A guidelines PDF is the richest single file most teams have: its artwork
+  // carries the marks AND the palette they are drawn in, and it embeds the real
+  // font programs. All of the reading is lib/design-system/sources/pdf.ts's
+  // (views/pdf-import.ts's PdfHandle underneath, imported on demand so nobody
+  // pays for pdf-lib until a PDF actually arrives); this owns the copy, the
+  // result card and the presses. Every byte is read here, on this device.
+  //
+  // The three findings travel three different ways, deliberately:
+  //   colours + families → the tray, like every other source. Nothing installs.
+  //   marks              → the Logos room, and only once the button is pressed:
+  //                        a stash armed by a scan nobody acted on would queue
+  //                        chips into a later visit that were never asked for.
+  //   embedded faces     → an install, one press per face, with the caveats the
+  //                        document itself states shown BEFORE the press.
+  let pdfPicks: PdfLogoPick[] = [];
+  let pdfFonts: PdfFontRow[] = [];
+  /** The scanned file's stem, so a mark sent to Logos arrives named after the
+   *  document it came out of rather than as "logo.svg". */
+  let pdfStem = '';
+
+  /** What kind of font file these bytes are, through the same magic-number read
+   *  the install itself performs. Only the first four bytes are copied: a
+   *  Uint8Array's own `.buffer` is the whole allocation behind it, which for a
+   *  face lifted out of a PDF can be the document. */
+  const formatOf = (bytes: Uint8Array): ReturnType<typeof detectFontFormat> =>
+    detectFontFormat(bytes.slice(0, 4).buffer as ArrayBuffer);
+
+  const pdfResultEl = (): HTMLElement | null =>
+    importModal?.el.querySelector<HTMLElement>('[data-ds-pdf-result]') ?? null;
+
+  /**
+   * One PDF, scanned into design-system material.
+   *
+   * The scanner returns a refusal rather than throwing, so every failure here is
+   * a sentence rather than a lost drop. Colours and families go straight to the
+   * tray (which says how many it kept, through the same note line the progress
+   * used); the marks and the faces need a decision, so they are painted into the
+   * stage's result card and wait there.
+   */
+  const scanPdfFile = async (file: File, note?: (msg: string, isError?: boolean) => void): Promise<void> => {
+    pdfPicks = [];
+    pdfFonts = [];
+    pdfStem = file.name.replace(/\.[^./\\]+$/, '') || file.name;
+    const before = pdfResultEl();
+    if (before) { before.hidden = true; before.textContent = ''; }
+    // Escape CANCELS, and a cancel keeps nothing. The read cannot be called back
+    // once the chunk is running, so the cancel is enforced at the one place it
+    // matters: the commit. Identity, not truthiness — a scan started from the
+    // drag-anywhere path can legitimately run with no dialog at all.
+    const startedIn = importModal;
+    const cancelled = (): boolean => !!startedIn && importModal !== startedIn;
+
+    note?.(tRaw('Reading {filename} on this device…', { filename: file.name }));
+    // The only step that can throw is loading the chunk itself — the scan reports
+    // every failure of its own as a value, so that a bad drop is a sentence.
+    let source: typeof import('../lib/design-system/sources/pdf.ts');
+    try {
+      source = await import('../lib/design-system/sources/pdf.ts');
+    } catch {
+      note?.(t('The PDF reader could not be loaded. Reload the page and try again.'), true);
+      return;
+    }
+    const result = await source.scanPdfForDesignSystem(
+      host as unknown as Parameters<typeof source.scanPdfForDesignSystem>[0],
+      file,
+      {
+        onProgress: (phase) => {
+          // A cancelled scan stops talking. `note` falls back to the rail when
+          // the dialog is gone, so without this the progress of a read nobody
+          // is waiting for keeps posting itself onto the page behind it.
+          if (cancelled()) return;
+          if (phase === 'vectors') note?.(t('Looking for marks and colours…'));
+          else if (phase === 'fonts') note?.(t('Reading the fonts…'));
+        },
+      },
+    );
+
+    // The dialog went away while the reader ran: the person cancelled, so the
+    // findings are dropped whole. Nothing is kept, nothing is said — a rail note
+    // reporting colours somebody just cancelled out of is the confusing half of
+    // a half-cancel, and the marks and faces were being discarded anyway.
+    if (cancelled()) return;
+
+    if (result.kind === 'refused') {
+      note?.(result.reason === 'too-large'
+        ? tRaw('{filename} is too large (max {n} MB).', { filename: file.name, n: Math.round((result.limit ?? 0) / (1024 * 1024)) })
+        : tRaw('{filename} could not be read as a PDF.', { filename: file.name }), true);
+      return;
+    }
+
+    // The tray first: it is the one place a source's findings wait, and its own
+    // count is the answer to "what did that do", so it replaces the progress line.
+    await keepInTray(result.census, note);
+
+    pdfPicks = result.logoPicks;
+    pdfFonts = result.fontCandidates.slice(0, MAX_PDF_FONT_ROWS).map((c: PdfFontCandidate): PdfFontRow => ({
+      family: c.family,
+      raw: c.raw,
+      chips: c.chips,
+      bytes: c.bytes,
+      subset: c.chips.includes('SUBSET'),
+      format: formatOf(c.bytes),
+    }));
+    renderPdfResult({
+      filename: file.name,
+      marks: pdfPicks.length,
+      hiddenFonts: Math.max(0, result.fontCandidates.length - pdfFonts.length),
+      pageWindow: result.pageWindow,
+      pages: result.pageCount,
+      warnings: result.warnings,
+    });
+  };
+
+  /**
+   * The PDF stage's result card: what the scan found, and the two things that can
+   * be done with it without leaving the dialog.
+   *
+   * A warning is printed for each half that did not run. "No fonts" and "the font
+   * table could not be read" are different facts, and a card that shows the first
+   * when the second happened is lying by omission.
+   *
+   * The card is a status message with controls in it, so it does BOTH things
+   * showImportResult does for the sibling card: its one-sentence summary is
+   * spoken, then focus moves into it. Focus alone is not an announcement — a
+   * `tabindex="-1"` div has no role and no name, so a reader that lands on it
+   * says nothing at all, and the marks, the faces and the warnings would go
+   * unheard behind the tray's own count.
+   */
+  function renderPdfResult(o: {
+    filename: string; marks: number; hiddenFonts: number;
+    pageWindow: number; pages: number; warnings: readonly string[];
+  }): void {
+    const el = pdfResultEl();
+    if (!el) return;   // the dialog closed while the scan ran — the tray still has it
+    const warnings: string[] = [];
+    if (o.warnings.some(w => w.startsWith('vectors'))) {
+      warnings.push(t('The artwork in this document could not be read, so no colours or marks came from it.'));
+    }
+    if (o.warnings.some(w => w.startsWith('fonts'))) {
+      warnings.push(t('The fonts in this document could not be read.'));
+    }
+    const fontRows = pdfFonts.map((row, i) => `
+      <li class="ds-pdf-font">
+        <span class="ds-pdf-font-name">${escape(row.family)}</span>
+        <span class="ds-pdf-font-chips">${row.chips.map(chip => `
+          <span class="ds-pdf-chip${chip === 'SUBSET' || chip === 'restricted' ? ' ds-pdf-chip--warn' : ''}">${escape(faceChipText(chip))}</span>`).join('')}
+        </span>
+        ${row.format === 'unknown'
+        ? `<span class="ds-pdf-font-note">${t('These are raw font-program bytes, not a file that can be installed.')}</span>`
+        : `<button type="button" class="be-btn be-btn--sm ds-pdf-add" data-ds-pdf-font="${i}">${t('Add to the design system')}</button>`}
+      </li>`).join('');
+
+    el.innerHTML = `
+      <p class="start-import-name">${escape(o.filename)}<span class="start-import-source">${t('PDF')}</span></p>
+      ${o.pages > o.pageWindow
+        ? `<p class="start-import-stats">${t('Marks and colours were taken from the first {n} pages of {total}.', { n: o.pageWindow, total: o.pages })}</p>` : ''}
+      ${warnings.map(w => `<p class="start-import-warn">${escape(w)}</p>`).join('')}
+      ${o.marks ? `
+        <div class="start-color-actions">
+          <button type="button" class="be-btn be-btn--sm ds-pdf-logos" data-ds-pdf-logos>${
+  t(o.marks === 1 ? 'Review {n} mark in Logos' : 'Review {n} marks in Logos', { n: o.marks })}</button>
+        </div>` : ''}
+      ${fontRows ? `
+        <p class="ds-src-stage-note">${t('Fonts in this document')}</p>
+        <ul class="ds-pdf-fonts" role="list">${fontRows}</ul>` : ''}
+      ${pdfFonts.some(r => r.subset)
+        ? `<p class="start-import-warn">${t('A subset carries only the characters this document printed, so it will be missing others.')}</p>` : ''}
+      ${o.hiddenFonts
+        ? `<p class="start-import-stats">${t(o.hiddenFonts === 1
+          ? '{n} more font is embedded in this document.'
+          : '{n} more fonts are embedded in this document.', { n: o.hiddenFonts })}</p>` : ''}
+      ${!o.marks && !fontRows && !warnings.length
+        ? `<p class="start-import-stats">${t('No marks and no embedded fonts were found in the pages that were read.')}</p>` : ''}
+      <p class="ds-src-stage-note">${t('Images, text and attachments are in Take a PDF apart, which asks for the file again.')}</p>
+      <a class="be-btn be-btn--sm ds-pdf-more" href="#/pdf">${t('Open Take a PDF apart')}</a>`;
+    el.hidden = false;
+    // What the card SAYS, in one line: the two counts it offers a decision on,
+    // plus any half of the scan that did not run. Deliberately not the whole
+    // card read aloud (the caveats, the hidden-font tally and the way out are
+    // all there to be read at leisure) and deliberately not the tray count,
+    // which keepInTray already said through the dialog's own note line.
+    const said: string[] = [...warnings];
+    if (o.marks) said.push(o.marks === 1 ? t('1 mark found') : tRaw('{n} marks found', { n: o.marks }));
+    if (pdfFonts.length) {
+      said.push(pdfFonts.length === 1 ? t('1 font found') : tRaw('{n} fonts found', { n: pdfFonts.length }));
+    }
+    if (!said.length) said.push(t('No marks and no embedded fonts were found in the pages that were read.'));
+    announce(said.join(' '));
+    // The card is a status message with controls in it, exactly like the design
+    // file card's — focus moves to it so a screen reader reads from where the
+    // buttons are, rather than being read the whole thing over the tray's own line.
+    el.focus();
+  }
+
+  /**
+   * Install one embedded face (plan 97 §7.2 / M5).
+   *
+   * `installFontFromBytes` is the whole vetting story — the cap, the magic
+   * number, the name table, the fsType reading and the variable axis — and it
+   * returns null rather than throwing for bytes it cannot use. So the judgement
+   * here is only what to SAY: a refusal is reported plainly and the control goes
+   * back to being an offer, and a subset that installs is still called a subset,
+   * because the missing characters turn up long after this dialog is closed.
+   *
+   * Busy and added are `aria-disabled`, never `disabled`: disabling the button
+   * under the press hands focus to the body, and on the failure path there would
+   * be nothing to hand it back to.
+   */
+  async function addPdfFont(index: number, btn: HTMLButtonElement): Promise<void> {
+    const row = pdfFonts[index];
+    if (!row || btn.getAttribute('aria-disabled') === 'true') return;
+    const was = btn.textContent;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.textContent = t('Adding…');
+
+    let family: string | null = null;
+    // A throw and a null are different answers, and only one of them means
+    // nothing was written: installFontFromBytes stores the asset first and
+    // registers/promotes it afterwards, so a failure in a later step leaves the
+    // face already saved. Claiming "nothing was added" there would be false.
+    let threw = false;
+    try {
+      const installed = await installFontFromBytes(host as unknown as UserFontsHost, row.bytes, {
+        filename: `${(row.raw || row.family).replace(/[^a-z0-9.+-]/gi, '_')}.${row.format}`,
+      });
+      family = installed?.family ?? null;
+    } catch (err) {
+      // installFontFromBytes returns null for bytes it cannot use rather than
+      // throwing, so anything caught here is unexpected: log it, and say the
+      // one thing that is certainly true — this did not finish.
+      threw = true;
+      (host as unknown as { log?: (level: string, msg: string, ctx?: object) => void })
+        .log?.('warn', 'start: pdf font install failed', { error: String((err as { message?: unknown })?.message ?? err) });
+    }
+    if (!family) {
+      btn.textContent = t('Could not add');
+      announce(threw
+        ? tRaw('{name} could not be added. Part of it may have been saved, so check the fonts in the design system before trying again.', { name: row.family })
+        : tRaw('{name} could not be read as a font, so nothing was added.', { name: row.family }), { assertive: true });
+      setTimeout(() => {
+        if (!btn.isConnected) return;
+        btn.textContent = was;
+        btn.removeAttribute('aria-disabled');
+      }, 1800);
+      return;
+    }
+    // The face is a user font now, so the Type room has to be told: the registry
+    // caches its resolutions and the room paints from the document.
+    try { bustFontRegistry(); await editor?.reload(); } catch { /* it installed either way */ }
+    // Said before the button is touched: the face landed whether or not the
+    // dialog is still open, and a closed dialog must not swallow the one
+    // sentence that reports it.
+    announce(row.subset
+      ? tRaw('{family} added to the design system. It is a subset, so characters this document did not print are missing from it.', { family })
+      : tRaw('{family} added to the design system', { family }));
+    playSfx('save');
+    if (!btn.isConnected) return;
+    // A quiet, permanent state: offering to install it again would say the first
+    // press did nothing.
+    btn.textContent = t('Added');
+    btn.classList.add('is-added');
+  }
+
+  /**
+   * The marks, to the Logos room.
+   *
+   * The stash is armed HERE rather than at scan time: it survives one navigation
+   * and is drained by the room's own paint, so arming it for a scan nobody acted
+   * on would drop chips into some later visit that were never asked for.
+   *
+   * And it REMOUNTS the studio on the Logos room rather than flipping rooms in
+   * place, because the drain runs from that paint and the paint runs on a mount
+   * (lib/brand-editor.ts). This is the same door #/pdf's own "Send to Logos"
+   * goes through, so a mark arrives the same way whichever one sent it. The
+   * remount reads `hasPendingLogoFiles()` and focuses the room it lands in.
+   *
+   * The stash reports what it actually armed, and this says so: a mark can be
+   * refused for being over its 4 MB cap (an extracted mark inherits the page's
+   * inlined rasters, so a logo over a photograph can be), and a button that
+   * promised three marks must not navigate to a room holding two without
+   * mentioning it — or, when nothing survived, navigate at all.
+   */
+  function sendPdfMarksToLogos(): void {
+    if (!pdfPicks.length) return;
+    // Named after the mark's place in the document, not its rank in this list:
+    // the same number the exploder's tile carries, so one document names its
+    // marks the same way whichever door sent them.
+    const { sent } = stashPendingLogoFiles(pdfPicks.map((pick) =>
+      new File([pick.svg], `${pdfStem}-logo-${pick.index + 1}.svg`, { type: 'image/svg+xml' })));
+    if (!sent) {
+      srcNote(pdfPicks.length === 1
+        ? t('That mark is over the 4 MB limit, so it was not sent.')
+        : t('Those marks are all over the 4 MB limit, so none were sent.'), true);
+      return;
+    }
+    // Said out loud rather than into the dialog's note: the remount below takes
+    // the dialog with it, and the live region is body-mounted and survives it.
+    if (sent < pdfPicks.length) {
+      announce(tRaw('{n} of {total} marks were sent. The rest are over the 4 MB limit.',
+        { n: sent, total: pdfPicks.length }));
+    }
+    playSfx('click');
+    sendToLogosRoom();
+  }
+
+  /** The one way this view hands marks to the Logos room. The room drains the
+   *  stash from its own PAINT, and the paint runs on a mount, so this remounts
+   *  the studio on that room rather than flipping to it in place. */
+  function sendToLogosRoom(): void {
+    const target = '#/start?area=logos';
+    if (window.location.hash !== target) window.location.hash = target;
+    else window.dispatchEvent(new Event('lolly:remount'));
+  }
+
+  // ── The website source (plan 97 §9, M6) ──────────────────────────────────────
+  // §9's decision in one sentence: NO SERVER FETCH, EVER. The deployed PWA
+  // cannot reach an arbitrary origin at all (its CSP allowlists six hosts, so
+  // this dies before CORS is even asked), and no fetching service was built —
+  // it was ruled out, not deferred. So the source exists only where a reader
+  // already lives on the device: a Tauri shell's native fetch, or the Lolly
+  // extension reading one background tab.
+  //
+  // `siteTransport === null` is the gate, and it gates the TILE, not the tile's
+  // state: nothing about this source appears in the picker on a plain browser,
+  // because a control that cannot work teaches the person a lie about their own
+  // machine. Discovery lives on the capabilities page instead (capabilities.ts's
+  // `siteIngestSupport`, rendered as prose in lib/capabilities-data.ts).
+  //
+  // Nothing is fetched before the press. The button IS the consent, its label
+  // names the host, and the line above it names WHO does the reading, because
+  // "the extension opens a background tab on suse.com" and "this app opens a
+  // socket to suse.com" are different facts about somebody's device. A
+  // `?source=url&u=` link only fills the field in.
+  const siteTransport = detectSiteTransport(host as unknown as HostV1);
+  // Read through the one place verdicts live, so the picker and the capabilities
+  // page cannot disagree about what 'ready' means. 'install' (Chromium without
+  // the extension) deliberately renders NOTHING here — see capabilities.ts.
+  const siteReady = siteIngestSupport(siteTransport !== null).status === 'ready' && siteTransport !== null;
+
+  /** The marks a scan found that the Logos room can take, and the name the page
+   *  calls itself: held between the result card and its presses, the same
+   *  lifecycle as the PDF stage's `pdfPicks`. */
+  let siteMarks: File[] = [];
+  let siteNameOffer = '';
+  /** The host the last scan actually landed on (after any redirect) — the
+   *  provenance in the card, and the noun in everything said about it. */
+  let siteHostName = '';
+
+  const siteResultEl = (): HTMLElement | null =>
+    importModal?.el.querySelector<HTMLElement>('[data-ds-site-result]') ?? null;
+
+  /** Why a scan produced nothing, in this view's words. The source module
+   *  reports machine reasons precisely so the copy lives here. */
+  //
+  // t() OR tRaw() IS A DECISION HERE, not a habit. scripts/translate.ts finds
+  // keys by scanning source for a literal `t(` call, so a `tRaw(` string is
+  // English forever unless somebody hand-lists it. Every sentence whose only
+  // parameter is a HOSTNAME or a NUMBER therefore uses t(): those cannot carry
+  // an HTML-special character (a hostname comes out of `new URL().hostname`),
+  // so the escaping t() adds is a no-op and the string becomes translatable.
+  // The two that stay tRaw are the two whose parameter is free text off a
+  // third-party page or out of the field — escaping those would show somebody
+  // `O&#39;Brien` in a sentence that is written to `textContent`.
+  function siteRefusalText(refusal: Extract<SiteScanResult, { kind: 'refused' }>, typed: string): string {
+    switch (refusal.reason) {
+      case 'empty-url': return t('Type a web address first.');
+      case 'unsupported-scheme': return t('Only an http or https address can be read.');
+      case 'credentials-in-url': return t('That address carries a username and password. Take them out and try again.');
+      case 'url-too-long': return t('That address is too long (limit {n} characters).', { n: refusal.limit ?? SITE_MAX_URL_CHARS });
+      case 'unparseable-url': return tRaw('{value} is not a web address.', { value: typed });
+      // The tile is not rendered without a transport, so this is defence in
+      // depth rather than a state somebody can press their way into.
+      case 'no-transport': return t('This app cannot read a website. The desktop app can, and so can Chromium with the Lolly extension.');
+      case 'timeout': return t('{host} took too long to answer.', { host: siteHostName });
+      case 'empty-page': return t('{host} answered with no page to read.', { host: siteHostName });
+      default: return t('{host} could not be read.', { host: siteHostName });
+    }
+  }
+
+  /**
+   * A refusal put where the field is, not only where the note is.
+   *
+   * The sentence is announced (once, assertively) AND left in a static element
+   * the field names through `aria-describedby`, with `aria-invalid` on the
+   * field itself. WCAG 3.3.1 asks for the error to be identified; a live region
+   * alone identifies it in TIME but not in PLACE, so somebody who tabs back to
+   * the address a minute later has nothing to re-read. Same shape as the
+   * Versions panel's slug field.
+   */
+  function siteFieldError(msg: string): void {
+    const modalEl = importModal?.el;
+    const field = modalEl?.querySelector<HTMLInputElement>('.ds-src-urlfield');
+    const errEl = modalEl?.querySelector<HTMLElement>('[data-ds-site-error]');
+    if (!field || !errEl) { srcNote(msg, true); return; }   // no stage: say it in the note
+    // The progress line said "Reading suse.com…"; leaving that under a refusal
+    // would be the dialog claiming two things at once.
+    srcNote('');
+    errEl.textContent = msg;
+    errEl.hidden = false;
+    field.setAttribute('aria-invalid', 'true');
+    announce(msg, { assertive: true });
+  }
+
+  /** Clears it. Called when the address changes and when a read succeeds — the
+   *  refusal was about an address that no longer stands. */
+  function clearSiteFieldError(): void {
+    const modalEl = importModal?.el;
+    const errEl = modalEl?.querySelector<HTMLElement>('[data-ds-site-error]');
+    if (errEl && !errEl.hidden) { errEl.hidden = true; errEl.textContent = ''; }
+    modalEl?.querySelector<HTMLInputElement>('.ds-src-urlfield')?.removeAttribute('aria-invalid');
+  }
+
+  /** A partial read said plainly. Each line is one FACT about what did not
+   *  happen — a card that stays silent about a truncated page is claiming to
+   *  have read the whole of it. */
+  function siteWarningText(warnings: readonly SiteScanWarning[]): string[] {
+    const out: string[] = [];
+    if (warnings.includes('html-truncated') || warnings.includes('css-truncated')) {
+      out.push(t('That page is very large, so only the first part of it was read.'));
+    }
+    if (warnings.includes('screenshot-failed')) {
+      out.push(t('The picture of the page could not be read, so only the colours it declares were used.'));
+    }
+    if (warnings.includes('logo-not-image') || warnings.includes('logo-too-large')
+      || warnings.includes('assets-truncated')) {
+      out.push(t('Some of the marks on the page could not be used.'));
+    }
+    return out;
+  }
+
+  /** One logo candidate as a file the Logos room accepts, or null. Named after
+   *  the page it came from so a mark arrives recognisable rather than as
+   *  "logo.svg" — the same courtesy the PDF hand-off pays. */
+  function siteMarkFile(url: string, bytes: Uint8Array, mime: string, index: number): File | null {
+    const ext = markExtension(mime);
+    if (!ext) return null;
+    let stem = '';
+    try {
+      const path = new URL(url).pathname;
+      stem = (path.split('/').pop() ?? '').replace(/\.[^.]+$/, '');
+    } catch { /* an unresolvable URL simply names itself after the host */ }
+    stem = stem.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    // `hostPart`, not `host`: the view's own `host` is the bridge, and shadowing
+    // it inside a helper that also reaches for the design system is a trap.
+    const hostPart = siteHostName.replace(/[^a-z0-9.-]+/gi, '-') || 'site';
+    const name = stem ? `${hostPart}-${stem}.${ext}` : `${hostPart}-mark-${index + 1}.${ext}`;
+    return new File([bytes as unknown as BlobPart], name, { type: mime });
+  }
+
+  /**
+   * One page, read once, on the press of the button that named it.
+   *
+   * The order is the privacy posture: the address is validated before anything
+   * (a refusal costs no fetch), the transport is called exactly once for that
+   * one address, and everything after it is parsing on this device. The scan
+   * never throws — a hostile page must cost a sentence, not the dialog.
+   */
+  async function scanSite(field: HTMLInputElement | null, btn: HTMLButtonElement | null): Promise<void> {
+    if (!siteTransport || btn?.getAttribute('aria-disabled') === 'true') return;
+    const raw = field?.value ?? '';
+    siteMarks = [];
+    siteNameOffer = '';
+    const before = siteResultEl();
+    if (before) { before.hidden = true; before.textContent = ''; }
+    clearSiteFieldError();
+
+    // Escape CANCELS, and a cancel keeps nothing. A read in flight cannot be
+    // called back (the transport owns the tab or the socket), so the cancel is
+    // enforced where it matters: the commit. Identity, not truthiness — the
+    // same rule the PDF scan follows.
+    //
+    // "All sources" counts as a cancel too, and that is not a nicety. The stage
+    // it leaves is `display: none`, so a result landing behind it would un-hide
+    // a card inside a hidden section, announce "3 marks found" and then call
+    // focus() on an element that cannot take focus — an announcement with no
+    // destination. Back and Escape now mean the same thing, which is also the
+    // simpler sentence to hold in your head.
+    const startedIn = importModal;
+    const stageGone = (): boolean =>
+      !!startedIn?.el.querySelector<HTMLElement>('[data-ds-stage="url"]')?.hidden;
+    const cancelled = (): boolean =>
+      (!!startedIn && importModal !== startedIn) || !shell.isConnected || stageGone();
+
+    // Only for the progress line and the words said about it; `scanWebsite`
+    // validates the address itself and is the authority on refusing one.
+    const check = normalizeSiteUrl(raw);
+    siteHostName = check.ok ? check.siteHost : '';
+
+    // Busy is aria-disabled, never `disabled`: disabling the button under the
+    // press hands focus to the body, and on the refusal path below there would
+    // be nothing to hand it back to.
+    if (btn) {
+      btn.setAttribute('aria-disabled', 'true');
+      btn.textContent = t('Reading…');
+    }
+    // Re-derived from the field rather than restored from a captured string:
+    // the address can be edited while a read runs (the field is live, only the
+    // button is busy), and a label naming the previous host would then be
+    // offering to read something the field no longer says.
+    const restore = (): void => {
+      if (!btn?.isConnected) return;
+      btn.removeAttribute('aria-disabled');
+      const now = normalizeSiteUrl(field?.value ?? '');
+      btn.textContent = now.ok ? t('Read {host}', { host: now.siteHost }) : t('Read the page');
+    };
+
+    const result = await scanWebsite(siteTransport, raw, (phase: SiteScanPhase) => {
+      // A cancelled read stops talking: `srcNote` falls back to the rail when
+      // the dialog is gone, so without this the progress of a read nobody is
+      // waiting for keeps posting itself onto the page behind it.
+      if (cancelled()) return;
+      if (phase === 'fetch') srcNote(t('Reading {host}…', { host: siteHostName }));
+      else if (phase === 'read') srcNote(t('Reading the colours, type and marks…'));
+      else if (phase === 'paint') srcNote(t('Reading the colours as painted…'));
+    }, { timeoutMs: SITE_READ_BUDGET_MS, host: host as unknown as HostV1 });
+
+    // The dialog went away while the read ran: the person cancelled, so the
+    // findings are dropped whole and nothing is said. A rail note reporting
+    // colours somebody just cancelled out of is the confusing half of a
+    // half-cancel — and the marks and the name were being discarded anyway.
+    if (cancelled()) return;
+    restore();
+
+    if (result.kind === 'refused') { siteFieldError(siteRefusalText(result, raw)); return; }
+
+    siteHostName = result.siteHost || siteHostName;
+    // The tray first: it is where every source's findings wait, and its own
+    // count is the answer to "what did that do", so it replaces the progress.
+    await keepInTray(result.census, srcNote);
+
+    // A mark travels only if the Logos room would take it (an .ico favicon is
+    // common and it would not), and only with bytes — a URL alone is nothing
+    // this device holds.
+    let listedOnly = 0;
+    let refusedFormat = 0;
+    result.logoCandidates.forEach((cand, i) => {
+      if (!cand.bytes || !cand.mime) { listedOnly++; return; }
+      if (!LOGO_ROOM_MIME.test(cand.mime)) { refusedFormat++; return; }
+      const file = siteMarkFile(cand.url, cand.bytes, cand.mime, i);
+      if (file) siteMarks.push(file);
+    });
+
+    // The name is a SUGGESTION and only where there is none: a page's <title>
+    // is a guess about what somebody calls their design system, and overwriting
+    // a name they chose with it would be the studio talking over them.
+    const named = await readSystemName(host as unknown as HostV1).catch(() => null);
+    if (cancelled()) return;
+    if (!named && result.siteName) siteNameOffer = result.siteName.slice(0, 60);
+
+    renderSiteResult({
+      marks: siteMarks.length,
+      listedOnly,
+      refusedFormat,
+      families: result.googleFamilies,
+      warnings: result.warnings,
+      usedScreenshot: result.usedScreenshot,
+    });
+  }
+
+  /**
+   * The website stage's result card: what one page turned out to hold, and the
+   * two decisions it offers without leaving the dialog.
+   *
+   * Same construction as the PDF card, and for the same reason: it is a status
+   * message with controls in it, so its one-sentence summary is SPOKEN and then
+   * focus moves into it. Focus alone announces nothing — a `tabindex="-1"` div
+   * has no role and no name — so the marks, the type and the caveats would go
+   * unheard behind the tray's own count.
+   */
+  function renderSiteResult(o: {
+    marks: number; listedOnly: number; refusedFormat: number;
+    families: readonly string[]; warnings: readonly SiteScanWarning[]; usedScreenshot: boolean;
+  }): void {
+    const el = siteResultEl();
+    if (!el) return;   // the dialog closed while the read ran — the tray still has it
+    const warnings = siteWarningText(o.warnings);
+    const familyList = o.families.slice(0, 6).join(', ');
+
+    el.innerHTML = `
+      <p class="start-import-name">${escape(siteHostName)}<span class="start-import-source">${t('Website')}</span></p>
+      ${o.usedScreenshot ? `<p class="start-import-stats">${t('The colours it is painted with were read too, not only the ones it declares.')}</p>` : ''}
+      ${warnings.map(w => `<p class="start-import-warn">${escape(w)}</p>`).join('')}
+      ${/* Each plural is TWO whole t() calls, not one t() over a ternary:
+            scripts/translate.ts finds literal call sites by scanning source, so
+            a string spelled inside a conditional never reaches a translator
+            unless somebody remembers to hand-list it in extra-keys.spa.json. */''}
+      ${o.marks ? `
+        <div class="start-color-actions">
+          <button type="button" class="be-btn be-btn--sm ds-site-act" data-ds-site-logos>${
+  o.marks === 1 ? t('Review {n} mark in Logos', { n: o.marks }) : t('Review {n} marks in Logos', { n: o.marks })}</button>
+        </div>` : ''}
+      ${o.refusedFormat ? `<p class="start-import-stats">${o.refusedFormat === 1
+        ? t('{n} more mark is in a format Logos does not take (PNG, JPEG, SVG or WebP).', { n: o.refusedFormat })
+        : t('{n} more marks are in formats Logos does not take (PNG, JPEG, SVG or WebP).', { n: o.refusedFormat })}</p>` : ''}
+      ${o.listedOnly ? `<p class="start-import-stats">${o.listedOnly === 1
+        ? t('The page lists {n} more mark whose file was not read.', { n: o.listedOnly })
+        : t('The page lists {n} more marks whose files were not read.', { n: o.listedOnly })}</p>` : ''}
+      ${familyList ? `<p class="start-import-stats">${t('Google Fonts on this page: {list}. Type installs them.', { list: familyList })}</p>` : ''}
+      ${siteNameOffer ? `
+        <div class="start-color-actions">
+          <button type="button" class="be-btn be-btn--sm ds-site-act" data-ds-site-name>${
+  t('Use {name} as the design system name', { name: siteNameOffer })}</button>
+        </div>` : ''}
+      ${!o.marks && !familyList && !siteNameOffer && !warnings.length
+        ? `<p class="start-import-stats">${t('No marks, no Google Fonts and no name came out of this page. Whatever colours it declares are in the tray.')}</p>` : ''}`;
+    el.hidden = false;
+
+    // What the card SAYS, in one line: the counts it offers a decision on, plus
+    // any part of the read that did not run. Deliberately not the whole card
+    // read aloud, and deliberately not the tray count — keepInTray already said
+    // that through the dialog's own note line.
+    const said: string[] = [...warnings];
+    if (o.marks) said.push(o.marks === 1 ? t('1 mark found') : t('{n} marks found', { n: o.marks }));
+    if (familyList) said.push(tRaw('Type: {list}', { list: familyList }));
+    if (siteNameOffer) said.push(tRaw('This page calls itself {name}.', { name: siteNameOffer }));
+    if (!said.length) said.push(t('Nothing beyond the colours came out of this page.'));
+    announce(said.join(' '));
+    el.focus();
+  }
+
+  /**
+   * The marks, to the Logos room — the same door the PDF stage uses, so a mark
+   * arrives and is classified identically whichever source sent it. Nothing is
+   * installed by this: the room queues confirm chips.
+   *
+   * The stash is armed HERE rather than at scan time, because it survives one
+   * navigation and is drained by the room's paint: arming it for a scan nobody
+   * acted on would drop chips into some later visit that were never asked for.
+   */
+  function sendSiteMarksToLogos(): void {
+    if (!siteMarks.length) return;
+    const { sent } = stashPendingLogoFiles(siteMarks);
+    if (!sent) {
+      srcNote(siteMarks.length === 1
+        ? t('That mark is over the 4 MB limit, so it was not sent.')
+        : t('Those marks are all over the 4 MB limit, so none were sent.'), true);
+      return;
+    }
+    // Said out loud rather than into the dialog's note: the remount takes the
+    // dialog with it, and the live region is body-mounted and survives it.
+    if (sent < siteMarks.length) {
+      // t(), not tRaw(): both parameters are counts, so the escaping is a no-op
+      // and the sentence becomes something a translator can actually see.
+      announce(t('{n} of {total} marks were sent. The rest are over the 4 MB limit.',
+        { n: sent, total: siteMarks.length }));
+    }
+    playSfx('click');
+    sendToLogosRoom();
+  }
+
+  /**
+   * Name the design system after the page, on one press.
+   *
+   * The name is the tokens asset's own label, so this is a head write with a
+   * label and no change to the document: `refreshHead` first, every time, so
+   * the write carries whatever the rooms have installed since this view mounted
+   * rather than the snapshot it opened with.
+   *
+   * No checkpoint, unlike an install: nothing is replaced, the document is
+   * byte-identical either side, and the way back is to type another name. It is
+   * only offered where there is no name to overwrite (see the scan), so it
+   * cannot take one away.
+   */
+  async function useSiteName(btn: HTMLButtonElement): Promise<void> {
+    const name = siteNameOffer;
+    if (!name || btn.getAttribute('aria-disabled') === 'true') return;
+    const was = btn.textContent;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.textContent = t('Naming…');
+    try {
+      await refreshHead();
+      if (!headDoc) throw new Error(t('There is nothing to name yet. Add a colour first.'));
+      await installUserTokens(host, headDoc, { label: name });
+      void applyChromeBrandVars(host);   // bust() cleared the caches; nothing repaints by itself
+    } catch (err) {
+      announce(String((err as { message?: unknown })?.message ?? err), { assertive: true });
+      if (!btn.isConnected) return;
+      btn.textContent = t('Could not name it');
+      setTimeout(() => {
+        if (!btn.isConnected) return;
+        btn.textContent = was;
+        btn.removeAttribute('aria-disabled');
+      }, 1800);
+      return;
+    }
+    // Said before the button is touched: the name landed whether or not the
+    // dialog is still open, and a closed dialog must not swallow the sentence.
+    announce(tRaw('The design system is called {name} now', { name }));
+    playSfx('save');
+    if (!btn.isConnected) return;
+    btn.textContent = t('Named');
+    btn.classList.add('is-added');
+  }
+
+  // ── Add from…: a two-stage picker ────────────────────────────────────────────
+  // Stage 1 asks WHAT you have (plan 97 §8); stage 2 is that source's own control.
+  // The design-file card is NOT rebuilt per open — it's moved out of its hidden
+  // holder into the file stage and back again, so the file input, the drop target
+  // and the delegated result handlers below stay wired to the same nodes for the
+  // life of the view. Everything else is the shared modal primitive: Escape,
+  // backdrop dismissal, focus containment and restore come free (components/modal.ts).
   const importBtn = viewEl.querySelector<HTMLButtonElement>('[data-start-import]');
   const importHome = viewEl.querySelector<HTMLElement>('[data-start-import-home]')!;
   const importPanel = viewEl.querySelector<HTMLElement>('[data-start-import-panel]')!;
   let importModal: ModalHandle<void> | null = null;
 
-  function openImport(): void {
-    if (importModal) return;
+  // Built at open so every label resolves against the language in force.
+  const SOURCE_NAME: Record<PickerSource, () => string> = {
+    file: () => t('Design tokens or a design file'),
+    pdf: () => t('PDF'),
+    image: () => t('Image'),
+    font: () => t('Font file'),
+    url: () => t('Website'),
+  };
+  const SOURCE_NOTE: Record<PickerSource, () => string> = {
+    file: () => t('DTCG or Tokens Studio JSON, a Penpot project, a zip of token sets, a design system pack or an SVG.'),
+    pdf: () => t('A deck or guidelines file. Colours, marks and typefaces are read on this device.'),
+    image: () => t('A screenshot or a photo. Colours are read on this device and nothing is uploaded.'),
+    font: () => t('TTF, OTF or WOFF. Opens Type, where the face installs.'),
+    // The tile names its reader AND whose session does the reading, because the
+    // two are different things to do to somebody's device and the person is
+    // about to consent to one of them.
+    url: () => siteTransport?.kind === 'extension'
+      ? t('One page, read through the extension in a background tab, signed in as you.')
+      : t('One page, fetched by the app on this device, signed in to nothing.'),
+  };
+
+  /** The tiles this device can actually offer. Website leads when it is there
+   *  (plan 97 §5's order) and is simply absent when it is not. */
+  const sourceTiles = (): ReadonlyArray<{ id: PickerSource; icon: IconName }> =>
+    siteReady ? [WEBSITE_TILE, ...SOURCE_TILES] : SOURCE_TILES;
+
+  /** The picker's own note line — one sentence about what just happened, in the
+   *  dialog rather than the rail, because that is where the eye already is. */
+  const srcNote = (msg: string, isError = false): void => {
+    const el = importModal?.el.querySelector<HTMLElement>('[data-ds-source-note]');
+    if (!el) { showNote(msg, isError); return; }   // the dialog closed under us
+    el.textContent = msg;
+    el.classList.toggle('is-error', isError);
+  };
+
+  /** Show one stage, or the source list when `src` names no stage of its own.
+   *  A pure `hidden` toggle over nodes that are already there — nothing here
+   *  rebuilds markup, which is why the picker adds no raw-HTML sink. */
+  function showStage(src: StartSource | null): void {
+    const el = importModal?.el;
+    if (!el) return;
+    // `url` is a stage only where a transport answered: on a plain browser the
+    // section was never rendered, so a `?source=url` link falls through to the
+    // list rather than opening an empty panel (plan 97 §9's degrade).
+    const stage = src === 'file' || src === 'image' || src === 'pdf' ? src
+      : src === 'url' && siteReady ? 'url' : null;
+    const tiles = el.querySelector<HTMLElement>('[data-ds-src-tiles]');
+    const intro = el.querySelector<HTMLElement>('[data-ds-src-intro]');
+    if (tiles) tiles.hidden = stage !== null;
+    if (intro) intro.hidden = stage !== null;
+    el.querySelectorAll<HTMLElement>('[data-ds-stage]').forEach(s => { s.hidden = s.dataset.dsStage !== stage; });
+    // Focus follows the stage: the control the person came for, or the first
+    // source when they came for the list.
+    const focusSel = stage === 'file' ? '.start-import-file'
+      : stage === 'image' ? '.ds-src-imgfile'
+        : stage === 'pdf' ? '.ds-src-pdffile'
+          : stage === 'url' ? '.ds-src-urlfield' : '[data-ds-source]';
+    el.querySelector<HTMLElement>(focusSel)?.focus();
+  }
+
+  /** A tile press. Three of the four open a stage; the font tile is an ACTION —
+   *  the Type room already owns installing a face, so sending someone there beats
+   *  a second uploader that would have to agree with it forever. */
+  function chooseSource(src: StartSource): void {
+    if (src === 'font') {
+      closeImport();
+      selectRoom('type', { focus: true });
+      // Focus the room's own upload control. Never .click() it from here — a file
+      // dialog belongs to the press the user made, not to a route.
+      editorRoot?.querySelector<HTMLElement>('.fonts-upload-file')?.focus();
+      return;
+    }
+    showStage(src);
+  }
+
+  function openImport(source: StartSource | null = null): void {
+    // A named source that is an ACTION rather than a stage never opens a dialog
+    // it would immediately close: `?source=font` goes straight to the Type room.
+    if (source === 'font') { chooseSource('font'); return; }
+    if (importModal) { showStage(source); return; }
     importModal = mountModal<void>(`
-      <h2 class="modal-title">${t('Import your brand')}</h2>
-      <p class="modal-msg">${t('Bring across what you already have — a design-token file, a Penpot project, an SVG’s colours, or a Lolly brand file.')}</p>
-      <div data-import-mount></div>`, {
+      <h2 class="modal-title">${t('Add from…')}</h2>
+      <p class="modal-msg" data-ds-src-intro>${t('Bring across what you already have. Everything is read on this device.')}</p>
+      <ul class="ds-src-tiles" role="list" data-ds-src-tiles>
+        ${sourceTiles().map(tile => `
+          <li>
+            <button type="button" class="ds-src-tile" data-ds-source="${escape(tile.id)}">
+              <span class="ds-src-tile-ic" aria-hidden="true">${icon(tile.icon)}</span>
+              <span class="ds-src-tile-name">${escape(SOURCE_NAME[tile.id]())}</span>
+              <span class="ds-src-tile-note">${escape(SOURCE_NOTE[tile.id]())}</span>
+            </button>
+          </li>`).join('')}
+      </ul>
+      <section class="ds-src-stage" data-ds-stage="file" hidden>
+        <button type="button" class="be-btn be-btn--sm ds-src-back" data-ds-src-back>${t('All sources')}</button>
+        <div data-import-mount></div>
+      </section>
+      <section class="ds-src-stage" data-ds-stage="image" hidden>
+        <button type="button" class="be-btn be-btn--sm ds-src-back" data-ds-src-back>${t('All sources')}</button>
+        <label class="start-import-drop ds-src-drop" data-ds-image-drop>
+          <input type="file" class="ds-src-imgfile visually-hidden" accept="image/*" aria-label="${escape(t('Choose an image'))}">
+          <span class="ds-src-drop-ic" aria-hidden="true">${icon('image')}</span>
+          <span class="be-btn start-import-btn" aria-hidden="true">${t('Choose an image…')}</span>
+          <span class="start-import-drophint">${t('or drag & drop it here')}</span>
+        </label>
+        <p class="ds-src-stage-note">${t('The colours it is actually painted with land in the tray. Add the ones you want.')}</p>
+      </section>
+      <section class="ds-src-stage" data-ds-stage="pdf" hidden>
+        <button type="button" class="be-btn be-btn--sm ds-src-back" data-ds-src-back>${t('All sources')}</button>
+        <label class="start-import-drop ds-src-drop" data-ds-pdf-drop>
+          <input type="file" class="ds-src-pdffile visually-hidden" accept="application/pdf,.pdf,.ai" aria-label="${escape(t('Choose a PDF'))}">
+          <span class="ds-src-drop-ic" aria-hidden="true">${icon('document')}</span>
+          <span class="be-btn start-import-btn" aria-hidden="true">${t('Choose a PDF…')}</span>
+          <span class="start-import-drophint">${t('or drag & drop it here')}</span>
+        </label>
+        <p class="ds-src-stage-note">${t('Colours and typefaces land in the tray. Marks wait until you send them to Logos.')}</p>
+        <!-- tabindex="-1": the scan's answer is a status message with controls in
+             it, so it takes focus when it appears rather than being read whole. -->
+        <div class="ds-src-pdf-result" data-ds-pdf-result tabindex="-1" hidden></div>
+      </section>
+      ${siteReady ? `
+      <!-- The website stage exists only where a transport does (plan 97 §9): it
+           is not rendered-and-disabled, it is not rendered at all. The button is
+           the consent, and the line above it names the host and the reader. -->
+      <section class="ds-src-stage" data-ds-stage="url" hidden>
+        <button type="button" class="be-btn be-btn--sm ds-src-back" data-ds-src-back>${t('All sources')}</button>
+        <div class="ds-src-url">
+          <label class="field-label" for="ds-src-url-input">${t('Web address')}</label>
+          <div class="ds-src-url-row">
+            <input class="field-input ds-src-urlfield" id="ds-src-url-input" type="url" inputmode="url"
+              autocomplete="off" spellcheck="false" placeholder="example.com"
+              maxlength="${SITE_MAX_URL_CHARS}" aria-describedby="ds-src-url-consent ds-src-url-error">
+            <button type="button" class="be-cta ds-src-url-go" data-ds-site-go>${t('Read the page')}</button>
+          </div>
+          <p class="ds-src-url-consent" id="ds-src-url-consent" data-ds-site-consent>${
+  t('Nothing is read until you press the button.')}</p>
+          <!-- A refusal stays HERE, named by the field's aria-describedby, so it
+               can be re-read after the one polite announcement has passed. The
+               field also takes aria-invalid; see siteFieldError. -->
+          <p class="ds-src-note is-error" id="ds-src-url-error" data-ds-site-error hidden></p>
+        </div>
+        <p class="ds-src-stage-note">${t('One page, and only the one you name. No link on it is followed. Colours and type land in the tray; marks wait until you send them to Logos.')}</p>
+        <!-- tabindex="-1": same status-message-with-controls as the PDF card. -->
+        <div class="ds-src-site-result" data-ds-site-result tabindex="-1" hidden></div>
+      </section>` : ''}
+      <p class="ds-src-note" data-ds-source-note aria-live="polite"></p>`, {
       className: 'modal start-import-modal',
-      ariaLabel: escape(t('Import your brand')),
-      // The file picker is the point of the dialog, so focus lands on the card
-      // (the label's own hidden input) rather than the browser's first guess.
-      initialFocus: el => el.querySelector<HTMLElement>('.start-import-file'),
+      ariaLabel: escape(t('Add from…')),
       onClose: () => {
         importModal = null;
         importHome.appendChild(importPanel);   // back to the holder, still wired
         importBtn?.classList.remove('is-open');
       },
     });
-    importModal.el.querySelector<HTMLElement>('[data-import-mount]')!.appendChild(importPanel);
+    const modalEl = importModal.el;
+    modalEl.querySelector<HTMLElement>('[data-import-mount]')!.appendChild(importPanel);
+    modalEl.addEventListener('click', (e) => {
+      const el = e.target as HTMLElement;
+      const src = el.closest<HTMLElement>('[data-ds-source]')?.dataset.dsSource;
+      if (src) { chooseSource(src as StartSource); playSfx('click'); return; }
+      if (el.closest('[data-ds-src-back]')) { showStage(null); playSfx('click'); return; }
+      // The PDF result card's two presses. Delegated for the same reason the
+      // design-file card's are: the card is rebuilt by every scan.
+      const fontBtn = el.closest<HTMLButtonElement>('[data-ds-pdf-font]');
+      if (fontBtn) { void addPdfFont(Number(fontBtn.dataset.dsPdfFont), fontBtn); return; }
+      if (el.closest('[data-ds-pdf-logos]')) { sendPdfMarksToLogos(); return; }
+      // The website stage's three presses. The fetch button is the consent, so
+      // it is the ONLY thing on this view that starts a read.
+      const goBtn = el.closest<HTMLButtonElement>('[data-ds-site-go]');
+      if (goBtn) {
+        void scanSite(modalEl.querySelector<HTMLInputElement>('.ds-src-urlfield'), goBtn);
+        return;
+      }
+      if (el.closest('[data-ds-site-logos]')) { sendSiteMarksToLogos(); return; }
+      const nameBtn = el.closest<HTMLButtonElement>('[data-ds-site-name]');
+      if (nameBtn) void useSiteName(nameBtn);
+    });
+    const imgInput = modalEl.querySelector<HTMLInputElement>('.ds-src-imgfile');
+    imgInput?.addEventListener('change', async () => {
+      const file = imgInput.files?.[0];
+      imgInput.value = '';                     // so re-picking the same file re-fires
+      if (file) await scanImageFile(file, srcNote);
+    });
+    const imgDrop = modalEl.querySelector<HTMLElement>('[data-ds-image-drop]');
+    imgDrop?.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      imgDrop.classList.add('is-dragover');
+    });
+    imgDrop?.addEventListener('dragleave', (e) => {
+      if (e.relatedTarget && imgDrop.contains(e.relatedTarget as Node)) return;
+      imgDrop.classList.remove('is-dragover');
+    });
+    imgDrop?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      imgDrop.classList.remove('is-dragover');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) void scanImageFile(file, srcNote);
+    });
+    // The PDF stage's own mouth, wired exactly like the image stage's: a label
+    // over a hidden input for the click, and the same three drag listeners
+    // (stopPropagation so the shell's drag-anywhere doesn't handle it twice).
+    const pdfInput = modalEl.querySelector<HTMLInputElement>('.ds-src-pdffile');
+    pdfInput?.addEventListener('change', async () => {
+      const file = pdfInput.files?.[0];
+      pdfInput.value = '';                     // so re-picking the same file re-fires
+      if (file) await scanPdfFile(file, srcNote);
+    });
+    const pdfDrop = modalEl.querySelector<HTMLElement>('[data-ds-pdf-drop]');
+    pdfDrop?.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pdfDrop.classList.add('is-dragover');
+    });
+    pdfDrop?.addEventListener('dragleave', (e) => {
+      if (e.relatedTarget && pdfDrop.contains(e.relatedTarget as Node)) return;
+      pdfDrop.classList.remove('is-dragover');
+    });
+    pdfDrop?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pdfDrop.classList.remove('is-dragover');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) void scanPdfFile(file, srcNote);
+    });
+    // The website stage's field. Its two jobs are to keep the consent honest
+    // while the address is typed, and to make Return do what the button does —
+    // it is a single field beside a single action, and reaching for the mouse
+    // to finish typing an address is not a thing anybody does.
+    const urlField = modalEl.querySelector<HTMLInputElement>('.ds-src-urlfield');
+    if (urlField) {
+      const goEl = modalEl.querySelector<HTMLButtonElement>('[data-ds-site-go]');
+      const consentEl = modalEl.querySelector<HTMLElement>('[data-ds-site-consent]');
+      const syncConsent = (): void => {
+        // The address is parsed, never guessed at: until it resolves to a host
+        // there is no host to name, and the button says so rather than
+        // promising to read something nobody has described yet.
+        const check = normalizeSiteUrl(urlField.value);
+        const named = check.ok ? check.siteHost : '';
+        if (goEl && goEl.getAttribute('aria-disabled') !== 'true') {
+          goEl.textContent = named ? t('Read {host}', { host: named }) : t('Read the page');
+        }
+        if (consentEl) {
+          // WHO reads it is half the fact; the other half is AS WHOM. The
+          // extension opens the page in the browser the person is signed into,
+          // so a logged-in dashboard comes back rendered with their name in it;
+          // the native fetch builds a client with no cookie store, so it gets
+          // the logged-out page. Same button, materially different act, and the
+          // sentence somebody consents to has to carry the difference.
+          consentEl.textContent = !named
+            ? t('Nothing is read until you press the button.')
+            : siteTransport?.kind === 'extension'
+              ? t('The extension reads {host} in a background tab, signed in as you.', { host: named })
+              : t('The app fetches {host} directly, signed in to nothing.', { host: named });
+        }
+      };
+      urlField.addEventListener('input', () => { clearSiteFieldError(); syncConsent(); });
+      urlField.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;   // Escape belongs to the dialog, untouched
+        e.preventDefault();
+        void scanSite(urlField, goEl);
+      });
+      // `?source=url&u=` — a PREFILL and nothing else. It is consumed here, once,
+      // so a remount cannot re-fill a field somebody deliberately cleared, and no
+      // code path turns it into a press.
+      if (urlPrefill) { urlField.value = urlPrefill; urlPrefill = ''; }
+      syncConsent();
+    }
     importBtn?.classList.add('is-open');
+    showStage(source);
   }
   const closeImport = (): void => importModal?.close();
 
   importBtn?.addEventListener('click', () => { openImport(); playSfx('click'); });
+  // A file the FRONT DOOR handed over: the drop chooser's "Use as the design
+  // system" (lib/drop-router.ts) stashes the dropped file and routes here, so the
+  // studio opens on that file instead of asking for it a second time. One-shot
+  // and cleared on read, like every other stash that router arms, and consumed on
+  // mount like every other read-only arrival flag. Routed by what it IS, so the
+  // PDF chooser's door and the token document's door both land where they should
+  // — and the `?source=` in the URL is only the fallback for a stash that has
+  // already been spent (a remount).
+  const handedOver = takePendingDesignSystemFile();
   // A link can still arrive with the importer open (`#/start?import`), which is how
-  // an "import your brand" entry point elsewhere hands off. `?import=0` is the
-  // historic form for "leave it shut" and stays a no-op against today's default.
-  if (importOpen) openImport();
+  // an "add your design system" entry point elsewhere hands off. `?source=<kind>`
+  // opens it on that source and is consumed here — selectRoom's replaceState
+  // already dropped both from the URL. `?import=0` is the historic form for
+  // "leave it shut" and stays a no-op against today's default.
+  if (handedOver) void routeDroppedFile(handedOver);
+  else if (importOpen) openImport(route.source);
 
   // Dragging a file anywhere over the studio opens the importer, so the drop has
   // somewhere to land — a modal you must open first would otherwise take away the
-  // drag & drop the card advertises.
+  // drag & drop the card advertises. A drop that never reached the card is routed
+  // by what it IS (see routeDroppedFile), so an image dragged onto the page is a
+  // colour scan rather than a failed token parse.
   shell.addEventListener('dragover', (e) => {
-    if (!e.dataTransfer?.types.includes('Files') || importModal) return;
-    openImport();
+    if (!e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    // A drag reports its items' TYPE (never their data), which is enough to open
+    // on the stage the drop is about to need instead of flashing the wrong one.
+    const dragged = e.dataTransfer.items?.[0]?.type ?? '';
+    const stage: StartSource = dragged === 'application/pdf' ? 'pdf'
+      : dragged.startsWith('image/') && dragged !== 'image/svg+xml' ? 'image' : 'file';
+    if (!importModal) openImport(stage);
+  });
+  shell.addEventListener('drop', (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    e.preventDefault();
+    void routeDroppedFile(file);
   });
 
+  /** What a dropped file IS decides who handles it. One router for the shell's
+   *  drag-anywhere and the card's own drop, so both answer the same. */
+  async function routeDroppedFile(file: File): Promise<void> {
+    if (PDF_NAME.test(file.name) || file.type === 'application/pdf') {
+      openImport('pdf');
+      await scanPdfFile(file, srcNote);
+      return;
+    }
+    const isSvg = /\.svg$/i.test(file.name) || file.type === 'image/svg+xml';
+    if (!isSvg && (IMAGE_NAME.test(file.name) || file.type.startsWith('image/'))) {
+      openImport('image');
+      await scanImageFile(file, srcNote);
+      return;
+    }
+    if (FONT_NAME.test(file.name)) {
+      // No silent install: the Type room takes the file, and this says so.
+      showNote(tRaw('Open Type to install {name}', { name: file.name }));
+      chooseSource('font');
+      return;
+    }
+    openImport('file');
+    await handleImportFile(file);
+  }
+
   // ── Install (the JSON-import path funnels here) ──────────────────────────────
-  // Unlike the old wizard (which bounced to the gallery), an install keeps the
-  // user IN the studio: the editor reloads around the new tokens so the palette,
-  // fonts and logos panels show what just landed, and the finish card offers the
-  // ways onward.
+  // An install keeps the user IN the studio: the editor reloads around the new
+  // tokens so the palette, fonts and logos rooms show what just landed, and the
+  // Colours room opens on it.
   let installing = false;
   async function install(doc: Record<string, unknown>, label: string, btn: HTMLButtonElement): Promise<void> {
     if (installing) return;
@@ -426,32 +1969,32 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     const prevLabel = btn.textContent;
     btn.textContent = t('Installing…');
     try {
+      await checkpointBeforeInstall();
       // A doc with no font group inherits the fonts already installed here, so an
       // import never silently undoes a chosen face.
       const withFonts = await carryUserFontTokens(host as unknown as UserFontsHost, doc);
       await installUserTokens(host, withFonts, { label });
       void applyChromeBrandVars(host);         // bust() cleared caches; nothing repaints chrome by itself
       await editor?.reload();
+      await refreshHead();                     // the head moved — the tokens export follows it
       markWelcomeDismissed();
       installing = false;
       // The user may have navigated away while the install ran — the tokens
       // landed either way, but only a still-mounted view touches its own DOM
-      // (or the URL: selectTab replaceStates, which would rewrite the NEW view's).
+      // (or the URL: selectRoom replaceStates, which would rewrite the NEW view's).
       if (!shell.isConnected) return;
       closeImport();
       importResult.hidden = true;
       btn.disabled = false;
       btn.textContent = prevLabel;
-      selectTab('color');
+      selectRoom('color');
       announce(tRaw('{label} installed — the studio now shows it', { label }));
       playSfx('saveProfile');
     } catch (err) {
       installing = false;
       btn.disabled = false;
       btn.textContent = prevLabel;
-      const msg = tRaw('Couldn’t install the brand: {error}', { error: String((err as { message?: unknown })?.message ?? err) });
-      showImportResult(`<p class="start-import-err">${escape(msg)}</p>`);
-      announce(msg, { assertive: true });
+      showImportError(tRaw('Couldn’t install the brand: {error}', { error: String((err as { message?: unknown })?.message ?? err) }));
     }
   }
 
@@ -459,8 +2002,24 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const importFile = viewEl.querySelector<HTMLInputElement>('.start-import-file')!;
   let importedDoc: Record<string, unknown> | null = null;
   // The token-less Penpot path's census, held between the proposal card render
-  // and its "Make this look your brand" click (same lifecycle as importedDoc).
+  // and its "Make this the look" click (same lifecycle as importedDoc).
   let pendingUsage: PenpotUsage | null = null;
+  // The semantic mapping review's proposal and the primary chosen in the card —
+  // same lifecycle again, cleared at the top of every handleImportFile.
+  let pendingRoles: TokenRoleProposal | null = null;
+  let roleChoice: string | null = null;
+  // The card's pool of colour tokens, same lifecycle again. The ranking, the
+  // chooser's cap and what follows a pick are all pure and live with the rest of
+  // the mapping model in lib/design-system/sources/file.ts; this view holds the
+  // state and paints it.
+  let pendingTokens: ColorTokenRow[] = [];
+  /** Surface and text for the primary chosen right now (sources/file.ts owns the
+   *  rule; this binds it to the card's held state). */
+  const followsFor = (primaryPath: string): Record<'surface' | 'text', RoleFollow> =>
+    followRoles(primaryPath, pendingTokens, pendingRoles);
+  // The SVG path's scanned colours, so "Keep these for later" can hand the same
+  // list to the tray that the checkbox grid is showing.
+  let pendingSvgColors: string[] = [];
   let importedLabel = t('My brand');
 
   // Shared "N sets · N themes · N tokens, N colours" blurb — every doc-shaped
@@ -478,14 +2037,36 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     } catch { return ''; } // stats are decorative — the install button still stands
   }
 
-  // A tiny local mirror of brand-transfer.ts's private readJson (not exported —
-  // this is the only other place that needs to peek at a zip's manifest before
-  // deciding which importer owns it).
-  function readManifest(files: Record<string, Uint8Array>): { format?: string; type?: string } | null {
-    const bytes = files['manifest.json'];
-    if (!bytes) return null;
-    try { return JSON.parse(strFromU8(bytes)); } catch { return null; }
+  /** Why a file could not be routed, in this view's own words. The router reports
+   *  machine reasons precisely so the copy lives here (lib/design-system/sources/file.ts). */
+  function refusalText(route: Extract<DesignFileRoute, { kind: 'refused' }>, filename: string): string {
+    switch (route.reason) {
+      case 'too-large':
+        return tRaw('{filename} is too large (max {n} MB).', { filename, n: Math.round((route.limit ?? 0) / (1024 * 1024)) });
+      case 'unreadable-zip':
+        // The bomb guard's own sentence is user-facing; fflate's ("invalid zip
+        // data") is not, so it rides as the reason rather than standing alone.
+        return route.detail
+          ? tRaw('{filename} could not be unzipped: {reason}', { filename, reason: route.detail })
+          : tRaw('{filename} could not be unzipped.', { filename });
+      case 'unknown-zip':
+        return tRaw('{filename} isn’t a design system pack, a Penpot export or a zip of token set files.', { filename });
+      case 'not-json':
+        return tRaw('Couldn’t read {filename} — is it valid JSON?', { filename });
+      default:
+        return tRaw('No tokens found: {reason}.', { reason: route.detail ?? t('unrecognised document') });
+    }
   }
+
+  /** What produced a document, as a phrase rather than an id. The JSON path used
+   *  to print the raw extraction source ('dtcg'), which said nothing to anyone who
+   *  had not read the engine. */
+  const SOURCE_LABEL: Record<TokensExtraction['source'], () => string> = {
+    'dtcg': () => t('design tokens'),
+    'tokens-studio': () => t('tokens studio'),
+    'token-set-files': () => t('token set files'),
+    'penpot-project': () => t('penpot tokens'),
+  };
 
   // extractSvgColors can return a bare named colour ("rebeccapurple") verbatim
   // — deriveBrandTokens's parser only understands hex/rgb()/hsl()/oklch()/lch(),
@@ -527,36 +2108,73 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   });
   dropEl.addEventListener('drop', (e) => {
     e.preventDefault();
+    // The shell's own drag-anywhere drop listener is an ANCESTOR of this card —
+    // without this the same file would be handled twice.
+    e.stopPropagation();
     dropEl.classList.remove('is-dragover');
     const file = e.dataTransfer?.files?.[0];
-    if (file) void handleImportFile(file);
+    // The SAME router the drag-anywhere drop uses. The card advertises design
+    // files, but a photo or a font lands on it constantly (it is the biggest
+    // drop target on the page), and parsing one as JSON to refuse it with "is it
+    // valid JSON?" is a worse answer than the image scan or the Type hand-off
+    // the identical file gets one pixel outside this card.
+    if (file) void routeDroppedFile(file);
   });
 
+  /**
+   * One picked/dropped design file, routed by what it turns out to BE.
+   *
+   * The sniffing, the size caps and the three zip shapes live in
+   * lib/design-system/sources/file.ts, which is pure and covered; this function
+   * owns the copy, the cards and the install — the split plan 97 §8 asks for.
+   * The size cap is checked from `File.size` first so a mispicked multi-GB file
+   * is refused before a byte of it is read (the router re-checks what it is
+   * handed, because a cap enforced at one of two call sites will be skipped).
+   */
   async function handleImportFile(file: File): Promise<void> {
     importedDoc = null;
     pendingUsage = null;
+    pendingRoles = null;
+    roleChoice = null;
+    pendingTokens = [];
+    pendingSvgColors = [];
+
+    const limit = designFileLimit(file.name, file.type);
+    if (file.size > limit) {
+      showImportError(tRaw('{filename} is too large (max {n} MB).', { filename: file.name, n: Math.round(limit / (1024 * 1024)) }));
+      return;
+    }
+    let fileRoute: DesignFileRoute;
+    try {
+      fileRoute = await routeDesignFile(file.name, new Uint8Array(await file.arrayBuffer()), { type: file.type });
+    } catch (err) {
+      showImportError(String((err as { message?: unknown })?.message ?? err));
+      return;
+    }
+
+    if (fileRoute.kind === 'refused') {
+      showImportError(refusalText(fileRoute, file.name));
+      return;
+    }
 
     // SVG has no formal-token concept — every colour it uses is "not a token",
     // so scan for what's actually there and let the user pick which to keep
     // (see the checkbox review below) rather than treating every incidental
-    // fill as part of the brand.
-    if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') {
-      if (file.size > 10 * 1024 * 1024) {
-        showImportResult(`<p class="start-import-err">${t('{filename} is too large for an SVG scan (max 10 MB).', { filename: file.name })}</p>`);
-        return;
-      }
+    // fill as part of the design system.
+    if (fileRoute.kind === 'svg') {
       let svgColors: string[] = [];
       try {
         svgColors = extractSvgColors(await file.text());
       } catch {
-        showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} as SVG.', { filename: file.name })}</p>`);
+        showImportError(tRaw('Couldn’t read {filename} as SVG.', { filename: file.name }));
         return;
       }
       if (!svgColors.length) {
-        showImportResult(`<p class="start-import-err">${t('No colours found in {filename}.', { filename: file.name })}</p>`);
+        showImportError(tRaw('No colours found in {filename}.', { filename: file.name }));
         return;
       }
-      importedLabel = file.name.replace(/\.svg$/i, '') || t('My brand');
+      importedLabel = fileRoute.label || t('My brand');
+      pendingSvgColors = svgColors;
       showImportResult(`
         <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('colours in use')}</span></p>
         <p class="start-import-warn">${t(svgColors.length === 1
@@ -577,217 +2195,357 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
               </label>
             </li>`).join('')}
         </ul>
-        <button type="button" class="be-cta start-cta--import" data-install-colors disabled>${t('Use these colours')}</button>`);
+        <div class="start-color-actions">
+          <button type="button" class="be-cta start-cta--import" data-install-colors disabled>${t('Use these colours')}</button>
+          <button type="button" class="be-btn be-btn--sm" data-colors-tray>${t('Keep these for later')}</button>
+        </div>`, {
+        say: tRaw(svgColors.length === 1
+          ? '{n} colour found in {filename}. Review the selection below.'
+          : '{n} colours found in {filename}. Review the selection below.',
+        { n: svgColors.length, filename: file.name }),
+      });
       // The colour-review path builds its doc lazily from whichever boxes are
       // still checked at click time (see data-install-colors below) rather
       // than from importedDoc/data-install-import.
       return;
     }
 
-    // A zip archive is either a Lolly BRAND FILE (tokens + fonts + theme,
-    // installed in one step — no preview leg, because the pack carries its own
-    // integrity map) or a Penpot project export (its FORMAL design tokens only
-    // — Penpot shape/layer fills that aren't tied to a token are out of scope
-    // here, same "prefer tokens" stance as the SVG path's opposite case).
-    // Sniff the manifest once to route between the two; a .penpot file is a
-    // zip archive under a different extension.
-    if (/\.(zip|penpot)$/i.test(file.name) || file.type === 'application/zip') {
-      if (file.size > 64 * 1024 * 1024) {
-        showImportResult(`<p class="start-import-err">${t('{filename} is too large (max 64 MB).', { filename: file.name })}</p>`);
+    // A Lolly design-system PACK: tokens + fonts + a theme preference, installed
+    // in one step — no preview leg, because the pack carries its own integrity
+    // map and the importer verifies it (brand-transfer.ts).
+    if (fileRoute.kind === 'pack') {
+      if (!editor) {
+        showImportError(t('The brand editor didn’t open — reload the page and try again.'));
         return;
       }
-      let files: Record<string, Uint8Array>;
+      showImportResult(`<p class="start-import-stats">${t('Loading {filename}…', { filename: file.name })}</p>`,
+        { say: tRaw('Loading {filename}…', { filename: file.name }) });
       try {
-        files = await unzipBrandBytes(await file.arrayBuffer());
+        await checkpointBeforeInstall();
+        await editor.importPack(file);
+        // The pack carries its own theme preference (prefs.json → localStorage);
+        // apply it, same as the old wizard's pack path did.
+        applyTheme(localStorage.getItem('theme') || 'light');
+        markWelcomeDismissed();
+        void refreshHead();
+        if (!shell.isConnected) return;
+        closeImport();
+        importResult.hidden = true;
+        selectRoom('color');
+        playSfx('saveProfile');
       } catch (err) {
-        showImportResult(`<p class="start-import-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`);
-        return;
+        showImportError(String((err as { message?: unknown })?.message ?? err));
       }
-      const manifest = readManifest(files);
+      return;
+    }
 
-      if (manifest?.format === 'lolly-brand') {
-        if (!editor) {
-          showImportResult(`<p class="start-import-err">${t('The brand editor didn’t open — reload the page and try again.')}</p>`);
+    // A Penpot project export: its FORMAL design tokens when it declares any —
+    // Penpot shape/layer fills that aren't tied to a token are out of scope here,
+    // the same "prefer tokens" stance as the SVG path's opposite case — and the
+    // look it actually paints with when it declares none.
+    if (fileRoute.kind === 'penpot') {
+      const files = fileRoute.files;
+      const { doc, warnings } = extractPenpotProject(files);
+      if (!doc) {
+        // No formal tokens — the common case. Scan what the file actually
+        // USES (every paint source, gradients, fonts) and propose the look
+        // as brand roles instead of dead-ending.
+        const usage = scanPenpotUsage(files);
+        const roles = proposeBrandRoles(usage);
+        if (!roles) {
+          showImportError(tRaw(warnings[0]
+            ? 'No design tokens found in {filename} — {warning}. Try exporting an SVG instead so we can read its colours.'
+            : 'No design tokens found in {filename}. Try exporting an SVG instead so we can read its colours.',
+            { filename: file.name, warning: warnings[0] ?? '' }));
           return;
         }
-        showImportResult(`<p class="start-import-stats">${t('Loading {filename}…', { filename: file.name })}</p>`);
-        try {
-          await editor.importPack(file);
-          // The pack carries its own theme preference (prefs.json → localStorage);
-          // apply it, same as the old wizard's pack path did.
-          applyTheme(localStorage.getItem('theme') || 'light');
-          markWelcomeDismissed();
-          if (!shell.isConnected) return;
-          closeImport();
-          importResult.hidden = true;
-          selectTab('color');
-          playSfx('saveProfile');
-        } catch (err) {
-          showImportResult(`<p class="start-import-err">${escape(String((err as { message?: unknown })?.message ?? err))}</p>`);
-        }
-        return;
-      }
-
-      if (manifest?.type === 'penpot/export-files') {
-        const { doc, warnings } = extractPenpotProject(files);
-        if (!doc) {
-          // No formal tokens — the common case. Scan what the file actually
-          // USES (every paint source, gradients, fonts) and propose the look
-          // as brand roles instead of dead-ending.
-          const usage = scanPenpotUsage(files);
-          const roles = proposeBrandRoles(usage);
-          if (!roles) {
-            showImportResult(`<p class="start-import-err">${t(warnings[0]
-              ? 'No design tokens found in {filename} — {warning}. Try exporting an SVG instead so we can read its colours.'
-              : 'No design tokens found in {filename}. Try exporting an SVG instead so we can read its colours.',
-              { filename: file.name, warning: warnings[0] ?? '' })}</p>`);
-            return;
-          }
-          pendingUsage = usage;
-          importedLabel = file.name.replace(/\.(penpot|zip)$/i, '') || t('My brand');
-          const fonts = proposeFonts(usage);
-          const gradN = usage.gradients.length;
-          const statBits = [
-            t(usage.colors.length === 1 ? '{n} colour' : '{n} colours', { n: usage.colors.length }),
-            gradN ? t(gradN === 1 ? '{n} gradient' : '{n} gradients', { n: gradN }) : null,
-            usage.fonts.length ? t(usage.fonts.length === 1 ? '{n} font' : '{n} fonts', { n: usage.fonts.length }) : null,
-          ].filter(Boolean).join(' · ');
-          const roleChips: Array<[string, string]> = [
-            [t('Primary'), roles.primary],
-            ...(roles.secondary ? [[t('Secondary'), roles.secondary] as [string, string]] : []),
-            [t('Surface'), roles.surface],
-            [t('Text'), roles.text],
-          ];
-          const fontLines = [
-            fonts.google.length ? `<p class="start-import-stats">${escape(tRaw('Fonts: {list}', { list: fonts.google.join(', ') }))}</p>` : '',
-            fonts.missing.length ? `<p class="start-import-warn">${escape(tRaw(fonts.missing.length === 1
-              ? '{list} has no downloadable source, so it stays as a name only.'
-              : '{list} have no downloadable source, so they stay as names only.', { list: fonts.missing.join(', ') }))}</p>` : '',
-          ].join('');
-          showImportResult(`
-            <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('look in use')}</span></p>
-            ${statBits ? `<p class="start-import-stats">${escape(statBits)}</p>` : ''}
-            <p class="start-import-warn">${t('This file declares no design tokens, so this is the look it actually uses.')}</p>
-            <ul class="start-color-grid start-look-roles" role="list">
-              ${roleChips.map(([label, hex]) => `
-                <li class="start-color-chip">
-                  <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
-                  <span class="start-color-hex">${escape(hex)}</span>
-                  <span class="start-color-role">${escape(label)}</span>
-                </li>`).join('')}
-            </ul>
-            ${roles.extras.length ? `
-              <p class="start-import-stats">${t('Keep any of the other colours as swatches:')}</p>
-              <ul class="start-color-grid" role="list">
-                ${roles.extras.map((hex, i) => `
-                  <li class="start-color-chip">
-                    <label>
-                      <input type="checkbox" data-color-idx="${i}" checked>
-                      <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
-                      <span class="start-color-hex">${escape(hex)}</span>
-                    </label>
-                  </li>`).join('')}
-              </ul>` : ''}
-            ${fontLines}
-            ${gradN ? `<p class="start-import-stats">${escape(t(gradN === 1
-              ? 'Its gradient becomes a brand token.'
-              : 'The top gradients become brand tokens.'))}</p>` : ''}
-            <button type="button" class="be-cta start-cta--import" data-install-look>${t('Make this look your brand')}</button>`);
-          return;
-        }
-        // The file declares tokens, so those ARE the brand — but a doc alone
-        // never says which token is the primary. Read how the designer applied
-        // them (and, for an older export that carries no applied references,
-        // what the file paints) so the install can also write the semantic
-        // roles as aliases to their own tokens. No usable colour tokens → the
-        // doc installs exactly as it does today.
-        importedLabel = file.name.replace(/\.(penpot|zip)$/i, '') || t('My brand');
-        const appliedTokens = scanPenpotAppliedTokens(files);
-        const roles = proposeRolesFromTokens(doc, appliedTokens, scanPenpotUsage(files));
-        importedDoc = roles ? withRoleAliases(doc, roles.refs) : doc;
-        const statLine = statLineFor(doc);
-        const tokenFonts = roles ? proposeFontsFromTokens(doc, appliedTokens) : null;
-        const roleChips: Array<[string, string, string | undefined]> = roles ? [
-          [t('Primary'), roles.primary, roles.refs.primary],
-          ...(roles.secondary ? [[t('Secondary'), roles.secondary, roles.refs.secondary] as [string, string, string | undefined]] : []),
-          [t('Surface'), roles.surface, roles.refs.surface],
-          [t('Text'), roles.text, roles.refs.text],
-        ] : [];
+        pendingUsage = usage;
+        importedLabel = fileRoute.label || t('My brand');
+        const fonts = proposeFonts(usage);
+        const gradN = usage.gradients.length;
+        const statBits = [
+          t(usage.colors.length === 1 ? '{n} colour' : '{n} colours', { n: usage.colors.length }),
+          gradN ? t(gradN === 1 ? '{n} gradient' : '{n} gradients', { n: gradN }) : null,
+          usage.fonts.length ? t(usage.fonts.length === 1 ? '{n} font' : '{n} fonts', { n: usage.fonts.length }) : null,
+        ].filter(Boolean).join(' · ');
+        const roleChips: Array<[string, string]> = [
+          [t('Primary'), roles.primary],
+          ...(roles.secondary ? [[t('Secondary'), roles.secondary] as [string, string]] : []),
+          [t('Surface'), roles.surface],
+          [t('Text'), roles.text],
+        ];
+        const fontLines = [
+          fonts.google.length ? `<p class="start-import-stats">${escape(tRaw('Fonts: {list}', { list: fonts.google.join(', ') }))}</p>` : '',
+          fonts.missing.length ? `<p class="start-import-warn">${escape(tRaw(fonts.missing.length === 1
+            ? '{list} has no downloadable source, so it stays as a name only.'
+            : '{list} have no downloadable source, so they stay as names only.', { list: fonts.missing.join(', ') }))}</p>` : '',
+        ].join('');
         showImportResult(`
-          <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('penpot tokens')}</span></p>
-          ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
-          ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
-          ${roles ? `
-            <p class="start-import-stats">${t('These are the tokens the file declares. Roles below follow how the designer applied them.')}</p>
-            <ul class="start-color-grid start-look-roles" role="list">
-              ${roleChips.map(([label, hex, ref]) => `
+          <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('look in use')}</span></p>
+          ${statBits ? `<p class="start-import-stats">${escape(statBits)}</p>` : ''}
+          <p class="start-import-warn">${t('This file declares no design tokens, so this is the look it actually uses.')}</p>
+          <ul class="start-color-grid start-look-roles" role="list">
+            ${roleChips.map(([label, hex]) => `
+              <li class="start-color-chip">
+                <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
+                <span class="start-color-hex">${escape(hex)}</span>
+                <span class="start-color-role">${escape(label)}</span>
+              </li>`).join('')}
+          </ul>
+          ${roles.extras.length ? `
+            <p class="start-import-stats">${t('Keep any of the other colours as swatches:')}</p>
+            <ul class="start-color-grid" role="list">
+              ${roles.extras.map((hex, i) => `
                 <li class="start-color-chip">
-                  <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
-                  <span class="start-color-hex">${escape(ref ?? hex)}</span>
-                  <span class="start-color-role">${escape(label)}</span>
+                  <label>
+                    <input type="checkbox" data-color-idx="${i}" checked>
+                    <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
+                    <span class="start-color-hex">${escape(hex)}</span>
+                  </label>
                 </li>`).join('')}
             </ul>` : ''}
-          ${tokenFonts?.missing.length ? `<p class="start-import-stats">${escape(tRaw('Type: {list}', { list: tokenFonts.missing.slice(0, 4).join(', ') }))}</p>` : ''}
-          <button type="button" class="be-cta start-cta--import" data-install-import>${t('Install these tokens')}</button>`);
+          ${fontLines}
+          ${gradN ? `<p class="start-import-stats">${escape(t(gradN === 1
+            ? 'Its gradient becomes a brand token.'
+            : 'The top gradients become brand tokens.'))}</p>` : ''}
+          <button type="button" class="be-cta start-cta--import" data-install-look>${t('Make this look your brand')}</button>`,
+          { say: cardSay(file.name, statBits) });
         return;
       }
-
-      showImportResult(`<p class="start-import-err">${t('{filename} isn’t a brand file or a Penpot export we recognise.', { filename: file.name })}</p>`);
+      // The file declares tokens, so those ARE the design system — but a doc
+      // alone never says which token is the primary. Read how the designer
+      // applied them (and, for an older export that carries no applied
+      // references, what the file paints) so the install can also write the
+      // semantic roles as aliases to their own tokens. No usable colour tokens
+      // → the doc installs exactly as it does today.
+      importedLabel = fileRoute.label || t('My brand');
+      const appliedTokens = scanPenpotAppliedTokens(files);
+      const roles = proposeRolesFromTokens(doc, appliedTokens, scanPenpotUsage(files));
+      importedDoc = roles ? withRoleAliases(doc, roles.refs) : doc;
+      const statLine = statLineFor(doc);
+      const tokenFonts = roles ? proposeFontsFromTokens(doc, appliedTokens) : null;
+      const roleChips: Array<[string, string, string | undefined]> = roles ? [
+        [t('Primary'), roles.primary, roles.refs.primary],
+        ...(roles.secondary ? [[t('Secondary'), roles.secondary, roles.refs.secondary] as [string, string, string | undefined]] : []),
+        [t('Surface'), roles.surface, roles.refs.surface],
+        [t('Text'), roles.text, roles.refs.text],
+      ] : [];
+      showImportResult(`
+        <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('penpot tokens')}</span></p>
+        ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
+        ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
+        ${roles ? `
+          <p class="start-import-stats">${t('These are the tokens the file declares. Roles below follow how the designer applied them.')}</p>
+          <ul class="start-color-grid start-look-roles" role="list">
+            ${roleChips.map(([label, hex, ref]) => `
+              <li class="start-color-chip">
+                <span class="start-color-swatch" style="background:${escape(hex)}" aria-hidden="true"></span>
+                <span class="start-color-hex">${escape(ref ?? hex)}</span>
+                <span class="start-color-role">${escape(label)}</span>
+              </li>`).join('')}
+          </ul>` : ''}
+        ${tokenFonts?.missing.length ? `<p class="start-import-stats">${escape(tRaw('Type: {list}', { list: tokenFonts.missing.slice(0, 4).join(', ') }))}</p>` : ''}
+        <button type="button" class="be-cta start-cta--import" data-install-import>${t('Install these tokens')}</button>`,
+        { say: cardSay(file.name, statLine) });
       return;
     }
 
-    // Token documents are hand-authored JSON, a few KB to a few MB — bound the
-    // read so a mispicked/hostile multi-GB file can't be parsed into memory.
-    if (file.size > 10 * 1024 * 1024) {
-      showImportResult(`<p class="start-import-err">${t('{filename} is too large for a token file (max 10 MB).', { filename: file.name })}</p>`);
-      return;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(await file.text());
-    } catch {
-      showImportResult(`<p class="start-import-err">${t('Couldn’t read {filename} — is it valid JSON?', { filename: file.name })}</p>`);
-      return;
-    }
-    const { doc, warnings, source } = coerceTokensDoc(parsed);
-    if (!doc) {
-      showImportResult(`<p class="start-import-err">${t('No tokens found: {reason}.', { reason: warnings[0] ?? t('unrecognised document') })}</p>`);
+    // A token DOCUMENT: a DTCG/Tokens-Studio JSON, or a zip of loose token-set
+    // files (the shape assembleTokenSetFiles has always read for the CLI and the
+    // web could never open — the router assembles it, so both paths land here).
+    const { doc, warnings, source } = fileRoute.extraction;
+    if (!doc) {   // the router only returns `tokens` with a doc; belt and braces
+      showImportError(tRaw('No tokens found: {reason}.', { reason: warnings[0] ?? t('unrecognised document') }));
       return;
     }
     importedDoc = doc;
-    importedLabel = file.name.replace(/\.json$/i, '') || t('My brand');
+    importedLabel = fileRoute.label || t('My brand');
     const statLine = statLineFor(doc);
-    showImportResult(`
-      <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${escape(source)}</span></p>
+    // Built before the call, not inside it: `mappingReviewHtml` is what decides
+    // whether there is a question on this card (it sets `pendingRoles`), and the
+    // announcement has to carry that question — it is the one thing the card
+    // asks for and the only reason the install button says something different.
+    const html = `
+      <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${escape(SOURCE_LABEL[source]())}</span></p>
       ${statLine ? `<p class="start-import-stats">${escape(statLine)}</p>` : ''}
       ${warnings.length ? `<p class="start-import-warn">${escape(warnings.join(' · '))}</p>` : ''}
-      <button type="button" class="be-cta start-cta--import" data-install-import>${t('Install these tokens')}</button>`);
+      ${mappingReviewHtml(doc)}
+      <div class="start-color-actions">
+        <button type="button" class="be-cta start-cta--import" data-install-import>${
+          pendingRoles ? t('Install with these roles') : t('Install these tokens')}</button>
+        ${pendingRoles ? `<button type="button" class="be-btn be-btn--sm" data-install-plain>${t('Install without roles')}</button>` : ''}
+        <button type="button" class="be-btn be-btn--sm" data-tokens-tray>${t('Review first')}</button>
+      </div>`;
+    showImportResult(html, { say: cardSay(file.name, statLine, pendingRoles ? t('Which one is the primary?') : '') });
+  }
+
+  /** What a result card says out loud: the file, what was found in it, and the
+   *  one question it asks, if it asks one. The card itself carries the detail —
+   *  focus lands there, so this is the headline and not a transcript. */
+  function cardSay(filename: string, statLine: string, question = ''): string {
+    const head = statLine ? tRaw('{filename}: {stats}', { filename, stats: statLine }) : filename;
+    return question ? `${head} ${question}` : head;
+  }
+
+  /**
+   * The semantic mapping review (plan 97 §8) — the card that stops an import
+   * landing a full palette with every `--brand-*` var still dark.
+   *
+   * It renders only for the case it is about: a document that resolves colour
+   * tokens and NONE of `color.semantic.{primary,surface,text}`. A doc that
+   * already carries roles, or carries no colours at all, never sees it and
+   * installs byte-identically to before. One decision, not four: which token is
+   * the primary; surface and text FOLLOW it and are shown read-only, because a
+   * card asking four questions is a form.
+   *
+   * "Follow" is literal — see `followsFor`. They are recomputed on every pick
+   * and the read-only pair repaints, because the alternative is a card that
+   * promises a consequence and installs a different one.
+   *
+   * Returns markup for the existing result sink — nothing here is a new one.
+   */
+  function mappingReviewHtml(doc: Record<string, unknown>): string {
+    if (!docNeedsMappingReview(doc)) return '';
+    // proposeRolesFromTokens with no census at all is the "no weights anywhere"
+    // branch, and it is the only proposer that returns the declared token PATHS
+    // withRoleAliases needs to write an alias rather than a literal.
+    const proposal = proposeRolesFromTokens(doc, [], null);
+    if (!proposal?.refs.primary) return '';
+    pendingRoles = proposal;
+    roleChoice = proposal.refs.primary;
+    pendingTokens = colorTokenRows(doc);
+    const choices = chooserRows(pendingTokens, roleChoice);
+    const follows = followsFor(roleChoice);
+    return `
+      <div class="ds-roles-card">
+        <p class="ds-roles-q">${t('Which one is the primary?')}</p>
+        <p class="start-import-warn">${t('This document declares colours but no roles, so nothing would pick up its main colour without one.')}</p>
+        <ul class="ds-roles-choices" role="list">
+          ${choices.map(c => `
+            <li>
+              <button type="button" class="ds-roles-chip" data-role-pick="${escape(c.path)}"
+                aria-pressed="${c.path === roleChoice ? 'true' : 'false'}">
+                <span class="start-color-swatch" style="background:${escape(c.hex)}" aria-hidden="true"></span>
+                <span class="start-color-hex">${escape(c.path)}</span>
+              </button>
+            </li>`).join('')}
+        </ul>
+        <p class="start-import-stats">${t('Surface and text follow from it.')}</p>
+        <ul class="start-color-grid start-look-roles" role="list">
+          ${(['surface', 'text'] as const).map(role => `
+            <li class="start-color-chip" data-ds-follow="${role}">
+              <span class="start-color-swatch" style="background:${escape(follows[role].hex)}" aria-hidden="true"></span>
+              <span class="start-color-hex">${escape(follows[role].ref ?? follows[role].hex)}</span>
+              <span class="start-color-role">${escape(role === 'surface' ? t('Surface') : t('Text'))}</span>
+            </li>`).join('')}
+        </ul>
+      </div>`;
   }
 
   // Colour-review checkboxes (the SVG path): select all/none, enable "Use
   // these colours" only while at least one is checked, and build the doc from
   // whatever's checked at click time.
+  // Both actions on that card act on the SELECTION, so both follow it.
+  const syncColorActions = (anyChecked: boolean): void => {
+    const installBtn = importResult.querySelector<HTMLButtonElement>('[data-install-colors]');
+    const trayBtn = importResult.querySelector<HTMLButtonElement>('[data-colors-tray]');
+    if (installBtn) installBtn.disabled = !anyChecked;
+    if (trayBtn) trayBtn.disabled = !anyChecked;
+  };
   importResult.addEventListener('input', (e) => {
     if (!(e.target as HTMLElement).matches('[data-color-idx]')) return;
-    const installBtn = importResult.querySelector<HTMLButtonElement>('[data-install-colors]');
-    const anyChecked = !!importResult.querySelector('[data-color-idx]:checked');
-    if (installBtn) installBtn.disabled = !anyChecked;
+    syncColorActions(!!importResult.querySelector('[data-color-idx]:checked'));
   });
   importResult.addEventListener('click', (e) => {
     const all = (e.target as HTMLElement).closest('[data-colors-all]');
     const none = (e.target as HTMLElement).closest('[data-colors-none]');
     if (!all && !none) return;
     importResult.querySelectorAll<HTMLInputElement>('[data-color-idx]').forEach(cb => { cb.checked = !!all; });
-    const installBtn = importResult.querySelector<HTMLButtonElement>('[data-install-colors]');
-    if (installBtn) installBtn.disabled = !all;
+    syncColorActions(!!all);
   });
 
   // Delegated: the install button is re-created with every result render.
   importResult.addEventListener('click', (e) => {
-    const importBtnEl = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-install-import]');
-    if (importBtnEl && importedDoc) { void install(importedDoc, importedLabel, importBtnEl); return; }
+    const target = e.target as HTMLElement;
 
-    const colorsBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-install-colors]');
+    // The mapping card's chooser: one decision, so picking a chip moves the
+    // pressed state and repaints what the card says follows from it. Nothing
+    // installs until the button below is pressed. Repainted in place rather than
+    // re-rendered — two swatches and two labels, and the card has no second sink.
+    const pick = target.closest<HTMLElement>('[data-role-pick]')?.dataset.rolePick;
+    if (pick) {
+      roleChoice = pick;
+      importResult.querySelectorAll<HTMLElement>('[data-role-pick]').forEach(chip => {
+        chip.setAttribute('aria-pressed', String(chip.dataset.rolePick === pick));
+      });
+      const follows = followsFor(pick);
+      for (const role of ['surface', 'text'] as const) {
+        const li = importResult.querySelector<HTMLElement>(`[data-ds-follow="${role}"]`);
+        const sw = li?.querySelector<HTMLElement>('.start-color-swatch');
+        const label = li?.querySelector<HTMLElement>('.start-color-hex');
+        if (sw) sw.style.background = follows[role].hex;
+        if (label) label.textContent = follows[role].ref ?? follows[role].hex;
+      }
+      return;
+    }
+
+    const importBtnEl = target.closest<HTMLButtonElement>('[data-install-import]');
+    if (importBtnEl && importedDoc) {
+      // With a proposal on the card, the chosen roles are folded into the doc
+      // that installs — ONE install, aliases not literals, so editing the token
+      // later still moves the role with it. Surface and text come from the SAME
+      // followsFor the card painted, so what installs is what it showed; a
+      // secondary that collides with the chosen primary is dropped rather than
+      // written as a second alias to one token.
+      const follows = roleChoice ? followsFor(roleChoice) : null;
+      const doc = pendingRoles && roleChoice && follows
+        ? applyMappingChoice(importedDoc, {
+          primary: roleChoice,
+          secondary: pendingRoles.refs.secondary === roleChoice ? undefined : pendingRoles.refs.secondary,
+          surface: follows.surface.ref,
+          text: follows.text.ref,
+        })
+        : importedDoc;
+      void install(doc, importedLabel, importBtnEl);
+      return;
+    }
+
+    // Skip is EXACTLY today's behaviour: the raw document installs, no roles
+    // written, nothing else different.
+    const plainBtn = target.closest<HTMLButtonElement>('[data-install-plain]');
+    if (plainBtn && importedDoc) { void install(importedDoc, importedLabel, plainBtn); return; }
+
+    // "Review first" (plan 97 §8): the document decomposes into candidates
+    // instead of installing, so it can be shopped one at a time. Nothing is
+    // written by pressing it.
+    if (target.closest('[data-tokens-tray]') && importedDoc) {
+      void (async () => {
+        // The rail note, not the dialog's: the modal closes on the way out, and a
+        // message that leaves with it was never read.
+        await keepInTray(censusFromTokensDoc(importedDoc, importedLabel), showNote);
+        closeImport();
+      })();
+      return;
+    }
+
+    // The SVG path's second door: keep the scanned colours as candidates rather
+    // than deriving a whole design system from them right now.
+    if (target.closest('[data-colors-tray]') && pendingSvgColors.length) {
+      const kept: string[] = [];
+      importResult.querySelectorAll<HTMLElement>('.start-color-chip').forEach(li => {
+        const cb = li.querySelector<HTMLInputElement>('[data-color-idx]');
+        const hex = li.querySelector<HTMLElement>('.start-color-hex')?.textContent;
+        if (cb?.checked && hex) kept.push(hex);
+      });
+      if (!kept.length) return;   // the button follows the selection (syncColorActions)
+      void (async () => {
+        await keepInTray(censusFromSvgColors(kept, importedLabel), showNote);
+        closeImport();
+      })();
+      return;
+    }
+
+    const colorsBtn = target.closest<HTMLButtonElement>('[data-install-colors]');
     if (!colorsBtn) return;
     const swatches = importResult.querySelectorAll<HTMLElement>('.start-color-chip');
     const kept: string[] = [];
@@ -798,7 +2556,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       if (cb?.checked && hex) kept.push(hex);
     });
     if (!kept.length) {
-      showImportResult(`<p class="start-import-err">${t('None of the kept colours could be used — try a different selection.')}</p>`);
+      showImportError(t('None of the kept colours could be used — try a different selection.'));
       return;
     }
     const doc = deriveBrandTokens({ primary: kept[0]!, name: importedLabel });
@@ -849,7 +2607,15 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // peek, then back to where the user came from.
     const popoverOpen = !!editorMount.querySelector(
       '[data-be-editor]:not([hidden]), [data-grad-pop]:not([hidden]), .color-picker-field:not(.color-field--inline) .color-popover:not([hidden])');
+    // The tray sits above the palette sheet in the stack, so it answers first:
+    // on a phone it folds to peek, on a dock width it closes (it reports which
+    // by returning true either way).
+    if (!popoverOpen && trayUi?.collapse()) { e.preventDefault(); syncTrayToggle(); return; }
     if (!popoverOpen && paletteSheet?.collapse()) { e.preventDefault(); return; }
+    // An open compat disclosure in the Versions panel folds before the studio is
+    // left. Esc only ever CANCELS here: no publish, activate or restore is ever
+    // one keypress away, and the panel has no modal for it to dismiss.
+    if (!popoverOpen && !versionsPanel.hidden && versions?.collapse()) { e.preventDefault(); return; }
     e.preventDefault();
     navigateTo(backHref);
   };
@@ -859,13 +2625,21 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // A dialog outlives the view it was opened from (it's body-mounted), so leaving
     // the studio must take it with it.
     closeImport();
+    unsubTray?.();
+    unsubTray = null;
+    trayUi?.teardown();
+    trayUi = null;
+    overview?.teardown();
+    overview = null;
+    versions?.teardown();
+    versions = null;
     paletteSheet?.teardown();
     paletteSheet = null;
     editor?.teardown();
   };
 }
 
-// ── Mobile palette sheet (≤640px, Colour tab only) ───────────────────────────
+// ── Mobile palette sheet (≤640px, Colours room only) ─────────────────────────
 // A fixed bottom sheet + sibling grip (both DIRECT children of `.start`, which
 // the CSS specificity depends on — see brand-studio.css) mirroring the
 // COMMITTED palette so it stays visible while the derive/generate panels
@@ -923,8 +2697,21 @@ function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editor
     });
     stripEl.innerHTML = stripHtml;
     groupsEl.innerHTML = bodyHtml;
+    syncMarks();
     handle?.refresh(); // the peek strip's height may have changed — re-measure
   };
+  // Multi-select state lives on the real tiles; the mirror only reflects it.
+  // Re-read after every render and after a forwarded tap, so collecting from
+  // the sheet is visible in the sheet, not just in the (off-screen) grid.
+  function syncMarks(): void {
+    sheet.querySelectorAll<HTMLElement>('[data-stu-tile]').forEach(chip => {
+      const src = editorRoot.querySelector<HTMLElement>(`[data-be-tile="${chip.dataset.stuTile}"]`);
+      chip.classList.toggle('is-multi', !!src?.classList.contains('is-multi'));
+      const pressed = src?.getAttribute('aria-pressed');
+      if (pressed != null) chip.setAttribute('aria-pressed', pressed);
+      else chip.removeAttribute('aria-pressed');
+    });
+  }
   render(); // populate BEFORE the driver mounts so its first peek measure is real
 
   handle = setupMobileSheet(shell, sheet, grip, {
@@ -973,6 +2760,7 @@ function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editor
     if (group && !group.open) group.open = true;
     tile.scrollIntoView({ block: 'center' });
     tile.click();
+    requestAnimationFrame(syncMarks); // a select-mode tap toggled the tile — reflect it here
   });
 
   return {

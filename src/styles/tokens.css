@@ -72,6 +72,23 @@
   --chrome-grow: calc(2.6rem * (var(--a11y-fs, 1) - 1));
 }
 
+/* ─── Tile-grid gutters ─────────────────────────────────────────────────────
+ * One breathing-room decision for every tile grid (tools/utilities gallery,
+ * catalog assets, projects) instead of a hard-coded gap per sheet — the three
+ * had drifted to 14/16/16px. The tight value is what every grid drops to on
+ * phones, where the wide gutter would cost a whole tile column. The folder
+ * OVERLAY's .folder-grid deliberately keeps its own denser 12px: a dialog
+ * doesn't get page-level breathing room. */
+:root {
+  --grid-gap: 2rem;
+  --grid-gap-tight: 12px;
+}
+@media (max-width: 640px) {
+  :root {
+    --grid-gap: var(--grid-gap-tight);
+  }
+}
+
 /* On phones the row drops clear of the notch and the content scrolls under it.
    Overriding the token here — rather than restating the offset in each part
    sheet's own media query, as they used to — keeps both ends of the row on the

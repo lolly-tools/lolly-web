@@ -9,16 +9,25 @@
  * Files ingest through the SAME storeUserUpload path as the asset picker (downscale/
  * sanitise/credential-preserve/animated-sniff); a PDF/.ai converts page(s) to SVG
  * assets via the lazily-loaded pdf-import chunk, and a PowerPoint .pptx converts
- * chosen slide(s) the same way via pptx-import. Ingest is sequential on purpose —
+ * chosen slide(s) the same way via pptx-import. An image is offered the shared
+ * trim-to-content card first (plan 97 §7.3 — see offerTrim below), which is why the
+ * loop stores `await offerTrim(file)` rather than `file`. Ingest is sequential on purpose —
  * parallel ingest of a big multi-drop would spike memory (each raster decode holds a
  * full bitmap) — and the single-flight guard is module-level so a mid-ingest re-mount
- * (the catalogue rebuilds its body per render) can't open a second lane.
+ * (the catalogue rebuilds its body per render) can't open a second lane. The other
+ * half of that rule: a mid-ingest re-mount also STOPS the old loop from asking
+ * anything (see `disposed`), because a question mounted into a container that is no
+ * longer on the page can never be answered, and one unanswerable question would hold
+ * that module-level lane shut for the rest of the session.
  */
 import { storeUserUpload, isPdfUpload, isPptxUpload, UPLOAD_ACCEPT } from '../views/picker.ts';
 import type { PickerHost } from '../views/picker.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
 import { escape } from '../utils.ts';
+// Only the trim card's strings go through t() — the zone's own copy predates it and
+// its translation is a separate i18n pass, not something to half-do here.
+import { t } from '../i18n.ts';
 import '../styles/parts/dropzone.css';
 
 export interface DropzoneOpts {
@@ -57,13 +66,107 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
   const zone = container.querySelector<HTMLElement>('.updz')!;
   const input = container.querySelector<HTMLInputElement>('.updz-input')!;
 
+  // Answers the trim card on the user's behalf when the surface goes away under it
+  // (see offerTrim). Null whenever no card is up.
+  let closeOffer: (() => void) | null = null;
+  // Set by the teardown below. An ingest that outlives its mount must stop ASKING:
+  // this closure's `container` is detached (or repainted) by then, so a card
+  // appended to it is invisible and unanswerable, and the promise it hands back to
+  // the loop would never settle — permanently latching the module-level
+  // single-flight guard and killing every dropzone in the app until a reload.
+  let disposed = false;
+
+  /**
+   * Plan 97 §7.3: every surface where a user file becomes an asset offers the same
+   * trim-to-content card, so a padded logo dropped here behaves like one dropped in
+   * the Logos room. Resolves to the file to actually ingest — the trimmed bytes, the
+   * original when the user keeps the margins, and the original untouched when the
+   * file is not an image, cannot be measured, or is already tight (no card at all).
+   *
+   * NULL means the user backed out (Escape, or the card's ✕): that file is skipped
+   * and nothing is stored for it. The loop carries on with the next one.
+   *
+   * MUST run before storeUserUpload: that path's normaliser strips an SVG's root
+   * width/height, after which a viewBox rewrite has nothing left to bite on.
+   *
+   * Never rejects — a failed measurement is not a reason to fail an upload.
+   */
+  async function offerTrim(file: File): Promise<File | null> {
+    if (disposed || !container.isConnected) return file;
+    // Lazy chunk: the measure/crop code (and its canvas work) costs nothing until a
+    // file actually arrives.
+    const trim = await import('./design-system/trim-offer.ts').catch(() => null);
+    if (!trim) return file;
+    const proposal = await trim.prepareTrim(file).catch(() => null);
+    if (!proposal) return file;
+    // Re-checked AFTER both awaits: the measure of a big raster is long enough for
+    // the surface to repaint under it.
+    if (disposed || !container.isConnected) return file;
+    const mount = document.createElement('div');
+    mount.className = 'trimo-host';
+    container.appendChild(mount);
+    return new Promise<File | null>((resolve) => {
+      // Assigned by the mount call below; a decision can only arrive from a click or
+      // an Escape, i.e. strictly after that, so the null guard is the "already
+      // answered" latch rather than a race.
+      let teardown: (() => void) | null = null;
+      // `restoreFocus` only when the USER answered: the card held focus and its buttons
+      // are about to be removed, so hand it back to the affordance that started this.
+      const finish = (chosen: File | null, restoreFocus = false): void => {
+        if (!teardown) return;
+        teardown();
+        teardown = null;
+        mount.remove();
+        closeOffer = null;
+        if (restoreFocus && input.isConnected) input.focus();
+        resolve(chosen);
+      };
+      teardown = trim.mountTrimOffer(mount, proposal, {
+        t,
+        onResolve: (chosen) => finish(chosen, true),
+        onCancel: () => finish(null, true),
+      });
+      // A surface that repaints while the card is up (the catalogue rebuilds its body
+      // per render) calls our teardown: answer with the ORIGINAL file rather than
+      // leaving the ingest loop — and, through the single-flight guard, every later
+      // drop — waiting on a promise nothing will ever settle. Not a user dismissal:
+      // they dropped the file, so it still lands, with the margins it arrived with.
+      closeOffer = () => finish(proposal.originalFile);
+    });
+  }
+
   async function ingestFiles(files: File[]): Promise<void> {
     if (!files.length || ingesting) return;
     ingesting = true;
+    try {
+      await runIngest(files);
+    } finally {
+      // The guard is module-level, so ANY escape from the loop that left it set
+      // would refuse every later drop across every mounted zone until a reload.
+      // A lazy chunk that fails to load (a stale service-worker build) is the one
+      // that actually happens.
+      ingesting = false;
+    }
+  }
+
+  async function runIngest(files: File[]): Promise<void> {
     const textEl = zone.querySelector<HTMLElement>('.updz-text');
     const idleText = textEl?.innerHTML ?? '';
     zone.classList.add('is-busy');
     if (textEl) textEl.textContent = 'Adding…';
+    try {
+      await ingestLoop(files, textEl);
+    } finally {
+      // Always, on every exit: `.is-busy` turns pointer events off, so a zone left
+      // wearing it after a throw refuses every later drop even though the lane is
+      // free again. Surfaces that rebuild after onAdded (the catalogue) orphan this
+      // node and the restore is harmless; ones that don't get the zone back ready.
+      zone.classList.remove('is-busy');
+      if (textEl) textEl.innerHTML = idleText;
+    }
+  }
+
+  async function ingestLoop(files: File[], textEl: HTMLElement | null): Promise<void> {
     // Explode a dropped plain archive (.zip/.tar/.tar.gz) into its member files first,
     // so its contents land in the library. Non-archives pass through untouched; an
     // office/OCF package that shares the PK magic is NOT expanded (kept as-is and
@@ -101,7 +204,11 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
           stored += refs.length;
           continue;
         }
-        await storeUserUpload(host, file);
+        // The trim question, then the ingest — in that order, and with the answer's
+        // file, never the one the loop started with (offerTrim's doc comment says why).
+        const answered = await offerTrim(file);
+        if (!answered) continue;   // backed out of the card: this file is skipped
+        await storeUserUpload(host, answered);
         stored++;
       } catch (err) {
         host.log('error', 'Upload failed', { file: file.name, error: String(err) });
@@ -109,23 +216,10 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
         announce((err as { code?: unknown }).code ? (err as Error).message : `Upload failed: ${(err as Error).message}`, { assertive: true });
       }
     }
-    ingesting = false;
-    if (!stored) {
-      // Nothing landed — restore the idle drop area (no refresh is coming).
-      zone.classList.remove('is-busy');
-      if (textEl) textEl.innerHTML = idleText;
-      return;
-    }
+    if (!stored) return;   // nothing landed; runIngest's finally restores the zone
     playSfx('drop');
     announce(`Added ${stored} file${stored === 1 ? '' : 's'} to your uploads.`);
-    try {
-      await opts.onAdded?.(stored);
-    } finally {
-      // Surfaces that rebuild after onAdded (the catalogue) orphan this node — the
-      // restore is harmless; ones that don't get the zone back ready for the next drop.
-      zone.classList.remove('is-busy');
-      if (textEl) textEl.innerHTML = idleText;
-    }
+    await opts.onAdded?.(stored);
   }
 
   const ac = new AbortController();
@@ -154,5 +248,13 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
     void ingestFiles([...e.dataTransfer.files]);
   }, { signal });
 
-  return () => { ac.abort(); };
+  return () => {
+    ac.abort();
+    // This mount is over: an ingest still running belongs to a container that is
+    // detached (or already repainted by the next mount), so it must stop asking.
+    disposed = true;
+    // An unanswered trim card dies with the mount: resolve it (keep the original) so
+    // the ingest it is blocking can finish instead of stalling the single-flight lane.
+    closeOffer?.();
+  };
 }

@@ -71,12 +71,16 @@ async function renderVariantAt(
   host: FeaturedHost,
   toolId: string,
   format: string,
-  variantIndex: number,
+  variantIndex: number | string,
   values: Record<string, unknown>,
+  keyPrefix = 'featured',
 ): Promise<string> {
   // Format is part of the key: a tool that once cached a raster look and now renders
-  // vector (svg) must not return the stale raster thumbnail on a matching `sig`.
-  const cacheKey = `featured:${toolId}:${variantIndex}:${format}`;
+  // vector (svg) must not return the stale raster thumbnail on a matching `sig`. The
+  // `keyPrefix` namespaces the cache: 'featured' for hero/example looks (numeric index),
+  // 'template' for "New from template" previews (string template id) — the two can never
+  // collide, so a template preview never disturbs a featured-variant record.
+  const cacheKey = `${keyPrefix}:${toolId}:${variantIndex}:${format}`;
   const sig = JSON.stringify(values);
   const cached = await host.previews?.get(cacheKey).catch(() => null);
   if (cached && cached.sig === sig && cached.thumb) return cached.thumb;
@@ -124,25 +128,29 @@ export async function renderFeaturedVariant(
   host: FeaturedHost,
   toolId: string,
   formats: readonly string[] | undefined,
-  variantIndex: number,
+  variantIndex: number | string,
   values: Record<string, unknown>,
+  keyPrefix = 'featured',
 ): Promise<string> {
   // Pre-rendered look from the build bundle (npm run previews → build:catalog) — an instant
   // ready <img> src with no engine load and no per-look asset fetch, shared by the featured
   // hero and every example carousel (both funnel through here). Falls through to the live
   // render below when the look isn't bundled (not yet generated / profile-personalised) or
   // the bundle is stale (sig mismatch), so this only ever speeds up, never changes output.
-  const bundled = await bundledLook(toolId, variantIndex, JSON.stringify(values));
-  if (bundled) return bundled;
+  // Templates (keyPrefix 'template') have no build bundle, so skip the lookup for them.
+  if (keyPrefix === 'featured') {
+    const bundled = await bundledLook(toolId, variantIndex as number, JSON.stringify(values));
+    if (bundled) return bundled;
+  }
 
   const primary = displayFormatOf(formats);
   if (!primary) throw new Error(`no displayable export format for ${toolId}`);
   try {
-    return await renderVariantAt(host, toolId, primary, variantIndex, values);
+    return await renderVariantAt(host, toolId, primary, variantIndex, values, keyPrefix);
   } catch (e) {
     const raster = rasterFormatOf(formats);
     if (primary === 'svg' && raster && raster !== primary) {
-      return await renderVariantAt(host, toolId, raster, variantIndex, values);
+      return await renderVariantAt(host, toolId, raster, variantIndex, values, keyPrefix);
     }
     throw e;
   }

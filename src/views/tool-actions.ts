@@ -17,6 +17,7 @@ import type {
 import type { MoneyContext } from '@lolly-tools/core';
 import { escape } from '../utils.js';
 import { t, tRaw } from '../i18n.ts';
+import { confirmDialog } from '../components/confirm-dialog.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
@@ -2140,6 +2141,71 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     addScrubBehavior(inp, onDimChange, { format: v => `${v} ${dimUnit()}` });
   });
 
+  // ── Artboards are the size truth (plans/93 frame primitive) ──────────────────
+  // In a framed editor (Layout Studio with a `frame` field), the export dimensions are
+  // NOT an independent output size — editing them RESIZES ALL ARTBOARDS. On a committed
+  // change we WARN, then set every frame box to the new size and re-flow the artboards in a
+  // row (members move with their frame). A no-frames doc keeps the existing behaviour (the
+  // single artboard follows the dims). Cancel restores the fields to the artboards' size.
+  const canvasCfg = (canvasBlocksInput as { canvas?: Record<string, unknown> } | undefined)?.canvas;
+  const canvasInputId = (canvasBlocksInput as { id?: string } | undefined)?.id;
+  const artFrameField = typeof canvasCfg?.frameField === 'string' ? canvasCfg.frameField : '';
+  const artNum = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  let artResizing = false;
+  async function resizeArtboardsFromDims(): Promise<void> {
+    if (artResizing || !artFrameField || !canvasInputId || manifest.render.layout !== 'editor') return;
+    const kindField = typeof canvasCfg?.kindField === 'string' ? canvasCfg.kindField : 'kind';
+    const frameKind = typeof canvasCfg?.frameKind === 'string' ? canvasCfg.frameKind : 'frame';
+    const idField = typeof canvasCfg?.idField === 'string' ? canvasCfg.idField : 'id';
+    const orderField = typeof canvasCfg?.orderField === 'string' ? canvasCfg.orderField : '';
+    const boxes = (runtime.getModel().find(i => i.id === canvasInputId)?.value as Array<Record<string, InputValue>> | undefined) ?? [];
+    const frames = boxes.filter(b => b && String(b[kindField]) === frameKind);
+    if (!frames.length) return; // no artboards → the single-artboard path applies
+    const unit = dimUnit();
+    const w = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '');
+    const h = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '');
+    if (!(w > 0 && h > 0)) return;
+    const pxW = Math.round(unit === 'px' ? w : toCssPx({ value: w, unit: unit as Unit }));
+    const pxH = Math.round(unit === 'px' ? h : toCssPx({ value: h, unit: unit as Unit }));
+    if (pxW < 1 || pxH < 1) return;
+    if (frames.every(f => Math.round(artNum(f.w)) === pxW && Math.round(artNum(f.h)) === pxH)) return; // already this size
+
+    artResizing = true;
+    try {
+      const ok = await confirmDialog({
+        title: t('Resize all artboards?'),
+        message: tRaw('This changes all {n} artboards to {w}×{h} px and lays them out in a row.', { n: String(frames.length), w: String(pxW), h: String(pxH) }),
+        confirmLabel: t('Resize all'),
+      });
+      if (!ok) { // artboards stay the truth — restore the fields to the current artboard size
+        setDims({ width: Math.round(artNum(frames[0]!.w)), height: Math.round(artNum(frames[0]!.h)), unit: 'px' });
+        return;
+      }
+      const GAP = 40;
+      const ordered = [...frames].sort((a, b) => (artNum(a[orderField]) - artNum(b[orderField])) || (artNum(a.x) - artNum(b.x)));
+      const patch = new Map<string, { x: number; y: number; w: number; h: number }>();
+      const delta = new Map<string, { dx: number; dy: number }>();
+      let runX = 0;
+      for (const f of ordered) {
+        patch.set(String(f[idField]), { x: runX, y: 0, w: pxW, h: pxH });
+        delta.set(String(f[idField]), { dx: runX - artNum(f.x), dy: 0 - artNum(f.y) });
+        runX += pxW + GAP;
+      }
+      const next = boxes.map(b => {
+        if (!b) return b;
+        const p = patch.get(String(b[idField]));
+        if (p) return { ...b, ...p };                                   // a frame → new size + row position
+        const d = delta.get(String(b[artFrameField] ?? ''));           // a member → move with its frame
+        return d ? { ...b, x: artNum(b.x) + d.dx, y: artNum(b.y) + d.dy } : b;
+      });
+      runtime.setInput(canvasInputId, next as unknown as InputValue);
+    } finally { artResizing = false; }
+  }
+  ([
+    el.querySelector<HTMLInputElement>('[data-action="export-width"]'),
+    el.querySelector<HTMLInputElement>('[data-action="export-height"]'),
+  ]).forEach(inp => inp?.addEventListener('change', () => { void resizeArtboardsFromDims(); }));
+
   // Apply a {width,height,unit} from a size-select option to the export-bar fields,
   // so choosing a size sets the actual exported page size. Refreshes the preview +
   // URL just like a manual edit. The user can still override the fields afterwards.
@@ -2556,7 +2622,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // exports at its true pixel size rather than the static render dimensions.
       // Gate on the carousel-specific render.pages — NOT render.paged, which also marks
       // multi-page-pdf / doc-studio, whose SVG export must stay a single whole-canvas file.
-      const pageEls = manifest.render.pages && canvasEl
+      // Also admit the Design/Layout-Studio frame primitive: an editor-layout tool whose
+      // boxes input declares canvas.frameField emits one [data-pdf-page] per ARTBOARD (frame
+      // box). A no-frames Design doc renders a single .artboard with zero [data-pdf-page], so
+      // pageEls stays empty and it correctly falls through to a single flat export. Mirrors
+      // tool.ts's frameCfg derivation (render.layout==='editor' && canvas.frameField).
+      const framesCanvas = manifest.render.layout === 'editor'
+        ? (manifest.inputs?.find(
+            (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas,
+          ) as { canvas?: { frameField?: string } } | undefined)?.canvas
+        : undefined;
+      const hasFrames = !!framesCanvas?.frameField;
+      const pageEls = (manifest.render.pages || hasFrames) && canvasEl
         ? [...canvasEl.querySelectorAll<HTMLElement>('[data-pdf-page]')] : [];
       if (pageEls.length >= 1 && !isAnimated && fmt !== 'pdf' && fmt !== 'zip' && fmt !== 'html' && fmt !== 'pptx') {
         // Export EACH page frame as its own still image, at that frame's own layout size
@@ -2565,15 +2642,33 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         if (pageEls.length > 1) btn.textContent = `Exporting ${pageEls.length} pages…`;
         const pageOpts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } = { ...opts };
         delete pageOpts.bundleFormats;
-        const files = await exportUnscaled(async () => {
-          const out: Array<{ name: string; blob: Blob }> = [];
-          for (let i = 0; i < pageEls.length; i++) {
-            const el = pageEls[i]!;
-            const pb = await runtime.export(el, fmt, { ...pageOpts, width: el.offsetWidth, height: el.offsetHeight });
-            out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
-          }
-          return out;
-        }, { shutter: true });
+        // Per-artboard stills fan out one image per frame; a cuts=N contact sheet only
+        // applies to a whole [data-sequence] stage (the .lolly-frames wrapper), so it is
+        // inert on an individual [data-pdf-page]. Drop it so a framed timed doc's per-slide
+        // export can never carry a stray cuts opt into the page-level render.
+        delete pageOpts.cuts;
+        // A timed slideshow (frames-as-scenes) gates off-playhead artboards with
+        // `.seq-off` (display:none, timeline.css) so only the current slide shows live.
+        // A per-artboard still export must lift that first, or every non-current frame
+        // photographs BLANK. Strip it across the whole canvas for the export window and
+        // restore in `finally` (mirrors sequence-render.ts's photograph-time strip; the
+        // class name is the CSS contract — OFF_CLASS in bridge/sequence-dom.ts).
+        const seqOff = canvasEl ? [...canvasEl.querySelectorAll<HTMLElement>('.seq-off')] : [];
+        seqOff.forEach((o) => o.classList.remove('seq-off'));
+        let files: Array<{ name: string; blob: Blob }>;
+        try {
+          files = await exportUnscaled(async () => {
+            const out: Array<{ name: string; blob: Blob }> = [];
+            for (let i = 0; i < pageEls.length; i++) {
+              const el = pageEls[i]!;
+              const pb = await runtime.export(el, fmt, { ...pageOpts, width: el.offsetWidth, height: el.offsetHeight });
+              out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
+            }
+            return out;
+          }, { shutter: true });
+        } finally {
+          seqOff.forEach((o) => o.classList.add('seq-off'));
+        }
         if (files.length === 1) {
           downloadedBlob = files[0]!.blob;
           await host.export.download(files[0]!.blob, `${filename}.${extFor(fmt, files[0]!.blob)}`);

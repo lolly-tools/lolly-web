@@ -23,6 +23,7 @@ import '../styles/parts/offline-manager.css'; // the "Offline tools" download ma
 import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
 import { setTheme } from '../lib/set-theme.ts';
 import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import type { A11yPrefs } from '../lib/a11y-prefs.ts';
 import { currentLang, switchLang, t, tRaw, docsHref } from '../i18n.ts';
@@ -234,23 +235,27 @@ const VERIFY_SHIELD = icon('shieldCheck', { size: 18 });
 // Jump to the Verify view — styled to match the gallery's green Verify button.
 // A function (not a module const) so t() runs at render time, after the catalog loads.
 const verifyLink = (): string => `<a href="#/verify" class="btn identity-verify-link" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span>${t('Verify a file')}</span></a>`;
-// Compass/gauge glyph — the same one the gallery's Dashboard button uses, for the bottom toolbar.
-const DASHBOARD_ICON = icon('dashboard', { size: 18 });
 
 // The settings-view section index — one entry per card, in page order. Drives the
 // left nav rail, the scroll-spy active state, and the search filter. `id` MUST match
-// the `id` on the corresponding `.profile-card`/`<details>` in the render below;
-// `keywords` are extra (untranslated) search terms so a query hits a section even
-// when its label doesn't literally contain the word (e.g. "dark" → Appearance).
-// The label is passed through t() at render time; keywords stay as an English aid.
-const NAV_SECTIONS: ReadonlyArray<{
+// the `id` on the corresponding `.profile-card`/`<details>` in the render below
+// (pinned by profile-nav.test.ts); `keywords` are extra (untranslated) search terms
+// so a query hits a section even when its label doesn't literally contain the word
+// (e.g. "dark" → Appearance). The label is passed through t() at render time;
+// keywords stay as an English aid.
+// EXPORTED for the spotlight settings provider (lib/search/providers/settings.ts,
+// plans/99 §2b — settings findability is first-class): every entry becomes a
+// search hit deep-linking to #/profile?focus=<id>, which the handler below
+// honours for ANY section here, not just the collapsibles.
+export interface ProfileNavSection {
   id: string;
   icon: Parameters<typeof icon>[0];
   label: string;
   keywords: string;
-}> = [
+}
+export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'details-section', icon: 'user', label: 'Your details', keywords: 'name email headshot photo avatar personal' },
-  { id: 'appearance-section', icon: 'palette', label: 'Appearance', keywords: 'theme dark light colour color sound look' },
+  { id: 'appearance-section', icon: 'palette', label: 'Appearance', keywords: 'theme dark light mode colour color sound look' },
   { id: 'a11y-section', icon: 'eye', label: 'Accessibility', keywords: 'motion contrast large text previews comfort a11y reduce' },
   { id: 'instance-section', icon: 'globe', label: 'Lolly instance', keywords: 'instance server source tools catalogue connect disconnect' },
   { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
@@ -652,12 +657,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
       </div>
     </div>
-
-    <footer class="profile-footer" aria-label="${escape(t('More'))}">
-      <a href="#/d" class="profile-nav-link btn" data-sfx="dashboard" aria-label="${escape(t('Dashboard — this device, the brand system & the full feature set'))}">${DASHBOARD_ICON}<span class="profile-nav-label">${t('Dashboard')}</span></a>
-      <a href="#/verify" class="profile-nav-link profile-nav-link--verify btn" data-sfx="verify" aria-label="${escape(t('Verify Content Credentials — check any file on-device'))}">${VERIFY_SHIELD}<span class="profile-nav-label">${t('Verify')}</span></a>
-    </footer>
   `;
+  // (The old two-button .profile-footer is retired — the shell's persistent search
+  // bar (components/search-bar.ts, plans/99 M1) shows on this route and carries the
+  // same Dashboard/Verify links plus the search field. Profile makes no claim, so
+  // the bar keeps its global default placeholder.)
 
   // ─── Settings nav rail: jump, scroll-spy, and search ─────────────────────
   // A macOS/GNOME-style left rail. Clicking a section scrolls to it (opening a
@@ -726,23 +730,32 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
     // Search — filter the rail by label + keywords; hide non-matching cards while a
     // query is present so the page itself narrows to what you're looking for.
+    // Matching is lib/search (plans/99 M3 — the shared matcher replaces the old
+    // single `.includes()` here). Two behaviour changes ride along, both wanted:
+    // a multi-word query ANDs across tokens ("large text" needs both words to
+    // land, in any field), and diacritics fold ("accessibilité" finds the
+    // Accessibility card). Same haystack as before — t(label) + English label +
+    // keywords — scored > 0 as a plain filter; the rail keeps page order.
     if (search) {
       const panes = viewEl.querySelector<HTMLElement>('.profile-panes');
       const apply = () => {
-        const q = search.value.trim().toLowerCase();
+        const tokens = tokenize(search.value);
         let matches = 0;
         for (const s of NAV_SECTIONS) {
           const btn = items.find(b => b.dataset.nav === s.id);
           const card = sectionOf(s.id);
-          const hay = `${t(s.label)} ${s.keywords}`.toLowerCase();
-          const hit = !q || hay.includes(q);
+          const hit = !tokens.length || scoreHaystack([
+            { text: fold(t(s.label)), weight: 2 },
+            { text: fold(s.label), weight: 2 },
+            { text: fold(s.keywords), weight: 1 },
+          ], tokens) > 0;
           if (btn) btn.hidden = !hit;
           // Only narrow the cards while actively searching — an empty query restores
           // the full page (never leaves a card orphaned hidden).
-          if (card) card.classList.toggle('is-filtered-out', !!q && !hit);
+          if (card) card.classList.toggle('is-filtered-out', tokens.length > 0 && !hit);
           if (hit) matches++;
         }
-        panes?.classList.toggle('is-searching', !!q);
+        panes?.classList.toggle('is-searching', tokens.length > 0);
         if (empty) empty.hidden = matches > 0;
       };
       search.addEventListener('input', apply);
@@ -847,16 +860,23 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     });
   }
 
-  // Any collapsible section is deep-linkable OPEN: #/profile?focus=<section-id>
-  // expands it (setting `open` fires the toggle that lazy-loads storage/images —
-  // and the initial-open check at the bottom catches it too) and scrolls it into
-  // view. So a share link OR a screenshot recipe can reproduce an expanded section,
-  // instead of that state living only in a click no URL records.
-  if (focusParam && ['activity-section', 'storage-section', 'offline-section', 'feature-flags-section', 'identity-section'].includes(focusParam)) {
-    const sec = viewEl.querySelector<HTMLDetailsElement>('#' + focusParam);
+  // ANY settings section is deep-linkable: #/profile?focus=<section-id> scrolls
+  // it into view, expanding a collapsible first (setting `open` fires the toggle
+  // that lazy-loads storage/images — and the initial-open check at the bottom
+  // catches it too). Same open+scroll the rail's jump() does. Was collapsibles
+  // only; widened for the spotlight settings provider (plans/99 §2b), which
+  // links every NAV_SECTIONS id here — so a share link, a screenshot recipe or
+  // a search hit can land on Appearance or Accessibility too.
+  if (focusParam && NAV_SECTIONS.some(s => s.id === focusParam)) {
+    const sec = viewEl.querySelector<HTMLElement>('#' + CSS.escape(focusParam));
     if (sec) {
-      sec.open = true;
-      requestAnimationFrame(() => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      if (sec instanceof HTMLDetailsElement) sec.open = true;
+      requestAnimationFrame(() => {
+        sec.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+        // Focus the heading for screen-reader/keyboard continuity — the same
+        // move the rail's nav buttons make (a no-op where it isn't focusable).
+        sec.querySelector<HTMLElement>('h2')?.focus?.();
+      });
     }
   }
 

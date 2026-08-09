@@ -18,10 +18,10 @@ import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { isPlaceableAsset } from '../lib/asset-kinds.ts';
-import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
+import { claimSearchBar, clearSearchBar, setSearchBarValue } from '../components/search-bar.ts';
+import { fold, tokenize, scoreHaystack, type SearchField } from '../lib/search/match.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
 import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
-import { jellyActive } from '../lib/jelly.ts';
 import { syncCatalog, prefetchAssetsById } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
 import { getInjectedTools } from '../lib/injected-tools.ts';
@@ -37,18 +37,20 @@ import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../
 import { currentTheme } from '../theme.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
-import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { segHtml } from '../lib/seg.ts';
 import { wireDisclosure } from '../components/body-popover.ts';
 import type { FeaturedEntry, FeaturedManifest, FeaturedVariant, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { loadFavourites, saveFavourites } from '../lib/favourites.ts';
+import { loadHiddenTools, saveHiddenTools } from '../lib/hidden-tools.ts';
+import { wireTileSelect } from '../lib/tile-select.ts';
+import { wireTileContextMenu, menuItemHtml } from '../lib/context-menu.ts';
+import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
-import { attachDropRouter } from '../lib/drop-router.ts';
 import type { PickerHost } from './picker.ts';
 import { announce } from '../a11y.ts';
 import { playSfx, playGalleryAah, cancelArrivalAah } from '../lib/sfx.ts';
-import { sessionRow } from '../folder-tiles.ts';
+import { sessionRow, CHECK_ICON } from '../folder-tiles.ts';
 
 import type { HostV1, StateEntry } from '@lolly-tools/core/host-v1';
 import { toolSeedHref } from '../lib/seed-url.ts';
@@ -67,6 +69,11 @@ interface GalleryTool {
   id: string;
   name: string;
   description?: string;
+  /** Pristine English name/description, stashed by catalog/sync.ts's
+   *  localizeToolIndex before it overlays a translation — searched alongside
+   *  the localized strings so "compress" finds Compress PDF in any session
+   *  language (plans/99 §2e). Absent in English sessions. */
+  en?: { name?: string; description?: string };
   version?: string;
   status?: string;
   category?: string;
@@ -200,6 +207,11 @@ import { captureNeutralPinned, settleForCapture } from '../lib/capture-neutral.t
 // 'info' is deduped against profile.ts's identical INFO_ICON (component-audit rec 5).
 const INFO_ICON = icon('info');
 const HISTORY_ICON = icon('history');
+// Context-menu row glyphs (the bulk bar reuses OPEN/LINK/EYE too; DOWNLOAD_ICON
+// for the offline rows already exists below, beside pinButtonHtml).
+const OPEN_ICON = icon('externalLink');
+const LINK_ICON = icon('link');
+const EYE_ICON = icon('eye');
 
 // Lucide "star" — the per-card favourite toggle. Filled via CSS when active (.is-fav).
 const STAR_ICON = icon('star');
@@ -368,10 +380,17 @@ export interface GalleryMountOpts {
    *  Bypasses the per-category feature flags — a deep link to the Utilities tab
    *  shows utilities even when the user hid that section from the main gallery. */
   only?: string;
+  /** Raw route query string. `q` seeds the search field — read at mount only,
+   *  never written back while typing (plans/99 M0). */
+  params?: string;
 }
 
 export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts: GalleryMountOpts = {}): Promise<void> {
   document.title = opts.only ? 'Utilities — Lolly' : 'Lolly';
+  // #/?q=<text> restores a handed-off search (plans/99 §2c): raw for the field's
+  // display value, lowercased below for `query` (the same normalisation the input
+  // handler applies at each keystroke).
+  const initialQuery = (new URLSearchParams(opts.params || '').get('q') || '').trim();
   // Whether the on-device speech bridge exists — computed ONCE so every
   // utilityViews(speechOk) call in this mount sees the same card set.
   const speechOk = !!host.speech?.isAvailable();
@@ -484,6 +503,74 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const isFav = (id: string): boolean => favourites.has(id);
   const isPinned = (id: string): boolean => pinnedTools.has(id);
 
+  // The user's hidden tools (+ `view:<id>` utility cards) — "Hide tool" removes the
+  // tile from the browse grid, search results and the featured strip, behind the
+  // grey "Show hidden tools" box that sits last in the grid. Deep links (#/tool/<id>,
+  // URL mode, the CLI) keep working — this is a browse-surface overlay, like the
+  // catalog's hidden assets.
+  const hiddenTools = loadHiddenTools(profile);
+  let showHiddenTools = false;   // ephemeral reveal, per mount (matches the catalog's showHidden)
+
+  // Multi-selection of tiles — tool ids plus `view:<id>` card keys. A closure Set so
+  // it survives the render() that wipes the masonry; repainted in place (never via a
+  // re-render) so marquee drags and scroll position are preserved.
+  const selected = new Set<string>();
+  const isViewRef = (ref: string): boolean => ref.startsWith('view:');
+  const viewByRef = (ref: string): UtilityView | undefined => utilityViews(speechOk).find(v => viewFavKey(v.id) === ref);
+  // Desktop-only tools: selectable (favourite/hide still apply) but never pinnable.
+  const unavailableIds = new Set(index.tools.filter(t => toolSupport(t, host.capabilities).status === 'unavailable').map(t => t.id));
+  const selectedToolIds = (): string[] => [...selected].filter(r => !isViewRef(r));
+  const pinnableIds = (): string[] => selectedToolIds().filter(id => !unavailableIds.has(id));
+  const allSelectedPinned = (): boolean => { const ids = pinnableIds(); return ids.length > 0 && ids.every(id => pinnedTools.has(id)); };
+  const allSelectedFav = (): boolean => selected.size > 0 && [...selected].every(r => favourites.has(r));
+  const allSelectedHidden = (): boolean => selected.size > 0 && [...selected].every(r => hiddenTools.has(r));
+  const sessionToolIds = (): string[] => selectedToolIds().filter(id => countByTool(id) > 0);
+
+  // The floating selection bar (lib/bulk-bar.ts — shared with projects/catalog).
+  // Labels are smart toggles read at sync time: all-favourited → Unfavourite, etc.
+  const bulkBarCfg: BulkBarConfig = {
+    prefix: 'gallery-bulkbar',
+    rootSelector: '.gallery',
+    count: () => selected.size,
+    actions: [
+      { id: 'pin', icon: DOWNLOAD_ICON, label: () => allSelectedPinned() ? t('Remove from offline') : t('Available offline'), disabled: () => pinnableIds().length === 0 },
+      { id: 'sessions', icon: HISTORY_ICON, label: () => t('View sessions'), title: () => t('Open Projects filtered to the selected tools’ saved sessions'), disabled: () => sessionToolIds().length === 0 },
+      { id: 'fav', icon: STAR_ICON, label: () => allSelectedFav() ? t('Unfavourite') : t('Favourite') },
+      { id: 'hide', icon: EYE_ICON, label: () => allSelectedHidden() ? t('Unhide') : t('Hide') },
+      { id: 'copylink', icon: LINK_ICON, label: () => t('Copy link'), hidden: () => selected.size !== 1 },
+    ],
+  };
+  // The floating selection bar is lazy-loaded (lib/bulk-bar.ts, ~8 KB) OFF the boot
+  // path — it is position:fixed and hidden until a tile is selected, so it never paints
+  // on first frame. ensureBulkBar() injects + wires it (dispatch + Escape-clears) on the
+  // first selection, a user gesture, and is idempotent; syncBulkBar() drives it after
+  // (a no-op before the first selection, when the module isn't loaded and there's nothing
+  // to show or hide). handleBulk/dropSelection are hoisted declarations below.
+  let bulkMod: typeof import('../lib/bulk-bar.ts') | null = null;
+  let bulkReady: Promise<typeof import('../lib/bulk-bar.ts')> | null = null;
+  const ensureBulkBar = (): Promise<typeof import('../lib/bulk-bar.ts')> =>
+    (bulkReady ??= import('../lib/bulk-bar.ts').then((m) => {
+      bulkMod = m;
+      const root = viewEl.querySelector('.gallery');
+      if (root && !viewEl.querySelector('.gallery-bulkbar')) {
+        root.insertAdjacentHTML('beforeend', m.bulkBarHtml(bulkBarCfg));
+        // Bulk-action dispatch — delegated on the now-present, stable bar node.
+        viewEl.querySelector<HTMLElement>('.gallery-bulkbar')?.addEventListener('click', (e) => {
+          const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-bulk]');
+          if (!btn) return;
+          e.preventDefault();
+          void handleBulk(btn.dataset.bulk!);
+        });
+        // Escape drops the selection (yielding to any open menu/dialog/field first).
+        cleanups.push(m.wireEscapeClearsSelection({ active: () => selected.size > 0, clear: () => dropSelection() }));
+      }
+      return m;
+    }));
+  const syncBulkBar = (): void => {
+    if (selected.size > 0) void ensureBulkBar().then((m) => m.syncBulkBar(viewEl, bulkBarCfg));
+    else bulkMod?.syncBulkBar(viewEl, bulkBarCfg);
+  };
+
   // Editor-layout tools mount an extra lazy view chunk (free-canvas / doc-editor /
   // deck-editor — see views/tool.ts). Warm the matching import when a tool is
   // pinned, and once per gallery mount for already-pinned tools, so the chunk
@@ -500,8 +587,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Favourites visible in the current catalog (not hidden by a flag) — the pill count.
   // Starred VIEW cards (their `view:`-keyed favourites) count too, but only in the
   // Utilities grid, the one place those tiles exist.
-  const favCount = (): number => index.tools.filter(t => favourites.has(t.id) && !hidden.has(t.category)).length
-    + (opts.only === 'utility' ? utilityViews(speechOk).filter(v => favourites.has(viewFavKey(v.id))).length : 0);
+  const favCount = (): number => index.tools.filter(t => favourites.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)).length
+    + (opts.only === 'utility' ? utilityViews(speechOk).filter(v => favourites.has(viewFavKey(v.id)) && !hiddenTools.has(viewFavKey(v.id))).length : 0);
 
   // A catalog tool → a featured-strip entry. A tool with no manifest `featured` block
   // (a favourited plain tool) still gets one, falling back to its description as the
@@ -534,10 +621,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const seen = new Set<string>();
     const out: FeaturedEntry[] = [];
     for (const t of index.tools) {
-      if (t.featured && !hidden.has(t.category)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
+      if (t.featured && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
     }
     for (const t of index.tools) {
-      if (!seen.has(t.id) && favourites.has(t.id) && !hidden.has(t.category)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
+      if (!seen.has(t.id) && favourites.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
     }
     // Starred VIEW cards (Verify, Take a PDF apart, Colour Lab) promote into the
     // hero strip exactly like starred tools — as icon-hero tiles, since a view has
@@ -547,7 +634,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // themselves exist nowhere else.
     if (opts.only === 'utility') {
       for (const v of utilityViews(speechOk)) {
-        if (favourites.has(viewFavKey(v.id))) {
+        if (favourites.has(viewFavKey(v.id)) && !hiddenTools.has(viewFavKey(v.id))) {
           out.push({ id: viewFavKey(v.id), name: v.name, icon: icon(v.icon), href: v.href, featured: { blurb: v.description } });
         }
       }
@@ -596,7 +683,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         popover: visibleCats.length ? `
           <div class="filter-popover" id="filter-popover" role="group" aria-label="${escape(t('Sort and filter tools'))}" hidden>
             <div class="filter-pop-sort">${themeSegmentHtml()}</div>
-            <div class="filter-pop-sort">${soundSegmentHtml()}</div>
+            <div class="filter-pop-sort" data-sound-slot></div>
             ${featuredEntries.length ? `
             <div class="filter-pop-sort">
               <p class="filter-pop-head">${t('Featured view')}</p>
@@ -634,12 +721,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         <div class="tool-masonry${opts.only === 'utility' ? ' tool-masonry--utility' : ''}"></div>
       `}
 
-      ${footerNav({
-        proEnabled,
-        searchHtml: opts.only
-          ? gallerySearchBox({ placeholder: t('Search utilities…'), ariaLabel: t('Search utilities') })
-          : gallerySearchBox({ placeholder: t('Search tools…'), ariaLabel: t('Search tools') }),
-      })}
       ${privacyNoticeMarkup()}
       ${personalizeNudgeMarkup(profile) || offlineNudgeMarkup(profile)}
     </div>
@@ -666,10 +747,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 
   // Universal drop front door: any file dragged onto the gallery is sniffed and
   // routed (design → Layout Studio, PDF → import/compress, media → library or
-  // /verify). Scoped to this view's root and torn down on navigation — never a
-  // window/document-global handler. The cast is erased: the concrete web host
-  // carries the picker's upload surface.
-  attachDropRouter(viewEl, host as unknown as PickerHost);
+  // /verify). Scoped to this view's root (its listeners die with the node on
+  // navigation) — never a window/document-global handler. drop-router (~6 KB) is
+  // dynamic-imported off the boot path; kicked at mount, it resolves in ~ms same-origin,
+  // so a file dropped in that sliver is effectively never missed. The cast is erased:
+  // the concrete web host carries the picker's upload surface.
+  void import('../lib/drop-router.ts').then((m) => m.attachDropRouter(viewEl, host as unknown as PickerHost));
 
   // Empty catalog: offer a re-sync without a full reload.
   viewEl.querySelector('.gallery-retry')?.addEventListener('click', async (e) => {
@@ -695,6 +778,73 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // gesture-gated, silent when sound is off. Cancel on leave so a pending one can't fire elsewhere.
   playGalleryAah();
   cleanups.push(() => cancelArrivalAah());
+
+  // ── Multi-select: marquee + Shift-range (lib/tile-select.ts, shared with
+  // projects/catalog) over the tiles' top-left selection dots. Everything repaints
+  // IN PLACE — applyView()'s live-node model must never see a re-render here.
+  const selectableTiles = (): HTMLElement[] =>
+    masonry ? [...masonry.querySelectorAll<HTMLElement>('.gtile[data-select-ref]')] : [];
+  function paintSelection(): void {
+    for (const el of selectableTiles()) {
+      const on = selected.has(el.dataset.selectRef!);
+      el.classList.toggle('is-selected', on);
+      el.querySelector('.tile-check')?.setAttribute('aria-pressed', String(on));
+    }
+    syncBulkBar();
+  }
+  const tileSelect = wireTileSelect({
+    host: viewEl,
+    tiles: selectableTiles,
+    refOf: (el) => el.dataset.selectRef!,
+    current: () => new Set(selected),
+    setRefs: (refs) => { selected.clear(); for (const r of refs) selected.add(r); paintSelection(); },
+    clear: () => dropSelection(),
+    // Never start a box on a tile, the strips, the chrome bars, a popover, or any
+    // control — only in a genuine gap between cards.
+    noStart: '.gtile, .featured, .featured-mount, .gallery-topbar, .gallery-footer, '
+      + '.filter-popover, .filter-backdrop, .gallery-bulkbar, .gallery-no-results, '
+      + 'button, a, input, select, label, dialog',
+  });
+  cleanups.push(() => tileSelect.destroy());
+  // Empty the selection AND forget the Shift-anchor together (a stale anchor would
+  // become the far end of the next Shift-click's range).
+  function dropSelection(): void {
+    selected.clear();
+    tileSelect.resetAnchor();
+    paintSelection();
+  }
+  // Escape-clears-selection is installed WITH the lazy bulk bar (ensureBulkBar above):
+  // there is nothing to clear until a first selection exists, and that first selection
+  // is what loads the bar module that owns the handler.
+
+  // Selection dots — delegated on the persistent masonry node so the per-render
+  // innerHTML rebuilds don't orphan the handler. Shift-click extends from the anchor.
+  masonry?.addEventListener('click', (e) => {
+    const dot = (e.target as HTMLElement).closest<HTMLElement>('.tile-check[data-select]');
+    if (!dot) return;
+    e.preventDefault(); e.stopPropagation();
+    const ref = dot.dataset.select!;
+    tileSelect.onDotClick(ref, e.shiftKey, () => {
+      if (selected.has(ref)) selected.delete(ref); else selected.add(ref);
+      paintSelection();
+    });
+  });
+
+  // Bulk-bar dispatch is delegated inside ensureBulkBar() at injection time (the bar is
+  // lazily built on the first selection), so it can't be bound here to a not-yet-present node.
+
+  // ── Context menu: right-click / long-press on any tile (and the bulk variant when
+  // the tile is inside the current multi-selection) — lib/context-menu.ts.
+  const ctxMenu = wireTileContextMenu({
+    host: viewEl,
+    tileSelector: '.gtile[data-select-ref]',
+    refOf: (el) => el.dataset.selectRef ?? null,
+    isBulkTarget: (ref) => selected.size > 1 && selected.has(ref),
+    singleHtml: (tgt) => tileMenuHtml(tgt.ref),
+    bulkHtml: () => bulkMenuHtml(),
+    onAction: (act, tgt) => { void onMenuAction(act, tgt?.ref ?? null); },
+  });
+  cleanups.push(() => ctxMenu.destroy());
 
   // Mount the cinematic featured hero row (tools flagged `featured` in their manifest)
   // at the top, and a second strip at the very bottom showcasing the on-device
@@ -795,7 +945,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const target = e.target as HTMLElement;
     // Controls with their own behaviour (fav/info/history/resume, carousel nav/dots) already
     // stopPropagation or preventDefault; skip anything inside them defensively.
-    if (target.closest('.gcar-nav, .gcar-dot, [data-fav], [data-pin], [data-info], [data-history], [data-resume]')) return;
+    if (target.closest('.gcar-nav, .gcar-dot, [data-fav], [data-pin], [data-info], [data-history], [data-resume], [data-select]')) return;
     const tile = target.closest<HTMLElement>('.gtile');
     const gcar = tile?.querySelector<HTMLElement>('.gcar');
     if (!tile || !gcar) return;
@@ -809,14 +959,16 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     void openExample(tile.dataset.toolId!, idx, tile);
   });
 
-  const searchInput = viewEl.querySelector<HTMLInputElement>('.gallery-search')!;
   const searchStatus = viewEl.querySelector<HTMLElement>('.gallery-search-status');
   const filterFab  = viewEl.querySelector<HTMLButtonElement>('.filter-fab');
   const filterPop  = viewEl.querySelector<HTMLElement>('.filter-popover');
   const filterBackdrop = viewEl.querySelector<HTMLElement>('.filter-backdrop');
 
   let activeCat = 'all';   // active category pill
-  let query = '';          // current search text (lowercased)
+  let query = initialQuery.toLowerCase();  // current search text (lowercased)
+  // The query folded + tokenized ONCE per change (mount + each debounced
+  // keystroke), not per tile — matchesQuery runs over every tile per applyView.
+  let queryTokens = tokenize(initialQuery);
   let sortKey: SortKey = 'category';   // global sort default; persisted like the theme
   try {
     const saved = localStorage.getItem(SORT_KEY_STORAGE);
@@ -1120,6 +1272,18 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // never change membership — so we render it to the DOM once and mutate in place.
   const allTools: GalleryTool[] = index.tools.filter(t => !hidden.has(t.category));
 
+  // Per-tool search haystacks, folded ONCE at mount (the tool set is stable —
+  // see allTools above): localized name/description PLUS the pristine English
+  // stash (`en`, written by localizeToolIndex — plans/99 §2e) so a Spanish
+  // session still finds "Compress PDF" by "compress", plus the tags. Weights
+  // are all 1 — this view only gates on match/no-match, it never ranks.
+  const searchFields = new Map<string, SearchField[]>(allTools.map(t => [
+    t.id,
+    [t.name, t.en?.name, t.description, t.en?.description, ...(t.tags ?? [])]
+      .filter((s): s is string => !!s)
+      .map(text => ({ text: fold(text), weight: 1 })),
+  ]));
+
   // The search + active-category predicate, WITHOUT the sort (assumes the tool is
   // already in allTools). Drives the in-place hide-show; sort is applied separately.
   function matchesQuery(t: GalleryTool): boolean {
@@ -1132,10 +1296,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // "Finish Preview" is what someone searching "foil" or "spot uv" wants, and
     // "Imperfections" is what they want for "riso". Tags are search-only — they
     // are never rendered, so this widens recall without changing any tile.
+    // lib/search semantics (plans/99 M3): folded, multi-word queries AND across
+    // tokens over name + English stash + description + tags.
     if (q) {
-      return t.name.toLowerCase().includes(q)
-        || (t.description ?? '').toLowerCase().includes(q)
-        || (t.tags ?? []).some(tag => tag.toLowerCase().includes(q));
+      return scoreHaystack(searchFields.get(t.id) ?? [], queryTokens) > 0;
     }
     if (activeCat === FAV_CAT) return favourites.has(t.id);   // starred collection
     return activeCat === 'all' || t.category === activeCat;
@@ -1145,7 +1309,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!pillbar) return;
     // `hidden` already excludes 'utility' in the main gallery and everything
     // else in the Utilities view, so it's the one membership test needed.
-    const total = index.tools.filter(t => !hidden.has(t.category ?? 'other')).length;
+    const total = index.tools.filter(t => !hidden.has(t.category ?? 'other') && !hiddenTools.has(t.id)).length;
     const allActive = activeCat === 'all' && !query;
     let html = `<button class="gallery-pill${allActive ? ' active' : ''}" data-cat="all" type="button" aria-pressed="${allActive}">${t('All')}<span class="ct">${total}</span></button>`;
     // Favourites — the starred collection. Always shown (even at 0) so it's discoverable;
@@ -1153,7 +1317,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const favActive = activeCat === FAV_CAT && !query;
     html += `<button class="gallery-pill gallery-pill--fav${favActive ? ' active' : ''}" data-cat="${FAV_CAT}" type="button" aria-pressed="${favActive}"><span class="pill-star" aria-hidden="true">★</span>${t('Favourites')}<span class="ct">${favCount()}</span></button>`;
     for (const cat of visibleCats) {
-      const n = grouped[cat]!.length;
+      const n = grouped[cat]!.filter(t => !hiddenTools.has(t.id)).length;
       const active = activeCat === cat && !query;
       html += `<button class="gallery-pill${active ? ' active' : ''}" data-cat="${escape(cat)}" type="button" aria-pressed="${active}">${escape(t(catLabel(cat)))}<span class="ct">${n}</span></button>`;
     }
@@ -1170,6 +1334,22 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   noResults.className = 'gallery-no-results';
   noResults.hidden = true;
 
+  // The grey "Show hidden tools" box — a persistent non-tile node like noResults,
+  // kept LAST in the grid by applyView(). Present only while something in this
+  // view's scope is hidden; clicking toggles the (per-mount) reveal, under which
+  // hidden tiles show dimmed at the end of the grid with Unhide in their menus.
+  // textContent only — no markup, so no new raw-HTML sink.
+  const hiddenBox = document.createElement('button');
+  hiddenBox.type = 'button';
+  hiddenBox.className = 'gtile gtile--hiddenbox';
+  hiddenBox.hidden = true;
+  hiddenBox.addEventListener('click', () => { showHiddenTools = !showHiddenTools; applyView(); });
+  // Everything hidden in THIS view's scope: grid tools (allTools already excludes
+  // hidden categories) plus, in the Utilities view, hidden view cards.
+  const hiddenInScope = (): number =>
+    allTools.filter(t => hiddenTools.has(t.id)).length
+    + (opts.only === 'utility' ? utilityViews(speechOk).filter(v => hiddenTools.has(viewFavKey(v.id))).length : 0);
+
   // FULL rebuild: re-stringify EVERY tile in the stable set. Costly (re-inlines base64
   // session thumbs, re-hydrates example <img>s, recreates observers), so it runs only
   // on mount and when the underlying tool SET changes (a saved session deleted). Search
@@ -1184,6 +1364,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       .map(t => cardMarkup(t, latestByTool(t.id), countByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), isFav(t.id), isPinned(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
       .join('');
     masonry.append(noResults);
+    masonry.append(hiddenBox);
     tileById.clear();
     for (const el of masonry.querySelectorAll<HTMLElement>('.gtile')) {
       const id = el.dataset.toolId;
@@ -1217,18 +1398,25 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // Show the hero row only in the default landing state — a search or category
     // filter makes it noise above the results. Toggle the mount + pause its motion.
     updateFeaturedVisibility();
-    // Reorder: append the tiles in sorted order (moves live nodes, no re-render), then
-    // keep the empty-state node last.
+    // Reorder: append the tiles in sorted order (moves live nodes, no re-render) —
+    // hidden tools trail the visible set so a reveal reads as "the hidden ones, at
+    // the end" — then keep the empty-state + Show-hidden nodes last.
     const ordered = [...allTools].sort(sortCompare);
-    for (const t of ordered) { const el = tileById.get(t.id); if (el) masonry.append(el); }
+    for (const t of ordered) { if (hiddenTools.has(t.id)) continue; const el = tileById.get(t.id); if (el) masonry.append(el); }
+    for (const t of ordered) { if (!hiddenTools.has(t.id)) continue; const el = tileById.get(t.id); if (el) masonry.append(el); }
     masonry.append(noResults);
+    masonry.append(hiddenBox);
     // Hide-show: filtered-out tiles get .is-filtered (display:none); count the shown.
+    // A hidden tool only ever shows while the reveal is on, and then dimmed
+    // (.is-hidden-tool) — search and the Favourites pill skip it otherwise.
     let shown = 0;
     for (const t of allTools) {
       const el = tileById.get(t.id);
       if (!el) continue;
-      const match = matchesQuery(t);
+      const isHidden = hiddenTools.has(t.id);
+      const match = matchesQuery(t) && (!isHidden || showHiddenTools);
       el.classList.toggle('is-filtered', !match);
+      el.classList.toggle('is-hidden-tool', isHidden);
       if (match) shown++;
     }
     // The view tiles aren't in `allTools`, so match them on their own text. Without
@@ -1238,12 +1426,26 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     for (const v of (opts.only === 'utility' ? utilityViews(speechOk) : [])) {
       const el = masonry.querySelector<HTMLElement>(`[data-view-card="${v.id}"]`);
       if (!el) continue;
-      const q = query.trim().toLowerCase();
-      const match = (!q || `${v.name} ${v.description}`.toLowerCase().includes(q))
-        && (activeCat !== FAV_CAT || favourites.has(viewFavKey(v.id)));
+      // Same lib/search semantics as matchesQuery (folded, token AND) — a search
+      // that found "café" for tools but not view cards would read as a bug.
+      const q = query.trim();
+      const vHidden = hiddenTools.has(viewFavKey(v.id));
+      const match = (!q || scoreHaystack([{ text: fold(`${v.name} ${v.description}`), weight: 1 }], queryTokens) > 0)
+        && (activeCat !== FAV_CAT || favourites.has(viewFavKey(v.id)))
+        && (!vHidden || showHiddenTools);
       el.classList.toggle('is-filtered', !match);
+      el.classList.toggle('is-hidden-tool', vHidden);
       if (match) shown++;
     }
+    // The Show-hidden box: last in the grid, only while this view's scope has hidden
+    // tiles, label flipping with the reveal. Plain text (see its creation above).
+    const nHidden = hiddenInScope();
+    hiddenBox.hidden = nHidden === 0;
+    hiddenBox.textContent = showHiddenTools ? t('Hide hidden tools') : t('Show hidden tools ({n})', { n: nHidden });
+    hiddenBox.setAttribute('aria-pressed', String(showHiddenTools));
+    // Re-apply the selection highlight — render() rebuilds tiles unselected, and a
+    // filter pass may have moved tiles under a live selection.
+    paintSelection();
     if (shown === 0) {
       noResults.innerHTML = query
         ? tRaw('No tools match "<strong>{query}</strong>" — {button}', { query: escape(query.trim()), button: `<button type="button" class="gallery-retry" data-search-clear>${t('clear search')}</button>` })
@@ -1385,7 +1587,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-cat]');
       if (!btn) return;
       activeCat = btn.dataset.cat!;
-      if (query) { query = ''; searchInput.value = ''; syncSearchClear(); }
+      if (query) { query = ''; queryTokens = []; setSearchBarValue(''); }
       applyView();
       // applyView() rebuilds the pills, dropping focus — restore it to the active one
       // so keyboard users aren't bounced to the top of the tab order. The popover
@@ -1446,45 +1648,23 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     });
   }
 
-  let searchDebounce: ReturnType<typeof setTimeout>;
-  searchInput.addEventListener('input', () => {
-    syncSearchClear();   // the ✕ tracks the field's content immediately, not the debounced query
-    clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => { query = searchInput.value.toLowerCase(); applyView(); }, 120);
-  });
-
-  // ── Search clear affordance (shared with Catalogue — component-audit rec 11) ────
-  // The ✕ is part of the shared gallerySearchBox markup now; just wire it up.
-  const searchClear = viewEl.querySelector<HTMLButtonElement>('.gallery-search-clear')!;
-
-  // The ✕ is present only while there's text to clear.
-  function syncSearchClear(): void { searchClear.toggleAttribute('hidden', !searchInput.value); }
-
-  // Empty the field and re-run the filter immediately (no debounce), then re-focus so the
-  // user keeps typing. Shared verbatim by the ✕ button, Escape, and the no-results "clear
-  // search" link — every path funnels through applyView(), so no filtering logic is duplicated.
-  function clearSearch(): void {
-    clearTimeout(searchDebounce);
-    searchInput.value = '';
-    query = '';
-    syncSearchClear();
-    applyView();
-    searchInput.focus({ preventScroll: true });
-  }
-  searchClear.addEventListener('click', clearSearch);
-
-  // Escape while focused clears the query; when already empty it blurs (and falls through)
-  // rather than swallowing the key. stopPropagation keeps a clear off any global Escape handler.
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (searchInput.value || query) { e.preventDefault(); e.stopPropagation(); clearSearch(); }
-    else searchInput.blur();
-  });
+  // The search field lives in the persistent shell bar (components/search-bar.ts,
+  // plans/99 M1) — the view claims it with its placeholder + the live-filter tap
+  // and releases on unmount. The ✕, Escape ladder and debounce are the bar's.
+  cleanups.push(claimSearchBar({
+    placeholder: opts.only ? t('Search utilities…') : t('Search tools…'),
+    ariaLabel: opts.only ? t('Search utilities') : t('Search tools'),
+    value: initialQuery,
+    // Type-to-find on fine-pointer devices (the bar skips touch so the keyboard
+    // doesn't pop over the gallery).
+    autoFocus: true,
+    onQuery: (raw) => { query = raw.toLowerCase(); queryTokens = tokenize(raw); applyView(); },
+  }));
 
   // "clear search" link inside the empty-state line (rebuilt by applyView). The <p> node
   // persists across renders, so one delegated listener covers every future message.
   noResults.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).closest('[data-search-clear]')) clearSearch();
+    if ((e.target as HTMLElement).closest('[data-search-clear]')) clearSearchBar({ focus: true });
   });
 
   // Global saved-sessions overlay (folders over all tool + batch sessions),
@@ -1554,15 +1734,252 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     });
   }
 
-  // Focus the search box on fine-pointer devices for type-to-find (skip touch so
-  // the keyboard doesn't pop over the gallery).
-  if (window.matchMedia?.('(pointer: fine)').matches) searchInput.focus({ preventScroll: true });
+  // ── Group actions (bulk bar + bulk context menu) and the per-tile context menu ──
+
+  /** A tile's display name — tool name or view-card name — for announcements. */
+  function refName(ref: string): string {
+    return isViewRef(ref) ? (viewByRef(ref)?.name ?? ref) : (toolById.get(ref)?.name ?? ref);
+  }
+
+  /** Repaint one tile's star in place (mirrors the single [data-fav] handler). */
+  function paintFavButton(ref: string): void {
+    const on = favourites.has(ref);
+    const el = isViewRef(ref)
+      ? masonry?.querySelector<HTMLElement>(`[data-fav-view="${CSS.escape(ref.slice('view:'.length))}"]`)
+      : masonry?.querySelector<HTMLElement>(`[data-fav="${CSS.escape(ref)}"]`);
+    if (!el) return;
+    const nm = refName(ref);
+    el.classList.toggle('is-fav', on);
+    el.setAttribute('aria-pressed', String(on));
+    el.title = on ? t('In favourites') : t('Add to favourites');
+    el.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name: nm }) : tRaw('Add {name} to favourites', { name: nm }));
+  }
+
+  /** Repaint one tile's offline-pin toggle in place (mirrors the single handler). */
+  function paintPinButton(id: string, on: boolean): void {
+    const el = masonry?.querySelector<HTMLElement>(`[data-pin="${CSS.escape(id)}"]`);
+    if (!el) return;
+    const nm = toolById.get(id)?.name ?? id;
+    el.classList.toggle('is-pinned', on);
+    el.setAttribute('aria-pressed', String(on));
+    el.title = on ? t('Available offline') : t('Keep available offline');
+    el.setAttribute('aria-label', on ? tRaw('Remove {name} from offline', { name: nm }) : tRaw('Keep {name} available offline', { name: nm }));
+  }
+
+  /** Star or unstar the whole selection (smart toggle: all starred → unstar all). */
+  function favouriteSelection(): void {
+    if (!selected.size) return;
+    const on = !allSelectedFav();
+    for (const ref of selected) { if (on) favourites.add(ref); else favourites.delete(ref); }
+    void saveFavourites(host, profile, favourites);
+    for (const ref of selected) paintFavButton(ref);
+    refreshFeatured();
+    applyView();
+    announce(on ? t('{n} added to favourites', { n: selected.size }) : t('{n} removed from favourites', { n: selected.size }));
+  }
+
+  /** Hide (or unhide, when the whole selection is already hidden) the selection. */
+  async function hideSelection(): Promise<void> {
+    if (!selected.size) return;
+    const unhide = allSelectedHidden();
+    const n = selected.size;
+    for (const ref of selected) { if (unhide) hiddenTools.delete(ref); else hiddenTools.add(ref); }
+    await saveHiddenTools(host, profile, hiddenTools);
+    dropSelection();
+    refreshFeatured();   // a hidden tool leaves the hero strip
+    applyView();
+    announce(unhide ? t('{n} unhidden', { n }) : t('{n} hidden — find them under “Show hidden tools”', { n }));
+  }
+
+  /** Hide/unhide one tile from its context menu. */
+  async function hideOne(ref: string): Promise<void> {
+    const unhide = hiddenTools.has(ref);
+    if (unhide) hiddenTools.delete(ref); else hiddenTools.add(ref);
+    await saveHiddenTools(host, profile, hiddenTools);
+    if (selected.delete(ref)) paintSelection();
+    refreshFeatured();
+    applyView();
+    announce(unhide ? tRaw('{name} unhidden', { name: refName(ref) }) : tRaw('{name} hidden — find it under “Show hidden tools”', { name: refName(ref) }));
+  }
+
+  /** Pin or unpin one tool (context-menu path) — same lifecycle as the tile button. */
+  async function pinOne(id: string): Promise<void> {
+    if (isViewRef(id) || unavailableIds.has(id)) return;
+    const on = !pinnedTools.has(id);
+    const nm = toolById.get(id)?.name ?? id;
+    try {
+      if (on) {
+        const manifest = await pinTool(id, ids => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], ids));
+        pinnedTools.add(id);
+        warmEditorChunk(manifest.render?.layout);
+        playSfx('victory');
+      } else {
+        await unpinTool(id);
+        pinnedTools.delete(id);
+      }
+      paintPinButton(id, on);
+      announce(on ? tRaw('{name} is available offline', { name: nm }) : tRaw('{name} removed from offline', { name: nm }));
+    } catch (err) {
+      host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
+      announce(tRaw('Couldn’t save {name} for offline — check your connection', { name: nm }), { assertive: true });
+    }
+  }
+
+  /** Pin (or unpin) every pinnable tool in the selection, sequentially, with
+   *  progress in the bar. Failures are logged and the run continues. */
+  async function pinSelection(): Promise<void> {
+    const unpin = allSelectedPinned();
+    const ids = pinnableIds().filter(id => (unpin ? pinnedTools.has(id) : !pinnedTools.has(id)));
+    if (!ids.length) return;
+    let failed = 0, done = 0;
+    for (const id of ids) {
+      setBulkBarBusy(viewEl, bulkBarCfg, unpin
+        ? t('Removing {a} of {b} from offline…', { a: done + 1, b: ids.length })
+        : t('Saving {a} of {b} for offline…', { a: done + 1, b: ids.length }));
+      try {
+        if (unpin) { await unpinTool(id); pinnedTools.delete(id); }
+        else {
+          const manifest = await pinTool(id, arr => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], arr));
+          pinnedTools.add(id);
+          warmEditorChunk(manifest.render?.layout);
+        }
+        paintPinButton(id, !unpin);
+      } catch (err) {
+        failed++;
+        host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
+      }
+      done++;
+    }
+    setBulkBarBusy(viewEl, bulkBarCfg, null);
+    syncBulkBar();
+    const ok = ids.length - failed;
+    if (!unpin && ok > 0) playSfx('victory');
+    if (failed) announce(t('{n} saved for offline, {m} failed — check your connection', { n: ok, m: failed }), { assertive: true });
+    else announce(unpin ? t('{n} removed from offline', { n: ok }) : t('{n} available offline', { n: ok }));
+  }
+
+  /** Land in Projects filtered to the selected tools' saved sessions. */
+  function viewSessionsForSelection(): void {
+    const ids = sessionToolIds();
+    if (!ids.length) return;
+    window.location.hash = `#/p?tools=${ids.map(encodeURIComponent).join(',')}`;
+  }
+
+  /** Copy the canonical link for one tile: /t/<id> for a tool (the crawler-visible
+   *  share stub), the app route for a view card. Flashes "Copied!" on the trigger. */
+  async function copyLink(ref: string | null, feedbackBtn: HTMLElement | null = null): Promise<void> {
+    if (!ref) return;
+    const v = isViewRef(ref) ? viewByRef(ref) : null;
+    const link = v
+      ? `${location.origin}${location.pathname}${v.href}`
+      : `${location.origin}/t/${encodeURIComponent(ref)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      announce(t('Couldn’t copy the link'), { assertive: true });
+      return;
+    }
+    announce(t('Link copied'));
+    const span = feedbackBtn?.querySelector('span');
+    if (feedbackBtn && span) {
+      const orig = span.textContent;
+      span.textContent = t('Copied!');
+      feedbackBtn.classList.add('is-copied');
+      setTimeout(() => { span.textContent = orig; feedbackBtn.classList.remove('is-copied'); }, 1200);
+    }
+  }
+
+  /** Bulk bar (and bulk context menu) dispatch. */
+  async function handleBulk(action: string): Promise<void> {
+    if (action === 'clear') { dropSelection(); return; }
+    if (action === 'fav') { favouriteSelection(); return; }
+    if (action === 'hide') { await hideSelection(); return; }
+    if (action === 'pin') { await pinSelection(); return; }
+    if (action === 'sessions') { viewSessionsForSelection(); return; }
+    if (action === 'copylink') {
+      await copyLink([...selected][0] ?? null, viewEl.querySelector<HTMLElement>('.gallery-bulkbar [data-bulk="copylink"]'));
+    }
+  }
+
+  /** The per-tile context menu rows (right-click / long-press). */
+  function tileMenuHtml(ref: string): string {
+    const fav = favourites.has(ref);
+    const hiddenNow = hiddenTools.has(ref);
+    if (isViewRef(ref)) {
+      const v = viewByRef(ref);
+      if (!v) return '';
+      return [
+        menuItemHtml('open', OPEN_ICON, t('Open')),
+        menuItemHtml('fav', STAR_ICON, fav ? t('Remove from favourites') : t('Add to favourites')),
+        menuItemHtml('copylink', LINK_ICON, t('Copy link')),
+        menuItemHtml('info', INFO_ICON, t('About')),
+        menuItemHtml('hide', EYE_ICON, hiddenNow ? t('Unhide') : t('Hide')),
+      ].join('');
+    }
+    const tool = toolById.get(ref);
+    if (!tool) return '';
+    const unavailable = unavailableIds.has(ref);
+    const n = countByTool(ref);
+    return [
+      unavailable ? '' : menuItemHtml('open', OPEN_ICON, t('Open')),
+      menuItemHtml('fav', STAR_ICON, fav ? t('Remove from favourites') : t('Add to favourites')),
+      unavailable ? '' : menuItemHtml('pin', DOWNLOAD_ICON, pinnedTools.has(ref) ? t('Remove from offline') : t('Available offline')),
+      n > 0 ? menuItemHtml('history', HISTORY_ICON, n === 1 ? t('1 saved session') : t('{n} saved sessions', { n })) : '',
+      menuItemHtml('copylink', LINK_ICON, t('Copy link')),
+      menuItemHtml('info', INFO_ICON, t('About')),
+      menuItemHtml('hide', EYE_ICON, hiddenNow ? t('Unhide tool') : t('Hide tool')),
+    ].join('');
+  }
+
+  /** The bulk context menu (right-click inside a multi-selection) — mirrors the bar.
+   *  Head outside the nested role="menu" list, per the shared a11y shape. */
+  function bulkMenuHtml(): string {
+    return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
+      + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
+        pinnableIds().length ? menuItemHtml('pin', DOWNLOAD_ICON, allSelectedPinned() ? t('Remove from offline') : t('Available offline')) : '',
+        sessionToolIds().length ? menuItemHtml('sessions', HISTORY_ICON, t('View sessions')) : '',
+        menuItemHtml('fav', STAR_ICON, allSelectedFav() ? t('Unfavourite') : t('Favourite')),
+        menuItemHtml('hide', EYE_ICON, allSelectedHidden() ? t('Unhide') : t('Hide')),
+      ].join('')}</div>`;
+  }
+
+  /** Context-menu dispatch — `ref` null means the bulk menu. */
+  async function onMenuAction(act: string, ref: string | null): Promise<void> {
+    if (ref === null) { await handleBulk(act); return; }
+    if (act === 'open') {
+      if (isViewRef(ref)) { const v = viewByRef(ref); if (v) window.location.hash = v.href; }
+      else {
+        const tool = toolById.get(ref);
+        window.location.hash = `#/tool/${ref}${tool?.openQuery ? `?${tool.openQuery}` : ''}`;
+      }
+      return;
+    }
+    if (act === 'fav') {
+      const on = !favourites.has(ref);
+      if (on) favourites.add(ref); else favourites.delete(ref);
+      void saveFavourites(host, profile, favourites);
+      paintFavButton(ref);
+      // A manifest-featured tool is already in the hero strip; everything else joins/leaves it.
+      if (isViewRef(ref) || !toolById.get(ref)?.featured) refreshFeatured();
+      if (activeCat === FAV_CAT) applyView(); else renderPills();
+      return;
+    }
+    if (act === 'pin') { await pinOne(ref); return; }
+    if (act === 'history') { const tool = toolById.get(ref); if (tool) openHistoryFor(tool); return; }
+    if (act === 'copylink') { await copyLink(ref); return; }
+    if (act === 'info') {
+      if (isViewRef(ref)) { const v = viewByRef(ref); if (v) showViewInfoDialog(v); }
+      else showInfoDialog(toolById.get(ref));
+      return;
+    }
+    if (act === 'hide') { await hideOne(ref); }
+  }
 
   render();
 
   // ── Deep-link (read-only): open a card's dialog on mount. ───────────────────
-  // The gallery is the default route and parseRoute() drops its query string, so
-  // read the hash query directly (same shape as main.ts's peekUrlLang). `?tool=<id>`
+  // Read the hash query directly (same shape as main.ts's peekUrlLang) — these
+  // flags are this view's own, not router state (only `q` rides opts.params). `?tool=<id>`
   // opens that card's info dialog; adding the `history` flag (or `?history=<id>`)
   // opens its saved-sessions dialog instead. Consumed here only — a READ-ONLY flag,
   // never propagated into a generated share link. An unknown/absent id opens
@@ -1733,9 +2150,17 @@ const utilityViews = (speechOk: boolean): UtilityView[] => [{
  *  never collide with a tool id. */
 const viewFavKey = (id: string): string => `view:${id}`;
 
+/** The top-left multi-select dot every gallery tile carries — the same
+ *  `.tile-check` primitive as projects/catalog tiles (folder-tiles.ts), with a
+ *  gallery-scoped reveal (gallery.css). `ref` doubles as the tile's selection
+ *  key: the tool id, or `view:<id>` for a utility view card. */
+const selectDot = (ref: string, name: string): string =>
+  `<button type="button" class="tile-check" data-select="${escape(ref)}" aria-pressed="false" aria-label="${escape(tRaw('Select {name}', { name }))}">${CHECK_ICON}</button>`;
+
 function viewCardMarkup(v: UtilityView, isFav: boolean): string {
   return `
-    <article class="gtile gtile--utility gtile--view" data-view-card="${escape(v.id)}">
+    <article class="gtile gtile--utility gtile--view" data-view-card="${escape(v.id)}" data-select-ref="${escape(viewFavKey(v.id))}">
+      ${selectDot(viewFavKey(v.id), v.name)}
       <div class="gtile-body gtile-body--link">
         <div class="gtile-cap">
           <span class="tool-card-icon" aria-hidden="true">${icon(v.icon, { size: 24 })}</span>
@@ -1824,7 +2249,8 @@ function cardMarkup(
       ? `<button type="button" class="gtile-iconbtn" data-history="${escape(tool.id)}" title="${escape(t('Saved sessions'))}" aria-label="${escape(sessionCount === 1 ? tRaw('1 saved session for {name}', { name: tool.name }) : tRaw('{n} saved sessions for {name}', { n: sessionCount, name: tool.name }))}">${HISTORY_ICON}</button>`
       : '';
     return `
-      <article class="gtile gtile--utility${unavailable ? ' gtile--unavailable' : ''}" data-tool-id="${escape(tool.id)}">
+      <article class="gtile gtile--utility${unavailable ? ' gtile--unavailable' : ''}" data-tool-id="${escape(tool.id)}" data-select-ref="${escape(tool.id)}">
+        ${selectDot(tool.id, tool.name)}
         <div class="gtile-body${unavailable ? '' : ' gtile-body--link'}">
           <div class="gtile-cap">
             ${iconSvg}
@@ -2011,7 +2437,8 @@ function cardMarkup(
     : '';
 
   return `
-    <article class="gtile${unavailable ? ' gtile--unavailable' : ''}${hasImageHero ? ' gtile--has-preview' : ''}" data-tool-id="${escape(tool.id)}">
+    <article class="gtile${unavailable ? ' gtile--unavailable' : ''}${hasImageHero ? ' gtile--has-preview' : ''}" data-tool-id="${escape(tool.id)}" data-select-ref="${escape(tool.id)}">
+      ${selectDot(tool.id, tool.name)}
       ${visual}
       <div class="gtile-body${unavailable ? '' : ' gtile-body--link'}">
         <div class="gtile-cap">
@@ -2246,8 +2673,9 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
 // Builds on folder-tiles.ts's sessionRow() — the shared row primitive behind
 // this history list AND the profile Storage manager's session list
 // (component-audit rec 6). Only this view's chrome (a full-row resume trigger,
-// the search-filter attribute, the h4/small tags its own stylesheets key off)
-// lives here; the batch/thumb/size resolution is shared.
+// the h4/small tags its own stylesheets key off) lives here; the batch/thumb/
+// size resolution is shared. (A data-search row attribute used to be built here
+// too — nothing ever read it; dropped per plans/99 M3's sweep.)
 
 function savedItem(entry: SavedEntry, bytes: number | undefined): string {
   const batch = isBatchSlot(entry.slot);
@@ -2257,14 +2685,12 @@ function savedItem(entry: SavedEntry, bytes: number | undefined): string {
   // the timestamp — no need to repeat the name.
   // sessionRow() escapes `subtitle` itself — tRaw keeps that the single escaping step.
   const subtitle = batch ? tRaw('Batch · {when}', { when }) : when;
-  const searchText = [title, entry.toolId, batch ? 'batch' : ''].filter(Boolean).join(' ').toLowerCase();
   // Tool sessions resume into #/tool; batch sessions resume into #/pro.
   const resumeAttrs = batch
     ? `data-batch data-slot="${escape(entry.slot)}"`
     : `data-resume="${escape(entry.toolId)}" data-slot="${escape(entry.slot)}"`;
   return sessionRow(entry, {
     rowClass: `saved-row${batch ? ' saved-row--batch' : ''}`,
-    rowAttrs: `data-search="${escape(searchText)}"`,
     thumbClass: 'saved-thumb',
     thumbImgAttrs: 'aria-hidden="true"',
     batchIcon: PACKAGE_ICON,

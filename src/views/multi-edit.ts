@@ -39,6 +39,7 @@ import { syncInputs } from './tool-inputs.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { t, tRaw } from '../i18n.ts';
+import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { mountProgressToast } from '../components/progress-toast.ts';
@@ -519,7 +520,13 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   // ── Search: filter controls across every card ───────────────────────────────
   const searchEl = viewEl.querySelector<HTMLInputElement>('[data-me-search]');
   searchEl?.addEventListener('input', () => {
-    const q = searchEl.value.trim().toLowerCase();
+    const q = searchEl.value.trim();
+    // lib/search matching (plans/99 M3): fold both sides, AND across tokens —
+    // "café" finds "cafe", and "logo width" finds a row carrying both words in
+    // any order. Tokenized once per keystroke, not per row.
+    const tokens = tokenize(q);
+    const hitText = (text: string): boolean =>
+      !tokens.length || scoreHaystack([{ text: fold(text), weight: 1 }], tokens) > 0;
     viewEl.querySelectorAll<HTMLDetailsElement>('.me-card').forEach(card => {
       // Ensure lazily-skipped panels exist before filtering them.
       if (q && !card.open) { card.open = true; syncSidebar(); }
@@ -528,13 +535,12 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       // [data-input-id] attribute rides the control element inside it.
       card.querySelectorAll<HTMLElement>('.me-inputs .input-row').forEach(row => {
         const id = row.querySelector<HTMLElement>('[data-input-id]')?.dataset.inputId ?? '';
-        const text = `${id} ${row.textContent ?? ''}`.toLowerCase();
-        const hit = !q || text.includes(q);
+        const hit = hitText(`${id} ${row.textContent ?? ''}`);
         row.hidden = !hit;
         if (hit) hits++;
       });
-      const title = card.querySelector('.me-card-title')?.textContent?.toLowerCase() ?? '';
-      const titleHit = q !== '' && title.includes(q);
+      const title = card.querySelector('.me-card-title')?.textContent ?? '';
+      const titleHit = tokens.length > 0 && hitText(title);
       if (titleHit) { card.querySelectorAll<HTMLElement>('.me-inputs .input-row').forEach(r => { r.hidden = false; }); hits++; }
       card.classList.toggle('me-card--nomatch', q !== '' && hits === 0);
     });

@@ -587,8 +587,126 @@ export {
   edgeAnchor, edgeBorderPt, edgeWaypoints, edgeNested, connectorRoute,
   roundedEdgePath, smoothEdgePath, edgeArrowHead, edgeHeadInset,
   isEdgePoint, parseEdgePoint, formatEdgePoint, edgeEndRect, buildConnectorSvg,
+  // plan 96 P3/P5 — the ONE routed-line renderer (a legacy edge and a bound path both end
+  // up here) and the ONE spline-kind → route mapping the editor and the pack hooks share.
+  routedLineSvg, pathRouteStyle, isConnectorRouteStyle, CONNECTOR_ROUTE_STYLES,
 } from '@lolly/engine';
-export type { EdgeRect, EdgeAnchor, ConnectorRoute, ConnectorRenderOpts } from '@lolly/engine';
+export type { EdgeRect, EdgeAnchor, ConnectorRoute, ConnectorRenderOpts, ConnectorDecor } from '@lolly/engine';
+
+// ── path end tangents (plan 96 P1 — arrowheads on an authored path) ──────────
+//
+// An arrowhead needs a tip and a direction. On a connector the direction comes out of the
+// route (`ConnectorRoute.tux/tuy`); on an AUTHORED path there is no route, so it is read
+// off the lowered curve — which is the only honest source, since the same nodes lower to
+// different tangents under different spline kinds.
+//
+// Both vectors point OUT of the path, i.e. the way a head at that end faces: `start` is
+// the reverse of the direction the curve leaves node 0 in, `end` is the direction it
+// arrives at its last node along. That is exactly `edgeArrowHead`'s (ux, uy).
+
+/** A cubic segment as the engine lowers it: [x0,y0, c1x,c1y, c2x,c2y, x3,y3]. */
+type CubicTuple = readonly number[];
+
+/** Unit vector from a → b, or null when they coincide (nothing to point along). */
+function unitFrom(ax: number, ay: number, bx: number, by: number): Point | null {
+  const dx = bx - ax, dy = by - ay;
+  const L = Math.hypot(dx, dy);
+  return L > 1e-9 ? { x: dx / L, y: dy / L } : null;
+}
+
+/**
+ * The outward unit tangents at a lowered path's two ends, or null when the whole path is
+ * degenerate (every control point coincident — a "path" with no direction anywhere).
+ *
+ * A zero-length control leg is stepped over rather than trusted: a cubic whose second
+ * control point sits exactly on its endpoint is ordinary (it is what a straight segment
+ * out of `fromNodes` looks like), and normalising that leg would divide by zero. Only when
+ * a whole end segment is degenerate does the walk continue into the neighbouring one.
+ */
+export function pathEndTangents(cubics: CubicTuple[]): { start: Point; end: Point } | null {
+  if (!cubics.length) return null;
+  let start: Point | null = null;
+  for (let i = 0; i < cubics.length && !start; i++) {
+    const c = cubics[i]!;
+    const x0 = c[0]!, y0 = c[1]!;
+    for (const [xi, yi] of [[2, 3], [4, 5], [6, 7]] as const) {
+      // Reversed: a head at the START points back out of the curve.
+      const u = unitFrom(c[xi]!, c[yi]!, x0, y0);
+      if (u) { start = u; break; }
+    }
+  }
+  let end: Point | null = null;
+  for (let i = cubics.length - 1; i >= 0 && !end; i--) {
+    const c = cubics[i]!;
+    const x3 = c[6]!, y3 = c[7]!;
+    for (const [xi, yi] of [[4, 5], [2, 3], [0, 1]] as const) {
+      const u = unitFrom(c[xi]!, c[yi]!, x3, y3);
+      if (u) { end = u; break; }
+    }
+  }
+  return start && end ? { start, end } : null;
+}
+
+/** The two points a path's heads sit ON: its first and last lowered point. */
+export function pathEndPoints(cubics: CubicTuple[]): { start: Point; end: Point } | null {
+  if (!cubics.length) return null;
+  const a = cubics[0]!, z = cubics[cubics.length - 1]!;
+  return { start: { x: a[0]!, y: a[1]! }, end: { x: z[6]!, y: z[7]! } };
+}
+
+// ── authored dash arrays (plan 96 P0 — the power-user dash field) ─────────────
+//
+// A path box's dash STYLE is a keyword (solid/dashed/dotted) whose pattern the tool's
+// hook derives from the stroke width. A power user wants the actual numbers, so the
+// stroke panel offers a text field alongside — "6 4", "8 4 2 4" — and this is the
+// parse that decides whether what was typed is a pattern at all.
+//
+// The canonical stored form is SPACE-separated, deliberately: the compact blocks URL
+// splits rows on '~' and fields on ',', and neither separator can be escaped inside a
+// value (see lib/blocks-url.ts), so a comma-bearing dash array would push every
+// layout-studio link onto the lossless JSON fallback. Commas are ACCEPTED on the way in
+// (they are what every other tool prints) and normalised away by formatDashArray.
+//
+// This is the SHELL's copy of a contract the engine also owns: at runtime the panel
+// prefers `host.connectors.dashFit.parse` when the running engine carries it, and falls
+// back to this. Kept here rather than imported so the field still validates on an engine
+// that predates the primitive, and pure so it is testable without a DOM.
+
+/** How many entries a dash pattern may carry. SVG allows any count; this is a sanity
+ *  bound on a hand-typed field, well past the longest pattern anyone authors. */
+export const DASH_ARRAY_MAX = 16;
+
+/**
+ * A typed dash pattern → its numbers, or null when it is not one.
+ *
+ * Rejects — rather than repairs — anything that is not a plain list of non-negative
+ * finite numbers, because the caller's answer to null is "show the error and write
+ * NOTHING to the box". A pattern of nothing but zeros is rejected too: it paints an
+ * invisible stroke, which reads as a broken shape rather than as a style choice.
+ * An empty/blank string is not an error — it is "no authored array" — and returns [].
+ */
+export function parseDashArray(text: string | null | undefined): number[] | null {
+  const s = String(text ?? '').trim();
+  if (!s) return [];
+  const parts = s.split(/[\s,]+/).filter(Boolean);
+  if (!parts.length || parts.length > DASH_ARRAY_MAX) return null;
+  const out: number[] = [];
+  for (const p of parts) {
+    // Number() would take '0x10', '1e3', 'Infinity' and ''. Pin the grammar instead.
+    if (!/^\d*\.?\d+$/.test(p)) return null;
+    const n = Number(p);
+    if (!Number.isFinite(n) || n < 0) return null;
+    out.push(n);
+  }
+  return out.some((n) => n > 0) ? out : null;
+}
+
+/** The canonical stored form of a parsed pattern: space-separated, at most two decimals
+ *  (the same rounding the hook's `f2` applies before the number reaches the attribute,
+ *  so what is stored is what is drawn). */
+export function formatDashArray(nums: number[]): string {
+  return nums.map((n) => String(Math.round(n * 100) / 100)).join(' ');
+}
 
 // ── on-canvas gradient editing ───────────────────────────────────────────────
 //

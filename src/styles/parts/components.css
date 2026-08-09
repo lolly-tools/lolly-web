@@ -120,6 +120,12 @@
    class on the view's mount element), and lifted the moment the drag ends. */
 .is-marqueeing, .is-marqueeing * { user-select: none; }
 
+/* The shared tile context menu (lib/context-menu.ts, default class) — the
+   `.folder-menu` skin, pinned to the viewport point the popover was opened at.
+   Same fixed-positioning delta `.projects-menu` applies over the page-relative
+   base .folder-menu (which the projects view-options popover still uses). */
+.ctx-menu { position: fixed; }
+
 .cat-grid {
   display: grid; gap: .6rem;
   grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));

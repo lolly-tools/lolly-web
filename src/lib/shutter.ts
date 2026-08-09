@@ -5,11 +5,12 @@
    history); that in turn replaced six skewed CSS flaps.
 
    WHY A SWIRL. It's the most on-brand cover we can paint: a lollipop swirl reads
-   as "Lolly" instantly. Its palette follows the THEME (light / dark / the
-   mid-toned 'brand' theme), NOT the brand colour: ambient brightness tracks the
-   theme background so light themes brighten the swirl and dark themes deepen it,
-   and only the mid-toned 'brand' theme leans the green toward the live accent —
-   the "more colour influenced" variant. See toneForTheme().
+   as "Lolly" instantly. Its palette follows BOTH the theme and the brand: ambient
+   brightness tracks the theme background so light themes brighten the swirl and
+   dark themes deepen it, and the coloured stripe leans toward the live brand accent
+   in EVERY theme (light / dark / the mid-toned 'brand' theme) so the swirl wears the
+   brand rather than a fixed green — the 'brand' theme just pushes that colour
+   hardest. A near-neutral brand falls back to Lolly green. See toneForTheme().
 
    HOW IT COVERS. The swirl is drawn in a fragment shader normalised by
    min(resolution), so it is ALWAYS a circle regardless of stage aspect. Coverage
@@ -160,30 +161,36 @@ function bgLightness(): number {
   return tokenLightness(getComputedStyle(document.documentElement).getPropertyValue('--background')) ?? 0.5;
 }
 
-/* The swirl's palette follows the THEME, not the brand:
+/* The swirl's palette follows both the theme and the brand:
    - exposure (overall brightness) tracks the theme background lightness, so the
      dark theme is unmistakably darker and the light theme brighter — continuously,
      so any future theme adapts without a new preset;
-   - light desaturates the green slightly (calmer); dark keeps Lolly green and lets
-     exposure do the dimming; the mid-toned 'brand' theme leans the green toward the
-     live accent and boosts saturation, and tints the cream stripe with it — the
-     "more colour influenced" variant. */
+   - the coloured stripe leans toward the live brand accent in every theme (falling
+     back to Lolly green only for a near-neutral brand). Light then desaturates it
+     slightly (calmer); dark leaves it and lets exposure do the dimming; the
+     mid-toned 'brand' theme boosts its saturation and tints the cream stripe with
+     it too — the "more colour influenced" variant. */
 function toneForTheme(): Tone {
   const bgL = bgLightness();
   const theme = currentTheme();
 
+  // The coloured stripe leans toward the live brand accent in EVERY theme — the
+  // swirl wears the brand, not a fixed green. It only falls back to Lolly green when
+  // the brand is near-neutral (no accent worth tinting toward), so a black-and-white
+  // brand keeps the lollipop identity instead of washing out to grey.
   let green = hexToRgb(LOLLY_GREEN)!;
+  const accent = liveAccentHint();
+  const accentRgb = accent ? hexToRgb(accent) : null;
+  if (accentRgb && saturationOf(accentRgb) >= 0.12) green = mixRgb(green, accentRgb, 0.75);
+
   let creamTint = 0;
   if (theme === 'light') {
     green = saturate(green, 0.85);                 // calmer, less saturated on light
   } else if (theme === 'brand') {
-    const accent = liveAccentHint();
-    const rgb = accent ? hexToRgb(accent) : null;
-    if (rgb && saturationOf(rgb) >= 0.12) green = mixRgb(green, rgb, 0.75);  // more brand influence
     green = saturate(green, 1.45);                 // the "more colour influenced" pop
     creamTint = 0.4;                               // light stripes pick up the hue
   }
-  // dark keeps Lolly green — the low exposure below does the darkening.
+  // dark keeps the accent at full strength — the low exposure below does the darkening.
 
   let cream: Rgb = mixRgb([0.80, 0.85, 0.80], [0.97, 0.99, 0.97], bgL);
   if (creamTint) cream = mixRgb(cream, green, creamTint);

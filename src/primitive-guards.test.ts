@@ -155,7 +155,6 @@ const PRIMARY_FILL_ALLOWED: Record<string, number> = {
   'styles/parts/gallery.css → .gtile-continue': 1,                     // gallery tile continue pill
   'styles/parts/gallery.css → .gtile-newbadge': 1,                     // gallery tile "new" badge
   'styles/parts/profile.css → .profile-view .profile-theme-pill': 1,   // Appearance theme pill active
-  'styles/parts/start.css → .start-tab.is-active': 1,                  // studio tab active state
   'styles/parts/storage.css → .clear-dialog-actions .btn.btn-go': 1,   // clear-gate go button
   'styles/parts/tool-chrome.css → .scrub-readout': 1,                  // select-scrub readout bubble
   'styles/parts/tool-chrome.css → .audio-preview.is-playing': 1,       // audio preview playing state
@@ -213,7 +212,9 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'components/profile-menu.ts': 2,
   'components/view-toggle.ts': 3,
   'lib/audio-coaching.ts': 1,
-  'lib/brand-editor.ts': 5,
+  // 5 → 0, plan 97 M1 (2026-08-09): the five BRAND_TABS glyphs went with the tab
+  // bar they fed. The design-system studio is rooms now, and views/start.ts
+  // builds its own navigation out of lib/icons.ts.
   'lib/brand-seal.ts': 1,
   'lib/capabilities-data.ts': 1,
   'lib/device-info.ts': 18,      // TITLE_ICONS map — the known landmine, biggest holdout after doc-editor/catalog
@@ -655,11 +656,23 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'components/profile-menu.ts': 1,
   'components/profiles-manager.ts': 3,
   'components/progress-toast.ts': 2,
+  // The persistent bar singleton's one render (plans/99 M1): a template.innerHTML of
+  // footerNav()+gallerySearchBox() markup, whose only dynamic interpolations —
+  // placeholder/aria-label/value from the view's claim — are escape()d inside
+  // gallerySearchBox (footer-nav.ts); the nav links are literal routes + t() labels.
+  'components/search-bar.ts': 1,
   // The row list's innerHTML replace, modelled on profiles-manager.ts. Reviewed —
   // every interpolated value (digest, name, fact line, reported-speech claim,
   // priced-summary) goes through escape() in rowHtml.
   'components/rate-cards-manager.ts': 1,
   'components/sound-toggle.ts': 2,
+  // The spotlight overlay's one sink (plans/99 M2): renderResults' listbox
+  // replace. Reviewed 2026-08-09 — every interpolation is escape()d (row hrefs,
+  // hit titles/subtitles), a t() literal (group labels, see-all, the empty
+  // line — t() escapes its params, so the query text is covered), a NUMBER
+  // (the option ids), or provider-authored lib/icons icon() markup per the
+  // SearchHit contract; the panel scaffold itself is built with DOM APIs.
+  'components/spotlight.ts': 1,
   'components/theme-toggle.ts': 1,
   // The guide dialog's track panel, re-rendered on a tab switch. Its only
   // interpolations come from inlineMarkup(), which escape()s the manifest string
@@ -672,7 +685,48 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'folder-overlay.ts': 3,
   'lib/audio-coaching.ts': 1,
   'lib/audio-transport.ts': 2,
-  'lib/brand-editor.ts': 22,
+  // The shared tile context menu's one sink: the popover body — moved here from
+  // views/projects.ts (10 → 9) when the mechanism was extracted. It writes only
+  // what the consuming view's singleHtml/bulkHtml callbacks return, which is
+  // menuItemHtml() rows (escape()d act + label, lib/icons markup) plus each
+  // view's own reviewed head markup — the same content the projects sink held.
+  'lib/context-menu.ts': 1,
+  // 22 → 24, plan 97 M1 (2026-08-08): the Replace-palette review card renders
+  // its own two states (the "what changes" list, and the collapsed "replaced,
+  // Undo" line). Every interpolated value is either a developer-authored t()
+  // string or a NUMBER counted off the two documents — no swatch name, notation
+  // or other user text reaches either sink.
+  // 24 → 25, plan 97 M3 (2026-08-09): the Logos room's confirm-chip queue
+  // (renderIntake). Reviewed — the chip markup interpolates t()/tRaw() literals,
+  // a fixed variant key from LOGO_ORIENTATIONS × LOGO_TREATMENTS, an in-code
+  // candidate key (`belg<n>`), and escape()d values for everything else: the
+  // preview blob: URL, the dropped FILE NAME (in the line, its title and the
+  // dismiss aria-label), the classifier's reason fragments, and the variant
+  // label. The hostile input here is a dropped file's own name, and it reaches
+  // the sink only through escape() (utils.ts). The room's OTHER new markup adds
+  // no sink: the drop zone rides the existing root.innerHTML scaffold, and the
+  // trim card is mounted by lib/design-system/trim-offer.ts, which carries its
+  // own entry above.
+  // 25, unchanged 2026-08-09: the M2 fix pass only lifted the Colours room's
+  // existing add-a-colour write into a named function and put it on the handle
+  // (`addColors`), which writes tokens, never markup.
+  // 25, unchanged 2026-08-09 (M3 fix pass): the chip queue's fixes add no sink.
+  // renderIntake gained a prune step and a focus hand-off (both DOM APIs:
+  // dropCandidate + element.focus()); the chip markup gained one attribute,
+  // `tabindex="-1"`, which is a constant; and the new size gate reuses
+  // installLogo's own sentence through tRaw() into showLogoErr's textContent.
+  // 25, unchanged 2026-08-09 (M4 fix pass): the Type room's role card now takes
+  // BOTH of its button strings from one helper (typeRoleActStrings) so the
+  // visible label and the accessible name cannot drift apart (WCAG 2.5.3). The
+  // scaffold's aria-label is still the same shape it was — escape(tRaw(…)) over
+  // an in-code role label — and the later rewrite of both strings goes through
+  // textContent and setAttribute, neither of which is a sink.
+  // 25, unchanged 2026-08-09 (M5 fix pass): paintLogos's own sink (the logo
+  // sections + the add-identity form) is unchanged; the fix moved it behind the
+  // liveness check that already guarded it, so the mark hand-off is no longer
+  // drained into a room that went away mid-paint. Nothing new is interpolated,
+  // and the shared-tray option carries no markup at all.
+  'lib/brand-editor.ts': 25,
   'lib/brand-studio-tabs.ts': 9,
   // The tonal-curve editor's one sink is draw()'s full panel re-render. Reviewed
   // 2026-08-08: every interpolated value is either a constant (channel labels,
@@ -683,6 +737,108 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // but no new sink: the roving tabindex + value changes go through setAttribute.
   'lib/curve-editor.ts': 1,
   'lib/catalog-summary.ts': 2,
+  // The Colours room's "Add a colour" control (plan 97 §7.1). Two sinks, both
+  // reviewed 2026-08-08: the row scaffold (t() literals and an icon() constant,
+  // with every attribute value escape()d — the placeholder and all three
+  // aria-labels), and the found-colours chip row, whose only interpolations are
+  // a NUMBER (the chip index), a boolean aria-pressed, and escape()d values (the
+  // resolved hex before it reaches a style attribute, and the notation as the
+  // person typed it). Pasted text is the hostile input here and it never reaches
+  // either sink unescaped — and under that, the scanner's own token charset
+  // admits no `<`, `>`, quote or backslash in a reported value at all, which
+  // add-color.test.ts pins directly.
+  'lib/design-system/add-color.ts': 2,
+  // The Design-system studio's Overview room (plan 97 §5). Its one sink is
+  // paint()'s whole-room re-render from overviewHtml(). Reviewed 2026-08-08:
+  // every interpolated value is a t() literal, an icon() constant, or escape()d
+  // (utils.ts) — the door/card helpers escape their area key, label and value,
+  // the palette strip escapes each swatch hex before it reaches a style
+  // attribute, and the font list is escaped as one card value.
+  'lib/design-system/rooms/overview.ts': 1,
+  // The Design-system studio's Versions panel (plan 97 §6a, M7). Its one sink is
+  // paint()'s whole-panel re-render from the pure versionsHtml(). Reviewed
+  // 2026-08-09: the hostile input here is the user's own version LABEL and NOTE,
+  // and both are escape()d (utils.ts) wherever they appear — the list row, the
+  // ahead banner and the restored line all go through t()'s own param escaping,
+  // which is the same escape(). The slug is grammar-constrained by the engine
+  // (design-version.ts: [a-z0-9][a-z0-9-]*) and is escape()d anyway on every
+  // data attribute and focus key; the diffed token PATHS and pinned asset IDS
+  // come out of the user's document and are escape()d per row; the counts and
+  // the byte total are numbers and fmtBytes output. Everything else is a t()
+  // literal. Deliberately ONE sink: the live slug line, the error line and the
+  // busy states are all textContent/disabled/hidden, because a repaint on every
+  // keystroke would take the caret with it.
+  // 1, unchanged by the M7 fix pass (2026-08-09). Re-reviewed: the plural strings
+  // became two whole t() calls each (so the translation extractor can see them),
+  // the publish buttons gained an aria-describedby naming a static id, and the
+  // storage sentence was reworded. All three are t() literals and a constant id;
+  // aria-invalid and the announced refusal are setAttribute/announce(), not
+  // markup, so no value newly reaches the sink and the count does not move.
+  'lib/design-system/rooms/versions.ts': 1,
+  // The Colours room's roles strip (plan 97 §7.1). Its one sink is
+  // mountRolesStrip's render() from the pure rolesStripHtml(). Reviewed
+  // 2026-08-08: every interpolated value is a t()/tRaw() literal or escape()d
+  // (utils.ts) — the role id, label, value line and its title, the swatch hex
+  // before it reaches the `--sw` style property, the APCA title and readout,
+  // and every <option>/<optgroup> key, name and group heading.
+  'lib/design-system/roles.ts': 1,
+  // The candidate tray's panel (plan 97 §8, M2). Two sinks, reviewed 2026-08-09:
+  // the mount scaffold (t() literals and icon() constants, with both aria-labels
+  // escape()d) and the candidate list, which is the pure trayHtml(). Everything
+  // interpolated in the second is a t() literal, an icon() constant, a NUMBER
+  // (the group count), a fixed candidate-type key, or escape()d — the candidate
+  // id on every data attribute, the value before it reaches the `background`
+  // style property and the dismiss aria-label, the colour name, and the
+  // provenance label and detail. The hostile input here is a scanned source's
+  // own file name riding the provenance chip, and tray-ui.test.ts pins that it
+  // reaches neither sink as markup — including the chip's `title`, which now
+  // carries that file name on every row and is escape()d whether or not the
+  // candidate also has a provenance detail.
+  'lib/design-system/tray-ui.ts': 2,
+  // The trim-to-content offer (plan 97 §7.3, M3). One sink, reviewed 2026-08-09:
+  // mountTrimOffer's card scaffold, written once and thereafter updated only
+  // through textContent and img.src. Its interpolations are t() literals, one
+  // icon() constant, NUMBERs (the stepper bounds and its start value), and
+  // escape()d strings — the two preview blob: URLs, the pad field id, the unit
+  // suffix, the dimension readout and the group aria-label. The file names and
+  // bytes a hostile upload carries never reach the sink: a name is only ever
+  // read into a File constructor, and the previews are object URLs the browser
+  // minted, not paths.
+  // 1, unchanged 2026-08-09 (M3 fix pass): the same single scaffold grew a
+  // cancel ✕ (an escape(t(…)) aria-label/title plus a &#x2715; entity), two
+  // generated element ids (escape()d — `trimo-savings-<n>` / `trimo-after-dims-<n>`
+  // off an in-module counter, used again in aria-describedby) and the two
+  // readouts' OPENING text, both escape()d: a t() sentence with a NUMBER param,
+  // and a dimension string built from numbers. Everything after mount still goes
+  // through textContent and img.src.
+  'lib/design-system/trim-offer.ts': 1,
+  // The Type room's compare stage (plan 97 §7.2, M4). Two sinks, reviewed
+  // 2026-08-09: the mount scaffold — t() literals, icon() constants, the NUMBER
+  // size bounds, and escape()d strings for the generated field ids, the file
+  // input's accept list and the opening specimen text (which is either the
+  // design system's OWN NAME, read off the tokens asset, or a t() pangram) — and
+  // the card row, which is the pure compareCardsHtml(). Everything interpolated
+  // in the second is a t() literal, an icon() constant, a fixed state key, an
+  // in-module card id, or escape()d: the family (in the line, the two Remove
+  // labels and the id), the candidate's label, every chip (source chips are
+  // authored by whatever scanned them), the provenance, the reason sentence, the
+  // specimen text as the person typed it, and the preview family before it
+  // reaches a `font-family` style property — which is doubly guarded, since
+  // slugFamily()'s output charset is [a-z0-9-] and cannot close the quote.
+  // type-compare.test.ts pins the hostile-input case directly.
+  // 2, unchanged 2026-08-09 (M4 fix pass): the card sink grew ATTRIBUTES, not
+  // interpolations of a new kind — `tabindex="-1"` (a constant), an aria-label
+  // that is the escape()d family, and an aria-describedby whose ids are built
+  // from the card's own preview family (slugFamily + two integers, so [a-z0-9-]
+  // throughout). The escaping DISCIPLINE changed in the same pass and is the
+  // part worth recording: a string that reaches the sink through `t()` is no
+  // longer escape()d again, because t() already escapes its interpolated params
+  // (i18n.ts) and doing it twice put "&amp;amp;" in an accessible name. Nothing
+  // became unescaped — every value still passes through exactly one of the two,
+  // and the source-authored chips (the untrusted ones) are still the escape()d
+  // side. type-compare.test.ts now drives the module with the SHARED escape in
+  // its `t` double, so a re-fork of either discipline fails there.
+  'lib/design-system/type-compare.ts': 2,
   // Two provably-safe sinks: the two head buttons' glyphs (constant icon() strings,
   // no interpolation) and the resize grips (constant panelGripsHtml(), like float-panel).
   'lib/export-panel-float.ts': 2,
@@ -695,7 +851,16 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // pre-focus innerHTML (engine-rendered markup captured on focus), no
   // interpolation of user text.
   'lib/table-canvas-edit.ts': 1,
-  'lib/upload-dropzone.ts': 3,
+  // 3 → 2, plan 97 M3 fix pass (2026-08-09): attrition. The zone had TWO copies
+  // of the same `.updz-text` idle restore (one per terminal path of the ingest
+  // loop); both are now one `finally` in runIngest, which also makes the restore
+  // cover a throw — a zone left wearing `.is-busy` has pointer events off and
+  // refuses every later drop. What remains: the mount scaffold, and that single
+  // restore, which writes back innerHTML this module itself captured off the
+  // zone at the start of the ingest. The pass's other fixes touch no sink (a
+  // `disposed` latch, the single-flight try/finally, and a skipped file when the
+  // user dismisses the trim card).
+  'lib/upload-dropzone.ts': 2,
   'org/approval-dialog.ts': 3,
   'org/banner.ts': 1,
   // Reviewed 2026-08-02: every interpolated value is escape()d (text, link label,
@@ -721,6 +886,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // overlay `work.innerHTML` and the `cropActions` row. Reviewed: the box/handle
   // markup is static; every interpolated value is escape()d (the image src, the
   // format radio value/label, and the Format/Cancel/Download crop t() strings).
+  // 10, unchanged 2026-08-09 (plan 97 M3 fix pass): inline TRIM mode writes no
+  // markup of its own — the card is trim-offer.ts's sink, mounted into an empty
+  // div — and the fix only taught the dialog's capture-phase Escape handler to
+  // answer for a card that focus had left.
   'views/catalog.ts': 10,
   // 21 as of 2026-08-08: +2 for the Colour Lab's vector (SVG) stills (feature #7).
   // renderSolidSvg writes ONE engine-produced gamutSolidToSvg string (numeric
@@ -749,15 +918,54 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 41 as of 2026-08-07: +1 for the Line tool's drawLineRubber (connectLayer.innerHTML,
   // plan 90) — coordinates via cf2 (numbers), colour via cAttr (strips <>"), and the
   // arrowhead via edgeArrowHead which escAttr-escapes its fill; no user markup reaches it.
-  'views/free-canvas.ts': 41,
+  // 43 as of 2026-08-09: +2 for the Artboards panel (Colour Lab work) — both writes
+  // interpolate only escape(t(…)) headings, escape()d frame ids, numeric indices and
+  // icon(SVG.*) constants; no user markup reaches them.
+  // 43, UNCHANGED by plan 96 P0-P2 (2026-08-09 — the unified path primitive). Three of
+  // these sinks gained content and none was added:
+  //   · the stroke panel (p.innerHTML) grew the Dash array field, the corner-fit toggle
+  //     and the two arrowhead menus. Every interpolation is escape()d — the stored dash
+  //     string, the cfg field names used as data attributes, escape(t(…)) labels — and
+  //     the head <option> values are HEAD_CHOICES, a module constant, not box data.
+  //   · the pen layer (penLayer.innerHTML) grew penEditHeadsSvg, whose markup is built by
+  //     the engine's edgeArrowHead from numbers plus the literal 'currentColor'; nothing
+  //     off the box reaches it.
+  //   · drawLineRubber (connectLayer.innerHTML) is the same write it was, with the colour
+  //     now cAttr(drawnInkHex()) — a computed hex — instead of a manifest default.
+  // 44 as of 2026-08-09 (plan 96 P3-P5 — endpoint binding). Net +1 over three changes to
+  // the SAME connectLayer.innerHTML family, all of them reviewed:
+  //   · −1: drawConnectRubber went with Connect mode (P4 deleted the mode outright).
+  //   · +1: setBindHover writes the snap ring over the box an end would attach to. Four
+  //     cf2() numbers off the box's own rect and otherwise literal markup — the box id
+  //     itself never reaches it, only its geometry.
+  //   · +1: drawLiveConnectors' bound-path branch writes drawLiveBoundPaths(), which is
+  //     built entirely by the ENGINE's routedLineSvg from a ConnectorDecor whose one
+  //     string-valued field, `color`, is cAttr()'d here AND escAttr()'d again inside the
+  //     engine; every other value is a number or one of the six whitelisted head keywords.
+  //     No box text, id or user markup can reach it.
+  'views/free-canvas.ts': 44,
   'views/gallery.ts': 6,
   'views/multi-edit.ts': 3,
+  // 6, unchanged 2026-08-09 (plan 97 M5 — the design-system hand-offs). The three
+  // new controls are markup inside the existing report template, not new sinks:
+  // the font row's "Add to the design system" and the mark's "Send to Logos" are
+  // t() literals plus a numeric index, and every state they later show (Adding…,
+  // Added, Could not add) is written through textContent.
+  // 6, unchanged by the M5 fix pass (2026-08-09): the hand-off handlers gained
+  // busy/failure states and honest counts, all of them textContent or announce()
+  // (a live region is a text sink, not an HTML one). "Send to Logos" reports its
+  // two failures the same way, and the mark filenames now come off the pick's
+  // own index rather than a match on its SVG text — neither reaches markup.
   'views/pdf-extract.ts': 6,
   'views/pdf-import.ts': 1,
+  // 27, unchanged 2026-08-09 (plan 97 M3 fix pass): the upload flow's trim offer
+  // adds no sink (the card is trim-offer.ts's own, mounted into the existing
+  // `.asset-picker-trim` slot); the fix made offerTrim's answer nullable so a
+  // dismissal stores nothing.
   'views/picker.ts': 27,
   'views/profile.ts': 22,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) — ids/names escape()d, sizes via fmtBytes, glyphs via icon()
                            // +1 2026-08-01: the offline persistence line (syncPersistLine) — both t() strings escape()d, the button markup is static
-  'views/projects.ts': 10,
+  'views/projects.ts': 9,   // 10 → 9: the context-menu popover sink moved to lib/context-menu.ts (2026-08-09)
   'views/record-control.ts': 6,
   'views/screen-capture-control.ts': 4,
   // 3 as of 2026-08-02: the Script-audio TTS dialog. Reviewed — the shell
@@ -771,7 +979,57 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // audioTransportHtml() (labels escaped internally), and the saved line's one
   // interpolation is the freshly minted asset id, encodeURIComponent + escape()d.
   'views/script-studio.ts': 5,
-  'views/start.ts': 7,
+  // The Design-system studio (plan 97). 7, unchanged by the M2 fix pass —
+  // reviewed 2026-08-09: the two view scaffolds and the editor-error line (t()
+  // literals, escape()d error text), the result sink `importResult.innerHTML`
+  // (every caller composes with escape()/t(), and the one refusal helper escapes
+  // its plain-text argument), and the phone palette sheet's scaffold + its two
+  // repaints, which write swatchTile() markup the shared helper escapes. The
+  // mapping card's follows row is updated through textContent and style, not a
+  // sink, which is why re-deriving surface/text added none.
+  // 8 as of 2026-08-09 (plan 97 M5, the PDF source): +1 for renderPdfResult, the
+  // PDF stage's own result card. Reviewed — the only values from the document are
+  // the file name and each embedded face's family, both escape()d; the face chips
+  // go through faceChipText (a switch over the source's own tokens, escape()d on
+  // the way out); the counts are numbers through t(); everything else is a t()
+  // literal. Its three later states (Adding…, Added, Could not add) are written
+  // with textContent, and the picker's stages are still a pure `hidden` toggle.
+  // 8, unchanged by the M5 fix pass (2026-08-09): renderPdfResult is the same
+  // sink with two strings reworded (the page-window line, which interpolates two
+  // numbers through t()) and a spoken summary added — announce() is a text sink,
+  // so the card's facts are said without any of them re-entering markup.
+  // 8, unchanged by the M7 fix pass (2026-08-09): the Versions rail entry became
+  // a latch (`versionsOffered`), which moves a boolean into `hidden` and touches
+  // no sink, and the panel context dropped a dead `label` string.
+  // 9 as of 2026-08-09 (plan 97 M6, the website source): +1 for renderSiteResult,
+  // the website stage's own result card. This is the most hostile input the view
+  // takes — every string in it came off a third-party page — so what reaches the
+  // sink is worth naming: the HOST (escape()d), the site's own NAME and the
+  // Google FAMILIES it asks for, both through t(), which escapes its params
+  // (i18n.ts); the counts are numbers through t(); everything else is a t()
+  // literal. Nothing else from the page reaches markup at all — the colours go
+  // to the tray (whose own sink is pinned above), the marks travel as File
+  // objects, and the scan's machine reasons and warnings are mapped to t()
+  // sentences by siteRefusalText/siteWarningText before they are shown. The
+  // stage's own markup adds no sink (it rides the one mountModal template, and
+  // the `?u=` prefill is assigned to input.value, never interpolated), and every
+  // later state — the consent line, the button label, the progress note, the
+  // Reading…/Named/Could not name it labels — is textContent.
+  // 9, unchanged by the M6 fix pass (2026-08-09). Four changes, none of them a
+  // sink: the website stage's template gained one static `<p>` (the refusal line
+  // the field names through aria-describedby — no interpolation at all, its text
+  // arrives later through textContent); the refusal itself moved from the shared
+  // note to that element via textContent + setAttribute('aria-invalid'), which is
+  // strictly less markup than before; the consent and failure sentences swapped
+  // tRaw() for t() wherever the only parameter is a hostname or a number, which
+  // ADDS escaping rather than removing it (the two whose parameter is free text
+  // off the page stay tRaw, and both are written to textContent); and the
+  // extension-transport adapter was deleted outright in favour of the bridge's.
+  'views/start.ts': 9,
+  // 1 as of 2026-08-09 (new template-chooser overlay, Design frame primitive). The
+  // one innerHTML sink is the dialog scaffold: escapeHtml()'d toolName, static t()
+  // markup, and the blankTile/groupsHtml composed-markup helpers; no raw input.
+  'views/template-chooser.ts': 1,
   // 5 as of 2026-07-31: every sink here writes icon() markup from lib/icons.ts
   // (own SVG bodies, guarded by R9) — no interpolated data at any of them.
   'views/timeline-panel.ts': 5,
@@ -784,7 +1042,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // contentSealNoteHtml). Reviewed — every attacker-controlled value on this
   // page (decoded payload/message hex, schema, filenames, hex dumps of file
   // bytes, handoff notes) is escape()d at its sink; the rest are static t().
-  'views/valid.ts': 21,
+  // 23 as of 2026-08-09: +2 for the re-render-after-claim path (rerenderClaimed) —
+  // listWrap.innerHTML = bodyHtml and the multi-file card rebuild. Same discipline:
+  // summaryInner escape()s the filename (${escape(fileName)}), bodyHtml reuses
+  // renderReportBody, and the static parts are t() strings.
+  'views/valid.ts': 23,
   // 3 as of 2026-08-06 (the model warning became an inline banner). Reviewed: the
   // panel build escapeHtml()s every interpolated value — the model <option> id/name
   // pairs, both aria-labels — the options sink escapeHtml()s id + label, and the new
@@ -861,4 +1123,51 @@ test('R11: the shared escape covers every character an attribute or text node ne
       `utils.ts escape does not mention ${ch} — an unescaped ${ch} breaks out of an attribute`);
   }
   assert.match(src, /&#39;|&apos;/, "escape must map the single quote to an entity (the pro/index.ts fork's omission)");
+});
+
+// ── R12 (plan 97 §8 — one candidate tray per mounted studio) ─────────────────
+// `createTray` is a MODEL, not a connection: each instance holds its own
+// in-memory candidate list and persists that whole list on every write
+// (lib/design-system/tray.ts), so two live instances over `start.tray.v1` do not
+// merge — the later write erases whatever the other one added, and neither one's
+// subscribers ever hear about it. That is exactly what happened between the
+// studio's own tray and the Logos room's private one: a mark placed between two
+// source scans put candidates into storage that vanished on the next scan and
+// never appeared in the panel. The room now takes the host's tray
+// (BrandEditorOptions.tray) and only falls back to its own when there is none.
+//
+// A ratchet rather than a ban: a view that mounts no other tray may legitimately
+// make one (the #/pdf exploder does, in a view where nothing else is live). What
+// must not happen quietly is a SECOND one inside a surface that already has one.
+
+const TRAY_CREATE = /\bcreateTray\s*\(/;
+
+const TRAY_CREATE_ALLOWED: Record<string, number> = {
+  // The studio's one tray, created before the editor mounts and handed to it.
+  'views/start.ts': 1,
+  // A different view with no tray of its own: the exploder loads, adds and
+  // navigates away, so nothing else is holding the key while it writes.
+  'views/pdf-extract.ts': 1,
+  // The fallback for a host that supplied none. Unreachable from #/start, which
+  // always passes its own — see the short-circuit asserted below.
+  'lib/brand-editor.ts': 1,
+};
+
+test('R12: the candidate tray is created once per surface, and the Logos room takes the host\'s', () => {
+  const creates = new Map<string, number[]>();
+  for (const f of TS) {
+    if (f.rel === 'lib/design-system/tray.ts') continue;  // the factory itself
+    const hits = hitLines(f.text, TRAY_CREATE);
+    if (hits.length) creates.set(f.rel, hits);
+  }
+  checkRatchet(creates, TRAY_CREATE_ALLOWED,
+    'A second live Tray over start.tray.v1 erases the first: each instance persists its ' +
+    'whole in-memory list. Take the one the surface already has (pass it down) instead of ' +
+    'creating another.');
+
+  // The fallback must stay a fallback. Without this line brand-editor builds its
+  // own tray even when the host handed one over, which is the two-instance bug.
+  const editor = TS.find(f => f.rel === 'lib/brand-editor.ts')?.text ?? '';
+  assert.match(editor, /if\s*\(opts\.tray\)\s*return opts\.tray;/,
+    "lib/brand-editor.ts must prefer the host's tray (opts.tray) before creating one of its own");
 });

@@ -19,6 +19,14 @@
  * tab whose pass found nothing is not rendered at all, so the strip reflects what
  * this document actually contains rather than what a PDF could contain, and a
  * plain text-only document still reads as a single uncluttered column.
+ *
+ * Design-system hand-offs (plan 97 §8, M5). A guidelines PDF usually holds the
+ * exact vector marks, the palette they are drawn in and real font files, so this
+ * view keeps everything it already does and gains three doors into the studio:
+ * a font row installs its face, a mark goes to the Logos room, and the bar sends
+ * the whole scan. None of them RE-SCANS — every hand-off is built from what the
+ * passes above already extracted, so a send costs a census and a state write, not
+ * a second walk of the document.
  */
 
 import '../styles/parts/pdf-extract.css';   // async CSS chunk (lazy view)
@@ -27,12 +35,14 @@ import type { PageText, HiddenTextFinding } from '@lolly/engine';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { announce } from '../a11y.ts';
 import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
+import type { UserFontsHost } from '../user-fonts.ts';
 import type { PdfHandle, EmbeddedFont, EmbeddedImage, EmbeddedAttachment, ExtractedVector } from './pdf-import.ts';
 
 /** Beyond this a page-by-page reconstruction stops being interactive. */
@@ -260,6 +270,11 @@ function imagesMarkup(x: Extracted): string {
  * Each mark previews as the actual SVG (inline, so it scales in the tile) and
  * carries the reason it was believed to be artwork rather than page furniture —
  * the judgement is a heuristic and the user should be able to see it was made.
+ *
+ * "Send to Logos" hands one mark to the Logos room, where it is classified and
+ * confirmed exactly like a mark dropped by hand. It deliberately does NOT place
+ * the mark in a slot: the heuristic above says this was probably artwork, not
+ * which artwork it is, and a silent placement would spend that guess twice.
  */
 function vectorsMarkup(x: Extracted): string {
   if (!x.vectors.length) return '';
@@ -280,6 +295,7 @@ function vectorsMarkup(x: Extracted): string {
         <div class="pdfx-asset-actions">
           <button type="button" class="btn btn--ghost" data-save-vector="${i}">${t('Download SVG')}</button>
           <button type="button" class="btn btn--ghost" data-catalog-vector="${i}">${t('Add to catalogue')}</button>
+          <button type="button" class="btn btn--ghost" data-logos-vector="${i}">${t('Send to Logos')}</button>
         </div>
       </figure>`;
   }).join('');
@@ -296,6 +312,15 @@ function vectorsMarkup(x: Extracted): string {
  * says. And `fsType` is the font's own machine-readable statement about reuse;
  * a restrictive one is an unambiguous no, and a permissive one still is not the
  * licence. Both are shown per font rather than buried in a general disclaimer.
+ *
+ * "Add to the design system" (plan 97 §7.2) installs the face through the same
+ * `installFontFromBytes` an upload uses, so a PDF-embedded family lands as an
+ * ordinary user font with its embedding statement recorded on the asset. The
+ * button is offered only on a face that is a whole installable file: a `cff` or
+ * `pfb` row is raw font-program bytes, the row already says so, and a button
+ * guaranteed to answer "could not add" would be a worse way to say it. The
+ * caveats do not soften on the way in — a SUBSET installs as a subset and says
+ * so, because the alternative is a family that quietly loses characters later.
  */
 function fontsMarkup(x: Extracted): string {
   if (!x.fonts.length) return '';
@@ -319,13 +344,20 @@ function fontsMarkup(x: Extracted): string {
     if (!f.installable) caveats.push(t('These are raw font-program bytes, not a file a system can install.'));
     caveats.push(PERMISSION[f.embedding.permission] ?? PERMISSION.unknown!);
 
+    const add = f.installable
+      ? `<button type="button" class="btn btn--ghost" data-add-font="${i}">${t('Add to the design system')}</button>`
+      : '';
+
     return `
       <li class="pdfx-font">
         <div class="pdfx-font-head">
           <span class="pdfx-font-name">${escape(f.family)}</span>
           ${tags.join('')}
           <span class="pdfx-font-sub">${escape(`.${f.ext} · ${sizeLabel(f.bytes.length)}`)}</span>
-          <button type="button" class="btn btn--ghost pdfx-font-save" data-save-font="${i}">${t('Download')}</button>
+          <span class="pdfx-font-actions">
+            <button type="button" class="btn btn--ghost" data-save-font="${i}">${t('Download')}</button>
+            ${add}
+          </span>
         </div>
         <p class="pdfx-font-caveat">${escape(caveats.join(' '))}</p>
       </li>`;
@@ -363,6 +395,11 @@ function resultMarkup(x: Extracted): string {
   // move (find an OCR tool) is completely different from "read the text".
   const allScans = scans > 0 && scans === x.pages.length;
 
+  // The studio hand-off is offered only when this document has design material
+  // in it. A text-only PDF would send an empty census and land the reader in a
+  // studio with nothing new in it, which is a worse answer than not asking.
+  const studio = x.vectors.length > 0 || x.fonts.length > 0;
+
   // Only passes that FOUND something get a tab, so the strip describes this
   // document rather than what a PDF could theoretically hold.
   const tabs = [
@@ -381,6 +418,7 @@ function resultMarkup(x: Extracted): string {
           <span class="pdfx-sum">${escape(summary.join(' · '))}</span>
         </div>
         <div class="pdfx-bar-actions">
+          ${studio ? `<button type="button" class="btn" data-act="studio">${t('Send to the design system studio')}</button>` : ''}
           <button type="button" class="btn" data-act="copy">${t('Copy all')}</button>
           <button type="button" class="btn" data-act="md">${t('Download .md')}</button>
           <button type="button" class="btn" data-act="txt">${t('Download .txt')}</button>
@@ -760,6 +798,196 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     setTimeout(() => { btn.textContent = was; }, 1800);
   }
 
+  /**
+   * "This control is answering, do not press it again", said with `aria-disabled`
+   * rather than `disabled`.
+   *
+   * A real `disabled` on the button that was just pressed hands focus to the
+   * body: a keyboard user who activates Add lands nowhere, and on the failure
+   * path there is nothing to return them to. `aria-disabled` says the same thing
+   * to assistive tech, keeps the button focusable, and leaves the guard to the
+   * handler — which is what `busy()` is.
+   */
+  const busy = (btn: HTMLElement): boolean => btn.getAttribute('aria-disabled') === 'true';
+  function setBusy(btn: HTMLElement, on: boolean): void {
+    if (on) btn.setAttribute('aria-disabled', 'true');
+    else btn.removeAttribute('aria-disabled');
+  }
+
+  /** A mark as the File the studio's own drop zone would have received. */
+  function vectorFile(v: ExtractedVector, index: number): File {
+    return new File([v.svg], `${stem(current!.fileName)}-logo-${index + 1}.svg`, { type: 'image/svg+xml' });
+  }
+
+  /**
+   * Install an embedded face as a user font (plan 97 §7.2 / M5).
+   *
+   * `installFontFromBytes` is the whole vetting story — the size cap, the magic
+   * number, the name table, the `fsType` reading and the variable-axis handling
+   * all live there, and it returns null rather than throwing for bytes it cannot
+   * use, because a drop zone handling several files must not abandon the rest.
+   * So the only judgement here is what to SAY: a null is reported as plainly as
+   * the row's own caveats, and a subset that installs is still called a subset,
+   * because the missing characters turn up long after this screen is closed.
+   */
+  async function addFontToSystem(f: EmbeddedFont, btn: HTMLButtonElement): Promise<void> {
+    if (busy(btn)) return;
+    const was = btn.textContent;
+    setBusy(btn, true);
+    btn.textContent = t('Adding…');
+    let family: string | null = null;
+    // A throw is NOT the same answer as a null, and the difference is what the
+    // sentence below is allowed to claim. `installFontFromBytes` writes the
+    // asset first and registers/promotes it afterwards, so a throw can land
+    // with the face already stored — "nothing was added" would be false.
+    let threw = false;
+    try {
+      const { installFontFromBytes } = await import('../user-fonts.ts');
+      const installed = await installFontFromBytes(host as unknown as UserFontsHost, f.bytes, {
+        filename: `${f.name.replace(/[^a-z0-9.+-]/gi, '_')}.${f.ext}`,
+      });
+      family = installed?.family ?? null;
+    } catch (err) {
+      threw = true;
+      host.log('warn', 'pdf-extract: font install failed', { error: (err as Error)?.message });
+    }
+    if (!family) {
+      // Nothing usable came back, so the button goes back to being an offer
+      // either way. Only the sentence differs: a null means the bytes were
+      // refused before anything was written, which is the one case that can
+      // honestly promise nothing was added.
+      btn.textContent = t('Could not add');
+      announce(threw
+        ? tRaw('{name} could not be added. Part of it may have been saved, so check the fonts in the design system before trying again.', { name: f.family })
+        : tRaw('{name} could not be read as a font, so nothing was added.', { name: f.family }), { assertive: true });
+      setTimeout(() => { btn.textContent = was; setBusy(btn, false); }, 1800);
+      return;
+    }
+    // A quiet, permanent state: the face is installed, and offering to install it
+    // again would say the first press did nothing.
+    btn.textContent = t('Added');
+    btn.classList.add('is-added');
+    announce(f.subset
+      ? tRaw('{family} added to the design system. It is a subset, so characters this document did not print are missing from it.', { family })
+      : tRaw('{family} added to the design system', { family }));
+    playSfx('save');
+  }
+
+  /**
+   * One mark to the Logos room. The stash survives exactly one navigation and
+   * never touches disk (lib/design-system/pending-files.ts), so a reload after
+   * this lands in an ordinary empty room rather than on a mystery queue.
+   *
+   * Neither failure is allowed to be silent, and they are DIFFERENT failures: a
+   * mark over the stash's 4 MB cap (an extracted mark inherits the page's
+   * inlined rasters, so a logo over a photograph can be that big) was refused,
+   * while a throw means the hand-off itself never happened. Navigating and
+   * playing the success sound on either would put the person in an empty room
+   * with no explanation, which is the one outcome this view is written to avoid.
+   */
+  async function sendVectorToLogos(v: ExtractedVector, index: number, btn: HTMLButtonElement): Promise<void> {
+    if (busy(btn)) return;
+    const was = btn.textContent;
+    setBusy(btn, true);
+    /** Put the button back to being an offer — nothing travelled. */
+    const failed = (label: string, said: string): void => {
+      btn.textContent = label;
+      announce(said, { assertive: true });
+      setTimeout(() => {
+        if (!btn.isConnected) return;
+        btn.textContent = was;
+        setBusy(btn, false);
+      }, 1800);
+    };
+    try {
+      const { stashPendingLogoFiles } = await import('../lib/design-system/pending-files.ts');
+      const { sent } = stashPendingLogoFiles([vectorFile(v, index)]);
+      if (!sent) {
+        failed(t('Too large'), t('That mark is over the 4 MB limit, so it was not sent. Download the SVG instead.'));
+        return;
+      }
+    } catch (err) {
+      host.log('warn', 'pdf-extract: logo handoff failed', { error: (err as Error)?.message });
+      failed(t('Could not send'), t('That mark could not be sent to Logos.'));
+      return;
+    }
+    playSfx('save');
+    location.hash = '#/start?area=logos';
+  }
+
+  /**
+   * The whole scan to the studio (plan 97 §8).
+   *
+   * Built from what the passes already extracted — the marks and their per-mark
+   * fill palettes, and the embedded families — so this costs a census, not a
+   * second walk of the document. Colours and fonts land as tray CANDIDATES,
+   * never as installs: the tray is the one place a source's findings wait, and
+   * nothing joins the design system without a tap there.
+   *
+   * The tray is LOADED before the add. It persists its whole candidate list on
+   * every write, so adding to an unloaded one would erase whatever an earlier
+   * source left in it.
+   *
+   * What the announcement claims is what the two sinks actually TOOK, never what
+   * this view offered them: the tray dedupes (a re-send of the same document
+   * keeps nothing), the stash refuses a mark over its byte cap, and counting
+   * colours alone would report "0 colours and 0 marks" for the commonest
+   * document of all — a text PDF whose embedded families did reach the tray.
+   */
+  async function sendToStudio(btn: HTMLButtonElement): Promise<void> {
+    const x = current;
+    if (!x || busy(btn)) return;
+    const was = btn.textContent;
+    setBusy(btn, true);
+    btn.textContent = t('Sending…');
+    try {
+      const [{ pdfScanToCensus, pdfLogoPicks }, { createTray, candidatesFromCensus }, pending] = await Promise.all([
+        import('../lib/design-system/sources/pdf.ts'),
+        import('../lib/design-system/tray.ts'),
+        import('../lib/design-system/pending-files.ts'),
+      ]);
+      // The label is the provenance chip every candidate then wears ("from
+      // guidelines"), so it is the file's STEM — the same thing the source
+      // picker's own door passes, or the two doors chip one document two ways.
+      const census = pdfScanToCensus({ vectors: x.vectors, fonts: x.fonts }, stem(x.fileName));
+      const candidates = candidatesFromCensus(census);
+      const tray = createTray(host);
+      await tray.load();
+      const kept = await tray.add(candidates);
+
+      // The marks travel as files, the tray carries the colours and the
+      // families, and both are the same send — so the studio opens with
+      // everything this document had to offer.
+      //
+      // WHICH marks is `pdfLogoPicks`' judgement, not this view's: a document
+      // with thirty marks is not thirty logo decisions, and the source picker
+      // ranks the same way, so the two doors into the studio never disagree
+      // about what a PDF holds. Each pick is named after the tile it came from
+      // (the tile's own Download SVG writes that filename), so a mark arriving
+      // in the Logos room is traceable back to the row it was sent from — off
+      // the pick's own `index`, because two pages can carry the same mark
+      // verbatim and matching the SVG text back would name both after the first.
+      const marks = pdfLogoPicks(x.vectors, { max: pending.PENDING_LOGO_MAX_FILES })
+        .map((pick) => new File([pick.svg], `${stem(x.fileName)}-logo-${pick.index + 1}.svg`, { type: 'image/svg+xml' }));
+      const sent = marks.length ? pending.stashPendingLogoFiles(marks).sent : 0;
+
+      // Two facts, each said only when it is true, and each counted at the sink
+      // rather than at the send.
+      const said = [
+        kept ? (kept === 1 ? t('1 kept in the tray') : tRaw('{n} kept in the tray', { n: kept })) : t('Nothing new for the tray.'),
+        sent ? (sent === 1 ? t('1 mark sent to Logos') : tRaw('{n} marks sent to Logos', { n: sent })) : '',
+      ].filter(Boolean).join(' ');
+      announce(said);
+      playSfx('save');
+      location.hash = '#/start?area=overview';
+    } catch (err) {
+      host.log('warn', 'pdf-extract: studio handoff failed', { error: (err as Error)?.message });
+      btn.textContent = t('Could not send');
+      announce(t('Nothing could be sent to the studio.'), { assertive: true });
+      setTimeout(() => { btn.textContent = was; setBusy(btn, false); }, 1800);
+    }
+  }
+
   async function copy(text: string, btn: HTMLElement | null): Promise<void> {
     try {
       await host.clipboard.writeText(text);
@@ -870,6 +1098,21 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       return;
     }
 
+    const logoVec = el.closest<HTMLButtonElement>('[data-logos-vector]');
+    if (logoVec) {
+      const i = Number(logoVec.dataset.logosVector);
+      const v = current.vectors[i];
+      if (v) void sendVectorToLogos(v, i, logoVec);
+      return;
+    }
+
+    const addFont = el.closest<HTMLButtonElement>('[data-add-font]');
+    if (addFont) {
+      const f = current.fonts[Number(addFont.dataset.addFont)];
+      if (f) void addFontToSystem(f, addFont);
+      return;
+    }
+
     const saveFont = el.closest<HTMLElement>('[data-save-font]');
     if (saveFont) {
       const f = current.fonts[Number(saveFont.dataset.saveFont)];
@@ -886,9 +1129,11 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       return;
     }
 
-    const act = el.closest<HTMLElement>('[data-act]')?.dataset.act;
+    const actEl = el.closest<HTMLElement>('[data-act]');
+    const act = actEl?.dataset.act;
     if (!act) return;
-    if (act === 'copy') void copy(joinPageText(current.pages, { markdown: false }), el.closest<HTMLElement>('[data-act]'));
+    if (act === 'studio') void sendToStudio(actEl as HTMLButtonElement);
+    else if (act === 'copy') void copy(joinPageText(current.pages, { markdown: false }), actEl);
     else if (act === 'md') download(host, joinPageText(current.pages), `${base}.md`, 'text/markdown');
     else if (act === 'txt') download(host, joinPageText(current.pages, { markdown: false }), `${base}.txt`, 'text/plain');
     else if (act === 'clear') reset();

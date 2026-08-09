@@ -41,13 +41,23 @@ const SLOTS = [
   ['edge', '--brand-edge'],
 ] as const;
 
+/** A resolvable tokens document — the head, or a published design-system version
+ *  (plans/97 §6a). Both answer the same two reads, which is the point. */
+interface BrandTokens {
+  resolve(ref: string, opts?: { theme?: string }): Promise<unknown>;
+  colors?(opts?: { theme?: string }): Promise<Array<{ value: string }>>;
+}
+
 /** The host slice this module reads — the (optional) tokens resolver, plus
- * `colors()` for the warm-accent scan (see nearestWarmHex). */
+ * `colors()` for the warm-accent scan (see nearestWarmHex).
+ *
+ * No version reads: the web bridge's own `resolve`/`colors` already answer for
+ * whatever the §6a ladder lands on (bridge/tokens.ts), so both painters here —
+ * app chrome and the tool canvas — read one surface and cannot disagree about
+ * which design system is live. A shell or test host whose tokens API has no
+ * versioning is on the head, which is what an unversioned system resolves to. */
 interface BrandVarsHost {
-  tokens?: {
-    resolve(ref: string, opts?: { theme?: string }): Promise<unknown>;
-    colors?(opts?: { theme?: string }): Promise<Array<{ value: string }>>;
-  };
+  tokens?: BrandTokens;
 }
 
 // ── Chrome (app UI) brand accent ─────────────────────────────────────────────
@@ -119,7 +129,7 @@ export function brandFontStack(value: unknown, tail: string): string | null {
 }
 
 /** Resolve the brand font slots and apply/clear them inline on <html>. */
-async function applyBrandFonts(host: BrandVarsHost): Promise<void> {
+async function applyBrandFonts(host: { tokens?: BrandTokens }): Promise<void> {
   const applied: Record<string, string> = {};
   for (const [slot, cssVar, tail] of FONT_SLOTS) {
     let stack: string | null = null;
@@ -167,7 +177,7 @@ export function brandRadiusValue(value: unknown): string | null {
 
 /** Resolve `shape.radius` and apply/clear it inline on <html>, caching the
  *  applied value (or clearing the cache) for index.html's pre-boot restore. */
-async function applyBrandRadius(host: BrandVarsHost): Promise<void> {
+async function applyBrandRadius(host: { tokens?: BrandTokens }): Promise<void> {
   let radius: string | null = null;
   try {
     radius = brandRadiusValue(await host.tokens?.resolve('{shape.radius}'));
@@ -726,16 +736,22 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   if (typeof document === 'undefined') return;
   const root = document.documentElement.style;
 
+  // `host.tokens` IS the render surface (plans/97 §6a): the web bridge resolves
+  // the version ladder behind its own reads, so chrome and the tool canvas below
+  // paint from one answer and cannot disagree. Nothing to resolve here, and
+  // nothing published means the head, exactly as before §6a.
+  const tk: BrandTokens | undefined = host.tokens;
+
   const resolveHex = async (slot: string, theme: string): Promise<string | null> => {
     try {
-      return tokenValueToHex(await host.tokens?.resolve(`{color.semantic.${slot}}`, { theme }));
+      return tokenValueToHex(await tk?.resolve(`{color.semantic.${slot}}`, { theme }));
     } catch { return null; }
   };
   // Fonts and shape first, independently of the colour blocks below — a brand
   // may declare font/shape tokens without semantic colour slots (the SUSE doc)
   // or vice versa.
-  await applyBrandFonts(host).catch(() => { /* never breaks boot */ });
-  await applyBrandRadius(host).catch(() => { /* never breaks boot */ });
+  await applyBrandFonts({ tokens: tk }).catch(() => { /* never breaks boot */ });
+  await applyBrandRadius({ tokens: tk }).catch(() => { /* never breaks boot */ });
   // The warm "needs attention" accent scans every resolved colour (ramps,
   // spectrum, roles) — independent of the semantic primary/on-primary block
   // below, so it still finds SUSE's Persimmon even though that catalog
@@ -744,7 +760,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   // keeping the handler pure means it can never itself throw).
   let warn: { hex: string; ink: string } | null = null;
   try {
-    warn = nearestWarmHex(await host.tokens?.colors?.() ?? []);
+    warn = nearestWarmHex(await tk?.colors?.() ?? []);
   } catch { warn = null; }
   if (warn) {
     root.setProperty('--brand-warn', warn.hex);
@@ -786,6 +802,12 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
  * residue (a `{path}` that never resolved is a missing slot, not a colour);
  * a structured DTCG colour object is normalised via the engine's colorToHex
  * (null ⇒ missing slot). Missing slots remove the property.
+ *
+ * The per-TOOL-CANVAS painter, and the reason `host.tokens` had to become the
+ * render surface rather than the head (plans/97 §6a): under an active version
+ * this must paint that version's colours, and there is no per-mount hook here to
+ * resolve a ladder in — the same reason the picker's swatches, the engine's
+ * token-bound inputs and the export palette all read the bridge directly.
  */
 export async function applyBrandVars(el: HTMLElement, host: BrandVarsHost): Promise<void> {
   await Promise.all(SLOTS.map(async ([slot, cssVar]) => {

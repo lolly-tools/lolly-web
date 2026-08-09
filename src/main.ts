@@ -18,19 +18,15 @@ import { initTheme, applyTheme } from './theme.ts';
 import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-prefs.ts';
 import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
-import { loadUserFonts } from './lib/load-user-fonts.ts';
-import { registerUserFonts } from './lib/register-user-fonts.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
-import { hydrateNeurospicy, armNeurospicy, getNeurospicy, invalidateNeurospicyTracks, dropNeurospicyTracks, reconcileNeurospicySelection } from './lib/neurospicy.ts';
-import { hydrateAtmosphere, armAtmosphere } from './lib/atmosphere.ts';
 import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
+import { initSearchBar, applySearchBarRoute } from './components/search-bar.ts';
+import { initSpotlight } from './components/spotlight.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
 import { applyCaptureNeutral } from './lib/capture-neutral.ts';
 import { peekNeuroDemo, applyNeuroDemo } from './lib/neuro-demo.ts';
-import { installRangeUpgrader } from './components/custom-slider.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
-import { initShareTargetIngest } from './lib/drop-router.ts';
 import { maybeShowFirstRunInstanceSheet } from './lib/instance-choice.ts';
 import { initOrg } from './org/index.ts';
 import { initSelectPreview } from './select-preview.ts';
@@ -59,11 +55,11 @@ type Route =
   | { name: 'start'; params?: string }
   | { name: 'multi'; params?: string }
   | { name: 'components' }
-  | { name: 'utilities' }
+  | { name: 'utilities'; params?: string }
   | { name: 'lab'; params?: string }
   | { name: 'pdf' }
   | { name: 'script' }
-  | { name: 'gallery' };
+  | { name: 'gallery'; params?: string };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
 interface ViewElement extends HTMLElement {
@@ -93,6 +89,10 @@ interface RouteSpec {
   viewClasses?: readonly string[];
   /** The sub-state the dedup signature keys on. */
   sigKey?: RouteSigKey;
+  /** Whether the persistent bottom search bar shows on this route (plans/99 M1):
+   *  'search' on the browse views, 'none' (the default) on editing views and the
+   *  utility views that keep their own chrome for now. */
+  footer?: 'search' | 'none';
 }
 
 /**
@@ -103,40 +103,44 @@ interface RouteSpec {
  * than editing four parallel lists that silently half-work when one is missed.
  */
 const ROUTES: Record<RouteName, RouteSpec> = {
-  gallery: { label: 'Tools gallery', tab: 'tools', viewClasses: ['gallery-view'] },
+  gallery: { label: 'Tools gallery', tab: 'tools', viewClasses: ['gallery-view'], footer: 'search' },
   // Utilities IS the gallery view (mountGallery in only-utility mode), so it must
   // carry the same scoping class — gallery.css's desktop saved-list grid, footer
   // padding and every other .gallery-view rule apply identically. Without it the
   // mounted markup is styled by nothing and the view renders broken/blank.
-  utilities: { label: 'Utilities', tab: 'utilities', viewClasses: ['gallery-view', 'utilities-view'] },
-  tool: { label: 'Tool', viewClasses: ['tool-view'], sigKey: 'toolId' },
-  profile: { label: 'Profile', viewClasses: ['profile-view'], sigKey: 'params' },
+  utilities: { label: 'Utilities', tab: 'utilities', viewClasses: ['gallery-view', 'utilities-view'], footer: 'search' },
+  tool: { label: 'Tool', viewClasses: ['tool-view'], sigKey: 'toolId', footer: 'none' },
+  profile: { label: 'Profile', viewClasses: ['profile-view'], sigKey: 'params', footer: 'search' },
   // The dashboard keys on its query too, so a deep link that only changes a flag
   // (#/d → #/d?print, or an old #/platform?x redirect) re-mounts and re-applies
   // the open+scroll, instead of being deduped as the same 'dashboard' route.
-  dashboard: { label: 'Dashboard', viewClasses: ['dashboard-view'], sigKey: 'params' },
-  pro: { label: 'Batch mode', viewClasses: ['pro-view'] },
-  projects: { label: 'Projects', tab: 'projects', viewClasses: ['projects-view'], sigKey: 'folderId' },
-  catalog: { label: 'Catalogue', tab: 'catalog', viewClasses: ['catalog-view'] },
-  verify: { label: 'Verify', viewClasses: ['verify-view'] },
-  convert: { label: 'Convert', viewClasses: ['convert-view'] },
-  data: { label: 'Spreadsheet', viewClasses: ['data-view'] },
+  dashboard: { label: 'Dashboard', viewClasses: ['dashboard-view'], sigKey: 'params', footer: 'search' },
+  pro: { label: 'Batch mode', viewClasses: ['pro-view'], footer: 'none' },
+  projects: { label: 'Projects', tab: 'projects', viewClasses: ['projects-view'], sigKey: 'folderId', footer: 'search' },
+  catalog: { label: 'Catalogue', tab: 'catalog', viewClasses: ['catalog-view'], footer: 'search' },
+  // Verify/Convert/PDF/Lab keep their own chrome in v1 — the bar reaches them in
+  // plans/99 M3 once proven (decision locked 2026-08-08).
+  verify: { label: 'Verify', viewClasses: ['verify-view'], footer: 'none' },
+  convert: { label: 'Convert', viewClasses: ['convert-view'], footer: 'none' },
+  data: { label: 'Spreadsheet', viewClasses: ['data-view'], footer: 'none' },
   // The studio keys on ?tab= for the same reason — "Manage fonts" (#/start?tab=type)
   // clicked while already on #/start must switch steps, not dedupe to a no-op.
-  start: { label: 'Brand setup', viewClasses: ['start-view'], sigKey: 'params' },
+  start: { label: 'Brand setup', viewClasses: ['start-view'], sigKey: 'params', footer: 'none' },
   // Multi-edit keys on its selection (?s=slot,slot…) so editing a different
   // selection re-mounts with the new set instead of deduping.
-  multi: { label: 'Multi-edit', viewClasses: ['multi-view'], sigKey: 'params' },
-  components: { label: 'Component library' },
+  multi: { label: 'Multi-edit', viewClasses: ['multi-view'], sigKey: 'params', footer: 'none' },
+  // Components keeps its footerNav SPECIMEN (in-flow, neutralised in components.css)
+  // rather than the live bar.
+  components: { label: 'Component library', footer: 'none' },
   // The Lab gets NO tab. It's a utility you open and come back from, like any tool
   // page — so it gets the back pill and no tab bar. Lighting the Utilities tab
   // here would suggest the pill is where you are rather than where you'd go,
   // and the tabs would compete with the report's own numbered sequence.
-  lab: { label: 'Colour Lab' },
-  pdf: { label: 'Take a PDF apart', viewClasses: ['pdfx-view'] },
+  lab: { label: 'Colour Lab', footer: 'none' },
+  pdf: { label: 'Take a PDF apart', viewClasses: ['pdfx-view'], footer: 'none' },
   // Script audio is a utility view like the Lab: no tab, the back pill instead
   // (see the lab row's rationale above).
-  script: { label: 'Script audio', viewClasses: ['scriptst-view'] },
+  script: { label: 'Script audio', viewClasses: ['scriptst-view'], footer: 'none' },
 };
 
 /** Every scoping class in ROUTES → the routes that own it, in declaration order. */
@@ -184,7 +188,15 @@ function routeSignature(route: Route): string {
   if (!key) return route.name;
   const sub = route as { toolId?: string; folderId?: string | null; params?: string };
   if (key === 'toolId') return `${route.name}:${sub.toolId ?? ''}`;
-  if (key === 'folderId') return `${route.name}:${sub.folderId ?? ''}`;
+  if (key === 'folderId') {
+    // The ?q= results-mode param is mount state too (plans/99 §2a): entering or
+    // leaving projects results mode must remount in BOTH directions — the
+    // overlay's "See all in Projects" handoff forward AND the browser's Back —
+    // so the signature carries it alongside the folder. Other params stay out:
+    // they don't change what's mounted.
+    const q = new URLSearchParams(sub.params ?? '').get('q');
+    return `${route.name}:${sub.folderId ?? ''}${q ? `?q=${q}` : ''}`;
+  }
   return `${route.name}:${sub.params ?? ''}`;
 }
 
@@ -273,6 +285,12 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   // view's goes on. (A route with no viewClasses, e.g. the Lab, scopes itself.)
   for (const [cls, owners] of VIEW_CLASS_OWNERS) view.classList.toggle(cls, owners.has(route.name));
   view.classList.toggle('is-returning', returning);
+
+  // The persistent search bar (plans/99 M1): shown on browse routes, hidden on
+  // editing ones. After the outgoing view's _cleanup (its claim is released) and
+  // before the incoming mount (which claims it) — and before the try, so a mount
+  // failure still leaves the bar consistent with the route.
+  applySearchBarRoute(ROUTES[route.name].footer ?? 'none', route.name);
 
   // When the route NAME changes, the view-scoping class above changes with it
   // (e.g. .profile-view → .gallery-view). But the outgoing view's markup is still
@@ -376,7 +394,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
         bumpMetric('filesRendered', files.length);
         for (const f of files) recordFormat(String(f.name).split('.').pop());
       };
-      await mountProjects(view, host, route.folderId, { onBatchRendered });
+      await mountProjects(view, host, route.folderId, { onBatchRendered, params: route.params });
       break;
     }
     // --- Catalog: a gallery-style view of every asset (catalog + user), plus swatches
@@ -430,9 +448,11 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // The 'Offline Utilities' flag governs the WHOLE view now — off means no
       // tab and no route (a deep link lands on the main gallery).
       if (!flagEnabledSync(UTILITIES_FLAG_ID)) { window.location.replace('#'); return; }
-      await mountGallery(view, host as unknown as Parameters<typeof mountGallery>[1], { only: 'utility' });
+      await mountGallery(view, host as unknown as Parameters<typeof mountGallery>[1], { only: 'utility', params: route.params });
       break;
     case 'gallery':
+      await mountGallery(view, host as unknown as Parameters<typeof mountGallery>[1], { params: route.params });
+      break;
     default:
       await mountGallery(view, host as unknown as Parameters<typeof mountGallery>[1]);
   }
@@ -627,8 +647,15 @@ async function boot(): Promise<void> {
   // User fonts first: --font-brand may name a locally-stored Google Font, so its
   // FontFaces should be in document.fonts by the time the stack applies (both are
   // async and best-effort — worst case the face pops in a beat later).
-  void registerUserFonts(host as unknown as Parameters<typeof registerUserFonts>[0])
-    .then(() => loadUserFonts(host))
+  // register-user-fonts + load-user-fonts (and its font-utils/font-asset-handler chain)
+  // are dynamic-imported off the boot path — this was already fire-and-forget, so a
+  // locally-stored --font-brand face applying a beat later is the same tolerated swap.
+  void import('./lib/register-user-fonts.ts')
+    .then(async ({ registerUserFonts }) => {
+      await registerUserFonts(host as unknown as Parameters<typeof registerUserFonts>[0]);
+      const { loadUserFonts } = await import('./lib/load-user-fonts.ts');
+      await loadUserFonts(host);
+    })
     .finally(() => { void applyChromeBrandVars(host); });
 
   // Profile is the canonical theme store. Apply it now so the theme is correct
@@ -675,41 +702,47 @@ async function boot(): Promise<void> {
   // (or without) the profile — the Sound control's Neurospicy player in popovers — can
   // gate synchronously.
   hydrateFeatureFlags(profile as Parameters<typeof hydrateFeatureFlags>[0]);
+  // The persistent bottom search bar (plans/99 M1) — one instance for the whole
+  // session, mounted after #view. Needs t() (initI18n above) and the flag mirror
+  // (hydrateFeatureFlags above, for the Pro link); hidden until the first
+  // navigate() below applies the route's footer mode.
+  initSearchBar();
+  // The spotlight overlay (plans/99 M2): hooks into the bar synchronously (the
+  // chord + combobox semantics from first paint) and lazy-loads the provider
+  // set off the boot path. Must follow the bar init above — it registers into it.
+  initSpotlight(host);
   // An automated screenshot run pins neutral chrome: effect flags off, a11y prefs
   // clear. It has to land HERE — after the line above rewrites the flag mirror from
   // the profile (which discards anything seeded earlier), and before the two reads
   // just below act on it. Inert for everyone else. See lib/capture-neutral.ts.
   if (applyCaptureNeutral()) console.info('[lolly] neutral capture state pinned');
-  // Neurospicy Mode — reconcile the saved focus-loop state, then (only if the feature is
-  // enabled and it was on) arm a one-shot gesture to resume the loop, since audio can't
-  // autoplay before a gesture.
-  hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
-  // The Atmosphere beds live in the same player, keep their own persisted levels,
-  // and resume on the same first-gesture terms (armAtmosphere is a no-op unless the
-  // user themselves left a layer above zero).
-  hydrateAtmosphere((profile as { atmosphere?: unknown }).atmosphere);
-  // The ?neuro demo deep-link (docs screenshots — see lib/neuro-demo.ts): stage the
-  // sound dock for THIS page load only — flag lit in memory, silent demo player +
-  // atmosphere state, dock shown expanded. Must sit AFTER applyCaptureNeutral()
-  // (the demo's in-memory flag override outranks the pin's mirror write) and after
-  // the two hydrates above (they would overwrite the demo state). Fire-and-forget:
-  // it waits internally for the catalog-synced track list.
+  // Neurospicy Mode + Atmosphere beds — reconcile the saved focus-loop / bed state,
+  // then (only if enabled and left on) arm a one-shot gesture to resume, since audio
+  // can't autoplay before a gesture. Both modules (lib/neurospicy.ts + lib/atmosphere.ts,
+  // which statically couple through neuroAudioContext) are DEFERRED off the boot path:
+  // they default OFF, and even for a flag-on user nothing here is needed before first
+  // paint — arm only installs a gesture listener, hydrate is pure state. The import is
+  // kicked here (after hydrateFeatureFlags + applyCaptureNeutral have settled the flag
+  // mirror) so the listener installs ahead of the user's first pointerdown; a first
+  // gesture landing in the ~ms import window would miss a one-time resume, which affects
+  // only the flag-on minority. The ?neuro docs deep-link runs INSIDE the .then, AFTER the
+  // hydrates (they'd overwrite its in-memory demo state) and after applyCaptureNeutral.
   const neuroDemo = peekNeuroDemo();
-  if (neuroDemo) void applyNeuroDemo(host as unknown as Parameters<typeof applyNeuroDemo>[0], neuroDemo);
-  if (flagEnabledSync('neurospicy')) {
-    armNeurospicy(host as unknown as Parameters<typeof armNeurospicy>[0]);
-    armAtmosphere(host as unknown as Parameters<typeof armAtmosphere>[0]);
-    // Show the bottom-right dock if the mode was left on. The dock (and the music
-    // player inside it) is dynamic-imported and only when the mode is actually
-    // enabled: syncNeuroDock's off-branch is hideNeuroDock(), a no-op for a dock
-    // that was never built, so skipping the import is equivalent for everyone else
-    // — which is nearly everyone (lib/neurospicy.ts DEFAULTS to enabled: false).
-    // armNeurospicy stays static, so first-gesture audio arming is unchanged.
-    if (getNeurospicy().enabled) {
-      void import('./components/neuro-dock.ts')
-        .then(m => m.syncNeuroDock(host as unknown as Parameters<typeof m.syncNeuroDock>[0]));
+  void Promise.all([import('./lib/neurospicy.ts'), import('./lib/atmosphere.ts')]).then(([neuro, atmo]) => {
+    neuro.hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
+    atmo.hydrateAtmosphere((profile as { atmosphere?: unknown }).atmosphere);
+    if (neuroDemo) void applyNeuroDemo(host as unknown as Parameters<typeof applyNeuroDemo>[0], neuroDemo);
+    if (flagEnabledSync('neurospicy')) {
+      neuro.armNeurospicy(host as unknown as Parameters<typeof neuro.armNeurospicy>[0]);
+      atmo.armAtmosphere(host as unknown as Parameters<typeof atmo.armAtmosphere>[0]);
+      // Show the bottom-right dock if the mode was left on. The dock (and the music
+      // player inside it) is dynamic-imported and only when the mode is actually enabled.
+      if (neuro.getNeurospicy().enabled) {
+        void import('./components/neuro-dock.ts')
+          .then(m => m.syncNeuroDock(host as unknown as Parameters<typeof m.syncNeuroDock>[0]));
+      }
     }
-  }
+  });
   // Jelly effects — start the lazy bundle load now, racing the rest of boot
   // (catalog sync + first view mount) rather than blocking or idle-deferring:
   // surfaces check the synchronous jellyActive() gate at paint, and a
@@ -718,11 +751,14 @@ async function boot(): Promise<void> {
   // and the .then() below retrofits the persistent nav pill for the view that
   // already mounted. Flag-off users never fetch the chunk.
   if (jellyEnabled()) void ensureJelly().then(ok => { if (ok) syncJellyNavToggle(navKeyForRoute(parseRoute().name)); });
-  // Sliders. Installed AFTER the flag hydration above, because the egg-trail is
-  // flag-gated and a slider reads that once, when it mounts. Not gated itself:
-  // `.custom-slider` is the app's slider in both modes, and the chrome's plain
-  // ranges become one wherever they mount (see components/custom-slider.ts).
-  installRangeUpgrader();
+  // Sliders. Deferred off the boot path (no native range paints on the gallery's
+  // first frame; the upgrader is a MutationObserver + one initial document sweep, so a
+  // late install still catches every range already mounted). Idle-scheduled after the
+  // flag hydration above, because the egg-trail is flag-gated and a slider reads that
+  // once, when it mounts. Not gated itself: `.custom-slider` is the app's slider in
+  // both modes, and the chrome's plain ranges become one wherever they mount.
+  const upgradeSliders = (): void => { void import('./components/custom-slider.ts').then(m => m.installRangeUpgrader()); };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(upgradeSliders); else setTimeout(upgradeSliders, 200);
   // EVERY user-asset delete funnels through the bridge, which announces it here —
   // an audio delete must also leave the music player (stopping it, or advancing,
   // if it was the sounding track), no matter which surface deleted it (catalog,
@@ -730,7 +766,10 @@ async function boot(): Promise<void> {
   // flag: purging dead cache entries is correct even while the player is hidden.
   document.addEventListener('lolly:user-asset-deleted', (e) => {
     const d = (e as CustomEvent<{ id?: string; type?: string }>).detail;
-    if (d?.type === 'audio' && d.id) void dropNeurospicyTracks(host as unknown as Parameters<typeof dropNeurospicyTracks>[0], [d.id]);
+    const id = d?.id;
+    if (d?.type === 'audio' && id) {
+      void import('./lib/neurospicy.ts').then(m => m.dropNeurospicyTracks(host as unknown as Parameters<typeof m.dropNeurospicyTracks>[0], [id]));
+    }
   });
 
   // Prime the in-memory tool index from the last cached copy so the gallery can
@@ -764,10 +803,11 @@ async function boot(): Promise<void> {
   // track list would be built from a not-yet-synced catalog. Rebuild it once assets land.
   catalogReady.then(async () => {
     if (!flagEnabledSync('neurospicy')) return;
-    invalidateNeurospicyTracks();
+    const m = await import('./lib/neurospicy.ts');
+    m.invalidateNeurospicyTracks();
     // Now that the real track list has landed, heal a persisted selection pointing at an
     // asset we've since retired from the catalog (it would otherwise sit enabled-but-silent).
-    await reconcileNeurospicySelection(host as unknown as Parameters<typeof reconcileNeurospicySelection>[0]);
+    await m.reconcileNeurospicySelection(host as unknown as Parameters<typeof m.reconcileNeurospicySelection>[0]);
   }).catch(() => { /* offline boot — cache-skip above already re-queries */ });
 
   // First-run seed: give a brand-new user the catalog's curated default asset favourites
@@ -838,9 +878,10 @@ async function boot(): Promise<void> {
   // shared files through the universal drop chooser. Placed after the first
   // navigate so a cold-start share opens its sheet over a painted view, not the
   // boot skeleton; runs regardless of which view mounted (the chooser is
-  // body-mounted). A feature-detected no-op everywhere but the Android WebView,
-  // and drop-router's heavy deps stay lazy — the init itself is tiny.
-  initShareTargetIngest(host as unknown as Parameters<typeof initShareTargetIngest>[0]);
+  // body-mounted). A feature-detected no-op everywhere but the Android WebView.
+  // drop-router (the sniff + chooser module) is itself dynamic-imported off the boot
+  // path now — its heavy import/ingest deps were already lazy.
+  void import('./lib/drop-router.ts').then(m => m.initShareTargetIngest(host as unknown as Parameters<typeof m.initShareTargetIngest>[0]));
 
   // Warm the likely-next view chunks so the first tap doesn't pay a cold dynamic-import.
   // import() promises are cached, so the later route reuses these.
@@ -949,12 +990,14 @@ function parseRoute(): Route {
     if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
-    if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities' }; // gallery filtered to the utility category
+    if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities', params: query || '' }; // gallery filtered to the utility category
     if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
     if (parts[0] === 'pdf') return { name: 'pdf' }; // take a PDF apart — text/asset extraction
     if (parts[0] === 'script') return { name: 'script' }; // Script audio — the TTS writing surface
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
-    return { name: 'gallery' };
+    // The gallery itself (#/?q=… keeps its query — the search field seeds from it),
+    // and the fall-through for any unrecognised hash path.
+    return { name: 'gallery', params: query || '' };
   }
 
   const pathParts = window.location.pathname.split('/').filter(Boolean);

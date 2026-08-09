@@ -81,6 +81,8 @@ import type { Unit } from '../../../../engine/src/units.js';
 // file). They only `import type` back from here, so these value imports don't cycle.
 import { icon } from '../lib/icons.ts';
 import { asRow } from './tool-types.ts';
+import { resolveCanvasFastCfg, geometryFastPathPlan, boundEndpointIds, type FastPathCfg } from './canvas-scene.ts';
+import type { Box } from './free-canvas-math.ts';
 import { encodeBlocksCompact } from '../lib/blocks-url.ts';
 import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
 import { isTextEditingTarget } from '../lib/typing-target.ts';
@@ -465,12 +467,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
-  // `?template=<id>` launches straight into a manifest `templates[]` starting point,
-  // SKIPPING the "New from template" chooser — the on-ramp for a retired tool id or a
-  // deep link. Reserved (so it's never a tool input and never counts toward the blank
-  // check below); the seed itself is read in-process from the loaded manifest, never
-  // packed into the URL. An unknown id is a null lookup → falls through to the normal
-  // fresh-open flow (chooser or blank).
+  // `?template=<id>` launches straight into a template starting point, SKIPPING the "New
+  // from template" chooser — the on-ramp for a retired tool id or a deep link. Reserved
+  // (so it's never a tool input and never counts toward the blank check below); the heavy
+  // `values` seed is FETCHED in-process from the external file (tools/<id>/templates/
+  // <id>.json), never packed into the URL. An unknown id is a null fetch → falls through
+  // to the normal fresh-open flow (chooser or blank).
   const templateParam = urlFlags.get('template');
   // Reached via a link when the boot URL carried ANY tool configuration — a share,
   // a bookmark, an `?options`/`?full` deep link. The cost panel keys its degrade on
@@ -506,11 +508,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   }
 
   // ── "New from template" on-ramp (plans/94) ───────────────────────────────────
-  // A tool can declare `templates[]` starting points. Two ways they seed a fresh
-  // session — both in-process (a real frame template serialises to many KB, so it is
-  // never packed into the URL):
-  //   1. `?template=<id>` seeds that entry directly and skips the chooser.
-  //   2. otherwise, a BLANK fresh open shows the chooser and awaits a pick.
+  // A tool offers template starting points as per-template files (tools/<id>/templates/
+  // <tid>.json); the synced index carries their METADATA only. Two ways they seed a fresh
+  // session — the heavy `values` is FETCHED on demand (a real frame template serialises to
+  // many KB, so it is never packed into the URL):
+  //   1. `?template=<id>` fetches that entry's values directly and skips the chooser.
+  //   2. otherwise, a BLANK fresh open shows the chooser (live tile previews + on-select
+  //      values fetch) and awaits a pick.
   // Emptiness is keyed off the parsed URL `values` (not `initialValues`, which the
   // profile-fill loop below mutates), so the check stays honest; a chosen/parameterised
   // seed still gets profile-filled on top because this runs BEFORE that loop. Skipped
@@ -524,18 +528,51 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // createRuntime/autoExport, gating on it too is what keeps an auto-export or `?full`
   // embed link from hanging on a modal no human is there to dismiss. `?template=<id>`
   // still seeds directly (it also sets `reachedViaLink`, so it's handled here, not below).
-  const hasTemplates = Array.isArray(tool.manifest.templates) && tool.manifest.templates.length > 0;
-  if (hasTemplates && !slot && !seededDirect && Object.keys(values).length === 0) {
-    if (templateParam) {
-      const { templateValuesById } = await import('./template-chooser.ts');
-      const seed = templateValuesById(tool.manifest.templates, templateParam);
-      if (seed) initialValues = { ...seed, ...initialValues };
-    } else if (!reachedViaLink) {
+  // Template METADATA (id/name/category/description/thumb — NO values) comes from the
+  // synced index entry (build-catalog-index.ts scans tools/<id>/templates/*.json). The
+  // heavy `values` seed lives in each external file and is FETCHED ON DEMAND below, so it
+  // never rides the index or a URL. Fall back to an inline manifest `templates[]` if a
+  // tool still authors one (the optional inline shape).
+  const indexEntry = (window as Window & { __toolIndex?: { tools?: Array<{ id: string; templates?: unknown }> } })
+    .__toolIndex?.tools?.find(e => e.id === toolId);
+  const templateMeta: unknown = Array.isArray(indexEntry?.templates)
+    ? indexEntry!.templates
+    : (Array.isArray(tool.manifest.templates) ? tool.manifest.templates : undefined);
+  const hasTemplates = Array.isArray(templateMeta) && templateMeta.length > 0;
+  // A NAMED `?template=` seeds on its own authority — the values fetch decides
+  // (unknown id → null → normal open). It must NOT gate on `hasTemplates`:
+  // metadata rides `window.__toolIndex`, which only the gallery populates, so a
+  // direct link, a share, or an OFFSCREEN export remount (the blank-PDF/MP4 bug:
+  // scene and export renders re-parse the URL in a context with no index and no
+  // inline manifest fallback) would silently drop the seed and render empty.
+  if (templateParam && !slot && !seededDirect && Object.keys(values).length === 0) {
+    const { fetchTemplateValues, templateValuesById } = await import('./template-chooser.ts');
+    let seed = await fetchTemplateValues(toolId, templateParam);
+    if (!seed && Array.isArray(templateMeta)) seed = templateValuesById(templateMeta, templateParam);
+    if (seed) initialValues = { ...seed, ...initialValues };
+  } else if (hasTemplates && !slot && !seededDirect && Object.keys(values).length === 0) {
+    if (!reachedViaLink) {
       const { openTemplateChooser, parseTemplates } = await import('./template-chooser.ts');
-      const templates = parseTemplates(tool.manifest.templates);
+      const templates = parseTemplates(templateMeta);
       if (templates.length) {
-        const chosen = await openTemplateChooser({ toolName: tool.manifest.name, templates });
-        initialValues = { ...chosen, ...initialValues };
+        // The chooser fetches each template's values file on demand — for the live tile
+        // previews (host + formats) and for the final select — so the seed it resolves is
+        // already the full input map, ready to merge.
+        // A chooser failure (a bad template file, a stale chunk, a throw mid-render)
+        // must never brick the mount - fall through to a blank open, which is what
+        // dismissing the chooser means anyway.
+        try {
+          const chosen = await openTemplateChooser({
+            toolName: tool.manifest.name,
+            toolId,
+            templates,
+            host,
+            formats: tool.manifest.render?.formats,
+          });
+          initialValues = { ...chosen, ...initialValues };
+        } catch (e) {
+          host.log?.('warn', 'template chooser failed - opening blank: ' + String(e));
+        }
       }
     }
   }
@@ -738,6 +775,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // The blocks input the editor manipulates directly (carries the `canvas` flag).
   const canvasEditInput = editorLayout
     ? tool.manifest.inputs?.find(i => i.type === 'blocks' && i.canvas)
+    : null;
+  // Geometry paint fast-skip (plans/98 §9) — OFF by default, opt-in via ?canvasfastpath=1 so
+  // the served-app harness proves exported-SVG byte-parity before it is enabled for everyone.
+  const fastPathOn = editorLayout && !!canvasEditInput
+    && typeof location !== 'undefined' && /[?&]canvasfastpath=1\b/.test(location.href);
+  const fastCfgPaint: FastPathCfg | null = fastPathOn && canvasEditInput?.canvas
+    ? resolveCanvasFastCfg(canvasEditInput.canvas as Record<string, unknown>)
     : null;
   // Multi-page ("carousel") editor: an editor-layout tool whose canvas is a horizontal
   // strip of N same-size [data-pdf-page] frames (render.pages). The overlay places boxes
@@ -2654,6 +2698,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   let rafId = 0;
   let pendingFrame: { model: InputModelItem[]; hydrated: string } | null = null;   // latest { model, hydrated } awaiting paint
   let lastPainted: string | null = null;   // hydrated source of the last CLEAN paint — skip an identical canvas rebuild
+  let lastPaintedBoxes: Box[] | null = null;   // baseline for the geometry fast-skip diff (plans/98 §9)
 
   function paint(): void {
     rafId = 0;
@@ -2668,7 +2713,47 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // have moved on an input that doesn't touch the template (e.g. an export-dimension
     // select), so URL sync / size-driver / auto-export below always run. lastPainted
     // is recorded only after a CLEAN paint, so a throwing render retries next emit.
-    if (hydrated !== lastPainted) {
+    // ── Geometry fast-skip (plans/98 §9, opt-in) ────────────────────────────────
+    // A proven pure-translation move whose DOM free-canvas already positioned (applyLiveRect
+    // during the drag) needs no rebuild — export parity holds via COMPUTED style (the export
+    // walker reads getComputedStyle, so raw-attribute formatting is irrelevant). paint()
+    // derives the damage itself from consecutive box models (no hint channel), and VERIFIES
+    // each moved node is already at committed geometry before skipping; anything unproven
+    // (resize/rotate, cross-box, or a non-drag commit that didn't pre-position the DOM) falls
+    // through to the full paint below.
+    // lastPaintedBoxes advances ONLY after a clean skip or clean full paint (mirroring
+    // lastPainted), NEVER unconditionally — so a throwing full paint leaves the baseline at
+    // the last cleanly-painted boxes and a later move still diffs against it (catching the
+    // un-healed change and forcing a full repaint), preserving the throwing-render self-heal.
+    const prevBoxes = lastPaintedBoxes;
+    const curBoxes: Box[] | null = fastCfgPaint && canvasEditInput
+      ? ((model.find(i => i.id === canvasEditInput.id)?.value as Box[] | undefined) ?? null)
+      : null;
+    let geomSkipped = false;
+    if (fastCfgPaint && prevBoxes && curBoxes) {
+      const plan = geometryFastPathPlan(prevBoxes, curBoxes, {
+        ...fastCfgPaint,
+        connectorEndpointIds: boundEndpointIds(curBoxes, {
+          idField: fastCfgPaint.field.idField, bindStartField: fastCfgPaint.bindStartField,
+          bindEndField: fastCfgPaint.bindEndField, kindField: fastCfgPaint.kindField,
+        }),
+      });
+      const esc = (id: string): string => (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id);
+      if (plan && plan.every((pt) => {
+        const el = contentEl.querySelector('.lolly-box[data-box-id="' + esc(pt.id) + '"]') as HTMLElement | null;
+        return !!el && parseFloat(el.style.left) === pt.x && parseFloat(el.style.top) === pt.y;
+      })) {
+        lastPainted = hydrated;
+        lastPaintedBoxes = curBoxes;
+        geomSkipped = true;
+        if (typeof window !== 'undefined') {
+          const w = window as unknown as { __lollyGeomFastPath?: { skips: number; fulls: number } };
+          (w.__lollyGeomFastPath ??= { skips: 0, fulls: 0 }).skips++;
+        }
+      }
+    }
+
+    if (!geomSkipped && hydrated !== lastPainted) {
       const gen = ++renderGen;
       // Paged docs scroll the whole document in the canvas surface; a full innerHTML
       // rebuild would otherwise snap the view back to the cover on every keystroke.
@@ -2724,6 +2809,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         }
         clearCanvasError();
         lastPainted = hydrated;
+        if (curBoxes) lastPaintedBoxes = curBoxes;   // clean full paint refreshes the baseline (throw-safe: after the render body)
+        if (fastPathOn && typeof window !== 'undefined') {
+          const w = window as unknown as { __lollyGeomFastPath?: { skips: number; fulls: number } };
+          (w.__lollyGeomFastPath ??= { skips: 0, fulls: 0 }).fulls++;
+        }
         // Keep the reader where they were scrolled to (paged docs only).
         if (pagedDoc && outerEl && prevScrollTop) outerEl.scrollTop = prevScrollTop;
         // Slide-sorter filmstrip: mount on the first paged paint, refresh thereafter.

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Palette download — export every swatch a brand carries (BrandSwatch[], from
- * brand-doc.ts) as a standalone file in one of five formats: a DTCG design-tokens
+ * brand-doc.ts) as a standalone file in one of six formats: a DTCG design-tokens
  * JSON (nested under each swatch's canonical dotted key), a plain CSS custom-
- * properties block, a set of CSS utility classes (bg/text/border), a GIMP .gpl
- * palette (name + 0-255 RGB only, no alpha), or a binary Adobe Swatch Exchange
- * (.ase) file.
+ * properties block, a set of CSS utility classes (bg/text/border), an SCSS `$var`
+ * block, a GIMP .gpl palette (name + 0-255 RGB only, no alpha), or a binary Adobe
+ * Swatch Exchange (.ase) file.
  *
  * The serializers themselves LIVE IN THE ENGINE now (engine/src/palette-export.ts,
  * ENGINE 1.108) so a tool reaches them through host.color.paletteExport and every
@@ -19,10 +19,11 @@
 import type { BrandSwatch } from './brand-doc.ts';
 import type { PaletteEntry } from '../palette.ts';
 import {
-  paletteTokensJson, paletteCssVariables, paletteCssClasses, paletteGpl, paletteAse,
+  paletteTokensJson, paletteCssVariables, paletteCssClasses, paletteScssVariables,
+  paletteGpl, paletteAse,
 } from '../../../../engine/src/palette-export.ts';
 
-export type SwatchExportFormat = 'tokens-json' | 'css-vars' | 'css-classes' | 'gpl' | 'ase';
+export type SwatchExportFormat = 'tokens-json' | 'css-vars' | 'css-classes' | 'scss' | 'gpl' | 'ase';
 
 // The engine serializers under the names the brand editor + catalog (and the
 // existing test) import. BrandSwatch carries key/name/group/hex and more, so it
@@ -31,6 +32,7 @@ export {
   paletteTokensJson as swatchesToTokensJson,
   paletteCssVariables as swatchesToCssVariables,
   paletteCssClasses as swatchesToCssClasses,
+  paletteScssVariables as swatchesToScssVariables,
   paletteGpl as swatchesToGpl,
   paletteAse as swatchesToAse,
 } from '../../../../engine/src/palette-export.ts';
@@ -82,6 +84,8 @@ export function exportSwatches(
       return { blob: new Blob([paletteCssVariables(swatches)], { type: 'text/css' }), filename: `${base}-variables.css` };
     case 'css-classes':
       return { blob: new Blob([paletteCssClasses(swatches)], { type: 'text/css' }), filename: `${base}-classes.css` };
+    case 'scss':
+      return { blob: new Blob([paletteScssVariables(swatches)], { type: 'text/x-scss' }), filename: `${base}-variables.scss` };
     case 'gpl':
       return { blob: new Blob([paletteGpl(swatches, paletteName)], { type: 'text/plain' }), filename: `${base}.gpl` };
     case 'ase':

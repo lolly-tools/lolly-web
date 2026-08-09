@@ -28,6 +28,8 @@ import { bustFontRegistry } from './bridge/font-registry.ts';
 import { REGISTERED, USER_FONT_PREFIX, brandFontFamilies, registerUserFonts, setBrandFontFamilyCache } from './lib/register-user-fonts.ts';
 import { fetchGoogleFont, GOOGLE_FAMILY_RE } from './lib/google-fonts.ts';
 import type { DownloadedFontFace } from './lib/google-fonts.ts';
+import { detectFontFormat, parseFontMetadata, readFontEmbedding, validateFontFile } from './lib/font-utils.ts';
+import { variableWeightRange } from './lib/design-system/font-resolve.ts';
 
 /** Every user font asset id starts with this (headshot-style fixed namespace). */
 
@@ -50,6 +52,10 @@ export interface UserFontsHost {
   tokens?: {
     resolve(ref: string, opts?: { theme?: string }): Promise<unknown>;
     bust?(): void;
+    /** True when the shipped brand is authoritative (bridge/tokens.ts). Read
+     *  here only to skip an IMPLICIT primary promotion — every actual write
+     *  still goes through installUserTokens, which is the chokepoint. */
+    isLocked?(): Promise<boolean>;
   };
 }
 
@@ -351,6 +357,213 @@ export async function installGoogleFont(
   if (mustBePrimary) await setPrimaryFont(host, canonical);
   return families.find(f => f.family === canonical)
     ?? { family: canonical, assetIds: stored, bytes: 0, weights: '', italic: faces.some(f => f.style === 'italic'), primary: mustBePrimary };
+}
+
+/** Is the shipped brand authoritative? Best-effort: an unreachable or absent
+ *  lock reads as unlocked, exactly like every other caller of isLocked(). */
+async function brandIsLocked(host: UserFontsHost): Promise<boolean> {
+  try { return !!(await host.tokens?.isLocked?.()); }
+  catch { return false; }
+}
+
+/** A detached ArrayBuffer copy of whatever the caller handed us — a Uint8Array
+ *  view over a larger buffer (a face sliced out of a PDF or a zip) must not
+ *  leak its neighbours into the stored blob. */
+function toArrayBuffer(bytes: ArrayBuffer | Uint8Array): ArrayBuffer {
+  return bytes instanceof Uint8Array
+    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    : bytes;
+}
+
+/** Options for {@link installFontFromBytes}. */
+export interface InstallFontBytesOptions {
+  /** The file's own name, when there was a file. Recorded in meta as provenance;
+   *  never used to derive the family (the sfnt's name table is the only source). */
+  filename?: string;
+  /** Claim `font.brand` for this family. Without it the only-font promotion below
+   *  still applies, exactly as installGoogleFont's does. */
+  makePrimary?: boolean;
+}
+
+/**
+ * Install a font the user already has the BYTES of — an upload, a face pulled
+ * out of a PDF or a design file, anything that never came from Google. The
+ * second entrance into the role system: until this existed `installGoogleFont`
+ * was the only way bytes could become a `font.*` token (plan 97 §4 gap 3), so
+ * an uploaded family could be stored but never *assigned*.
+ *
+ * Everything downstream is deliberately identical to the Google path — the same
+ * `user/fonts/<slug>/<n>` user assets (so the storage meter, "Export my data",
+ * a brand pack and clear-all all keep working with no new rail), the same
+ * FontFace registration, the same only-font promotion — so a face's origin
+ * stops mattering the moment it lands.
+ *
+ * Vetting is the existing pure validators, not a second opinion:
+ * `validateFontFile` owns the size cap, `detectFontFormat` the magic number,
+ * `parseFontMetadata` the family/weight/style, `readFontEmbedding` the licence
+ * signal. **Nothing here throws for bad bytes** — an oversized, unrecognised,
+ * or unparseable file returns `null` and writes nothing, because the callers
+ * are drop zones handling several files at once and one bad file must not
+ * abandon the rest. A `BrandLockedError` from an EXPLICIT `makePrimary` does
+ * propagate: that is a refusal, not a bad file.
+ *
+ * Two conversions happen on the way in, both because a stored face has to stay
+ * readable by everything downstream:
+ * - **woff1** is unwrapped to a plain sfnt and stored that way. It is not an
+ *   sfnt, `parseFontMetadata` can't read its table directory, and
+ *   bridge/font-registry.ts decompresses only woff2 — a stored woff1 would be a
+ *   face that installs and then silently .notdefs on vector export. Unwrapping
+ *   is also the one place the size gate has to run TWICE: what lands on the
+ *   device is the expanded sfnt (woff1 is zlib-per-table, so roughly 2×), and a
+ *   cap that only ever saw the compressed input would not be a cap on storage.
+ *   Both checks are the same `validateFontFile`; the cap itself still lives in
+ *   one place.
+ * - **woff2** is decompressed only to READ it; the compressed original is what
+ *   gets stored (it's ~2.5× smaller, and font-registry already decompresses on
+ *   demand), so its stored size is the size already vetted.
+ *
+ * A VARIABLE face is stored with its whole `wght` axis ("100 900"), not with the
+ * default instance `OS/2.usWeightClass` names — see `variableWeightRange`. The
+ * Google path has always recorded the range css2 hands it, and a file dropped in
+ * by hand must not come out clamped to one weight with the other eight
+ * faux-synthesised.
+ *
+ * A face whose own `OS/2.fsType` says `restricted` still installs — the person
+ * may well hold the licence — but it is marked `deviceLocal` and its embedding
+ * statement is recorded in meta, so the honesty travels with the asset instead
+ * of living in the UI that happened to be on screen at the time.
+ *
+ * Re-installing a face this family already has (same weight + style) REPLACES
+ * it in place rather than piling up `…/1`, `…/2`, `…/3` — the natural thing
+ * after fixing a font file and dropping it again. Only a face THIS path wrote is
+ * ever replaced: a Google-installed face of the same weight carries subset and
+ * unicodeRange metadata an upload cannot reproduce, and overwriting it would
+ * destroy downloaded bytes to make room for a file the person could simply have
+ * added. An upload beside it takes the next index and both stand.
+ *
+ * NOT yet the only bytes path in the shell: components/fonts-manager.ts still
+ * uploads through lib/font-asset-handler.ts, which writes a PARALLEL store
+ * (`host.state` keys `font-asset:<id>` + its own index) that listUserFonts,
+ * the storage meter, brand packs and backups never see. Moving it here also
+ * means moving its list/delete (lib/load-user-fonts.ts reads the same keys) and
+ * migrating anything already stored there, so it is its own change.
+ */
+export async function installFontFromBytes(
+  host: UserFontsHost, bytes: ArrayBuffer | Uint8Array, opts: InstallFontBytesOptions = {},
+): Promise<UserFontFamily | null> {
+  const original = toArrayBuffer(bytes);
+
+  // The 5MB cap lives in validateFontFile and nowhere else. It reads only size
+  // and type, so bytes with no File behind them (a PDF-embedded face) can be
+  // vetted by the same gate: an empty `type` skips the MIME branch, which is
+  // advisory anyway — the magic number below is the real check.
+  const withinCap = (size: number): boolean => validateFontFile({
+    size, type: '', name: opts.filename ?? '',
+  } as unknown as File).valid;
+  if (!withinCap(original.byteLength)) return null;
+
+  const format = detectFontFormat(original);
+  if (format === 'unknown') return null;
+
+  let stored = original;                       // what we persist
+  let sfnt = original;                         // what we parse
+  let storedFormat: 'ttf' | 'otf' | 'woff2' = format === 'woff2' ? 'woff2' : format === 'otf' ? 'otf' : 'ttf';
+
+  if (format === 'woff') {
+    try {
+      const { woffToSfnt } = await import('@lolly/engine');
+      const out = woffToSfnt(new Uint8Array(original));
+      sfnt = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+      stored = sfnt;
+      storedFormat = detectFontFormat(sfnt) === 'otf' ? 'otf' : 'ttf';
+    } catch { return null; }
+    // The gate again, against what is actually about to be written: unwrapping
+    // is the one path where the stored bytes are bigger than the vetted ones.
+    if (!withinCap(stored.byteLength)) return null;
+  } else if (format === 'woff2') {
+    try {
+      const decompress = (await import('woff2-encoder/decompress')).default;
+      const out = await decompress(new Uint8Array(original)) as Uint8Array | ArrayBuffer;
+      const u8 = out instanceof Uint8Array ? out : new Uint8Array(out);
+      sfnt = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
+    } catch { return null; }
+  }
+
+  const parsed = parseFontMetadata(sfnt);
+  // 'Unknown' is parseFontMetadata's "the name table told me nothing" — treating
+  // it as a family would slug every such file into one bucket and label the
+  // Fonts list with a non-name. Unreadable is unreadable.
+  if (!parsed || !parsed.family || parsed.family === 'Unknown') return null;
+
+  const family = parsed.family.trim();
+  const slug = slugOf(family);
+  if (!slug) return null;
+  // A variable face is its whole axis, not its default instance (see the note
+  // above); a static one is the single class OS/2 states.
+  const weight = variableWeightRange(sfnt) ?? String(parsed.weight);
+  const style = parsed.style;
+  const embedding = readFontEmbedding(sfnt);
+
+  // Where this face goes: over the family's existing same-weight/same-style face
+  // if this path wrote it, else the next free index in the family.
+  let records: Array<{ id: string; type: string; meta?: Record<string, unknown> }> = [];
+  try { records = await host.assets._exportUserAssets(); }
+  catch { /* an unreadable store just means we start this family at 0 */ }
+  const prefix = `${USER_FONT_PREFIX}${slug}/`;
+  const siblings = records.filter(r => r.type === 'font' && r.id.startsWith(prefix));
+  const replacing = siblings.find(r =>
+    String(r.meta?.source ?? '') === 'upload'
+    && String(r.meta?.weight ?? '') === weight && String(r.meta?.style ?? 'normal') === style);
+  const nextIndex = siblings.reduce((max, r) => Math.max(max, Number(r.id.slice(prefix.length)) || 0), -1) + 1;
+  const id = replacing?.id ?? `${prefix}${nextIndex}`;
+
+  // Replacing means the document is still holding the OLD bytes under this id:
+  // registerUserFonts skips ids already in REGISTERED, so without this the new
+  // file would store fine and render as the old one until a reload.
+  const staleFace = REGISTERED.get(id);
+  if (staleFace) {
+    if (typeof document !== 'undefined') (document.fonts as unknown as { delete(f: FontFace): void }).delete(staleFace);
+    REGISTERED.delete(id);
+  }
+
+  const mime = storedFormat === 'woff2' ? 'font/woff2' : storedFormat === 'otf' ? 'font/otf' : 'font/ttf';
+  await host.assets._uploadUserAsset({
+    id,
+    type: 'font',
+    format: storedFormat,
+    blob: new Blob([stored as BlobPart], { type: mime }),
+    version: new Date().toISOString().slice(0, 10),
+    meta: {
+      name: `${family}${weight !== '400' ? ` ${weight}` : ''}${style !== 'normal' ? ` ${style}` : ''}`,
+      family,
+      style,
+      weight,
+      source: 'upload',
+      ...(opts.filename ? { fileName: opts.filename } : {}),
+      // The font's own statement about reuse, recorded verbatim (raw fsType
+      // included) so a report can audit it rather than trust our reading of it.
+      embedding: embedding.permission,
+      fsType: embedding.fsType,
+      noSubsetting: embedding.noSubsetting,
+      bitmapOnly: embedding.bitmapOnly,
+      ...(embedding.permission === 'restricted' ? { deviceLocal: true } : {}),
+      tags: ['font'],
+    },
+  });
+
+  await registerUserFonts(host);   // load the new face into document.fonts
+
+  // The only-font promotion, exactly as installGoogleFont applies it — except
+  // that on a locked brand the IMPLICIT half is skipped rather than left to
+  // throw: an upload is not a request to restyle a brand that forbids it. An
+  // explicit makePrimary still goes through setPrimaryFont, so the lock refuses
+  // it at the one chokepoint (BrandLockedError, propagated to the caller).
+  const mustBePrimary = !!opts.makePrimary
+    || (!(await primaryFontFamily(host)) && !(await brandIsLocked(host)));
+  if (mustBePrimary) await setPrimaryFont(host, family);
+
+  return (await listUserFonts(host)).find(f => f.family === family)
+    ?? { family, assetIds: [id], bytes: 0, weights: weight, italic: style === 'italic', primary: mustBePrimary };
 }
 
 /** A weight blurb for the family list: 'variable 100–900' / '400 + 700' / '400'. */

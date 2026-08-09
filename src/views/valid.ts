@@ -1128,6 +1128,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       ${aiFlagHtml(aiOrigin, makerHint)}
       ${mine ? mineNote(mine) : ''}
       ${panelsBlock}
+      ${claimPanelHtml(fileIndex, report.format, fileName, report.found)}
       ${watermarkNote(watermark)}
       ${imprintRescanBlock(fileIndex, report.format, fileName, !!watermark?.present, report.madeWithLolly)}
       ${sealNoteHtml(seal)}
@@ -1208,6 +1209,107 @@ function wireMasonry(viewEl: HTMLElement, reportEl: HTMLElement): void {
     prev?.();
     mq.removeEventListener('change', relayout);
   };
+}
+
+// ─── Claim / add-your-credentials (the embed write flow, folded into /verify) ──
+//
+// /verify is no longer read-only: under each file's report a viewer can add their
+// OWN Content Credential — author, copyright, licence — which is layered ON TOP of
+// whatever the file already carries (the existing chain is preserved as ingredients,
+// never replaced; see host.c2pa.sign + collectIngredients). This is the same signing
+// path the Embed, Imprint & Track tool uses; hosting it here means "inspect the
+// credentials, then claim the file" is one surface. The signed file downloads and
+// the panel re-verifies in place so the viewer immediately sees their claim on the chain.
+
+/** Licence options offered when claiming a file — mirrors community/embed-track-image
+ *  (option value = the exact string embedded as dc:rights, incl. the CC deed URL). */
+const CLAIM_LICENCES: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Proprietary — All rights reserved' },
+  { value: 'CC0 1.0 (Public Domain) · https://creativecommons.org/publicdomain/zero/1.0/', label: 'CC0 1.0 — Public Domain' },
+  { value: 'CC BY 4.0 · https://creativecommons.org/licenses/by/4.0/', label: 'CC BY 4.0 — Attribution' },
+  { value: 'CC BY-SA 4.0 · https://creativecommons.org/licenses/by-sa/4.0/', label: 'CC BY-SA 4.0 — Attribution-ShareAlike' },
+  { value: 'CC BY-ND 4.0 · https://creativecommons.org/licenses/by-nd/4.0/', label: 'CC BY-ND 4.0 — Attribution-NoDerivatives' },
+  { value: 'CC BY-NC 4.0 · https://creativecommons.org/licenses/by-nc/4.0/', label: 'CC BY-NC 4.0 — Attribution-NonCommercial' },
+  { value: 'CC BY-NC-SA 4.0 · https://creativecommons.org/licenses/by-nc-sa/4.0/', label: 'CC BY-NC-SA 4.0 — NonCommercial-ShareAlike' },
+  { value: 'CC BY-NC-ND 4.0 · https://creativecommons.org/licenses/by-nc-nd/4.0/', label: 'CC BY-NC-ND 4.0 — NonCommercial-NoDerivatives' },
+  { value: 'Public Domain Mark 1.0 · https://creativecommons.org/publicdomain/mark/1.0/', label: 'Public Domain Mark — already public domain' },
+];
+
+/** The engine format key + MIME + whether it takes the pixel Imprint, for a verify
+ *  format string / filename — the claimable set (what host.c2pa.sign can carry a
+ *  credential in). Null → the file can't be credentialed, so no claim panel. Mirrors
+ *  the embed tool's _formatKey so both surfaces agree on what is claimable. */
+function claimFormatFor(format: string | null | undefined, fileName: string): { key: string; mime: string; raster: boolean } | null {
+  const f = String(format || '').toLowerCase();
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  const is = (k: string, e?: string): boolean => f === k || (!!e && ext === e);
+  if (is('jpg', 'jpg') || is('jpeg', 'jpeg') || f === 'jpeg') return { key: 'jpg', mime: 'image/jpeg', raster: true };
+  if (is('png', 'png')) return { key: 'png', mime: 'image/png', raster: true };
+  if (is('webp', 'webp')) return { key: 'webp', mime: 'image/webp', raster: true };
+  if (is('avif', 'avif')) return { key: 'avif', mime: 'image/avif', raster: false };
+  if (is('tiff', 'tiff') || ext === 'tif') return { key: 'tiff', mime: 'image/tiff', raster: false };
+  if (is('gif', 'gif')) return { key: 'gif', mime: 'image/gif', raster: false };
+  if (is('svg', 'svg')) return { key: 'svg', mime: 'image/svg+xml', raster: false };
+  if (is('pdf', 'pdf')) return { key: 'pdf', mime: 'application/pdf', raster: false };
+  if (f === 'mp4' || ext === 'mp4' || ext === 'mov' || ext === 'm4v') return { key: 'mp4', mime: 'video/mp4', raster: false };
+  if (is('webm', 'webm')) return { key: 'webm', mime: 'video/webm', raster: false };
+  if (ext === 'm4a' || f === 'm4a') return { key: 'm4a', mime: 'audio/mp4', raster: false };
+  if (f === 'mp3' || ext === 'mp3') return { key: 'mp3', mime: 'audio/mpeg', raster: false };
+  if (f === 'wav' || ext === 'wav') return { key: 'wav', mime: 'audio/wav', raster: false };
+  return null;
+}
+
+/** The per-file "Add your credentials" action card. Fields start blank; the
+ *  author/contact are filled from the opted-in profile after mount (prefillClaim,
+ *  which honours the profile's "Use my details" gate). Copyright + licence are
+ *  NEVER auto-filled — they are user-asserted. A collapsible panel so it sits quietly
+ *  under the report until a viewer wants to claim the file. */
+function claimPanelHtml(fileIndex: number, format: string | null | undefined, fileName: string, hasCredential: boolean): string {
+  const fk = claimFormatFor(format, fileName);
+  if (!fk) return ''; // not a format we can carry a credential in
+  const chainNote = hasCredential
+    ? t('Your claim is added on top of the existing credential — the chain already on this file is preserved, not replaced.')
+    : t('This adds the first Content Credential to the file — your authorship, on the file itself.');
+  const durableRow = fk.raster ? `
+        <label class="valid-claim-check">
+          <input type="checkbox" data-claim-durable="${fileIndex}">
+          <span>${t('Also add a durable invisible watermark')} <span class="valid-claim-hint">${t('survives screenshotting')}</span></span>
+        </label>` : '';
+  const licenceOpts = CLAIM_LICENCES.map(l =>
+    `<option value="${escape(l.value)}">${escape(t(l.label))}</option>`).join('');
+  return `
+      <details class="valid-panel valid-claim" data-claim-panel="${fileIndex}" data-claim-key="${escape(fk.key)}" data-claim-mime="${escape(fk.mime)}" data-claim-raster="${fk.raster ? '1' : ''}">
+        <summary class="valid-claim-summary">
+          <span class="valid-claim-ic" aria-hidden="true">${svgIcon('pen')}</span>
+          <span class="valid-claim-title">${t('Add your credentials')}</span>
+          <span class="valid-claim-chev" aria-hidden="true">${ICON_CHEVRON}</span>
+        </summary>
+        <div class="valid-claim-body">
+          <p class="valid-claim-note">${escape(chainNote)}</p>
+          <label class="valid-claim-field">
+            <span>${t('Artist / author')}</span>
+            <input type="text" class="valid-claim-input" data-claim-author="${fileIndex}" autocomplete="name" placeholder="${escape(t('Your name'))}">
+          </label>
+          <label class="valid-claim-field">
+            <span>${t('Contact')} <span class="valid-claim-hint">${t('optional')}</span></span>
+            <input type="text" class="valid-claim-input" data-claim-contact="${fileIndex}" autocomplete="email" placeholder="${escape(t('Email or site for licensing'))}">
+          </label>
+          <label class="valid-claim-field">
+            <span>${t('Copyright notice')} <span class="valid-claim-hint">${t('optional')}</span></span>
+            <input type="text" class="valid-claim-input" data-claim-copyright="${fileIndex}" placeholder="© 2026 ${escape(t('Your Name'))}">
+          </label>
+          <label class="valid-claim-field">
+            <span>${t('Rights / licence')}</span>
+            <select class="field-select valid-claim-select" data-claim-licence="${fileIndex}">${licenceOpts}</select>
+          </label>
+          ${durableRow}
+          <div class="valid-claim-actions">
+            <button type="button" class="btn valid-claim-sign" data-claim-sign="${fileIndex}">${t('Sign & download')}</button>
+            <span class="valid-claim-status" data-claim-status="${fileIndex}" aria-live="polite"></span>
+          </div>
+          <p class="valid-claim-foot">${t('Signed on your device with your Lolly identity (or a self-signed key). Nothing is uploaded.')}</p>
+        </div>
+      </details>`;
 }
 
 export async function mountValid(viewEl: HTMLElement, host: HostV1, params = ''): Promise<void> {
@@ -1876,6 +1978,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         : `<p class="valid-busy">${t('Could not check this file: {message}', { message: error! })}</p>`;
       const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
       if (panels) layoutMasonry(panels);
+      void prefillClaim();  // fill the claim form's author/contact from the opted-in profile
       // Audible verdict, as two composable signals: the spooky ghost "hoooo" marks
       // AI-generated content, the bright "signing" chirps mark an intact Lolly make.
       // A file that's BOTH gets the chirps over the ooo; any OTHER AI file gets the
@@ -1912,9 +2015,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     // Place every card up-front in drop order (busy), so the list doesn't reflow as
     // each result lands. Verify sequentially — bounds memory to one file's bytes at a
     // time and fills the cards top-to-bottom as a visible progress cue.
-    const cards = list.map((file) => {
+    const cards = list.map((file, i) => {
       const card = document.createElement('details');
       card.className = 'valid-item is-busy';
+      card.dataset.cardIndex = String(i);   // so a post-claim re-verify can replace this one card in place
       card.innerHTML = `<summary class="valid-item-summary">
           <span class="valid-item-badge is-busy">${t('Checking…')}</span>
           <span class="valid-item-name">${escape(file.name)}</span>
@@ -1958,6 +2062,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     // Arm deep scanning for the batch — auto if the models are on-device, else a
     // single header banner so one download serves every file.
     void armDeepScan(list.some((f) => isDeepScannable(null, f.name)));
+    void prefillClaim();  // fill every card's claim form from the opted-in profile
   }
 
   // Append "-clean" before the extension: report.pdf → report-clean.pdf.
@@ -2105,7 +2210,114 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       window.location.hash = `#/tool/${toolId}`;   // seeding failed — open a blank session
     }
   }
+
+  // ─── Claim flow: prefill from profile, sign a new credential, re-verify in place ──
+
+  // Prefill the author/contact fields of every visible claim form from the profile —
+  // ONLY when the user opted in ("Use my details"), and NEVER copyright/licence (those
+  // are user-asserted, never auto-derived; same policy as buildExportMeta). Never
+  // clobbers a field the user already typed. Read once, cached for the mount.
+  let claimProfile: { firstname?: string; lastname?: string; email?: string; useDetails?: boolean } | null = null;
+  let claimProfileLoaded = false;
+  async function prefillClaim(root: HTMLElement = reportEl): Promise<void> {
+    try {
+      if (!claimProfileLoaded) {
+        claimProfile = (await host.profile?.get?.()) as typeof claimProfile ?? null;
+        claimProfileLoaded = true;
+      }
+      const p = claimProfile;
+      if (!p || p.useDetails !== true) return; // opt-in gate
+      const name = [p.firstname, p.lastname].filter(Boolean).join(' ').trim();
+      const email = typeof p.email === 'string' ? p.email.trim() : '';
+      root.querySelectorAll<HTMLInputElement>('[data-claim-author]').forEach((el) => { if (!el.value) el.value = name; });
+      root.querySelectorAll<HTMLInputElement>('[data-claim-contact]').forEach((el) => { if (!el.value) el.value = email; });
+    } catch { /* profile unavailable — leave the form blank, no prefill */ }
+  }
+
+  // After a successful claim: re-verify the newly-signed bytes and swap the file's
+  // report in place, led by a confirmation banner. The re-verify makes the appended
+  // credential (the user's claim ON TOP of the preserved chain) show up immediately.
+  async function rerenderClaimed(i: number): Promise<void> {
+    const file = activeFiles[i];
+    if (!file) return;
+    const res = await verifyFile(file);
+    const banner = `<div class="valid-claim-done" role="status"><span class="valid-claim-done-ic" aria-hidden="true">✓</span> ${t('Your credentials were added and the file downloaded. Its credential chain now includes your claim.')}</div>`;
+    const bodyHtml = res.report
+      ? banner + renderReportBody(file.name, res.report, res.meta, makePreview(file, res.report), i, res.watermark, res.mine, res.seal)
+      : `${banner}<p class="valid-busy">${t('Signed and downloaded, but the re-check could not run: {message}', { message: res.error ?? '' })}</p>`;
+    if (activeFiles.length === 1) {
+      const listWrap = reportEl.querySelector<HTMLElement>('.valid-reports-list');
+      if (listWrap) listWrap.innerHTML = bodyHtml;
+    } else {
+      const card = reportEl.querySelector<HTMLDetailsElement>(`[data-card-index="${i}"]`);
+      if (card && res.report) {
+        const cardTone = noCredentialSignal(res.report, res.watermark, res.mine) ? 'good' : stateTone(res.report);
+        card.className = `valid-item is-${cardTone}`;
+        card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, res.report, res.meta, res.watermark, res.seal, res.mine)}</summary>` +
+          `<div class="valid-item-body">${bodyHtml}</div>`;
+        card.open = true;
+      }
+    }
+    reportEl.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
+    void prefillClaim();
+  }
+
+  // Sign a fresh Content Credential into one file, PRESERVING any existing chain as
+  // ingredients (host.c2pa.sign appends the new claim as the active manifest on top —
+  // the exact path the Embed tool uses). Raster essence also gets the pixel Imprint.
+  async function claimSign(btn: HTMLButtonElement): Promise<void> {
+    const i = Number(btn.dataset.claimSign);
+    const file = activeFiles[i];
+    const panel = reportEl.querySelector<HTMLElement>(`[data-claim-panel="${i}"]`);
+    if (!file || !panel) return;
+    const statusEl = panel.querySelector<HTMLElement>('[data-claim-status]');
+    const setStatus = (msg: string, cls = ''): void => { if (statusEl) { statusEl.textContent = msg; statusEl.className = `valid-claim-status ${cls}`; } };
+    const val = (name: string): string => (panel.querySelector<HTMLInputElement>(`[data-claim-${name}]`)?.value ?? '').trim();
+    const author = val('author'), contact = val('contact'), copyright = val('copyright');
+    const licence = panel.querySelector<HTMLSelectElement>('[data-claim-licence]')?.value ?? '';
+    const durable = !!panel.querySelector<HTMLInputElement>('[data-claim-durable]')?.checked;
+    const key = panel.dataset.claimKey ?? '';
+    const mime = panel.dataset.claimMime || 'application/octet-stream';
+    const raster = panel.dataset.claimRaster === '1';
+    btn.disabled = true;
+    setStatus(t('Signing…'), 'is-busy');
+    try {
+      if (!host.c2pa?.sign) throw new Error(t('Signing isn’t available in this app.'));
+      if (file.size > MAX_VERIFY_BYTES) throw new Error(t('File is too large to sign here.'));
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      // Read the EXISTING chain BEFORE any pixel rewrite — the imprint re-encode drops
+      // the embedded manifest, so reading after would orphan it.
+      let ingredients: unknown[] = [];
+      try { ingredients = (await host.c2pa.readIngredients?.(bytes)) ?? []; } catch { ingredients = []; }
+      let stamped: Uint8Array<ArrayBufferLike> = bytes;
+      let imprinted = false;
+      if (raster && host.export?.imprint) {
+        try {
+          const marked = await host.export.imprint(bytes, key, { durable });
+          if (marked && marked.length && marked !== bytes) { stamped = marked; imprinted = true; }
+        } catch { /* imprint is best-effort — sign the un-imprinted bytes */ }
+      }
+      const email = contact.includes('@') ? (contact.split(/[\s·,;]+/).find((s) => s.includes('@')) ?? '') : '';
+      const rights = [copyright, licence].map((s) => String(s || '').trim()).filter(Boolean).join(' · ');
+      const opts: Parameters<NonNullable<HostV1['c2pa']>['sign']>[2] = { action: 'imported', imprinted } as Record<string, unknown>;
+      if (author) (opts as Record<string, unknown>).author = email ? { name: author, email } : { name: author };
+      if (rights) (opts as Record<string, unknown>).rights = rights;
+      if (ingredients.length) (opts as Record<string, unknown>).ingredients = ingredients;
+      const signed = await host.c2pa.sign(stamped, key, opts);
+      await host.export.file(new Blob([signed as BlobPart], { type: mime }), { filename: file.name });
+      activeFiles[i] = new File([signed as BlobPart], file.name, { type: mime });
+      playSfx('sign');
+      await rerenderClaimed(i);
+    } catch (err) {
+      setStatus((err as Error)?.message || t('Couldn’t add credentials — try again.'), 'is-err');
+      btn.disabled = false;
+      host.log('warn', 'valid: claim sign failed', { error: String((err as Error)?.message || err) });
+    }
+  }
+
   reportEl.addEventListener('click', (e) => {
+    const claim = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-claim-sign]');
+    if (claim) { void claimSign(claim); }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-clean-copy]');
     if (btn) downloadCleanCopy(btn);
     const rec = (e.target as HTMLElement).closest<HTMLAnchorElement>('[data-recreate]');

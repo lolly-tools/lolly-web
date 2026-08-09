@@ -73,6 +73,41 @@ export interface ToolSupport {
 }
 
 /**
+ * How the Design System studio's website source stands on THIS device
+ * (plan 97 §9). The same three-verdict vocabulary `toolSupport` uses, for a
+ * feature that is gated by a transport rather than by a tool manifest:
+ *
+ *   'ready'       — a transport exists (a Tauri shell's native fetch, or the
+ *                   Lolly extension), so a page can actually be read.
+ *   'install'     — a Chromium browser with no transport: the extension can
+ *                   fulfil this, exactly as it can fulfil `capture`.
+ *   'unavailable' — anywhere else. There is no third transport to add later:
+ *                   §9's decision is that Lolly runs no fetching service, and
+ *                   the deployed PWA's CSP cannot reach an arbitrary origin at
+ *                   all, so this verdict is settled rather than pending.
+ *
+ * WHAT EACH VERDICT IS ALLOWED TO RENDER is the part worth writing down. Only
+ * 'ready' puts a Website tile in the source picker — a disabled tile, or a
+ * "get the app" teaser where the feature cannot run, is the dark pattern §9
+ * forbids. 'install' is documented on the capabilities surface
+ * (lib/capabilities-data.ts → #/d?tab=caps), the same place every other gated
+ * capability explains its unlock, so somebody who wants it can find out how and
+ * nobody else ever trips over it.
+ *
+ * Transport DETECTION is not this module's business — it needs the host bridge,
+ * and this file stays shell-agnostic — so the caller passes what it found
+ * (lib/design-system/sources/website.ts's `detectSiteTransport`).
+ */
+export interface SiteIngestSupport {
+  status: 'ready' | 'install' | 'unavailable';
+}
+
+export function siteIngestSupport(hasTransport: boolean): SiteIngestSupport {
+  if (hasTransport) return { status: 'ready' };
+  return { status: isChromium() ? 'install' : 'unavailable' };
+}
+
+/**
  * How a tool can run in THIS shell/browser:
  *   'ok'          — all capabilities met; render normally.
  *   'install'     — only missing 'capture', on a Chromium browser → offer the

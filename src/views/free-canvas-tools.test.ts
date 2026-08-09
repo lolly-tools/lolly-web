@@ -9,6 +9,12 @@
  * assertions here are exhaustive over the ORDERED PAIRS rather than sampled — a one-way
  * check is exactly what let `armConnect` keep the pen armed.
  *
+ * The fourth mode in the matrix is the LINE tool as of plan 96 P2. Connect lost its rail
+ * button there (one primitive, one way in — a line is a path box now, and P3 binds it by
+ * dragging an endpoint onto a box), and a mode with no way in cannot be driven "the way a
+ * user would". Line took its place rather than the matrix shrinking to three: the exclusion
+ * claim is about the modes a tool actually offers at once, and Line is one of them.
+ *
  * Everything is driven through real DOM events against the real `initFreeCanvas`, on the
  * jsdom harness free-canvas-pen.test.ts established: an in-memory runtime that echoes
  * `setInput` back through `getModel`, so a "the model did not change" claim is a round trip
@@ -19,7 +25,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { encodeAuthoredPath, type SplineNode } from '@lolly/engine';
+import { encodeAuthoredPath, decodeAuthoredPath, type SplineNode } from '@lolly/engine';
 import type { Box } from './free-canvas-math.ts';
 import { initFreeCanvas } from './free-canvas.ts';
 
@@ -69,14 +75,22 @@ function pointerEvent(
 const NATIVE = 1000;
 
 /** Layout Studio's canvas block plus Org Chart's `connect` block, so ONE fixture can be put
- *  into all four modes. Every mode is opt-in on a config key, and the exclusion claim is
- *  about the modes a tool actually offers at once. */
+ *  into all four modes AND still carry the connector input the Auto-arrange button reads.
+ *  Every mode is opt-in on a config key, and the exclusion claim is about the modes a tool
+ *  actually offers at once. */
 function canvasCfg(): Record<string, unknown> {
   return {
     idField: 'id', xField: 'x', yField: 'y', wField: 'w', hField: 'h', rotationField: 'rot',
     fillField: 'bg', opacityField: 'opacity', shapeField: 'shape', radiusField: 'radius',
     textField: 'text', groupField: 'group', clipField: 'clip',
     pathField: 'path',
+    // The plan 96 path decorations, exactly as both Layout Studio manifests declare them.
+    // They are DECLARED rather than defaulted: the editor only authors a head or a binding
+    // into a tool whose manifest named the field, so a fixture that omits them would be
+    // testing Sequence Studio's shape of the feature, not Layout Studio's.
+    headStartField: 'headStart', headEndField: 'headEnd',
+    bindStartField: 'bindStart', bindEndField: 'bindEnd',
+    strokeDashArrayField: 'strokeDashArray', dashFitField: 'dashFit',
     connect: { input: 'edges', fromField: 'from', toField: 'to' },
     addKinds: [
       { id: 'box', label: 'Box', seed: {} },
@@ -89,6 +103,7 @@ interface Fixture {
   stageEl: HTMLElement;
   canvasEl: HTMLElement;
   boxes(): Box[];
+  edges(): Box[];
   commits: () => number;
   sync(): void;
   destroy(): void;
@@ -125,6 +140,7 @@ function mount(initial: Box[]): Fixture {
   return {
     stageEl, canvasEl,
     boxes: () => model.get('boxes') as Box[],
+    edges: () => model.get('edges') as Box[],
     commits: () => commits,
     sync() { for (const s of subs) s(); frames(); },
     destroy() { handle.destroy(); viewEl.remove(); dom.window.document.body.innerHTML = ''; },
@@ -182,14 +198,14 @@ const plainBox = (id: string, x: number, y: number): Box =>
 
 // ── mode entry helpers ────────────────────────────────────────────────────────
 
-const MODES = ['select', 'create', 'pen', 'connect'] as const;
+const MODES = ['select', 'create', 'pen', 'line'] as const;
 type Mode = typeof MODES[number];
 
 /** Put the editor into `m` the way a user would: through the rail. */
 function enter(f: Fixture, m: Mode): void {
   if (m === 'select') { click(btn(f, 'fc-btn-pointer')); frames(); return; }
   if (m === 'pen') { click(btn(f, 'fc-btn-pen')); frames(); return; }
-  if (m === 'connect') { click(btn(f, 'fc-btn-connect')); frames(); return; }
+  if (m === 'line') { click(btn(f, 'fc-btn-line')); frames(); return; }
   // Create: the Add button opens a menu of kinds; the first item arms that kind.
   click(btn(f, 'fc-btn-add'));
   frames();
@@ -206,7 +222,7 @@ function stageMode(f: Fixture): Mode {
   const on: Mode[] = [];
   if (c.contains('fc-arming')) on.push('create');
   if (c.contains('fc-penning')) on.push('pen');
-  if (c.contains('fc-connecting')) on.push('connect');
+  if (c.contains('fc-lining')) on.push('line');
   assert.ok(on.length <= 1, `the stage claims to be in ${on.length} modes at once: ${on.join(' + ')}`);
   return on[0] ?? 'select';
 }
@@ -214,7 +230,7 @@ function stageMode(f: Fixture): Mode {
 /** The rail as the USER reads it: exactly one mode button pressed, and it is `m`. */
 function railMode(f: Fixture): Mode {
   const map: Array<[Mode, string]> = [
-    ['select', 'fc-btn-pointer'], ['create', 'fc-btn-add'], ['pen', 'fc-btn-pen'], ['connect', 'fc-btn-connect'],
+    ['select', 'fc-btn-pointer'], ['create', 'fc-btn-add'], ['pen', 'fc-btn-pen'], ['line', 'fc-btn-line'],
   ];
   const on = map.filter(([, cls]) => pressed(btn(f, cls))).map(([m]) => m);
   assert.equal(on.length, 1, `exactly one mode button is pressed, not ${on.length} (${on.join(' + ')})`);
@@ -273,8 +289,8 @@ test('Pointer exits node editing too, and node editing keeps the rail on Pointer
   f.destroy();
 });
 
-test('entering pen or connect from node editing leaves node editing', () => {
-  for (const to of ['pen', 'connect'] as const) {
+test('entering pen or the line tool from node editing leaves node editing', () => {
+  for (const to of ['pen', 'line'] as const) {
     const f = mount([pathBox()]);
     enterNodeEdit(f);
     enter(f, to);
@@ -375,8 +391,8 @@ test('the Escape ladder: panel, then the mode, then the selection', () => {
   f.destroy();
 });
 
-test('the same ladder holds for connect mode and for armed create', () => {
-  for (const m of ['connect', 'create'] as const) {
+test('the same ladder holds for the line tool and for armed create', () => {
+  for (const m of ['line', 'create'] as const) {
     const f = mount([plainBox('a', 700, 700)]);
     place(f, 760, 760);                       // a selection to be cleared at the end
     assert.ok(selectionCount(f) > 0, 'a box is selected');
@@ -496,5 +512,62 @@ test('the mode buttons work from a touch pointer, and pen mode leaves the two-fi
   f.stageEl.dispatchEvent(pointerEvent('pointerup', { x: 430, y: 500, id: 2, pointerType: 'touch', time: 140 }));
   frames();
   assert.ok(f.stageEl.querySelector('.fc-popover'), 'the two-finger tap still opens the context menu in pen mode');
+  f.destroy();
+});
+
+// ══ the Line tool (plan 96 P2) ════════════════════════════════════════════════
+//
+// The line USED to write a row into the `connectors` blocks input — an edge with no nodes,
+// which is why it could not be node-edited or given a spline kind. It writes a path box
+// now, through the same `commitPathBox` the pen commits through. These pin the switch: the
+// connectors input must stay untouched, and what lands must be a real authored path.
+
+test('the Line tool draws a PATH BOX, not a connector edge', () => {
+  const f = mount([plainBox('a', 700, 700)]);
+  enter(f, 'line');
+  const before = f.commits();
+  place(f, 120, 140, { drag: [420, 300] });
+  assert.equal(f.commits() - before, 1, 'one drag, one commit — one undo step');
+  assert.equal(f.edges().length, 0, 'the connectors input is not written to at all');
+  const made = f.boxes().filter((b) => b.kind === 'path');
+  assert.equal(made.length, 1, 'exactly one path box');
+  const path = decodeAuthoredPath(String(made[0]!.path));
+  assert.equal(path?.kind, 'line', 'a straight-segment spline');
+  assert.equal(path?.nodes.length, 2, 'with two nodes');
+  assert.equal(path?.closed, false);
+  assertMode(f, 'select', 'and the tool hands back to the pointer');
+  f.destroy();
+});
+
+test('a line carries the decoration fields: an end arrowhead and two empty bindings', () => {
+  const f = mount([plainBox('a', 700, 700)]);
+  enter(f, 'line');
+  place(f, 120, 140, { drag: [420, 300] });
+  const made = f.boxes().filter((b) => b.kind === 'path')[0]!;
+  assert.equal(made.headEnd, 'triangle', 'a line points at something by default');
+  assert.equal(made.headStart, 'none');
+  assert.equal(made.bindStart, '', 'a free end is an EMPTY binding, not an absent field');
+  assert.equal(made.bindEnd, '');
+  f.destroy();
+});
+
+test('a Line tap (no drag) commits nothing — a mis-click leaves no invisible box', () => {
+  const f = mount([plainBox('a', 700, 700)]);
+  const before = structuredClone(f.boxes());
+  enter(f, 'line');
+  const commits = f.commits();
+  place(f, 200, 200);
+  assert.equal(f.commits(), commits, 'nothing committed');
+  assert.deepEqual(f.boxes(), before, 'the model is what it was');
+  f.destroy();
+});
+
+test('the retired Connect button is gone from the rail, and its mode with it', () => {
+  const f = mount([plainBox('a', 700, 700)]);
+  assert.equal(f.stageEl.querySelector('.fc-btn-connect'), null, 'no Connect tool in the rail');
+  assert.equal(f.stageEl.classList.contains('fc-connecting'), false, 'and nothing can be in it');
+  // The Line tool took its place next to the Pen — both are the one path primitive.
+  assert.ok(f.stageEl.querySelector('.fc-btn-line'), 'the Line tool is there');
+  assert.ok(f.stageEl.querySelector('.fc-btn-pen'), 'beside the Pen');
   f.destroy();
 });

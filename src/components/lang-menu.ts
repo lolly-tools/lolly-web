@@ -46,7 +46,7 @@ export function attachLangMenu(triggerEl: HTMLElement | null, host: LangSwitchHo
   // clear, so "avoid the bottom bar" only kicks in on the views that have one.
   function bottomBoundary(vh: number): number {
     let boundary = vh;
-    document.querySelectorAll<HTMLElement>('.gallery-footer, .profile-footer, .export-popup').forEach(bar => {
+    document.querySelectorAll<HTMLElement>('.gallery-footer, .export-popup').forEach(bar => {
       const rect = bar.getBoundingClientRect();
       if (rect.height <= 0 || rect.top >= boundary) return;
       if (rect.bottom < vh - 4) return; // not actually pinned to the bottom edge right now

@@ -18,6 +18,7 @@ import { createProfileAPI } from './profile.ts';
 import { createPreviewsAPI } from './previews.ts';
 import { createAssetsAPI } from './assets.ts';
 import { createTokensAPI } from './tokens.ts';
+import { createPinPreserver } from './version-assets.ts';
 import { createClipboardAPI } from './clipboard.ts';
 // export.ts (the 90 KB SVG/PDF/video bridge) and compose.ts (which statically pulls
 // in the full render runtime — Handlebars — and the tool loader — Ajv) are NOT
@@ -112,8 +113,18 @@ export async function createBridge(): Promise<WebHost> {
   host.previews = createPreviewsAPI(db);
   // `pick` is attached below (line ~99), so the factory return is intentionally
   // missing it here; the cast reconciles that with the AssetsAPI-typed field.
-  host.assets = createAssetsAPI(db as unknown as Parameters<typeof createAssetsAPI>[0]) as unknown as WebHost['assets'];
+  // Copy-on-write preservation of bytes a published design-system version pins
+  // (plans/97 §6a). Assigned AFTER tokens exists — the preserver reads the head
+  // document to find the version ledger — so the option closes over the binding
+  // rather than the value, the same late-binding trick createTokensAPI(host) uses.
+  // With nothing published it returns on a property read, so an unversioned
+  // install pays nothing for it.
+  let preservePinned: ((id: string, o?: { reclaiming?: boolean }) => Promise<void>) | null = null;
+  host.assets = createAssetsAPI(db as unknown as Parameters<typeof createAssetsAPI>[0], {
+    preservePinned: (id, o) => preservePinned?.(id, o) ?? Promise.resolve(),
+  }) as unknown as WebHost['assets'];
   host.tokens = createTokensAPI(host as unknown as Parameters<typeof createTokensAPI>[0]); // depends on assets (reads the brand tokens asset)
+  preservePinned = createPinPreserver(host as unknown as Parameters<typeof createPinPreserver>[0]);
   host.clipboard = createClipboardAPI();
 
   // Lazy export facade: build (and cache) the real 90 KB export bridge on first
@@ -442,7 +453,7 @@ export async function installToolApis(host: HostV1): Promise<void> {
       import('../../../../engine/src/color-tools.ts'),
       import('../../../../engine/src/geom-api.ts'),
       import('../../../../engine/src/connectors.ts'),
-    ]).then(([c, g, n]) => ({ color: c.makeColorApi(), geom: g.makeGeomApi(), connectors: { build: n.buildConnectorSvg } }));
+    ]).then(([c, g, n]) => ({ color: c.makeColorApi(), geom: g.makeGeomApi(), connectors: n.makeConnectorsApi() }));
   }
   try {
     const apis = await toolApiModules;

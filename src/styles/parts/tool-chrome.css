@@ -386,8 +386,15 @@
 .export-dims .dim-field:first-child input[type="number"] {
   border-radius: var(--radius) 0 0 var(--radius);        /* left cap = width */
 }
-.export-dims .dim-unit { border-radius: 0 var(--radius) var(--radius) 0; } /* right cap = unit… */
-.export-dims:has(.dim-dpi:not([style*="none"])) .dim-unit { border-radius: 0; }
+/* Right cap = the unit select when it's the last visible segment (px, DPI hidden).
+   Prefixed with .tool-actions so it OUTRANKS the generic `.tool-actions
+   select:not(.field-select)` radius rule (specificity 0,2,1) below at ~:1291 —
+   without it the unit inherits an all-corner radius and reads as a detached pill
+   in px mode (mm mode was unaffected only because the :has() rule below is more
+   specific). The row must always read as one pill: flat internal joins, the last
+   VISIBLE segment carries the right cap. */
+.tool-actions .export-dims .dim-unit { border-radius: 0 var(--radius) var(--radius) 0; }
+.tool-actions .export-dims:has(.dim-dpi:not([style*="none"])) .dim-unit { border-radius: 0; }
 .export-dims:has(.dim-dpi:not([style*="none"])) .dim-dpi {
   border-radius: 0 var(--radius) var(--radius) 0;         /* …but the DPI segment when it's shown */
 }

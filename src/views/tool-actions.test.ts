@@ -599,3 +599,128 @@ test('carousel editor (render.pages): the page strip owns the size — no 1:1 re
   wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   assert.equal(canvas.style.width, '1080px', 'a carousel editor is clamped, not resized to the export width');
 });
+
+// ── 9. per-artboard still fan-out for the Design frame primitive ──────────────
+// A multi-artboard Design (Layout Studio) doc — render.layout:'editor' with a boxes
+// input declaring canvas.frameField — emits one [data-pdf-page] per frame box. A STILL
+// export must fan out ONE image per artboard (a zip for several, a single file for one),
+// matching carousel-maker (render.pages). The gate is the ONLY [data-pdf-page] fanout in
+// the export path; render.paged (multi-page-pdf / doc-studio) must stay a single flat file,
+// and a no-frames Design doc (single .artboard, zero page els) must stay a single flat file.
+
+/** Mount the export bar over a canvas holding `pages` [data-pdf-page] els. Captures every
+ *  runtime.export call's target node so we can tell a per-artboard fanout (calls that land
+ *  on a [data-pdf-page]) from a single flat export (call lands on the whole canvas). */
+function mountPaged(opts: {
+  pages: number;
+  render?: Record<string, unknown>;
+  inputs?: unknown[];
+}): {
+  panel: HTMLElement;
+  canvas: HTMLElement;
+  pageExports: () => Array<{ format: string; opts: Record<string, unknown> }>;
+  download: () => void;
+  setFormat: (f: string) => void;
+} {
+  const doc = dom.window.document;
+  doc.body.innerHTML = '';
+  const panel = doc.createElement('div');
+  const canvas = doc.createElement('div');
+  doc.body.append(panel, canvas);
+  for (let i = 0; i < opts.pages; i++) {
+    const p = doc.createElement('div');
+    p.setAttribute('data-pdf-page', '');
+    canvas.appendChild(p);
+  }
+  const pageExports: Array<{ format: string; opts: Record<string, unknown> }> = [];
+  const manifest = {
+    id: 'layout-studio', name: 'Design', version: '1.0.0', inputs: opts.inputs ?? [],
+    render: { width: 1080, height: 1080, formats: ['png', 'svg', 'pdf'], ...(opts.render ?? {}) },
+  };
+  const runtime = {
+    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    export: async (node: unknown, format: string, o: Record<string, unknown>) => {
+      // Count only DOWNLOAD per-page exports, not the export-history thumbnail capture,
+      // which (for render.paged) also targets the first [data-pdf-page] but sets thumbnail:true.
+      if ((node as HTMLElement)?.matches?.('[data-pdf-page]') && o.thumbnail !== true) {
+        pageExports.push({ format, opts: { ...o } });
+      }
+      return new dom.window.Blob(['x'], { type: 'image/png' });
+    },
+  };
+  const host = { assets: { query: async () => [] }, state: { save: async () => {} }, export: { download: async () => {} } };
+  renderActions(
+    panel as never, manifest as never, runtime as never, canvas, host as never,
+    () => {}, (async (fn: () => unknown) => fn()) as never, {},
+  );
+  const setFormat = (f: string) => {
+    const sel = panel.querySelector('[data-action="format"]') as HTMLSelectElement | null;
+    if (sel) { sel.value = f; sel.dispatchEvent(new dom.window.Event('change', { bubbles: true })); }
+  };
+  setFormat('png');
+  return {
+    panel, canvas, setFormat, pageExports: () => pageExports,
+    download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
+      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+  };
+}
+
+const FRAME_INPUT = [{ id: 'boxes', type: 'blocks', canvas: { frameField: 'frame' } }];
+
+test('Design frame primitive: a multi-artboard doc fans a PNG out to one still per artboard', async () => {
+  const h = mountPaged({ pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT });
+  h.download();
+  await settle();
+  assert.equal(h.pageExports().length, 3, 'three artboards → three per-page still exports (zipped downstream)');
+  for (const e of h.pageExports()) assert.equal(e.format, 'png');
+});
+
+test('Design frame primitive: a single-artboard doc exports one flat still (still fans, one file)', async () => {
+  const h = mountPaged({ pages: 1, render: { layout: 'editor' }, inputs: FRAME_INPUT });
+  h.download();
+  await settle();
+  assert.equal(h.pageExports().length, 1, 'one artboard → a single per-page still (no zip downstream)');
+});
+
+test('Design with NO frames (zero page els) stays a single flat export', async () => {
+  const h = mountPaged({ pages: 0, render: { layout: 'editor' }, inputs: FRAME_INPUT });
+  h.download();
+  await settle();
+  assert.equal(h.pageExports().length, 0, 'no [data-pdf-page] → the flat whole-canvas path, never the fanout');
+});
+
+test('the frame arm requires canvas.frameField, not merely a boxes canvas (Org Chart is excluded)', async () => {
+  // A fixed-canvas editor (org-chart) declares canvas but NO frameField. Even if page els
+  // were somehow present, the gate must not fan out — it renders a single .artboard.
+  const h = mountPaged({ pages: 2, render: { layout: 'editor' }, inputs: [{ id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } }] });
+  h.download();
+  await settle();
+  assert.equal(h.pageExports().length, 0, 'no frameField → hasFrames false → no per-artboard fanout');
+});
+
+test('render.paged (multi-page-pdf / doc-studio) is NOT admitted to the still fanout', async () => {
+  // render.paged marks the paged document tools whose SVG/still export must stay ONE
+  // whole-canvas file. It carries no frameField and no render.pages, so it must not fan out.
+  const h = mountPaged({ pages: 4, render: { layout: 'document', paged: true }, inputs: [] });
+  h.download();
+  await settle();
+  assert.equal(h.pageExports().length, 0, 'render.paged stays a single whole-canvas file — never per-page stills');
+});
+
+test('carousel-maker (render.pages) keeps fanning out unchanged', async () => {
+  const h = mountPaged({ pages: 2, render: { pages: { count: 'n', width: 'w', height: 'h' } }, inputs: [{ id: 'slides', type: 'blocks', canvas: {} }] });
+  h.download();
+  await settle();
+  assert.equal(h.pageExports().length, 2, 'render.pages fans out per page exactly as before the frame arm was added');
+});
+
+test('a framed still fanout drops the inert cuts opt from the per-page render', async () => {
+  // A framed timed doc still-export routes to per-artboard fanout (precedence over the
+  // whole-timeline cuts contact sheet, which only applies to a [data-sequence] stage). The
+  // per-page opts must not carry a stray cuts value.
+  const h = mountPaged({ pages: 2, render: { layout: 'editor' }, inputs: FRAME_INPUT });
+  h.download();
+  await settle();
+  for (const e of h.pageExports()) assert.equal('cuts' in e.opts, false, 'cuts is deleted from the per-artboard opts');
+});

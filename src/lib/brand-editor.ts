@@ -9,17 +9,37 @@
  * the host view (start.ts) drives visibility by setting `data-active-tab` on
  * the editor root — every panel stays mounted (and wired) whichever tab shows:
  *
- *  1. logos     — the mark manager (brand-logos.ts): the canonical orientation
- *                 × treatment matrix, user-named custom marks ("icon", "crest"),
- *                 and additional logo identities. An SVG upload feeds the Colour
- *                 tab's "found in your logo" primary suggestion.
- *  2. color     — the derive controls (primary + scheme / surface / contrast)
- *                 with live preview (DRAFT-until-saved: only "Save colour"
- *                 persists), the harmony generator, the palette (every swatch an
- *                 editable tile + the OKLCH wheel) and optional gradient tokens.
- *  3. type      — the Google-Fonts manager (user-fonts.ts) plus the two type
- *                 roles the chrome reads (font.brand / font.mono) and a live
- *                 specimen, so type is chosen without colour noise.
+ *  1. logos     — the Logos room (plan 97 §7.3). Level 0 is one multi-file drop
+ *                 zone: each file is classified (classify-logo.ts), proposes one
+ *                 of the eight slots and waits as a confirm chip, and a placed
+ *                 colour SVG offers generated mono / reverse siblings. Under it,
+ *                 unchanged, the canonical orientation × treatment matrix
+ *                 (brand-logos.ts), user-named custom marks ("icon", "crest")
+ *                 and additional logo identities. Every placement runs the
+ *                 shared trim-to-content offer first (trim-offer.ts), and an SVG
+ *                 feeds the Colours room's "found in the logo" primary
+ *                 suggestion, with its other colours going to the tray.
+ *  2. color     — the Colours room (plan 97 §7.1). Level 0 leads: "Add a colour"
+ *                 writes exactly one token, and the Roles strip says which
+ *                 swatch plays each part. The expert controls — Generate a
+ *                 starter palette, Shade curves, Contrast, Print — are folded
+ *                 into four wings below it. The palette (every swatch an
+ *                 editable tile + the OKLCH wheel) and optional gradient tokens
+ *                 sit in the side pane.
+ *  3. type      — the Type room (plan 97 §7.2). Level 0 is four ROLE CARDS
+ *                 (Primary, Headings, Code, Italic — brand-vars.ts's FONT_SLOTS),
+ *                 each showing the face that serves it on a live one-line
+ *                 specimen. A card opens the COMPARE STAGE inline
+ *                 (design-system/type-compare.ts): Google families by name,
+ *                 dropped font files, and font candidates a source scan left in
+ *                 the tray all stand side by side on one editable specimen at
+ *                 one size, and NOTHING installs until a card is chosen. The
+ *                 stage previews faces as session-scoped FontFaces and installs
+ *                 nothing itself — `applyTypeChoice` here is the only writer
+ *                 (installGoogleFont / installFontFromBytes, then the role).
+ *                 Below it: the management list of installed families (roles,
+ *                 delete), the font-file upload panel, and the full four-role
+ *                 specimen.
  *  4. tokens    — the corner radius plus every other non-colour primitive
  *                 (spacing, sizing, stroke, opacity, rotation, numbers, shadows
  *                 — lib/token-studio.ts).
@@ -28,8 +48,10 @@
  *
  * Everything persists to the one `user/tokens/brand` install via the bridge's
  * single write chokepoint (installUserTokens → bust → the next get()/colors()/
- * resolve() re-reads) — except the Colour panel's derive, which is draft-until-
- * saved. Palette/font/logo/token edits persist immediately, same as ever.
+ * resolve() re-reads). ONE save discipline (plan 97 §6): every commit-level
+ * action persists immediately and a session undo stack (Ctrl/Cmd+Z, scoped to
+ * the Colours room) is the safety net — there is no draft, no dirty flag, and
+ * no confirm dialog where an undo suffices.
  * Import/export of the whole brand pack is exposed on the handle
  * (exportPack/importPack) so the host view owns those buttons' placement.
  *
@@ -66,7 +88,7 @@ import { mountCurveEditor } from './curve-editor.ts';
 import type { CurveEditorHandle } from './curve-editor.ts';
 import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
 import type { SpotColor, FinishKind } from '@lolly-tools/core/host-v1';
-import { applyChromeBrandVars, applyChromeAccent, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
+import { applyChromeBrandVars, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
 import { STORAGE_FORMATS, formatColor, serializeColor, storageFormatOf } from './color-formats.ts';
 import type { StorageFormat } from './color-formats.ts';
@@ -80,20 +102,32 @@ import {
 } from './oklch-slice.ts';
 import type { SliceChartState, SliceDot } from './oklch-slice.ts';
 import type { SlicePlane } from '@lolly/engine';
-import type { PaletteEntry } from '../palette.ts';
 import { swatchTile, tileLabel } from './swatches.ts';
 import {
-  listUserFonts, installGoogleFont, setPrimaryFont, setMonoFont, removeUserFont,
+  listUserFonts, installGoogleFont, installFontFromBytes, setPrimaryFont, setMonoFont, removeUserFont,
   primaryFontFamily, monoFontFamily, setBrandRadius,
   setDisplayFont, setItalicFont, displayFontFamily, italicFontFamily,
 } from '../user-fonts.ts';
-import type { UserFontsHost, UserFontFamily } from '../user-fonts.ts';
+import type { UserFontsHost, UserFontFamily, FontRole } from '../user-fonts.ts';
 import { mountFontsManager } from '../components/fonts-manager.ts';
 import {
   LOGO_ORIENTATIONS, LOGO_TREATMENTS, ORIENTATION_META, TREATMENT_META, LOGO_SLUG_RE,
   splitVariant, variantLabel, listLogos, installLogo, removeLogo,
 } from './brand-logos.ts';
 import type { LogoVariant, LogoSlot } from './brand-logos.ts';
+import { classifyLogoSvg, classifyLogoRasterStats } from './design-system/classify-logo.ts';
+import type { LogoClassification } from './design-system/classify-logo.ts';
+import { hasPendingLogoFiles, takePendingLogoFiles } from './design-system/pending-files.ts';
+import { deriveMonoSvg, deriveReverseSvg, eligibleForDerivedVariants } from './design-system/recolor-logo.ts';
+import { prepareTrim, mountTrimOffer } from './design-system/trim-offer.ts';
+import { rasterAlphaBounds } from './design-system/trim-bounds.ts';
+import { createTray, candidatesFromCensus } from './design-system/tray.ts';
+import type { Tray } from './design-system/tray.ts';
+import { mountTypeCompare } from './design-system/type-compare.ts';
+import type { CompareChoice, TypeCompare } from './design-system/type-compare.ts';
+import { googleMatch, parseFaceName } from './design-system/font-resolve.ts';
+import { censusFromSvgColors, censusHex } from './design-system/census.ts';
+import { icon } from './icons.ts';
 import { mountTokensPanel, mountGradientsPanel, mountCataloguePanel, panelHead } from './brand-studio-tabs.ts';
 import { mountStudioSplit } from './studio-split.ts';
 import { STUDIO_GROUPS, gradientAliasRefCount, materializeGradientAliases } from './token-studio.ts';
@@ -107,18 +141,14 @@ import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { segHtml } from './seg.ts';
 import { announce } from '../a11y.ts';
+import { prefersReducedMotion } from './a11y-prefs.ts';
 import { playSfx } from './sfx.ts';
-
-/**
- * Fired on `document` whenever the Colour panel's live draft changes (primary
- * drag, a neutral/secondary ramp pick, or "Use this colour") — `detail.palette`
- * is the draft's ramp + spectrum swatches (see draftPalette). NOTHING listens
- * today; any future subscriber must treat it as optional decoration, never a
- * dependency. Consumers of the COMMITTED palette don't ride this — they
- * subscribe via BrandEditorHandle.onPalette instead.
- */
-export const BRAND_DRAFT_EVENT = 'lolly:brand-draft';
-export interface BrandDraftEventDetail { palette: PaletteEntry[]; }
+import { mountAddColor } from './design-system/add-color.ts';
+import type { ColorEntry } from './design-system/add-color.ts';
+import {
+  ROLE_IDS, roleLabel, readRoles, assignRole, clearRole, mountRolesStrip,
+} from './design-system/roles.ts';
+import type { RoleId } from './design-system/roles.ts';
 
 // ── Host shape ──────────────────────────────────────────────────────────────
 // The editor reads/writes tokens, fonts and brand packs. Every real web host
@@ -207,10 +237,100 @@ async function ensureGoogleFontsConsent(): Promise<boolean> {
   return true;
 }
 
+// ── Type room: the four role cards (plan 97 §7.2, level 0) ───────────────────
+/**
+ * The faces the chrome, the tools and every export read — brand-vars.ts's
+ * FONT_SLOTS, in the order the room shows them. `brand` is the TOKEN id and it
+ * is never renamed (§3 rule 9); "Primary" is the word on screen, because nobody
+ * calls their body face "the brand face".
+ *
+ * `css` is the exact `font-family` value the card's specimen paints in, so each
+ * card shows what its role RESOLVES to right now rather than what it was
+ * assigned: an unset Headings card renders in the primary, because that is what
+ * a heading actually wears today. The var chain is brand-vars.ts's own
+ * (`--font-display` falls back to `--font-brand`), so a card cannot drift from
+ * the chrome it is describing.
+ */
+interface TypeRoleDef {
+  id: FontRole;
+  css: string;
+  /** The role IS the slant — the specimen has to lean or it says nothing. */
+  slanted?: boolean;
+  /** Sized down: a code line is longer and set tighter than display copy. */
+  mono?: boolean;
+}
+const TYPE_ROLES: readonly TypeRoleDef[] = [
+  { id: 'brand', css: 'var(--font-brand)' },
+  { id: 'display', css: 'var(--font-display, var(--font-brand))' },
+  { id: 'mono', css: 'var(--font-mono)', mono: true },
+  { id: 'italic', css: 'var(--font-italic, var(--font-brand))', slanted: true },
+];
+
+/** The role's name on screen. Called at render, not at module load, so a late
+ *  locale still lands (the same reason the rooms build their markup in mount). */
+function typeRoleLabel(role: FontRole): string {
+  return role === 'brand' ? t('Primary')
+    : role === 'display' ? t('Headings')
+      : role === 'mono' ? t('Code') : t('Italic');
+}
+
+/** One short line per role — long enough to judge a face, short enough to stay
+ *  on one line at any card width. The code line is a real command, not prose:
+ *  a mono face is chosen on its digits, its zero and its punctuation. */
+function typeRoleSample(role: FontRole): string {
+  return role === 'brand' ? t('Body copy, buttons and every tool')
+    : role === 'display' ? t('Headlines set the tone')
+      : role === 'mono' ? 'lolly qr-code --export=svg 0O1lI'
+        : t('Emphasis, quotations and asides');
+}
+
+/**
+ * The role button's two strings, kept in one place because they have to agree.
+ *
+ * The button is icon-free but ROLE-free too: "Change" on its own would be four
+ * identical buttons on four cards, so the accessible name names the role. WCAG
+ * 2.5.3 (Label in Name) then requires the visible words to be IN that name —
+ * speech control says "click Change", and a name of "Change the Headings face"
+ * matches while "Choose the Headings face" over a visible "Change" does not.
+ * Both strings below are built so the visible label is a literal prefix of the
+ * spoken one, in every state. `paintRoleCards` rewrites BOTH together.
+ */
+function typeRoleActStrings(roleLabel: string, isSet: boolean): { text: string; name: string } {
+  return isSet
+    ? { text: t('Change'), name: tRaw('Change the {role} face', { role: roleLabel }) }
+    : { text: t('Choose a face'), name: tRaw('Choose a face for {role}', { role: roleLabel }) };
+}
+
+/**
+ * One role card's markup. Part of the room's own scaffold write, so nothing
+ * dynamic reaches it: every interpolation is a t() literal or an in-code
+ * constant from TYPE_ROLES. The face name and the button's label are written
+ * later as textContent by `paintRoleCards`, never as markup.
+ */
+function typeRoleCardHtml(def: TypeRoleDef): string {
+  const label = typeRoleLabel(def.id);
+  const act = typeRoleActStrings(label, false);
+  return `
+    <article class="be-typecard" data-be-typecard="${def.id}">
+      <header class="be-typecard-head">
+        <span class="be-typecard-role">${label}</span>
+        <span class="be-typecard-face" data-be-typecard-face></span>
+      </header>
+      <p class="be-typecard-sample${def.mono ? ' be-typecard-sample--mono' : ''}"
+        style="font-family:${def.css}${def.slanted ? ';font-style:italic' : ''}">${typeRoleSample(def.id)}</p>
+      <button type="button" class="be-btn be-typecard-act" data-be-typecard-choose="${def.id}"
+        aria-label="${escape(act.name)}"><span data-be-typecard-actlabel>${act.text}</span></button>
+    </article>`;
+}
+
 /** Per-ramp state of the tonal-curve affordance rendered on each ramp row:
  *  whether the ramp carries a user-tuned curve, and whether its editor is open. */
 interface CurveMark { edited: boolean; open: boolean; }
 type CurveMarks = Partial<Record<RampId, CurveMark>>;
+/** The three ramps' display names. Module scope because the Colours room's
+ *  markup (the Curves + Contrast wings' ramp picker) is built before any of the
+ *  mount's own locals exist. */
+const RAMP_LABEL: Record<RampId, string> = { primary: t('Primary'), neutral: t('Neutral'), secondary: t('Secondary') };
 // A small tonal-curve glyph (a rising ease). Inline so it themes with currentColor.
 const CURVE_GLYPH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 13c4 0 4-10 12-10"/></svg>';
 
@@ -287,47 +407,6 @@ function previewHtml(doc: Record<string, unknown>, sel: { neutral: number; secon
   return `
     <div class="be-ramps">${rampRow(light, 'primary', t('Primary'), sel.steps, { curve: cm.primary })}${rampRow(light, 'neutral', t('Neutral'), sel.steps, { selected: sel.neutral, curve: cm.neutral })}${rampRow(light, 'secondary', t('Secondary'), sel.steps, { selected: sel.secondary, curve: cm.secondary })}${blendRow(light, sel.steps)}</div>
     <div class="be-specs">${specCard(t('Light'), light)}${specCard(t('Dark'), dark)}</div>`;
-}
-
-/**
- * The derived doc's ramp + spectrum swatches as PaletteEntry[] — the shape the
- * Dashboard's "Colour palette" ink-bar section (views/dashboard.ts) renders.
- * Semantic roles are left out (that section never shows them); cmyk is always
- * null (a draft has no measured ink). Rides BRAND_DRAFT_EVENT (broadcastDraft),
- * which nothing consumes today — see that constant's doc comment.
- */
-function draftPalette(doc: Record<string, unknown>): PaletteEntry[] {
-  return walkSwatches(doc, 'light')
-    .filter(s => s.kind === 'ramp' || s.kind === 'spectrum')
-    .map(s => ({
-      hex: s.hex,
-      label: s.kind === 'ramp' ? `${s.group} ${s.name}` : s.name,
-      cmyk: null,
-      group: s.kind === 'spectrum' ? 'spectrum' : s.group,
-    }));
-}
-
-/**
- * Live-apply a derived (not necessarily installed) doc's chrome accent —
- * resolved locally via createTokenSet, never through host.tokens, so this
- * works from an in-memory draft the same way applyChromeBrandVars works from
- * the real install. Generalises brand-vars.ts's CSS-generation (applyChromeAccent)
- * rather than duplicating it.
- */
-function applyDraftChrome(doc: Record<string, unknown>): void {
-  const hex = (theme: 'light' | 'dark', role: string): string | null => {
-    try { return tokenValueToHex(createTokenSet(doc, { theme }).resolve(`color.semantic.${role}`)); }
-    catch { return null; }
-  };
-  applyChromeAccent(
-    { primary: hex('light', 'primary'), onPrimary: hex('light', 'on-primary') },
-    { primary: hex('dark', 'primary'), onPrimary: hex('dark', 'on-primary') },
-  );
-}
-
-/** Broadcast the draft change — currently unheard (see BRAND_DRAFT_EVENT). */
-function broadcastDraft(doc: Record<string, unknown>): void {
-  document.dispatchEvent(new CustomEvent<BrandDraftEventDetail>(BRAND_DRAFT_EVENT, { detail: { palette: draftPalette(doc) } }));
 }
 
 // `segHtml` moved to lib/seg.ts (component audit rec 1 — the one `.view-seg`
@@ -741,7 +820,10 @@ function paletteHtml(swatches: BrandSwatch[]): string {
   const top = `
     <div class="be-pal-top">
       <span class="be-pal-count">${countLabel}</span>
-      <button type="button" class="be-add" data-be-add="custom">${t('+ Add swatch')}</button>
+      <span class="be-pal-topbtns">
+        <button type="button" class="be-add" data-be-pal-select aria-pressed="false">${t('Select')}</button>
+        <button type="button" class="be-add" data-be-add="custom">${t('+ Add swatch')}</button>
+      </span>
     </div>`;
   // Every section is collapsible (<details>, open by default — no persistence)
   // and carries its own "+ Add": Spectrum grows in place, Custom adds a custom
@@ -775,41 +857,60 @@ function paletteHtml(swatches: BrandSwatch[]): string {
  * Render the brand studio into `root` and wire it. Returns a teardown that stops
  * the (font/preview) listeners. Locked builds render a read-only note and no-op.
  */
-/** The five step tabs the studio renders — the host view's tab bar drives which
- *  one shows by setting `data-active-tab` on the editor root. */
+/** The five areas the studio renders — the host view drives which one shows by
+ *  setting `data-active-tab` on the editor root, and `onChange` names the one an
+ *  edit came from.
+ *
+ *  The `BRAND_TABS` label+icon table that used to sit here is gone with the tab
+ *  bar it fed: the design-system studio is rooms, and `views/start.ts` builds
+ *  its own navigation. The key itself is still the studio's vocabulary. */
 export type BrandTabKey = 'logos' | 'color' | 'type' | 'tokens' | 'catalogue';
 
-const TAB_ICONS: Record<BrandTabKey, string> = {
-  logos: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6"/><circle cx="15" cy="6" r="3"/><polygon points="3,21 9,15 12,18 21,9 21,21 3,21"/></svg>`,
-  color: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16" stroke="none" fill="currentColor"/><circle cx="12" cy="8" r="1.5" fill="currentColor"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/><circle cx="8" cy="12" r="1.5" fill="currentColor"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/></svg>`,
-  type: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12v16H6z"/><path d="M9 9h6M9 14h4"/></svg>`,
-  tokens: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8h10M7 12h10M7 16h6M4 6v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z"/></svg>`,
-  catalogue: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
-};
-
-export const BRAND_TABS: ReadonlyArray<{ id: BrandTabKey; label: string; icon: string }> = [
-  { id: 'logos', label: t('Logos'), icon: TAB_ICONS.logos },
-  { id: 'color', label: t('Colours'), icon: TAB_ICONS.color },
-  { id: 'type', label: t('Type'), icon: TAB_ICONS.type },
-  { id: 'tokens', label: t('Tokens'), icon: TAB_ICONS.tokens },
-  { id: 'catalogue', label: t('Catalogue'), icon: TAB_ICONS.catalogue },
-];
-
 export interface BrandEditorOptions {
-  /** Fired after any brand edit lands (persisted or drafted), with the tab it
-   *  came from — the host's "Save & continue" appearance + next-tab nudge. */
+  /** Fired after any brand edit lands, with the tab it came from — the host's
+   *  refresh hook. */
   onChange?: (tab: BrandTabKey) => void;
+  /** Take a durable, named checkpoint of the design system before a destructive
+   *  action. The host owns the rolling history (lib/design-system/studio-state.ts);
+   *  absent, the session undo stack is the only net. Best-effort: a rejection is
+   *  swallowed, never surfaced as a failed edit. Additive since plan 97 M1. */
+  checkpoint?: (label: string) => Promise<void>;
+  /**
+   * The host's already-loaded candidate tray (plan 97 §8).
+   *
+   * There must be exactly ONE live tray per mounted studio. It persists its
+   * whole candidate list on every write, so two instances over the same storage
+   * key each save their own in-memory copy and whichever writes last erases the
+   * other's candidates. The Logos room hands a mark's extra colours to a tray;
+   * given one, it uses the host's rather than creating a second — which also
+   * means those candidates show up in the panel the host already mounted.
+   *
+   * Must be LOADED by the host before it is passed. Absent, the room creates
+   * (and loads) its own, which is correct only because a host that owns a tray
+   * always passes it. Additive since plan 97 M5.
+   */
+  tray?: Tray;
 }
 
-/** teardown: unmount. saveDraft: commit the Colour panel's pending, unsaved
- *  derive (a no-op when there's nothing dirty). isDirty: whether such a draft
- *  is pending. exportPack/importPack: the brand-file share pair, exposed here
- *  so the host view owns the buttons' placement (errors propagate — the caller
- *  shows them). */
+/** teardown: unmount. exportPack/importPack: the brand-file share pair, exposed
+ *  here so the host view owns the buttons' placement (errors propagate — the
+ *  caller shows them). */
 export interface BrandEditorHandle {
   teardown: () => void;
+  /** Retained only so an older caller still compiles. Every commit in the studio
+   *  persists immediately (plan 97 §6), so there is never a draft to save and
+   *  never a pending state to report — start.ts consulted neither, verified. */
   saveDraft: () => void;
   isDirty: () => boolean;
+  /** Add n colours as n swatches, through the Colours room's own write — one
+   *  `addSwatch` each, one persist, no derive and nothing suggested-into (plan
+   *  97 §3 principle 1). Returns how many landed.
+   *
+   *  This is the ONLY correct way for another surface (the tray) to add a
+   *  colour: it writes into the live document this editor holds, so an add can
+   *  never reinstall a stale snapshot over edits made in the room. Additive
+   *  since plan 97 M2; absent on a locked build, which writes nothing at all. */
+  addColors?: (entries: ColorEntry[]) => number;
   exportPack: () => Promise<{ filename: string }>;
   importPack: (file: File) => Promise<void>;
   /** Re-read the installed doc and repaint every panel — for a host that
@@ -829,6 +930,12 @@ export interface BrandEditorHandle {
    *  Returns false when the card isn't present (a locked build renders no
    *  studio), so a host can degrade gracefully. */
   openColorChart: () => boolean;
+  /** Open a level-2 wing of the Colours room. False when absent (a locked build
+   *  renders no studio). Additive since plan 97 M1. */
+  openWing?: (key: 'generate' | 'curves' | 'contrast' | 'print') => boolean;
+  /** Session undo for the room's destructive actions. Additive since M1. */
+  undo?: () => boolean;
+  canUndo?: () => boolean;
 }
 
 export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts: BrandEditorOptions = {}): Promise<BrandEditorHandle> {
@@ -967,6 +1074,18 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // value (the user can re-pick it any time; Apply reads the live input).
   const contrastLockBg = surfaceHex();
 
+  // The ramp the Shade curves + Contrast wings act on. The curve editor and the
+  // two one-shot transforms used to share the "whichever ramp's glyph you
+  // clicked" state; now that they live in two separate wings, each wing renders
+  // the SAME picker and this is the one value both read.
+  let curveRamp: RampId = 'primary';
+  /** The ramp picker, rendered once per wing (the two instances stay in sync).
+   *  Its own `groupAttr` keeps it out of DERIVE_SEGS's generic delegate. */
+  const rampPickHtml = (): string => segHtml(
+    'ramppick', RAMP_IDS.map(r => ({ id: r, label: RAMP_LABEL[r] })), curveRamp, t('Ramp'),
+    { attr: 'data-ramp', extraClass: 'be-ramppick', groupAttr: 'data-be-ramp-pick' },
+  );
+
   const initialDraft = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
   // Reflect any stored curves in the very first paint (a no-op when curve-less).
   if (initialDraft) overlayRampCurves(initialDraft, curves, steps);
@@ -976,6 +1095,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-tab" data-be-tab-panel="logos">
         <div class="be-panel be-logos">
           ${panelHead(t('Logos'), t('Add whichever marks you have — each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way — an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.'))}
+          ${/* Level 0 (plan 97 §7.3): one multi-file drop zone. Each file is
+                read for shape and ink, proposes a slot, and waits for a tap —
+                the matrix below stays exactly as it was, per-slot drops and
+                all. The trim offer mounts between the two. */''}
+          <div class="be-logo-intake" data-be-logo-intake>
+            <label class="be-logo-intake-drop">
+              <input type="file" class="visually-hidden" data-be-logo-multi multiple accept="image/png,image/jpeg,image/svg+xml,image/webp" aria-label="${escape(t('Choose logo files'))}">
+              <span class="be-logo-intake-glyph" aria-hidden="true">${icon('uploadImage', { size: 20 })}</span>
+              <span class="be-logo-intake-lead">${t('Drop marks here, or choose several at once')}</span>
+              <span class="be-logo-intake-hint">${t('Each file is read for its shape and its ink, then offered the slot it looks like. Nothing is placed until you tap.')}</span>
+            </label>
+            <div class="be-logo-queue" data-be-logo-queue hidden></div>
+            <div class="be-logo-trim" data-be-logo-trim hidden></div>
+          </div>
           <div class="be-logo-grid" data-be-logos></div>
           <p class="be-err" data-be-logo-err hidden></p>
         </div>
@@ -983,28 +1116,35 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
       <div class="be-tab be-tab--split" data-be-tab-panel="color">
       <div class="be-split-main">
-      <div class="be-panel be-colour">
-        ${panelHead(t('Colour'), t('Pick one colour — Lolly derives the ramps, both themes and every role; click a step in the Neutral or Secondary ramp to choose that shade instead of the default. Changes here preview live across the whole app. "Use this colour" re-derives the palette beside — <strong>Save colour</strong> is what actually keeps it.'))}
+      ${/* ── Level 0: the one control. Adding a colour writes exactly one token
+             (plan 97 §7.1) — nothing is derived, suggested-into, or demanded. */''}
+      <div class="be-panel be-addcolor">
+        ${panelHead(t('Add a colour'), t('Paste or pick any colour, in any notation. One colour adds one token, nothing else. Paste a list and every colour in it becomes a chip you can add.'))}
+        <div data-be-addcolor></div>
         <div class="be-suggest" data-be-suggest hidden></div>
+      </div>
+
+      ${/* Roles are an assignment layer over the swatches that already exist —
+            a design system of three loose colours with no roles is valid. */''}
+      <div class="be-panel be-roles">
+        ${panelHead(t('Roles'), t('Which colour plays each part. Roles are optional, and any swatch can take one. Contrast is measured against the surface, APCA first.'))}
+        <div data-be-roles></div>
+      </div>
+
+      ${/* ── Level 2: the expert wings. Folded by default, no persistence — the
+             same discipline the palette's own sections keep. */''}
+      <details class="be-wing" data-be-wing="generate">
+        <summary class="be-wing-head">
+          <span class="be-wing-title">${t('Generate a starter palette')}</span>
+          <span class="be-wing-sub">${t('Build a full set of shades from one colour. Nothing changes until you replace the palette.')}</span>
+        </summary>
+        <div class="be-wing-body">
+      <div class="be-colour">
+        ${panelHead(t('Start from one colour'), t('Pick a colour and Lolly works out the ramps, both themes and every role. Click a step in the Neutral or Secondary ramp to anchor that shade. This is a preview until you replace the palette.'))}
         <div class="be-derive">
           <div class="be-colorpick">
             <span class="be-field-label">${t('Primary colour')}</span>
             <div data-be-primary-field>${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}</div>
-            <!-- Screen / print: the primary is one colour; Lolly shows its on-screen
-                 (sRGB) form and auto-converts it for print — UNLESS the shared print
-                 lock inside pins an exact CMYK anchor or a named spot colour instead.
-                 Folded by default; the summary chips carry the lock state. -->
-            <details class="be-subst-details be-print-details" data-be-print-details>
-              <summary><span class="be-subst-details-label">${t('Print &amp; screen')}</span><span class="be-subst-chips" data-be-print-chips></span></summary>
-              <div class="be-subst" data-be-subst>
-                <div class="be-subst-line">
-                  <span class="be-subst-key">${t('Screen')}</span>
-                  <code class="be-subst-val" data-be-screen></code>
-                  <span class="be-subst-tag">${t('auto')}</span>
-                </div>
-                <div data-be-lock-mount="primary"></div>
-              </div>
-            </details>
           </div>
           <div class="be-derive-controls">
             <label class="be-field"><span class="be-field-label">${t('Scheme')}</span>${segHtml('scheme', SCHEMES, scheme, t('Colour scheme'))}</label>
@@ -1020,74 +1160,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
                 <label class="be-field"><span class="be-field-label">${t('Text on brand')}</span>${segHtml('foreground', FOREGROUNDS, foreground, t('Text colour on the brand colour'))}</label>
               </div>
             </details>
-            <button type="button" class="be-cta" data-be-derive>${t('Use this colour')}</button>
-            <button type="button" class="be-cta" data-be-save hidden>${t('Save colour')}</button>
           </div>
           <div class="be-preview" data-be-preview>${initialDraft ? previewHtml(initialDraft, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() }) : ''}</div>
-          <!-- Inline tonal-curve editor — opened from a ramp row's curve toggle;
-               sits under the preview (the Shades slider above resamples it). -->
-          <div class="be-curve" data-be-curve-editor hidden>
-            <div class="be-curve-head">
-              <span class="be-curve-title" data-be-curve-title></span>
-              <div class="be-curve-head-actions">
-                <button type="button" class="be-btn be-btn--sm be-curve-rebuild" data-be-curve-rebuild>${t('Rebuild from colour')}</button>
-                <button type="button" class="be-curve-close" data-be-curve-close aria-label="${escape(t('Close the curve editor'))}" title="${escape(t('Close'))}">✕</button>
-              </div>
-            </div>
-            <p class="be-curve-hint">${t('Drag a point to reshape this ramp. Lightness, chroma and hue each have their own curve — switch with L / C / H. The shades below rebake live; the number of shades follows the slider above.')}</p>
-            <div class="be-curve-mount" data-be-curve-mount></div>
-            <!-- Rotate hue: a one-shot curve transform. It shifts every step's hue
-                 by a fixed angle, keeping each step's lightness + chroma, turning
-                 the whole ramp bodily around the wheel — then hands the result to
-                 the SAME curve machinery (drag / re-anchor / Rebuild all apply). -->
-            <div class="be-hr" data-be-hr>
-              <div class="be-hr-head">
-                <span class="be-hr-title">${t('Rotate hue')}</span>
-                <span class="be-hr-sub">${t('Turn this whole ramp around the hue wheel. Every shade keeps its lightness and chroma.')}</span>
-              </div>
-              <div class="be-hr-controls">
-                <div class="be-field be-hr-deg-field">
-                  <span class="be-field-label">${t('Degrees')} <span class="be-hr-val" data-be-hr-val>0°</span></span>
-                  <input type="range" class="field-range be-hr-slider" data-be-hr-deg min="-180" max="180" step="1" value="0" aria-label="${escape(t('Hue rotation in degrees'))}">
-                </div>
-                <button type="button" class="be-btn be-btn--sm be-hr-apply" data-be-hr-apply>${t('Apply rotation')}</button>
-              </div>
-            </div>
-            <!-- Contrast-lock: a one-shot curve transform. It retones every step
-                 to hit an APCA target against a background, keeping each step's
-                 hue + chroma, then hands the result to the SAME curve machinery
-                 (drag / re-anchor / Rebuild all apply as-is afterwards). -->
-            <div class="be-cl" data-be-cl>
-              <div class="be-cl-head">
-                <span class="be-cl-title">${t('Contrast-lock')}</span>
-                <span class="be-cl-sub">${t('Retone this ramp to hit APCA contrast targets against a background — each step keeps its hue and chroma.')}</span>
-              </div>
-              <div class="be-cl-controls">
-                <label class="be-field be-cl-bg-field">
-                  <span class="be-field-label">${t('Background')}</span>
-                  <input type="color" class="be-cl-bg" data-be-cl-bg value="${escape(contrastLockBg)}" aria-label="${escape(t('Contrast-lock background colour'))}">
-                </label>
-                <label class="be-field be-cl-preset-field">
-                  <span class="be-field-label">${t('Targets')}</span>
-                  <select class="field-select field-select--auto field-select--sm be-cl-preset" data-be-cl-preset aria-label="${escape(t('Contrast target preset'))}">
-                    ${CONTRAST_LOCK_PRESETS.map(p => `<option value="${escape(p.id)}">${escape(p.label)}</option>`).join('')}
-                  </select>
-                </label>
-                <label class="be-field be-cl-custom-field">
-                  <span class="be-field-label">${t('Custom Lc')} <em>${t('(optional)')}</em></span>
-                  <input type="text" class="field-input field-input--sm be-cl-custom" data-be-cl-custom placeholder="15, 45, 75, 90" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="${escape(t('Custom APCA Lc targets, comma-separated'))}">
-                </label>
-              </div>
-              <div class="be-cl-actions">
-                <button type="button" class="be-btn be-btn--sm be-cl-apply" data-be-cl-apply>${t('Apply contrast-lock')}</button>
-                <span class="be-cl-readout" data-be-cl-readout aria-live="polite"></span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
-      <div class="be-panel be-generate">
+      <div class="be-generate">
         ${panelHead(t('Build your palette'), t('Generate matching colours from your primary — pick a harmony, then <strong>+ Add</strong> the ones you want to your brand. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.'))}
         <div class="be-field">
           <span class="be-field-label">${t('Harmony')}</span>
@@ -1125,6 +1203,124 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           <div class="be-previews" data-be-previews></div>
         </div>
       </div>
+
+      ${/* Replace is the ONLY thing in this wing that writes. It opens a review
+            card first — the card is the review, and undo is the safety net, so
+            no confirm dialog stands here. */''}
+      <div class="be-gen-actions">
+        <button type="button" class="be-cta" data-be-replace-palette>${t('Replace palette')}</button>
+        <span class="be-gen-note">${t('Adds nothing on its own. You see exactly what changes first.')}</span>
+      </div>
+      ${/* NOT a live region. The card is a confirmation someone has to act on,
+            which is a FOCUS job — renderReview focuses its primary, and a screen
+            reader reads the card as that button's context. Adding aria-live on
+            top announced the whole subtree a second time, as a mutation. The
+            polite channel is still used here, through announce(), for the things
+            that are genuinely news rather than a thing to press. */''}
+      <div class="be-review" data-be-review hidden></div>
+        </div>
+      </details>
+
+      <details class="be-wing" data-be-wing="curves">
+        <summary class="be-wing-head">
+          <span class="be-wing-title">${t('Shade curves')}</span>
+          <span class="be-wing-sub">${t('Reshape a ramp point by point. Lightness, chroma and hue each have their own curve.')}</span>
+        </summary>
+        <div class="be-wing-body">
+          <label class="be-field"><span class="be-field-label">${t('Ramp')}</span>${rampPickHtml()}</label>
+          <!-- The tonal-curve editor. Revealed with the wing (the Shades slider
+               in the Generate wing resamples whatever it holds). -->
+          <div class="be-curve" data-be-curve-editor hidden>
+            <div class="be-curve-head">
+              <span class="be-curve-title" data-be-curve-title></span>
+              <div class="be-curve-head-actions">
+                <button type="button" class="be-btn be-btn--sm be-curve-rebuild" data-be-curve-rebuild>${t('Rebuild from colour')}</button>
+                <button type="button" class="be-curve-close" data-be-curve-close aria-label="${escape(t('Close the curve editor'))}" title="${escape(t('Close'))}">✕</button>
+              </div>
+            </div>
+            <p class="be-curve-hint">${t('Drag a point to reshape this ramp. Lightness, chroma and hue each have their own curve — switch with L / C / H. The shades below rebake live; the number of shades follows the slider above.')}</p>
+            <div class="be-curve-mount" data-be-curve-mount></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="be-wing" data-be-wing="contrast">
+        <summary class="be-wing-head">
+          <span class="be-wing-title">${t('Contrast')}</span>
+          <span class="be-wing-sub">${t('Retone a ramp to APCA targets, or turn it around the hue wheel.')}</span>
+        </summary>
+        <div class="be-wing-body">
+          <label class="be-field"><span class="be-field-label">${t('Ramp')}</span>${rampPickHtml()}</label>
+          <!-- Contrast-lock: a one-shot curve transform. It retones every step
+               to hit an APCA target against a background, keeping each step's
+               hue + chroma, then hands the result to the SAME curve machinery
+               (drag / re-anchor / Rebuild all apply as-is afterwards). -->
+          <div class="be-cl" data-be-cl>
+            <div class="be-cl-head">
+              <span class="be-cl-title">${t('Contrast-lock')}</span>
+              <span class="be-cl-sub">${t('Retone this ramp to hit APCA contrast targets against a background — each step keeps its hue and chroma.')}</span>
+            </div>
+            <div class="be-cl-controls">
+              <label class="be-field be-cl-bg-field">
+                <span class="be-field-label">${t('Background')}</span>
+                <input type="color" class="be-cl-bg" data-be-cl-bg value="${escape(contrastLockBg)}" aria-label="${escape(t('Contrast-lock background colour'))}">
+              </label>
+              <label class="be-field be-cl-preset-field">
+                <span class="be-field-label">${t('Targets')}</span>
+                <select class="field-select field-select--auto field-select--sm be-cl-preset" data-be-cl-preset aria-label="${escape(t('Contrast target preset'))}">
+                  ${CONTRAST_LOCK_PRESETS.map(p => `<option value="${escape(p.id)}">${escape(p.label)}</option>`).join('')}
+                </select>
+              </label>
+              <label class="be-field be-cl-custom-field">
+                <span class="be-field-label">${t('Custom Lc')} <em>${t('(optional)')}</em></span>
+                <input type="text" class="field-input field-input--sm be-cl-custom" data-be-cl-custom placeholder="15, 45, 75, 90" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="${escape(t('Custom APCA Lc targets, comma-separated'))}">
+              </label>
+            </div>
+            <div class="be-cl-actions">
+              <button type="button" class="be-btn be-btn--sm be-cl-apply" data-be-cl-apply>${t('Apply contrast-lock')}</button>
+              <span class="be-cl-readout" data-be-cl-readout aria-live="polite"></span>
+            </div>
+          </div>
+          <!-- Rotate hue: a one-shot curve transform. It shifts every step's hue
+               by a fixed angle, keeping each step's lightness + chroma, turning
+               the whole ramp bodily around the wheel — then hands the result to
+               the SAME curve machinery (drag / re-anchor / Rebuild all apply). -->
+          <div class="be-hr" data-be-hr>
+            <div class="be-hr-head">
+              <span class="be-hr-title">${t('Rotate hue')}</span>
+              <span class="be-hr-sub">${t('Turn this whole ramp around the hue wheel. Every shade keeps its lightness and chroma.')}</span>
+            </div>
+            <div class="be-hr-controls">
+              <div class="be-field be-hr-deg-field">
+                <span class="be-field-label">${t('Degrees')} <span class="be-hr-val" data-be-hr-val>0°</span></span>
+                <input type="range" class="field-range be-hr-slider" data-be-hr-deg min="-180" max="180" step="1" value="0" aria-label="${escape(t('Hue rotation in degrees'))}">
+              </div>
+              <button type="button" class="be-btn be-btn--sm be-hr-apply" data-be-hr-apply>${t('Apply rotation')}</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="be-wing" data-be-wing="print">
+        <summary class="be-wing-head">
+          <span class="be-wing-title">${t('Print')}</span>
+          <span class="be-wing-sub">${t('What the primary becomes on press: a pinned CMYK build or a named spot ink.')}</span>
+          <span class="be-subst-chips" data-be-print-chips></span>
+        </summary>
+        <div class="be-wing-body">
+          <!-- The primary is one colour; Lolly shows its on-screen (sRGB) form and
+               auto-converts it for print — UNLESS the shared print lock inside pins
+               an exact CMYK anchor or a named spot colour instead. -->
+          <div class="be-subst" data-be-subst>
+            <div class="be-subst-line">
+              <span class="be-subst-key">${t('Screen')}</span>
+              <code class="be-subst-val" data-be-screen></code>
+              <span class="be-subst-tag">${t('auto')}</span>
+            </div>
+            <div data-be-lock-mount="primary"></div>
+          </div>
+        </div>
+      </details>
       </div>
 
       <div class="be-split-divider" data-be-split-divider role="separator" aria-orientation="vertical" tabindex="0"
@@ -1168,6 +1364,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           <option value="tokens-json">${t('Design tokens (JSON)')}</option>
           <option value="css-vars">${t('CSS variables')}</option>
           <option value="css-classes">${t('CSS classes')}</option>
+          <option value="scss">${t('SCSS variables')}</option>
           <option value="gpl">${t('GIMP palette (.gpl)')}</option>
           <option value="ase">${t('Adobe Swatch Exchange (.ase)')}</option>
         </select>
@@ -1177,20 +1374,50 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       <div class="be-tab" data-be-tab-panel="type">
+      ${/* ── Level 0 (plan 97 §7.2): the four role cards. Each shows the face
+             that serves its role right now and opens the compare stage scoped
+             to it. Nothing on a card commits anything. */''}
+      <div class="be-panel be-typecards">
+        ${panelHead(t('Type'), t('Four faces the app, the tools and every export read. Each card shows what serves that role today, and opens a stage where candidates stand side by side before anything installs.'))}
+        <div class="be-typecard-grid" data-be-typecards>${TYPE_ROLES.map(typeRoleCardHtml).join('')}</div>
+      </div>
+
+      ${/* The compare stage (lib/design-system/type-compare.ts), hosted inline by
+             the room rather than in a dialog: the room has the width, and a
+             panel keeps the role cards it was opened from on screen. Escape
+             cancels and hands the keyboard back to that card. */''}
+      <section class="be-panel be-typestage" data-be-typestage hidden aria-labelledby="be-typestage-title">
+        <div class="be-typestage-head">
+          <h3 class="be-typestage-title" id="be-typestage-title" data-be-typestage-title></h3>
+          <button type="button" class="be-typestage-x" data-be-typestage-close aria-label="${escape(t('Close without choosing'))}">${icon('close', { size: 14 })}</button>
+        </div>
+        <form class="be-typestage-search" data-be-typestage-search>
+          <label class="visually-hidden" for="be-typestage-q">${t('Google Fonts family')}</label>
+          <input type="text" id="be-typestage-q" data-be-typestage-q list="be-google-fonts" placeholder="${escape(t('Search Google Fonts, for example Inter or Fraunces'))}" autocomplete="off" autocapitalize="words" spellcheck="false">
+          <datalist id="be-google-fonts">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
+          <button type="submit" class="be-btn" data-be-typestage-add>${t('Add to the comparison')}</button>
+        </form>
+        <div data-be-typestage-mount></div>
+        <p class="be-err" data-be-typestage-err hidden></p>
+      </section>
+
+      ${/* The management list: every installed family, its roles, and delete.
+             Behaviour unchanged; only its place in the room moved. Adding a face
+             now goes through the stage, so there is one door and everything is
+             seen before it is stored. */''}
+      <div class="be-panel be-fonts">
+        ${panelHead(t('Fonts on this device'), t('Every face installed here, and the roles it serves. Fonts stay on this device and travel in the design system file.'))}
+        <ul class="be-font-list" data-be-fonts role="list"></ul>
+        <div class="be-font-add">
+          <button type="button" class="be-btn" data-be-font-compare>${t('Add a face')}</button>
+          <span class="be-font-addnote">${t('Opens the compare stage. Search Google Fonts, or drop a font file.')}</span>
+        </div>
+        <p class="be-err" data-be-font-err hidden></p>
+      </div>
+
       <div class="be-panel be-custom-fonts">
         ${panelHead(t('Your fonts'), t('Upload TTF, OTF, or WOFF font files — they stay on this device and are available to all tools and exports.'))}
         <div data-be-font-file-mount></div>
-      </div>
-
-      <div class="be-panel be-fonts">
-        ${panelHead(t('Fonts'), t('Add any <strong>Google Font</strong> — it downloads to this device and renders in the app, your tools and every export. One is always the <strong>primary</strong>; another can serve as your <strong>code</strong> face.'))}
-        <ul class="be-font-list" data-be-fonts role="list"></ul>
-        <form class="be-font-add" data-be-font-add>
-          <input type="text" data-be-font-input list="be-google-fonts" placeholder="${escape(t('Search Google Fonts — Inter, Fraunces, Space Grotesk…'))}" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="${escape(t('Google Fonts family'))}">
-          <datalist id="be-google-fonts">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
-          <button type="submit" class="be-btn" data-be-font-btn>${t('Add font')}</button>
-        </form>
-        <p class="be-err" data-be-font-err hidden></p>
       </div>
 
       <div class="be-panel be-typeroles">
@@ -1226,6 +1453,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            The card grows with its folds and REPOSITIONS (see positionEditor) —
            opening a section moves the card to where it fits rather than starting
            an inner scroll. -->
+      <div class="be-bulkbar" data-be-bulkbar hidden>
+        <span class="be-bulkbar-n" data-be-bulk-n aria-live="polite"></span>
+        <button type="button" class="be-bulkbar-del" data-be-bulk-del>${t('Delete')}</button>
+        <button type="button" class="be-bulkbar-x" data-be-bulk-cancel aria-label="${escape(t('Cancel selection'))}">✕</button>
+      </div>
       <div class="be-editor" data-be-editor hidden>
         <div class="be-editor-card" role="dialog" aria-label="${escape(t('Edit swatch'))}">
           <div class="be-editor-scroll">
@@ -1247,6 +1479,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
               ${segHtml('stored', STORAGE_FORMATS, '', '', {
                 attr: 'data-store-fmt', extraClass: 'be-stored-seg', groupAttr: 'data-be-stored', labelledBy: 'be-stored-label',
               })}
+            </div>
+            ${/* Roles are identity, print is output — so "Use as" sits above the
+                  print fold. Hidden for a role's own tile: a role cannot take a
+                  role (the alias would chain). */''}
+            <div class="be-useas-row" data-be-useas hidden>
+              <span class="be-useas-label">${t('Use as')}</span>
+              ${ROLE_IDS.map(r => `<button type="button" class="be-btn be-btn--sm" data-be-useas="${escape(r)}" aria-pressed="false">${escape(roleLabel(r))}</button>`).join('')}
             </div>
             <details class="be-subst-details" data-be-subst-details>
               <summary><span class="be-subst-details-label">${t('Print substitutes')}</span><span class="be-subst-chips" data-be-subst-chips></span></summary>
@@ -1383,20 +1622,37 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     } catch { return null; }
   };
 
-  // The Save-colour dirty flag — declared ahead of persist() below, which
-  // clears it: Palette edits and the Colour draft share the one `doc`, so a
-  // persist() triggered from the Palette panel writes a pending Colour draft
-  // too, and the button must stop claiming it's unsaved once that happens.
-  const saveBtn = $('[data-be-save]') as HTMLButtonElement | null;
-  const setDirty = (v: boolean): void => { if (saveBtn) saveBtn.hidden = !v; };
+  // ── Session undo (plan 97 §6) ───────────────────────────────────────────────
+  // The one save discipline means every commit writes straight through, so the
+  // destructive actions need a way back. Snapshots are whole documents — a few
+  // KB of JSON — so the cap is memory-shaped, not a product limit. Checkpoints
+  // (the durable, cross-reload net) belong to the host and are reached through
+  // opts.checkpoint. Six actions push, every one of which REMOVES something the
+  // user cannot retype: Replace palette, bulk delete, a single swatch delete,
+  // clearing a role from the strip, un-pressing a "Use as" role in the swatch
+  // popover, and "Rebuild from colour" (which discards a hand-tuned curve). An
+  // ordinary recolour, rename or curve drag is not destructive — the value is
+  // still on screen — and would only flood the stack.
+  const UNDO_LIMIT = 20;
+  const undoStack: Array<{ doc: Record<string, unknown>; label: string }> = [];
+  const pushUndo = (label: string): void => {
+    if (!isRec(doc)) return;
+    undoStack.push({ doc: structuredClone(doc) as Record<string, unknown>, label });
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  };
+  /** Take a durable checkpoint through the host, best-effort. A rejection is a
+   *  missing safety net, never a failed edit — the local stack still has it. */
+  const ctxCheckpoint = (label: string): void => {
+    try { void opts.checkpoint?.(label)?.catch?.(() => {}); } catch { /* host's problem */ }
+  };
 
-  // "Use this colour" lights up bright green (see .be-cta.is-active) the moment any
-  // derive input changes — colour, scheme, surface, contrast, shades, a ramp step —
-  // signalling there's a fresh palette to apply. Cleared once it's applied (or the
-  // draft is saved), so a resting button never nags. Every live change funnels
+  // "Replace palette" lights up glossy (see .be-cta.is-active) the moment any
+  // derive input changes — colour, scheme, surface, contrast, shades, a ramp step
+  // — signalling there's a fresh proposal waiting. Cleared once it's applied (or
+  // anything persists), so a resting button never nags. Every live change funnels
   // through renderPreview(), so that's the one place we flag it.
-  const deriveBtn = $('[data-be-derive]') as HTMLButtonElement | null;
-  const setDeriveActive = (v: boolean): void => { deriveBtn?.classList.toggle('is-active', v); };
+  const replaceBtn = $('[data-be-replace-palette]') as HTMLButtonElement | null;
+  const setReplaceActive = (v: boolean): void => { replaceBtn?.classList.toggle('is-active', v); };
 
   /** Tell the host view a brand edit just landed on `tab` (Save-&-continue
    *  appearance + next-tab nudge). Best-effort — a throwing listener must never
@@ -1405,15 +1661,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
   /**
    * Push the edited doc to the install (debounced) + refresh chrome & pickers.
-   * Also clears the Save-colour dirty flag — see setDirty above. Every caller
-   * is a Colour-tab surface (palette tiles, wheel, locks, generator), so this
-   * is also the one place that flags colour-tab activity to the host.
+   * The ONE write, and the one save discipline: every commit-level action in
+   * this room calls it immediately (plan 97 §6). Every caller is a Colour-tab
+   * surface (palette tiles, wheel, locks, generator, the add row), so this is
+   * also the one place that flags colour-tab activity to the host.
    */
   const persist = (immediate = false): void => {
     clearTimeout(saveTimer);
-    setDirty(false);
     notify('color');
-    setDeriveActive(false); // saved — nothing pending to apply
+    setReplaceActive(false); // installed — nothing pending to apply
     notifyPaletteObservers(); // the doc is already mutated — mirrors repaint now, not post-debounce
     const run = async (): Promise<void> => {
       try {
@@ -1431,11 +1687,39 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (immediate) void run(); else saveTimer = setTimeout(run, 300);
   };
 
-  // ── Derive controls ─────────────────────────────────────────────────────────
-  // Colour is DRAFT-until-saved: every change below live-applies the chrome
-  // accent + the Dashboard ink-bar app-wide (applyDraftChrome/broadcastDraft),
-  // but nothing here calls persist() directly — only the Save colour button
-  // does (a Palette-panel persist() can also clear this draft — see persist()).
+  /**
+   * How many shade steps the INSTALLED doc's ramp actually carries.
+   *
+   * NOT `steps`: that is the Generate wing's Shades slider, a preview-only
+   * control that deliberately writes nothing until Replace palette is applied.
+   * Baking a curve into `doc` at the slider's count rewrites leaves `1..n` and
+   * leaves the rest of a longer ramp untouched, which is how a 9-step ramp
+   * baked at 5 came out non-monotonic (step 5 the lightest, step 6 back down)
+   * with duplicated tails. Every write into the committed document counts the
+   * document's own leaves; only the preview follows the slider. 0 when the ramp
+   * is absent, so callers fall back to the slider for a doc with no ramps.
+   */
+  const docRampSteps = (ramp: RampId): number => {
+    const base = (isRec(doc) && isRec((doc as Record<string, unknown>).base)
+      ? (doc as Record<string, unknown>).base : doc) as Record<string, unknown>;
+    const group = leafAt(base, ['color', 'ramp', ramp]);
+    return group ? Object.keys(group).filter(k => /^\d+$/.test(k)).length : 0;
+  };
+  /** The step count a write into `doc` must use for `ramp`. */
+  const bakeSteps = (ramp: RampId): number => docRampSteps(ramp) || steps;
+
+  /** Set once the Replace-palette review card exists (it is declared far below
+   *  this, and every derive control funnels through renderPreview). A parked
+   *  proposal describes the controls as they were when it was built, so a later
+   *  change must drop it rather than leave a card that would install a document
+   *  the panel no longer describes. */
+  let dropPendingReplacement: () => void = () => {};
+
+  // ── Derive controls (the Generate wing) ─────────────────────────────────────
+  // Nothing here writes. renderPreview paints ONLY the wing's own preview — the
+  // ramps + specimen cards — which is a proposal, not the system: the app's
+  // chrome, the palette and the install all keep showing what is actually
+  // installed until Replace palette is confirmed (plan 97 §3 principle 1).
   const renderPreview = (): void => {
     const next = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
     if (!next) return; // a half-typed hex mid-edit — keep the last good preview
@@ -1443,12 +1727,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // pure derive (a byte-identical no-op for any ramp without a curve).
     overlayRampCurves(next, curves, steps);
     if (preview) preview.innerHTML = previewHtml(next, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() });
-    applyDraftChrome(next);
-    broadcastDraft(next);
-    setDeriveActive(true); // a derive input changed → invite the user to apply it
-    // Deliberately NO notify() here: a preview-only change isn't saveable yet
-    // (saveDraft() would no-op), so surfacing the host's "Save & continue" now
-    // would be a lie — the glowing "Use this colour" CTA is the honest next step.
+    setReplaceActive(true); // a derive input changed → invite the user to review it
+    dropPendingReplacement(); // the parked proposal is now stale — see its comment
+    // Deliberately NO notify(): a preview-only change has landed nowhere, so
+    // telling the host an edit happened would be a lie.
   };
   // Shades slider — how many divisions each ramp carries. Re-derives live; the
   // neutral/secondary step picks re-centre on the new anchor (and clamp in range).
@@ -1493,16 +1775,45 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     renderGenerator();
   };
 
+  // ── Level-2 wings ───────────────────────────────────────────────────────────
+  // Four folded disclosures under the Add + Roles panels. Closed on mount, no
+  // persistence — the same discipline the palette's own sections keep.
+  type WingKey = 'generate' | 'curves' | 'contrast' | 'print';
+  const wingEl = (k: WingKey): HTMLDetailsElement | null => $(`[data-be-wing="${k}"]`);
+  /** Open a wing and bring it into view. False when it is absent (a locked build
+   *  renders no studio at all). Scrolls ONLY when the wing was closed: revealing
+   *  something is worth moving the page for, re-pointing a control inside a wing
+   *  that is already open is not — that scroll used to yank the viewport away
+   *  from whatever the user was actually using. */
+  const openWing = (k: WingKey): boolean => {
+    const el = wingEl(k);
+    if (!el) return false;
+    const wasOpen = el.open;
+    el.open = true;
+    // Guarded: jsdom (the CLI shell's renderer, and the unit tests) has no
+    // scrollIntoView, and this runs on the ordinary curve-glyph path. The glide
+    // is JS-driven motion, so it asks the shared read (OS query OR the app pref)
+    // and jumps instead when either says reduce — the wing's own CSS marker
+    // rotation is already gated the same way.
+    if (!wasOpen) {
+      el.scrollIntoView?.({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    }
+    return true;
+  };
+
+  // The ramp picker is rendered once per wing, so both instances must agree.
+  const syncRampPick = (): void => {
+    root.querySelectorAll<HTMLElement>('[data-be-ramp-pick] [data-ramp]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.ramp === curveRamp)));
+  };
+
   // ── Tonal-curve editor wiring ───────────────────────────────────────────────
-  // Curve edits are DRAFT (preview + chrome), committed into `doc` only by "Use
-  // this colour" (the derive handler overlays the curves) — the same contract as
-  // every other derive input. So an unsaved curve can never reach persist without
-  // first passing through the derive handler, which keeps byte-identity honest.
+  // A curve edit is a real write, debounced like every other edit in the room:
+  // it bakes the ramp's steps onto `doc` and installs once the drag settles.
   const curveEditorMount = $('[data-be-curve-editor]') as HTMLElement | null;
   const curveMountEl = $('[data-be-curve-mount]') as HTMLElement | null;
   const curveTitleEl = $('[data-be-curve-title]') as HTMLElement | null;
   let curveHandle: CurveEditorHandle | null = null;
-  const RAMP_LABEL: Record<RampId, string> = { primary: t('Primary'), neutral: t('Neutral'), secondary: t('Secondary') };
 
   /** Any CSS colour → OKLCH: exact for oklch()/lch() literals, else via hex. */
   const colorToOklch = (s: string): Oklch | null => {
@@ -1537,9 +1848,47 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (curveEditorMount) curveEditorMount.hidden = true;
     if (repaint) renderPreview(); // clear the row's open state (skipped in reload)
   };
-  const openCurveEditor = (ramp: RampId): void => {
-    if (editingCurveRamp === ramp) { closeCurveEditor(); return; }
+  // A curve drag fires per frame. renderPreview is cheap (one re-derive into the
+  // wing's own markup); the palette repaint is not — it rebuilds the grid, the
+  // wheel and the gamut slices — and NEITHER is persist(): it synchronously runs
+  // notify('color') (the host re-reads the whole design system for the Overview)
+  // and notifyPaletteObservers() (the mobile sheet rebuilds its markup and
+  // re-measures) before its own 300ms install debounce even starts. Both are
+  // exactly the work a per-frame handler must not do, so the repaint AND the
+  // save trail the drag by 250ms together.
+  const CURVE_SETTLE_MS = 250;
+  let curveSettleTimer: ReturnType<typeof setTimeout> | undefined;
+  let curveSaveDue = false;
+  /** A curve edit landed on `doc`: repaint + install once the drag settles. */
+  const queueCurveSave = (): void => {
+    curveSaveDue = true;
+    clearTimeout(curveSettleTimer);
+    curveSettleTimer = setTimeout(() => {
+      curveSaveDue = false;
+      if (root.isConnected) repaintPalette();
+      persist(true);
+    }, CURVE_SETTLE_MS);
+  };
+  /** Drop a pending settle — for a path that has just persisted the same doc
+   *  itself (the one-shot transforms), so it doesn't install twice. */
+  const cancelCurveSave = (): void => { clearTimeout(curveSettleTimer); curveSaveDue = false; };
+  // A teardown mid-drag must not repaint a dead tree — but it must not eat the
+  // last frame either, so a pending save is flushed rather than dropped.
+  cleanups.push(() => {
+    clearTimeout(curveSettleTimer);
+    if (curveSaveDue) { curveSaveDue = false; persist(true); }
+  });
+
+  const openCurveEditor = (ramp: RampId, opts2: { toggle?: boolean; reveal?: boolean } = {}): void => {
+    if (opts2.toggle !== false && editingCurveRamp === ramp) { closeCurveEditor(); return; }
+    // The editor lives in the Curves wing now, and a curve glyph clicked on a
+    // preview ramp row sits in the Generate wing — reveal its home first.
+    // `reveal: false` is for a control INSIDE another wing re-pointing an editor
+    // that is already open: the editor moves, the viewport does not.
+    if (opts2.reveal !== false) openWing('curves');
     editingCurveRamp = ramp;
+    curveRamp = ramp;
+    syncRampPick();
     // Seed on first open from the LIVE draft derive (so it matches the visible
     // preview even after an uncommitted primary/scheme/shade change), at full
     // OKLCH precision — an untouched ramp re-bakes byte-identically until the
@@ -1559,28 +1908,42 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           // The open ramp can change under a re-anchor; always write the LIVE one.
           if (!editingCurveRamp) return;
           curves[editingCurveRamp] = next;
+          // A real write: bake the steps + stamp the curve on the doc, repaint
+          // the wing's preview per frame, and let the palette + install trail.
+          // The bake counts the DOC's own steps, never the preview slider —
+          // see docRampSteps.
+          overlayRampCurves(doc, { [editingCurveRamp]: next }, bakeSteps(editingCurveRamp));
           renderPreview();
+          queueCurveSave();
         },
       });
     }
     renderPreview(); // reflect the open + edited state on the ramp rows
   };
+  /** Open (never toggle) the curve editor on the wings' currently picked ramp —
+   *  what the Curves wing does on reveal and what its ramp picker does. */
+  const showCurveEditor = (ramp: RampId): void => { openCurveEditor(ramp, { toggle: false }); };
   /** "Rebuild from colour": drop this ramp's curve and re-bake ONLY its steps
-   *  from the pure derive (other ramps + manual palette edits untouched), then
-   *  commit into the draft. Never a silent discard — it's an explicit reset. */
+   *  from the pure derive (other ramps + manual palette edits untouched). Never
+   *  a silent discard — it's an explicit reset, and it lands immediately. */
   const rebuildRampFromColour = (): void => {
-    const ramp = editingCurveRamp;
-    if (!ramp || !isRec(doc)) return;
+    const ramp = editingCurveRamp ?? curveRamp;
+    if (!isRec(doc)) return;
+    // It DELETES a hand-tuned curve and overwrites the ramp's steps, and a curve
+    // cannot be retyped — so it takes a snapshot, like every other removal.
+    pushUndo(t('Rebuild from colour')); // the button's own label — no new string
+    cancelCurveSave(); // this path persists itself; no stale settle behind it
     delete curves[ramp];
     setRampCurve(doc, ramp, null); // clear the stored curve on the committed doc
-    // Copy this ramp's pure-derive step literals back over the committed doc so
-    // the palette + a subsequent save reflect the reset immediately.
-    const fresh = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
+    // Copy this ramp's pure-derive step literals back over the doc so the palette
+    // reflects the reset immediately. Derived at the DOC's shade count, not the
+    // preview slider's: copyRampLiterals only overwrites the leaves the source
+    // has, so a shorter derive would leave the ramp's tail on the old curve.
+    const fresh = deriveSafe({ primary, scheme, surface, contrast, steps: bakeSteps(ramp), foreground });
     if (fresh) copyRampLiterals(fresh, ramp);
     closeCurveEditor(); // re-renders the preview → pure derive for this ramp
     repaintPalette();
-    applyDraftChrome(doc); broadcastDraft(doc);
-    setDirty(true); notify('color');
+    persist(true);
     announce(tRaw('{label} ramp rebuilt from your colour', { label: RAMP_LABEL[ramp] }));
   };
   /** Copy one ramp's numeric step `$value`s from `src` into the committed `doc`. */
@@ -1603,42 +1966,47 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   curveEditorMount?.querySelector('[data-be-curve-close]')?.addEventListener('click', () => closeCurveEditor());
   cleanups.push(() => { curveHandle?.teardown(); curveHandle = null; });
 
-  // ── Contrast-lock (a curve TRANSFORM over the open ramp) ─────────────────────
+  // ── Contrast-lock (a curve TRANSFORM over the picked ramp) ───────────────────
   // Builds a fresh curve that hits per-step APCA targets against a background,
   // KEEPING each step's hue + chroma, then hands it to the SAME curve machinery
   // every other curve rides. The commit shape mirrors the sibling "Rebuild from
   // colour" button (rebuildRampFromColour): write curves[ramp], overlay onto the
-  // committed doc (so "Save colour" actually persists the lock — setDirty is only
-  // ever honest when doc carries the change), re-render the editor + preview,
-  // repaint the palette, setDirty. One-shot: afterwards the ramp is an ordinary
-  // curve (drag / re-anchor on primary edit / Rebuild-from-colour all apply as-is).
+  // doc (bake + stamp), re-render the editor + preview, repaint the palette, and
+  // persist. One-shot: afterwards the ramp is an ordinary curve (drag / re-anchor
+  // on primary edit / Rebuild-from-colour all apply as-is).
   const clBgInput = $('[data-be-cl-bg]') as HTMLInputElement | null;
   const clPresetSel = $('[data-be-cl-preset]') as HTMLSelectElement | null;
   const clCustomInput = $('[data-be-cl-custom]') as HTMLInputElement | null;
   const clReadout = $('[data-be-cl-readout]') as HTMLElement | null;
   const applyContrastLock = (): void => {
-    const ramp = editingCurveRamp;
-    if (!ramp || !isRec(doc)) return;
+    // The transform lives in its own wing now, so it acts on the ramp the wings'
+    // picker names — not on whichever curve editor happens to be open.
+    const ramp = curveRamp;
+    if (!isRec(doc)) return;
     const rawPreset = clPresetSel?.value;
     const preset: ContrastLockPreset = rawPreset === 'text' || rawPreset === 'ui' ? rawPreset : 'even';
     const custom = clCustomInput?.value ?? '';
     // A valid picked colour wins; anything unreadable falls back to the resolved
     // surface (never an empty bg, which the solver can't measure against).
     const bg = (clBgInput?.value ? colorToHex(clBgInput.value) : null) ?? surfaceHex();
-    const targets = contrastTargets(preset, steps, custom);
+    // Every count here is the INSTALLED ramp's, not the preview slider's — this
+    // writes the committed doc (see docRampSteps), so the targets, the solve and
+    // the bake all have to describe the same ramp.
+    const n = bakeSteps(ramp);
+    const targets = contrastTargets(preset, n, custom);
     // Seed a curve when this ramp has none yet — from the LIVE draft derive so it
     // matches the visible preview, exactly like openCurveEditor's first-open seed.
     const base = curves[ramp]
       ?? seedRampCurve(deriveSafe({ primary, scheme, surface, contrast, steps, foreground }) ?? doc, ramp, steps);
-    const { curve, unreachable } = contrastLockCurve(base, steps, targets, bg);
+    const { curve, unreachable } = contrastLockCurve(base, n, targets, bg);
     curves[ramp] = curve;
     curveAnchorPrimary = primary;           // the locked curve is anchored to today's primary
-    overlayRampCurves(doc, { [ramp]: curve }, steps); // bake steps + stamp the curve on the committed doc
-    curveHandle?.render({ curve, steps });  // reflect the new curve in the open editor (stays open to hand-tune)
-    renderPreview();                        // live app preview + repaint the ramp rows
+    cancelCurveSave();                      // this path persists itself
+    overlayRampCurves(doc, { [ramp]: curve }, n); // bake steps + stamp the curve on the committed doc
+    if (editingCurveRamp === ramp) curveHandle?.render({ curve, steps }); // reflect it in an open editor
+    renderPreview();                        // repaint the wing's ramp rows
     repaintPalette();                       // the Palette panel shows the retoned steps
-    applyDraftChrome(doc); broadcastDraft(doc);
-    setDirty(true); notify('color');
+    persist(true);
     if (clReadout) {
       clReadout.textContent = unreachable === 0
         ? t('All shades reached their target.')
@@ -1649,24 +2017,24 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     announce(tRaw('{label} ramp contrast-locked', { label: RAMP_LABEL[ramp] }));
     playSfx('click');
   };
-  curveEditorMount?.querySelector('[data-be-cl-apply]')?.addEventListener('click', () => applyContrastLock());
+  $('[data-be-cl-apply]')?.addEventListener('click', () => applyContrastLock());
 
-  // ── Rotate hue (a curve TRANSFORM over the open ramp) ────────────────────────
+  // ── Rotate hue (a curve TRANSFORM over the picked ramp) ──────────────────────
   // Shifts every step's hue by a fixed angle (L + C untouched, gamut-mapped at
   // bake by oklchToHex), rotating the whole ramp bodily around the wheel. The
   // commit shape is the SAME as contrast-lock / Rebuild-from-colour: write
-  // curves[ramp], overlay onto the committed doc (so "Save colour" persists it),
-  // re-render the editor + preview, repaint the palette, setDirty. One-shot: the
-  // slider resets to 0 afterwards and the ramp is an ordinary curve (further
-  // rotation composes; drag / re-anchor / Rebuild all apply as-is).
+  // curves[ramp], overlay onto the doc (bake + stamp), re-render the editor +
+  // preview, repaint the palette, persist. One-shot: the slider resets to 0
+  // afterwards and the ramp is an ordinary curve (further rotation composes;
+  // drag / re-anchor / Rebuild all apply as-is).
   const hrDegInput = $('[data-be-hr-deg]') as HTMLInputElement | null;
   const hrDegVal = $('[data-be-hr-val]') as HTMLElement | null;
   hrDegInput?.addEventListener('input', () => {
     if (hrDegVal) hrDegVal.textContent = `${Number(hrDegInput.value) || 0}°`;
   });
   const applyHueRotate = (): void => {
-    const ramp = editingCurveRamp;
-    if (!ramp || !isRec(doc)) return;
+    const ramp = curveRamp;
+    if (!isRec(doc)) return;
     const degrees = Number(hrDegInput?.value) || 0;
     if (!degrees) return; // 0° is a no-op — nothing to commit
     // Seed a curve when this ramp has none yet — from the LIVE draft derive so it
@@ -1676,18 +2044,43 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const curve = rotateCurveHue(base, degrees);
     curves[ramp] = curve;
     curveAnchorPrimary = primary;           // the rotated curve is anchored to today's primary
-    overlayRampCurves(doc, { [ramp]: curve }, steps); // bake steps + stamp the curve on the committed doc
-    curveHandle?.render({ curve, steps });  // reflect the new curve in the open editor (stays open to hand-tune)
-    renderPreview();                        // live app preview + repaint the ramp rows
+    cancelCurveSave();                      // this path persists itself
+    overlayRampCurves(doc, { [ramp]: curve }, bakeSteps(ramp)); // bake the doc's own steps + stamp the curve
+    if (editingCurveRamp === ramp) curveHandle?.render({ curve, steps }); // reflect it in an open editor
+    renderPreview();                        // repaint the wing's ramp rows
     repaintPalette();                       // the Palette panel shows the rotated steps
-    applyDraftChrome(doc); broadcastDraft(doc);
-    setDirty(true); notify('color');
+    persist(true);
     if (hrDegInput) hrDegInput.value = '0'; // reset — the transform is applied, further turns compose
     if (hrDegVal) hrDegVal.textContent = '0°';
     announce(tRaw('{label} ramp hue rotated', { label: RAMP_LABEL[ramp] }));
     playSfx('click');
   };
-  curveEditorMount?.querySelector('[data-be-hr-apply]')?.addEventListener('click', () => applyHueRotate());
+  $('[data-be-hr-apply]')?.addEventListener('click', () => applyHueRotate());
+
+  // ── Wing wiring: the ramp picker (two instances) + the Curves wing's reveal ──
+  root.querySelectorAll<HTMLElement>('[data-be-ramp-pick]').forEach(seg => {
+    // The Curves wing's own picker OWNS the editor: it opens it on whichever
+    // ramp is picked, which is also the way back after the editor's ✕ (the wing
+    // would otherwise show a picker that does nothing at all until it is
+    // collapsed and re-expanded). Any other copy — the Contrast wing's — only
+    // re-points an editor that is already showing, and never reveals the Curves
+    // wing behind it or scrolls the page there mid-interaction.
+    const ownsEditor = !!seg.closest('[data-be-wing="curves"]');
+    seg.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-ramp]'); if (!btn) return;
+      const next = btn.dataset.ramp;
+      if (next !== 'primary' && next !== 'neutral' && next !== 'secondary') return;
+      curveRamp = next;
+      syncRampPick();
+      if (ownsEditor) showCurveEditor(curveRamp);
+      else if (editingCurveRamp) openCurveEditor(curveRamp, { toggle: false, reveal: false });
+    });
+  });
+  // The editor lives in the Curves wing and is hidden until asked; revealing the
+  // wing IS the ask, so it opens on whichever ramp the picker names.
+  wingEl('curves')?.addEventListener('toggle', function (this: HTMLDetailsElement) {
+    if (this.open) showCurveEditor(curveRamp);
+  });
 
   /** The last primary that resolved to a real hex — what an unreadable primary
    *  falls back to, so the generator never sees a broken string. */
@@ -1847,18 +2240,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     getCmyk: () => primaryPrintLock()?.cmyk ?? null,
     setCmyk: (cmyk) => {
       const path = primaryAnchorPath(doc);
-      if (path) setSwatchCmykLock(doc, path, cmyk); // rides on the current draft; Save persists it
-      setDirty(true);
-      notify('color');
+      if (path) setSwatchCmykLock(doc, path, cmyk);
       repaintPalette(); // same swatch is a tile in the Palette panel — keep its lock badge in sync
+      persist();        // the popover's afterSwatchLockChange does exactly this
     },
     getSpot: () => primaryPrintLock()?.spot ?? null,
     setSpot: (spot) => {
       const path = primaryAnchorPath(doc);
       if (path) setSwatchSpotLock(doc, path, spot);
-      setDirty(true);
-      notify('color');
       repaintPalette();
+      persist();
     },
   }) : null;
   // Neutral/secondary ramp-step picks — the Primary ramp stays non-interactive
@@ -1880,10 +2271,88 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const ramp = btn.dataset.beCurve;
     if (ramp === 'primary' || ramp === 'neutral' || ramp === 'secondary') openCurveEditor(ramp);
   });
-  $('[data-be-derive]')?.addEventListener('click', async () => {
+  /**
+   * Re-seed every Generate-wing control from whatever `doc` currently holds.
+   * Split out of reload() because an undo needs exactly the same work: the
+   * document was swapped wholesale, so the primary, the shade count, the ramp
+   * anchors, the stored curves and the preview all describe the wrong brand
+   * until this runs. Reads the steps off the GIVEN doc rather than a fresh
+   * tokens.raw() — an undo has not installed anything yet.
+   */
+  const reseedFromDoc = (): void => {
+    try {
+      const set = createTokenSet(doc, { theme: 'light' });
+      primary = tokenValueToHex(set.resolve('color.semantic.primary')) ?? primary;
+      const g = set.query({ type: 'color' }).filter(tk => /^color\.ramp\.primary\.\d+$/.test(tk.path));
+      if (g.length >= RAMP_STEPS_MIN) steps = Math.min(RAMP_STEPS_MAX, g.length);
+      neutralStep = anchorStep(steps); secondaryStep = anchorStep(steps);
+    } catch { /* tokenless/malformed doc — keep the previous seeds */ }
+    if (stepsSlider) stepsSlider.value = String(steps);
+    if (stepsVal) stepsVal.textContent = String(steps);
+    // Re-load per-ramp tonal curves from the doc (a pack import may carry them; a
+    // plain brand won't, leaving curves empty → pure derive). Any open editor
+    // described the OLD brand, so close it first — without a preview repaint
+    // (the fresh preview is painted below).
+    closeCurveEditor(false);
+    for (const ramp of RAMP_IDS) { delete curves[ramp]; const st = getRampCurve(doc, ramp); if (st) curves[ramp] = deserializeCurve(st); }
+    curveAnchorPrimary = primary;
+    const wrap = $('[data-be-primary-field]') as HTMLElement | null;
+    if (wrap) {
+      wrap.innerHTML = colorFieldHtml('be-primary', primary, { inline: true, modes: true });
+      wireColorField(wrap, { onChange: onPrimaryFieldChange });
+    }
+    // Overlay the re-loaded curves so the preview matches the doc's (curve-baked)
+    // ramp literals rather than a pure derive of the new primary.
+    const fresh = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
+    if (fresh) overlayRampCurves(fresh, curves, steps);
+    if (preview && fresh) preview.innerHTML = previewHtml(fresh, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() });
+    renderScreen();
+    primaryLock?.render();
+    renderGenerator();
+    setReplaceActive(false);
+    dropPendingReplacement(); // the doc was swapped wholesale — any parked proposal is stale
+  };
+
+  /** Pop the last snapshot and make the room describe it again. Returns false
+   *  when there is nothing to undo, so the key event can fall through. */
+  const undoLast = (): boolean => {
+    const prev = undoStack.pop();
+    if (!prev) return false;
+    doc = prev.doc;
+    reseedFromDoc();
+    closeEditor();
+    exitPalSelect();
+    repaintPalette();
+    persist(true);
+    playSfx('click');
+    announce(tRaw('Undone: {action}', { action: prev.label }));
+    return true;
+  };
+
+  // ── Replace palette: build a proposal, review it, then swap ─────────────────
+  // The old flow derived straight into the doc behind a confirm dialog. Now the
+  // derive builds a candidate document, a review card says exactly what changes,
+  // and only its own button swaps it in — with an undo snapshot taken first, so
+  // no confirm dialog stands where an undo suffices (plan 97 §3 principle 3).
+
+  /** What a Replace would do, counted from the two documents. Pure — computed
+   *  before anything is swapped, so the card can be honest and then cancelled. */
+  interface ReplacePlan {
+    steps: number; ramps: number; rebuilt: number; spectrumRebuilt: number;
+    roles: number; kept: number; curves: number; locks: number;
+    excluded: number; pinnedStops: number; rolesKept: number;
+  }
+  const reviewEl = $('[data-be-review]') as HTMLElement | null;
+  /** The proposal the review card is describing, or null when it is closed. */
+  let pendingReplacement: Record<string, unknown> | null = null;
+
+  const countLeaves = (node: unknown): number =>
+    isRec(node) ? Object.keys(node).filter(k => !k.startsWith('$')).length : 0;
+
+  const buildReplacement = (): { next: Record<string, unknown>; plan: ReplacePlan } | null => {
     let next: Record<string, unknown>;
     try { next = deriveBrandTokens({ primary, scheme, surface, contrast, steps, foreground, name: 'My brand' }) as Record<string, unknown>; }
-    catch (err) { announce(tRaw("Couldn't derive from {primary}: {error}", { primary, error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true }); return; }
+    catch (err) { announce(tRaw("Couldn't derive from {primary}: {error}", { primary, error: String((err as { message?: unknown })?.message ?? err) }), { assertive: true }); return null; }
     setSemanticRampAlias(next, 'secondary', secondaryStep);
     setSemanticRampAlias(next, 'neutral', neutralStep);
     // Re-apply any tonal curves onto the fresh derive — this is what makes an
@@ -1891,8 +2360,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // points, and its extension re-stamped on the new doc). A no-op for a ramp
     // with no curve, so a curve-less re-derive is byte-identical to before.
     overlayRampCurves(next, curves, steps);
-    // Read the lock LIVE off the pre-derive `doc` — whichever surface (Colour
-    // panel or the Palette panel's swatch popover) set it last, since both write
+    // Read the lock LIVE off the pre-derive `doc` — whichever surface (the print
+    // wing or the Palette panel's swatch popover) set it last, since both write
     // straight to `doc` — so re-deriving never silently drops a lock the other
     // surface just set (see primaryPrintLock's doc comment above). cmyk and spot
     // are independent, so both are re-pinned onto the freshly derived doc.
@@ -1900,52 +2369,186 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const p = priorLock ? primaryAnchorPath(next) : null;
     if (p && priorLock?.cmyk) setSwatchCmykLock(next, p, priorLock.cmyk); // ramp rebuilt → re-pin the print lock
     if (p && priorLock?.spot) setSwatchSpotLock(next, p, priorLock.spot);
+
+    const cur = isRec(doc) ? doc : {};
+    const srcBase = (isRec(cur.base) ? cur.base : cur) as Record<string, unknown>;
+    const dstBase = (isRec(next.base) ? next.base : next) as Record<string, unknown>;
+    // Count the derive's own spectrum BEFORE the carry below grows it.
+    const spectrumRebuilt = countLeaves(isRec(dstBase.color) ? (dstBase.color as Record<string, unknown>).spectrum : null);
+
     // Deriving only rebuilds COLOUR — everything else the doc carries (the
     // studio's spacing/shadows/gradients, the font roles, the logos' asset
     // tokens, shape.radius) survives it, same precedent as the print lock.
     // deriveBrandTokens never emits these groups, so a straight carry is safe.
+    for (const g of [...STUDIO_GROUPS, 'font', 'asset', 'shape']) {
+      if (dstBase[g] === undefined && isRec(srcBase[g])) dstBase[g] = structuredClone(srcBase[g]);
+    }
+
+    // Colour carry — what makes "added colours kept" true. STUDIO_GROUPS does not
+    // cover `color`, so before this every custom swatch was silently dropped and
+    // the old flow needed a confirm dialog to say so.
+    let kept = 0;
     {
-      const cur = isRec(doc) ? doc : {};
-      const srcBase = (isRec(cur.base) ? cur.base : cur) as Record<string, unknown>;
-      const dstBase = (isRec(next.base) ? next.base : next) as Record<string, unknown>;
-      for (const g of [...STUDIO_GROUPS, 'font', 'asset', 'shape']) {
-        if (dstBase[g] === undefined && isRec(srcBase[g])) dstBase[g] = structuredClone(srcBase[g]);
+      const srcColor = isRec(srcBase.color) ? srcBase.color as Record<string, unknown> : null;
+      const dstColor = isRec(dstBase.color) ? dstBase.color as Record<string, unknown> : null;
+      if (srcColor && dstColor) {
+        // `custom` is user-owned outright — nothing derived ever lands there.
+        if (isRec(srcColor.custom)) { dstColor.custom = structuredClone(srcColor.custom); kept += countLeaves(srcColor.custom); }
+        // `spectrum` is shared: the derive rebuilds its six fixed hues, every OTHER
+        // key is an accent the user added from the generator, so it comes across.
+        if (isRec(srcColor.spectrum)) {
+          const dst = (isRec(dstColor.spectrum) ? dstColor.spectrum : (dstColor.spectrum = {})) as Record<string, unknown>;
+          for (const [k, v] of Object.entries(srcColor.spectrum as Record<string, unknown>)) {
+            if (k.startsWith('$') || k in dst) continue;
+            dst[k] = structuredClone(v);
+            kept++;
+          }
+        }
       }
     }
+
+    const nextKeys = new Set(walkSwatches(next, currentTheme).map(s => s.key));
+
+    // Role carry — a hand-assigned secondary/surface/text survives the rebuild.
+    // Deliberately NOT primary or on-primary: the wing's own picker IS the
+    // primary, and keeping a hand-assigned one would contradict the ramps this
+    // derive just built around it.
+    // Per THEME, because the roles are: a surface assigned in light mode has no
+    // business landing in the dark theme's set (see roles.ts). A role kept in
+    // both themes is one kept role, not two, so the count is over the names.
+    const rolesCarried = new Set<string>();
+    {
+      for (const th of ['light', 'dark'] as const) {
+        const before = readRoles(doc, th);
+        for (const role of ['secondary', 'surface', 'text'] as const) {
+          const ref = before[role].ref;
+          if (!ref || ref.startsWith('color.ramp.') || ref.startsWith('color.semantic.')) continue;
+          if (!nextKeys.has(ref)) continue;
+          if (assignRole(next, role, ref, th)) rolesCarried.add(role);
+        }
+      }
+    }
+    const rolesKept = rolesCarried.size;
+
     // Carry the swatch exclusion list ("deleted" derived steps stay deleted) —
     // but only entries whose swatch still exists in the fresh derive: a smaller
     // shade count drops its stale ramp-step exclusions, per the delete contract.
+    // Runs AFTER the colour + role carries, so a carried swatch keeps its
+    // exclusion rather than losing it to a key that wasn't there yet.
+    let excluded = 0;
     {
-      const excluded = getExcludedSwatches(doc);
-      if (excluded.length) {
-        const keys = new Set(walkSwatches(next, currentTheme).map(s => s.key));
-        for (const k of excluded) if (keys.has(k)) setSwatchExcluded(next, k, true);
-      }
+      const wasExcluded = getExcludedSwatches(doc);
+      const keys = new Set(walkSwatches(next, currentTheme).map(s => s.key));
+      for (const k of wasExcluded) if (keys.has(k)) { setSwatchExcluded(next, k, true); excluded++; }
     }
+
     // The carried gradients' stops alias ramp/spectrum/custom keys, and this
     // derive may have rebuilt or dropped their targets (fewer shades; custom
     // swatches go). Resolve every alias against the OLD doc now (`doc` hasn't
     // swapped yet — resolveTokenRef still answers from it) and pin the ones the
     // fresh doc can no longer answer, so an exported pack never carries a
     // dangling ref. Aliases that still resolve keep tracking their swatch.
-    {
-      const nextSet = createTokenSet(next, { theme: currentTheme === 'dark' ? 'dark' : 'light' });
-      materializeGradientAliases(next, ref => colorToHex(nextSet.resolve(ref)) == null, resolveTokenRef);
-    }
-    const ok = swatches.some(s => s.kind === 'custom')
-      ? await confirmDialog({ title: t('Re-derive the palette?'), message: t('This rebuilds every swatch from your colour and drops the custom swatches you added.'), confirmLabel: t('Re-derive') })
-      : true;
-    if (!ok || !root.isConnected) return;
-    // Commits into the in-memory draft only — no persist() here; Save colour
-    // (below) is the only thing in this panel that writes to storage.
-    doc = next; repaintPalette(); applyDraftChrome(doc); broadcastDraft(doc); setDirty(true); notify('color');
-    setDeriveActive(false); // applied — the button rests until the next change
+    const nextSet = createTokenSet(next, { theme: currentTheme === 'dark' ? 'dark' : 'light' });
+    const pinnedStops = materializeGradientAliases(next, ref => colorToHex(nextSet.resolve(ref)) == null, resolveTokenRef);
+
+    const lightSet = isRec(next.light) ? next.light as Record<string, unknown> : next;
+    const roles = countLeaves(isRec(lightSet.color) ? (lightSet.color as Record<string, unknown>).semantic : null);
+    return {
+      next,
+      plan: {
+        steps, ramps: RAMP_IDS.length, rebuilt: steps * RAMP_IDS.length, spectrumRebuilt,
+        roles, kept, curves: RAMP_IDS.filter(r => curves[r]).length,
+        locks: (priorLock?.cmyk ? 1 : 0) + (priorLock?.spot ? 1 : 0),
+        excluded, pinnedStops, rolesKept,
+      },
+    };
+  };
+
+  /** Where focus goes when a card that HELD it is taken away: back to the button
+   *  that opens one. Only when the focus really was inside — a card retired
+   *  underneath somebody working elsewhere must not yank them here. */
+  const hideReview = (): void => {
+    pendingReplacement = null;
+    if (!reviewEl) return;
+    const hadFocus = reviewEl.contains(document.activeElement);
+    reviewEl.hidden = true;
+    reviewEl.innerHTML = '';
+    if (hadFocus) $<HTMLElement>('[data-be-replace-palette]')?.focus();
+  };
+  // A proposal is a snapshot of the derive controls, and the card sits in the
+  // same open wing as the controls that built it — so any later change retires
+  // it rather than leaving a card whose counts, and whose document, describe a
+  // panel that has moved on. Only an OPEN proposal is dropped: the "replaced,
+  // Undo" card that follows a commit holds no document and stays put.
+  dropPendingReplacement = (): void => { if (pendingReplacement) hideReview(); };
+  /** Wrap a rendered line. Every string below is a LITERAL at its t()/tRaw()
+   *  call site — the chrome-string process reads these statically, so a
+   *  plural-picking helper that took the key as an argument would hide them. */
+  const li = (text: string): string => `<li>${text}</li>`;
+
+  const renderReview = (plan: ReplacePlan): void => {
+    if (!reviewEl) return;
+    const bits = [
+      li(tRaw('{n} shades rebuilt across {ramps} ramps', { n: plan.rebuilt, ramps: plan.ramps })),
+      li(plan.spectrumRebuilt === 1 ? t('1 spectrum hue rebuilt') : tRaw('{n} spectrum hues rebuilt', { n: plan.spectrumRebuilt })),
+      li(`${plan.roles === 1 ? t('1 role re-derived') : tRaw('{n} roles re-derived', { n: plan.roles })}${
+        plan.rolesKept ? tRaw(', {n} kept as assigned', { n: plan.rolesKept }) : ''}`),
+    ];
+    if (plan.kept) bits.push(li(plan.kept === 1 ? t('1 added colour kept') : tRaw('{n} added colours kept', { n: plan.kept })));
+    if (plan.curves) bits.push(li(plan.curves === 1 ? t('1 shade curve re-anchored') : tRaw('{n} shade curves re-anchored', { n: plan.curves })));
+    if (plan.locks) bits.push(li(plan.locks === 1 ? t('1 print lock re-pinned') : tRaw('{n} print locks re-pinned', { n: plan.locks })));
+    if (plan.excluded) bits.push(li(plan.excluded === 1 ? t('1 hidden shade stays hidden') : tRaw('{n} hidden shades stay hidden', { n: plan.excluded })));
+    if (plan.pinnedStops) bits.push(li(plan.pinnedStops === 1 ? t('1 gradient stop keeps its colour') : tRaw('{n} gradient stops keep their colour', { n: plan.pinnedStops })));
+    reviewEl.innerHTML = `
+      <p class="be-review-title">${t('Replace the palette?')}</p>
+      <ul class="be-review-list">${bits.join('')}</ul>
+      <div class="be-review-actions">
+        <button type="button" class="be-cta" data-be-review-go>${t('Replace palette')}</button>
+        <button type="button" class="be-btn" data-be-review-cancel>${t('Cancel')}</button>
+      </div>`;
+    reviewEl.hidden = false;
+    reviewEl.querySelector<HTMLButtonElement>('[data-be-review-go]')?.focus();
+  };
+  const renderReviewDone = (): void => {
+    if (!reviewEl) return;
+    reviewEl.innerHTML = `
+      <p class="be-review-title">${t('Palette replaced.')}</p>
+      <div class="be-review-actions">
+        <button type="button" class="be-btn" data-be-review-undo>${t('Undo')}</button>
+      </div>`;
+    reviewEl.hidden = false;
+    // Undo IS the safety net this whole path leans on, and the Replace button
+    // that was focused a moment ago has just been replaced out of the document.
+    // Hand focus straight to it rather than leaving it on <body>, from where
+    // reaching Undo means tabbing in from the top of the page.
+    reviewEl.querySelector<HTMLButtonElement>('[data-be-review-undo]')?.focus();
+  };
+
+  const commitReplacement = (next: Record<string, unknown>): void => {
+    pushUndo(t('Replace palette'));                        // snapshot BEFORE the swap
+    ctxCheckpoint(t('Before replacing the palette'));       // durable, best-effort
+    doc = next;
+    curveAnchorPrimary = primary;
+    repaintPalette();
+    persist(true);
+    setReplaceActive(false);
+    pendingReplacement = null;
+    renderReviewDone();
     playSfx('click');
-    announce(t('Palette re-derived from your colour — click Save colour to keep it'));
+    announce(t('Palette replaced. Undo is available.'));
+  };
+
+  $('[data-be-replace-palette]')?.addEventListener('click', () => {
+    const built = buildReplacement();
+    if (!built) return;
+    pendingReplacement = built.next;
+    renderReview(built.plan);
   });
-  saveBtn?.addEventListener('click', () => {
-    persist(true); playSfx('saveProfile');
-    announce(t('Brand colour saved'));
+  reviewEl?.addEventListener('click', (e) => {
+    const el = e.target as HTMLElement;
+    if (el.closest('[data-be-review-go]')) { if (pendingReplacement) commitReplacement(pendingReplacement); return; }
+    if (el.closest('[data-be-review-cancel]')) { hideReview(); return; }
+    if (el.closest('[data-be-review-undo]')) { hideReview(); undoLast(); }
   });
 
   // ── Palette: click a tile → open the shared swatch editor ───────────────────
@@ -2185,6 +2788,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     storedFmt = s.isAlias ? 'lch' : storageFormatOf(s.raw);
     renderStoredSeg();
     if (storedRow) storedRow.hidden = s.isAlias;
+    renderUseAs();
     renderSubstChips();
     if (substDetails) substDetails.open = false; // folded until asked — the lock chips say enough
     swatchSubst?.render();
@@ -2195,6 +2799,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     editorEl.hidden = false; // before positioning — the clamp measures offsetHeight
     positionEditor(tile);
     nameInput.focus();
+  };
+
+  /**
+   * Select the swatch at a JSON path and open its editor against the best
+   * available anchor. Never "the last one" — key order shifts on repaint — and
+   * never a hidden tile: a folded palette group measures 0×0 and would place
+   * the popover at the panel origin, so the caller's own anchor (a wheel dot,
+   * a gamut dot) takes over. A no-op when the path did not land.
+   */
+  const openSwatchAt = (path: string[] | null, fallback?: HTMLElement | null): void => {
+    if (!path) return;
+    const idx = swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i]));
+    if (idx < 0) return;
+    const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${idx}"]`) ?? null;
+    const anchor = (tile && tile.offsetParent !== null ? tile : null) ?? fallback ?? tile;
+    if (anchor) openEditor(idx, anchor);
   };
 
   // The card earns its height back by MOVING. Anything that resizes it — folding
@@ -2210,7 +2830,103 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     cleanups.push(() => ro.disconnect());
   }
 
+  // ── Palette multi-select (the catalogue/projects pattern) ───────────────────
+  // "Select" flips a mode where tiles collect into a set instead of opening the
+  // popover, and one floating bar deletes the lot. Keys are JSON paths, so the
+  // set survives a repaint; per-swatch semantics mirror the popover's Delete
+  // exactly (ramp/role steps hide via the exclusion list, custom swatches
+  // materialise any gradient aliases then delete; non-removable kinds don't
+  // collect at all, so the bar never promises more than it does).
+  let palSelecting = false;
+  const palSel = new Set<string>();
+  const swKey = (s: BrandSwatch): string => s.path.join('␟');
+  const canBulkRemove = (s: BrandSwatch): boolean => s.kind === 'ramp' || s.kind === 'semantic' || !!s.deletable;
+  const bulkbar = $('[data-be-bulkbar]') as HTMLElement | null;
+  const syncPalSelect = (): void => {
+    const live = new Set(swatches.map(swKey));
+    for (const k of [...palSel]) if (!live.has(k)) palSel.delete(k);
+    swatches.forEach((s, i) => {
+      const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${i}"]`);
+      if (!tile) return;
+      const on = palSel.has(swKey(s));
+      tile.classList.toggle('is-multi', on);
+      if (palSelecting && canBulkRemove(s)) tile.setAttribute('aria-pressed', String(on));
+      else tile.removeAttribute('aria-pressed');
+    });
+    const sb = palMount?.querySelector<HTMLElement>('[data-be-pal-select]');
+    if (sb) { sb.setAttribute('aria-pressed', String(palSelecting)); sb.textContent = palSelecting ? t('Done') : t('Select'); }
+    if (bulkbar) {
+      bulkbar.hidden = !palSelecting;
+      const n = palSel.size;
+      const nEl = bulkbar.querySelector<HTMLElement>('[data-be-bulk-n]');
+      if (nEl) nEl.textContent = n === 1 ? t('1 selected') : tRaw('{n} selected', { n });
+      const del = bulkbar.querySelector<HTMLButtonElement>('[data-be-bulk-del]');
+      if (del) del.disabled = n === 0;
+    }
+    if (palSelecting) root.setAttribute('data-pal-selecting', '1');
+    else root.removeAttribute('data-pal-selecting');
+  };
+  /**
+   * Hand focus back to the Select toggle once the bulk bar has gone.
+   *
+   * Cancel and Delete both hide the bar that holds the button being pressed, so
+   * without this the document's focus falls to `<body>` and a keyboard user
+   * restarts from the top of the page. Only a bar that HELD focus hands it over
+   * (`was` inside the bar) — plus the `<body>` case, which is both a Safari
+   * click, where pressing a button never focuses it, and the state left behind
+   * when a repaint has already detached whatever was focused. Focus that is
+   * demonstrably somewhere else is left alone.
+   *
+   * The toggle is re-queried each time: it lives in the grid, which the delete
+   * path rebuilds, so a handle taken before the repaint would be a dead node.
+   */
+  const handBackPalFocus = (was: Element | null): void => {
+    if (was && was !== document.body && !bulkbar?.contains(was)) return;
+    palMount?.querySelector<HTMLElement>('[data-be-pal-select]')?.focus();
+  };
+  const exitPalSelect = (): void => {
+    if (!palSelecting) return;
+    const was = document.activeElement;
+    palSelecting = false; palSel.clear(); syncPalSelect();
+    handBackPalFocus(was);
+  };
+  paletteHooks.push(syncPalSelect);
+  bulkbar?.querySelector<HTMLElement>('[data-be-bulk-cancel]')?.addEventListener('click', exitPalSelect);
+  // No confirm dialog: undo is the safety net (plan 97 §3 principle 3). The
+  // gradient-stop side effect moves from a pre-hoc warning to a post-hoc
+  // statement, and the per-swatch semantics are byte-for-byte what they were.
+  bulkbar?.querySelector<HTMLElement>('[data-be-bulk-del]')?.addEventListener('click', () => {
+    const items = swatches.filter(s => palSel.has(swKey(s)));
+    if (!items.length) return;
+    const refs = items.reduce((n, s) => n + (s.kind !== 'ramp' && s.kind !== 'semantic' && s.deletable ? gradientAliasRefCount(doc, s.key) : 0), 0);
+    pushUndo(items.length === 1 ? tRaw('Delete {name}', { name: items[0]!.name }) : tRaw('Delete {n} swatches', { n: items.length }));
+    ctxCheckpoint(t('Before removing swatches'));
+    let removed = 0;
+    for (const s of items) {
+      if (s.kind === 'ramp' || s.kind === 'semantic') { setSwatchExcluded(doc, s.key, true); removed++; continue; }
+      if (!s.deletable) continue;
+      if (gradientAliasRefCount(doc, s.key)) materializeGradientAliases(doc, ref => aliasPath(ref) === s.key, () => s.hex || null);
+      deleteSwatch(doc, s.path); removed++;
+    }
+    exitPalSelect(); closeEditor(); repaintPalette(); persist(true);
+    // The repaint rebuilt the grid, and with it the toggle exitPalSelect had
+    // just focused — so the handoff is repeated against the live one.
+    handBackPalFocus(document.activeElement);
+    const gone = removed === 1 ? t('1 swatch removed') : tRaw('{n} swatches removed', { n: removed });
+    const stops = refs === 0 ? ''
+      : refs === 1 ? ` ${t('1 gradient stop keeps its colour as a fixed value.')}`
+        : ` ${tRaw('{refs} gradient stops keep their colour as a fixed value.', { refs })}`;
+    announce(`${gone}${stops} ${t('Undo with Control Z.')}`);
+  });
+
   palMount?.addEventListener('click', (e) => {
+    const selToggle = (e.target as HTMLElement).closest<HTMLElement>('[data-be-pal-select]');
+    if (selToggle) {
+      palSelecting = !palSelecting;
+      if (palSelecting) closeEditor(); else palSel.clear();
+      syncPalSelect();
+      return;
+    }
     const add = (e.target as HTMLElement).closest<HTMLElement>('[data-be-add]');
     if (add) {
       // Group Adds live inside a <summary> — swallow the default toggle so
@@ -2222,15 +2938,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       // A neutral new swatch the user immediately recolours — stored LCH, the default.
       const path = addSwatch(doc, group, group === 'spectrum' ? t('New hue') : t('New swatch'), serializeColor('#888888', 'lch'), displayGroup ? { displayGroup } : {});
       repaintPalette(); persist(true);
-      // Select the leaf we just wrote (by JSON path — never "the last one", which
-      // depends on key order after a repaint).
-      const newIdx = path ? swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i])) : -1;
-      const tile = newIdx >= 0 ? palMount!.querySelector<HTMLElement>(`[data-be-tile="${newIdx}"]`) : null;
-      if (newIdx >= 0 && tile) openEditor(newIdx, tile);
+      openSwatchAt(path);
       return;
     }
     const tileEl = (e.target as HTMLElement).closest<HTMLElement>('[data-be-tile]');
-    if (tileEl) openEditor(Number(tileEl.dataset.beTile), tileEl);
+    if (!tileEl) return;
+    const tIdx = Number(tileEl.dataset.beTile);
+    if (palSelecting) {
+      const s = swatches[tIdx];
+      if (s && canBulkRemove(s)) {
+        const k = swKey(s);
+        if (palSel.has(k)) palSel.delete(k); else palSel.add(k);
+        syncPalSelect();
+      }
+      return;
+    }
+    openEditor(tIdx, tileEl);
   });
 
   // ── Palette grid: keyboard channel nudging (huetone-style) ──────────────────
@@ -2257,6 +2980,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     );
   };
   palMount?.addEventListener('keydown', (e) => {
+    if (palSelecting) return; // tiles are collect-toggles in select mode — no channel nudging
     const tile = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-be-tile]') ?? null;
     // Only when the tile BUTTON itself holds focus — never a nested/other control.
     if (!tile || tile !== (e.target as HTMLElement) || e.altKey || e.metaKey || e.ctrlKey) return;
@@ -2298,9 +3022,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (tile) syncTileMeta(tile, cur); // the grid is shape-only — the name lives in title/aria
     persist();
   });
-  editorEl?.querySelector('[data-be-editor-del]')?.addEventListener('click', async () => {
+  editorEl?.querySelector('[data-be-editor-del]')?.addEventListener('click', () => {
     if (selected < 0) return;
     const cur = swatches[selected]; if (!cur) return;
+    pushUndo(tRaw('Delete {name}', { name: cur.name }));
     // Derived leaves (ramp steps + the theme roles) are structural — "delete"
     // HIDES them via the doc's exclusion list: the ramp stays derived and the
     // token keeps resolving (so semantic roles and gradient aliases pointing at
@@ -2310,28 +3035,20 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (cur.kind === 'ramp' || cur.kind === 'semantic') {
       setSwatchExcluded(doc, cur.key, true);
       closeEditor(); repaintPalette(); persist(true);
-      announce(tRaw('{name} removed from your palette', { name: cur.name }));
+      announce(`${tRaw('{name} removed', { name: cur.name })} ${t('Undo with Control Z.')}`);
       return;
     }
-    if (!cur.deletable) return;
-    // Gradient stops may wear this swatch by alias — pin them to its current
-    // hex before it goes (the confirm says so), so the doc and any exported
-    // pack never carry a dangling ref. An unreferenced swatch deletes silently,
-    // exactly as before.
+    if (!cur.deletable) { undoStack.pop(); return; } // nothing happened — drop the snapshot
+    // Gradient stops may wear this swatch by alias — pin them to its current hex
+    // before it goes, so the doc and any exported pack never carry a dangling
+    // ref. No confirm: the announcement says what happened, and undo restores it.
     const refs = gradientAliasRefCount(doc, cur.key);
-    if (refs) {
-      const message = refs === 1
-        ? tRaw('{refs} gradient stop wears this colour — it keeps its current value as a fixed colour.', { refs })
-        : tRaw('{refs} gradient stops wear this colour — they keep their current value as a fixed colour.', { refs });
-      const ok = await confirmDialog({
-        title: tRaw('Delete {name}?', { name: cur.name }),
-        message,
-        confirmLabel: t('Delete'),
-      });
-      if (!ok || !root.isConnected || selected < 0 || swatches[selected] !== cur) return;
-      materializeGradientAliases(doc, ref => aliasPath(ref) === cur.key, () => cur.hex || null);
-    }
+    if (refs) materializeGradientAliases(doc, ref => aliasPath(ref) === cur.key, () => cur.hex || null);
     deleteSwatch(doc, cur.path); closeEditor(); repaintPalette(); persist(true);
+    const stops = refs === 0 ? ''
+      : refs === 1 ? ` ${t('1 gradient stop keeps its colour as a fixed value.')}`
+        : ` ${tRaw('{refs} gradient stops keep their colour as a fixed value.', { refs })}`;
+    announce(`${tRaw('{name} removed', { name: cur.name })}${stops} ${t('Undo with Control Z.')}`);
   });
   // Save = the affirmative close: edits already landed live (same contract as
   // the wheel/tiles), so this flushes the debounce, confirms audibly, and closes.
@@ -2347,7 +3064,26 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // stopPropagation can't stop a sibling listener — Esc on an open popover
   // would close it AND kick the user out of the studio. The editor mounts
   // before the host wires its handler, so this one runs first.
-  const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape' && editorEl && !editorEl.hidden) { e.stopImmediatePropagation(); closeEditor(); } };
+  const onKey = (e: KeyboardEvent): void => {
+    // Undo — Colours room only, and never over a text field (a native input owns
+    // its own undo; hijacking a browser default is not on). With an empty stack
+    // the key falls straight through to the page.
+    if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      const be = root.querySelector<HTMLElement>('[data-brand-editor]');
+      // No data-active-tab at all = every panel stacked, i.e. the room is showing.
+      if (be?.dataset.activeTab && be.dataset.activeTab !== 'color') return;
+      if (!undoStack.length) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      undoLast();
+      return;
+    }
+    if (e.key !== 'Escape') return;
+    if (editorEl && !editorEl.hidden) { e.stopImmediatePropagation(); closeEditor(); return; }
+    if (reviewEl && !reviewEl.hidden) { e.stopImmediatePropagation(); hideReview(); return; }
+    if (palSelecting) { e.stopImmediatePropagation(); exitPalSelect(); }
+  };
   document.addEventListener('pointerdown', onDocPointer, true);
   document.addEventListener('keydown', onKey);
   cleanups.push(() => { document.removeEventListener('pointerdown', onDocPointer, true); document.removeEventListener('keydown', onKey); });
@@ -2429,11 +3165,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         const path = addSwatch(doc, 'custom', t('New swatch'), oklchHex(seed));
         if (path) setSwatchValue(doc, path, oklchToStored(seed)); // sit exactly where dropped
         repaintPalette(); persist(true);
-        const newIdx = path ? swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i])) : -1;
-        const anchor = newIdx >= 0
-          ? (palMount?.querySelector<HTMLElement>(`[data-be-tile="${newIdx}"]`) ?? wheelMount.querySelector<HTMLElement>(`[data-be-widx="${newIdx}"]`))
-          : null;
-        if (newIdx >= 0 && anchor) openEditor(newIdx, anchor);
+        const idx = path ? swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i])) : -1;
+        openSwatchAt(path, idx >= 0 ? wheelMount.querySelector<HTMLElement>(`[data-be-widx="${idx}"]`) : null);
       },
     });
   };
@@ -2571,12 +3304,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         const path = addSwatch(doc, 'custom', t('New swatch'), oklchHex(seed));
         if (path) setSwatchValue(doc, path, oklchToStored(seed));
         repaintPalette(); persist(true);
-        const newIdx = path ? swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i])) : -1;
-        const anchor = newIdx >= 0
-          ? (palMount?.querySelector<HTMLElement>(`[data-be-tile="${newIdx}"]`)
-            ?? sliceMount.querySelector<HTMLElement>(`[data-okls-idx="${newIdx}"]`))
-          : null;
-        if (newIdx >= 0 && anchor) openEditor(newIdx, anchor);
+        const idx = path ? swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i])) : -1;
+        openSwatchAt(path, idx >= 0 ? sliceMount.querySelector<HTMLElement>(`[data-okls-idx="${idx}"]`) : null);
       },
     }));
 
@@ -2666,9 +3395,150 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
   });
 
+  // ── Level 0: Add a colour ───────────────────────────────────────────────────
+  // The module parses; this callback is the only thing that writes. One colour
+  // in, one addSwatch out — nothing derived, nothing suggested-into (plan 97 §3
+  // principle 1). Notation is preserved as typed: storageFormatOf maps `#…`→hex,
+  // `rgb(…)`→rgb, `hsl(…)`→hsl and everything else to the app's LCH default.
+  /**
+   * The room's write for "here are n colours" — one `addSwatch` each, one
+   * persist for the batch. Returns how many landed.
+   *
+   * Exposed on the handle as `addColors` (plan 97 §2b) because it writes into
+   * the doc THIS editor is holding. A caller that keeps its own snapshot of the
+   * installed document and writes into that instead would reinstall the snapshot
+   * — silently reverting every edit made in the room since it was taken. There
+   * is one live document; this is the way in.
+   *
+   * `reveal` is the room's own affordance (open the new swatch, announce it) and
+   * belongs to a press made IN the room. A tray add announces for itself from
+   * the panel the press happened in, and must not drag the Colours room's
+   * popover open underneath it.
+   */
+  const addColorEntries = (entries: ColorEntry[], reveal = false): number => {
+    const added: Array<{ path: string[]; name: string }> = [];
+    for (const e of entries) {
+      const name = nameColor(e.hex);
+      const path = addSwatch(doc, 'custom', name, serializeColor(e.hex, storageFormatOf(e.value)));
+      if (path) added.push({ path, name });
+    }
+    if (!added.length) return 0;
+    repaintPalette(); persist(true); playSfx('click');
+    if (reveal) {
+      if (added.length === 1) {
+        openSwatchAt(added[0]!.path);
+        announce(tRaw('{name} added', { name: added[0]!.name }));
+      } else {
+        announce(tRaw('{n} colours added', { n: added.length }));
+      }
+    }
+    return added.length;
+  };
+
+  const addColorMount = $('[data-be-addcolor]') as HTMLElement | null;
+  if (addColorMount) {
+    const teardownAdd = mountAddColor(addColorMount, {
+      t: (source, params) => (params ? tRaw(source, params) : t(source)),
+      onAdd: (entries: ColorEntry[]) => { addColorEntries(entries, true); },
+    });
+    cleanups.push(teardownAdd);
+  }
+
+  // ── Roles as an assignment layer ────────────────────────────────────────────
+  // The strip reads the doc and writes through assignRole/clearRole; every
+  // repaint re-reads it, so an add, a delete, a Replace or an undo all land.
+  const rolesMount = $('[data-be-roles]') as HTMLElement | null;
+  /** The theme the strip is reading, and therefore the ONE it may write. A
+   *  derived doc's light and dark roles are deliberately inverted (surface is
+   *  the lightest neutral in one and the darkest in the other), so an unscoped
+   *  write from here would overwrite dark mode with the light theme's choices. */
+  const roleTheme = (): string => (currentTheme === 'dark' ? 'dark' : 'light');
+  /** A swatch key's display name, for the announcements. */
+  const nameOfKey = (key: string): string => swatches.find(s => s.key === key)?.name ?? key;
+  const roleSwatchOptions = (): Array<{ key: string; name: string; hex: string; group?: string }> =>
+    swatches.filter(s => s.hex && s.kind !== 'semantic')
+      .map(s => ({ key: s.key, name: s.name, hex: s.hex, group: s.group }));
+  const rolesStrip = rolesMount ? mountRolesStrip(rolesMount, {
+    doc: () => doc as Record<string, unknown>,
+    theme: roleTheme,
+    resolve: (key) => {
+      try { return createTokenSet(doc, { theme: roleTheme() }).resolve(key); }
+      catch { return null; }
+    },
+    swatches: roleSwatchOptions,
+    // Both callbacks report what actually happened: a refused write (a document
+    // the role can't land in) re-renders the strip so the picker snaps back to
+    // the truth, rather than persisting nothing and announcing success.
+    assign: (role, key) => {
+      if (!assignRole(doc, role, key, roleTheme())) { rolesStrip?.render(); return; }
+      repaintPalette(); persist(true);
+      announce(tRaw('{role} is now {name}', { role: roleLabel(role), name: nameOfKey(key) }));
+    },
+    clear: (role) => {
+      // A removal: clearing `primary` deletes the token the app's own accent
+      // reads, and nothing on screen holds the swatch it pointed at. Snapshot
+      // first, and drop it again if there turned out to be nothing to remove.
+      pushUndo(tRaw('Clear {role}', { role: roleLabel(role) }));
+      if (!clearRole(doc, role, roleTheme())) { undoStack.pop(); rolesStrip?.render(); return; }
+      repaintPalette(); persist(true);
+      announce(tRaw('{role} is not set', { role: roleLabel(role) }));
+    },
+  }) : null;
+  paletteHooks.push(() => rolesStrip?.render());
+
+  // The swatch popover's "Use as" row — the same assignment, reached from the
+  // colour itself. A pressed button means "this swatch IS that role", so
+  // pressing it again clears the role rather than re-writing it.
+  const useasRow = editorEl?.querySelector<HTMLElement>('[data-be-useas]') ?? null;
+  const renderUseAs = (): void => {
+    if (!useasRow) return;
+    const cur = selected >= 0 ? swatches[selected] : null;
+    useasRow.hidden = !cur || cur.kind === 'semantic';
+    if (useasRow.hidden || !cur) return;
+    const held = readRoles(doc, roleTheme());
+    useasRow.querySelectorAll<HTMLElement>('[data-be-useas]').forEach(b => {
+      const role = b.dataset.beUseas as RoleId | undefined;
+      b.setAttribute('aria-pressed', String(!!role && held[role]?.ref === cur.key));
+    });
+  };
+  useasRow?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-be-useas]');
+    const role = btn?.dataset.beUseas as RoleId | undefined;
+    if (!role || selected < 0) return;
+    const cur = swatches[selected]; if (!cur || cur.kind === 'semantic') return;
+    const key = cur.key;
+    const wasSet = btn!.getAttribute('aria-pressed') === 'true';
+    // Un-pressing REMOVES the role (the strip's Clear by another door), so it
+    // takes the same snapshot; assigning is not destructive and does not. The
+    // snapshot is dropped again if the write turned out to change nothing.
+    if (wasSet) pushUndo(tRaw('Clear {role}', { role: roleLabel(role) }));
+    const wrote = wasSet ? clearRole(doc, role, roleTheme()) : assignRole(doc, role, key, roleTheme());
+    if (!wrote) {
+      if (wasSet) undoStack.pop();
+      renderUseAs(); // the button's pressed state describes the doc, not the tap
+      return;
+    }
+    // repaintPalette rebuilds the grid, so re-find the tile the popover is on.
+    const path = cur.path;
+    repaintPalette(); persist(true); playSfx('click');
+    const idx = swatches.findIndex(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i]));
+    if (idx >= 0) { selected = idx; refreshTile(idx); }
+    renderUseAs();
+    announce(wasSet
+      ? tRaw('{role} is not set', { role: roleLabel(role) })
+      : tRaw('{role} is now {name}', { role: roleLabel(role), name: cur.name }));
+  });
+
   repaintPalette();
 
-  // ── Fonts (the Type tab) ─────────────────────────────────────────────────────
+  // ── Type (the Type room, plan 97 §7.2) ───────────────────────────────────────
+  // Three layers, top to bottom: the four ROLE CARDS (level 0 — what serves each
+  // role, and the one action that changes it), the COMPARE STAGE they open (six
+  // faces at one size on one specimen; nothing installs until a card is chosen),
+  // and the MANAGEMENT LIST of everything already on the device (roles, delete).
+  // The stage is presentation only — type-compare.ts installs nothing and this
+  // file owns every write, which is why `applyTypeChoice` below is the single
+  // place a face becomes an asset and a token.
   const fontErr = $('[data-be-font-err]') as HTMLElement | null;
   const showFontErr = (m: string): void => { if (fontErr) { fontErr.textContent = m; fontErr.hidden = !m; } if (m) announce(m, { assertive: true }); };
   let fontFamilies: UserFontFamily[] = [];
@@ -2729,6 +3599,45 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <span class="be-typerole-face">${escape(monoFace)}</span>
       </div>`;
   };
+  /**
+   * The four role cards (level 0), updated IN PLACE — every dynamic string is
+   * written as textContent onto nodes the scaffold already built. Deliberately
+   * not a re-render: a repaint that replaced the cards would take the keyboard
+   * off the button that caused it, and no family name would then be a step away
+   * from a markup sink. The specimen itself needs no touching at all — it paints
+   * through the role's CSS var, which applyChromeBrandVars has already moved.
+   */
+  const paintRoleCards = async (): Promise<void> => {
+    const grid = $('[data-be-typecards]') as HTMLElement | null;
+    if (!grid) return;
+    const brandFace = await primaryFontFamily(fontsHost).catch(() => '');
+    if (!root.isConnected) return;
+    const held: Record<FontRole, string> = {
+      brand: brandFace, display: displayFamily, mono: monoFamily, italic: italicFamily,
+    };
+    for (const def of TYPE_ROLES) {
+      const card = grid.querySelector<HTMLElement>(`[data-be-typecard="${def.id}"]`);
+      if (!card) continue;
+      const face = held[def.id];
+      card.classList.toggle('is-set', !!face);
+      const faceEl = card.querySelector<HTMLElement>('[data-be-typecard-face]');
+      // What the role resolves to, said plainly. An unset optional role names
+      // the primary it falls through to rather than showing a blank, because
+      // "nothing here" is not what the role does.
+      if (faceEl) {
+        faceEl.textContent = face || (def.id === 'brand'
+          ? t('Platform default')
+          : brandFace
+            ? tRaw('{family}, the primary', { family: brandFace })
+            : t('Follows the primary'));
+      }
+      // The label and the accessible name move together — see typeRoleActStrings.
+      const act = typeRoleActStrings(typeRoleLabel(def.id), !!face);
+      const actEl = card.querySelector<HTMLElement>('[data-be-typecard-actlabel]');
+      if (actEl) actEl.textContent = act.text;
+      card.querySelector<HTMLElement>('[data-be-typecard-choose]')?.setAttribute('aria-label', act.name);
+    }
+  };
   const paintFonts = async (): Promise<void> => {
     const list = $('[data-be-fonts]') as HTMLElement | null; if (!list) return;
     fontFamilies = await listUserFonts(fontsHost).catch(() => []);
@@ -2743,31 +3652,218 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <span class="be-font-badge">${t('Primary')}</span></li>`);
     }
     rows.push(...fontFamilies.map(fontRow));
-    if (!fontFamilies.length) rows.push(`<li class="be-font-empty">${t('No fonts added yet — pick any Google Font below.')}</li>`);
+    if (!fontFamilies.length) rows.push(`<li class="be-font-empty">${t('No fonts added yet. Choose a face on a card above.')}</li>`);
     if (root.isConnected) list.innerHTML = rows.join('');
     void paintSpecimen();
+    void paintRoleCards();
   };
   void paintFonts();
-  $('[data-be-font-add]')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = $('[data-be-font-input]') as HTMLInputElement | null;
-    const btn = $('[data-be-font-btn]') as HTMLButtonElement | null;
-    const family = input?.value.trim(); if (!family || !btn || !input) return;
-    // Fetching a Google Font is the one thing in the brand editor that reaches a
-    // third party, and it is not strictly necessary — so it is consented, once,
-    // rather than merely disclosed in the privacy policy. (A German court has
-    // awarded damages over exactly this transfer: LG München I, 3 O 17493/20.)
-    if (!(await ensureGoogleFontsConsent())) return;
-    showFontErr(''); const prev = btn.textContent;
-    btn.disabled = input.disabled = true; btn.textContent = t('Downloading…');
+  // ── The compare stage (plan 97 §7.2) ────────────────────────────────────────
+  // type-compare.ts renders candidates side by side and installs NOTHING; this
+  // block owns opening it, seeding it, persisting a choice and closing it.
+  //
+  // NETWORK HONESTY. Google Fonts is the one egress in the studio and it stays
+  // behind the same one-time consent it always was: `ensureGoogleFontsConsent`
+  // is handed to the stage as its gate, so a PREVIEW asks exactly as an install
+  // used to. Fetching a Google Font sends the family name and, unavoidably, the
+  // user's IP address to Google, which is a third-party transfer they get to
+  // refuse. (A German court has awarded damages over exactly this transfer:
+  // LG München I, 3 O 17493/20.) Nothing else here reaches the network.
+  const stageEl = $('[data-be-typestage]') as HTMLElement | null;
+  const stageMount = $('[data-be-typestage-mount]') as HTMLElement | null;
+  const stageTitleEl = $('[data-be-typestage-title]') as HTMLElement | null;
+  const stageQ = $('[data-be-typestage-q]') as HTMLInputElement | null;
+  const stageErr = $('[data-be-typestage-err]') as HTMLElement | null;
+  let stage: TypeCompare | null = null;
+  /** Which role the open stage is choosing for. Null = the management list's
+   *  "Add a face": the face installs and takes no role beyond the only-font
+   *  promotion every install has always done. */
+  let stageRole: FontRole | null = null;
+  /** The control the stage was opened from — where the keyboard goes when it
+   *  closes, however it closes. */
+  let stageReturn: HTMLElement | null = null;
+  /** Lowercased family → the tray candidate that put it on the stage, so a
+   *  chosen face stops being pending in the tray instead of being offered again
+   *  next week. */
+  const stageFromTray = new Map<string, string>();
+  /** How many tray faces the stage opens with. Six cards fit; the point of the
+   *  stage is the comparison the person is making, so a source's finds seed it
+   *  without filling it. */
+  const TRAY_SEED_MAX = 3;
+
+  /** The stage's own error line. Written, never announced: the stage announces
+   *  the outcome of a press itself, and two polite messages for one action is
+   *  one too many. This carries the REASON the stage's own sentence cannot. */
+  const setStageErr = (m: string): void => {
+    if (!stageErr) return;
+    stageErr.textContent = m;
+    stageErr.hidden = !m;
+  };
+
+  /** Close the stage. Always a cancel: nothing is installed on the way out, and
+   *  every preview registration goes with it (type-compare.ts's teardown). */
+  const closeStage = (opts: { restoreFocus?: boolean } = {}): void => {
+    const open = stage;
+    stage = null;
+    stageRole = null;
+    stageFromTray.clear();
+    open?.teardown();
+    if (stageEl) stageEl.hidden = true;
+    setStageErr('');
+    const back = stageReturn;
+    stageReturn = null;
+    // Never let a close drop the keyboard on <body>.
+    if (open && opts.restoreFocus !== false && back?.isConnected) back.focus();
+  };
+  cleanups.push(() => closeStage({ restoreFocus: false }));
+
+  /**
+   * Persist one stage choice. The stage hands over a candidate and this decides
+   * the rail: a Google pick through `installGoogleFont`, a file through
+   * `installFontFromBytes` (plan 97 §4 gap 3 — the second entrance into the role
+   * system), then the role that OPENED the stage is assigned through the same
+   * withFontRoleToken writers the list rows use.
+   *
+   * Throwing is meaningful: the stage keeps the card standing and says the press
+   * failed, so it can be tried again. The reason lands under the stage.
+   */
+  const applyTypeChoice = async (choice: CompareChoice): Promise<void> => {
+    const role = stageRole;
+    setStageErr('');
+    let family = '';
     try {
-      const fam = await installGoogleFont(fontsHost, family); input.value = ''; playSfx('saveProfile'); await paintFonts(); notify('type');
-      announce(fam.primary ? tRaw('Added {family} as your primary font', { family: fam.family }) : tRaw('Added {family}', { family: fam.family }));
+      if (choice.install === 'google') {
+        // `primary: true` only for the Primary card. Every other role still gets
+        // installGoogleFont's standing only-font promotion, which is the right
+        // answer when there is no primary yet.
+        const fam = await installGoogleFont(fontsHost, choice.family, role === 'brand' ? { primary: true } : {});
+        family = fam.family;
+      } else if (choice.bytes) {
+        const fam = await installFontFromBytes(fontsHost, choice.bytes, {
+          ...(choice.label ? { filename: choice.label } : {}),
+          ...(role === 'brand' ? { makePrimary: true } : {}),
+        });
+        // installFontFromBytes returns null rather than throwing for bytes it
+        // will not take, because its other callers are multi-file drop zones
+        // where one bad file must not abandon the rest. Here there is one file
+        // and one deliberate press, so a refusal is an error to show.
+        if (!fam) throw new Error(t('That font file could not be installed.'));
+        family = fam.family;
+      } else {
+        throw new Error(t('That candidate has no face to install.'));
+      }
+      if (role === 'display') await setDisplayFont(fontsHost, family);
+      else if (role === 'mono') await setMonoFont(fontsHost, family);
+      else if (role === 'italic') await setItalicFont(fontsHost, family);
+    } catch (err) {
+      setStageErr(String((err as { message?: unknown })?.message ?? err));
+      throw err;
     }
-    // Clear on failure too — otherwise the failed attempt's text blocks searching
-    // for a different font until manually cleared (matches the success path above).
-    catch (err) { showFontErr(String((err as { message?: unknown })?.message ?? err)); input.value = ''; }
-    btn.textContent = prev; btn.disabled = input.disabled = false; input.focus();
+    // The tray candidate that put this face on the stage has been shopped.
+    const trayId = stageFromTray.get(choice.family.trim().toLowerCase());
+    if (trayId) {
+      try {
+        const handle = await trayHandle();
+        // Re-read before writing. The candidate list is one host.state record and
+        // the studio view holds its OWN Tray over it (views/start.ts's rail
+        // panel), so a write from a stale in-memory copy would drop whatever it
+        // has done since. This narrows that window to the write itself; it does
+        // not close it, which is a two-instances problem and not this room's.
+        await handle?.load();
+        await handle?.markAdded(trayId);
+      } catch { /* the tray is a convenience; it never fails an install */ }
+    }
+    playSfx('saveProfile');
+    await paintFonts();
+    notify('type');
+    announce(role
+      ? tRaw('{family} now serves {role}', { family, role: typeRoleLabel(role) })
+      : tRaw('Added {family}', { family }));
+    closeStage();
+  };
+
+  /** Font candidates a source scan left in the tray, put on the stage with their
+   *  provenance. A face discovered in a document arrives spelled its own way
+   *  ("ABCDEF+Inter-SemiBold"); font-resolve.ts resolves the whole spelling
+   *  first and the parsed family second, which is the order its tests pin. An
+   *  unresolvable family is still offered — the stage says honestly that it has
+   *  no source for it, which beats hiding a face the person's own file names. */
+  const seedStageFromTray = async (): Promise<void> => {
+    const open = stage;
+    const handle = await trayHandle();
+    if (!handle) return;
+    await handle.load().catch(() => {}); // freshest list — see applyTypeChoice
+    // The stage may have been closed or replaced while that was in flight.
+    if (!open || open !== stage) return;
+    const pending = handle.list()
+      .filter(c => c.type === 'font' && c.state === 'pending')
+      .slice(0, TRAY_SEED_MAX);
+    for (const c of pending) {
+      const resolved = googleMatch(c.value) ?? googleMatch(parseFaceName(c.value).family) ?? c.value;
+      const spelled = c.value.trim();
+      stageFromTray.set(resolved.trim().toLowerCase(), c.id);
+      open.addCandidate({
+        kind: 'tray',
+        family: resolved,
+        ...(resolved.trim().toLowerCase() === spelled.toLowerCase() ? {} : { label: spelled }),
+        provenance: c.provenance.label,
+      });
+    }
+  };
+
+  const openStage = (role: FontRole | null, opener: HTMLElement | null): void => {
+    if (!stageEl || !stageMount) return;
+    closeStage({ restoreFocus: false }); // one stage, one decision
+    stageRole = role;
+    stageReturn = opener;
+    stageEl.hidden = false;
+    if (stageTitleEl) {
+      stageTitleEl.textContent = role
+        ? tRaw('Choose the {role} face', { role: typeRoleLabel(role) })
+        : t('Compare faces');
+    }
+    stage = mountTypeCompare(stageMount, {
+      host: host as unknown as HostV1,
+      t,
+      tRaw,
+      consentGoogle: ensureGoogleFontsConsent,
+      onSelect: applyTypeChoice,
+    });
+    // Into the stage, on its first control: opening a panel from a press has to
+    // move the keyboard with it.
+    if (stageQ) { stageQ.value = ''; stageQ.focus(); }
+    stageEl.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    void seedStageFromTray();
+  };
+
+  $('[data-be-typecards]')?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-be-typecard-choose]');
+    const role = btn?.dataset.beTypecardChoose as FontRole | undefined;
+    if (!btn || !role) return;
+    openStage(role, btn);
+  });
+  $('[data-be-font-compare]')?.addEventListener('click', (e) => {
+    openStage(null, e.currentTarget as HTMLElement);
+  });
+  $('[data-be-typestage-close]')?.addEventListener('click', () => closeStage());
+  $('[data-be-typestage-search]')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const family = stageQ?.value.trim();
+    if (!family || !stage) return;
+    // A CANDIDATE, not an install. Nothing is fetched until the card's Preview
+    // is pressed (or consent is already in hand for this stage), and nothing is
+    // stored until "Use this face".
+    stage.addCandidate({ kind: 'google', family });
+    if (stageQ) { stageQ.value = ''; stageQ.focus(); }
+  });
+  stageEl?.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key !== 'Escape' || !stage) return;
+    // Cancel, never commit. The specimen field answers Escape only while it has
+    // an edit to cancel (it reverts the text and stops the key there); with
+    // nothing to cancel the key bubbles to here and closes the stage, so the
+    // field the stage opens on is not a place Escape stops working.
+    e.stopPropagation();
+    closeStage();
   });
   $('[data-be-fonts]')?.addEventListener('click', async (e) => {
     const mp = (e.target as Element).closest<HTMLButtonElement>('[data-mp]');
@@ -2798,7 +3894,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     } catch (err) { del.disabled = false; showFontErr(String((err as { message?: unknown })?.message ?? err)); }
   });
 
-  // ── Logos (the Logos tab) ────────────────────────────────────────────────────
+  // ── Logos (the Logos room) ───────────────────────────────────────────────────
   // Identity sections (a brand can carry several distinct logos), each holding
   // the canonical orientation × treatment matrix plus user-named custom marks
   // ("icon", "crest", …). Each slot is a drop/upload tile: empty → "Add",
@@ -2835,11 +3931,28 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <p class="be-logo-hint">${escape(hint)}</p>
       </div>`;
   };
+  // Which of the unnamed identity's slots currently hold a mark. Refreshed by
+  // every paint and read by the intake queue: a chip says "Replace" instead of
+  // "Place" for a taken slot, and a derived variant is only offered for an EMPTY
+  // sibling. The intake files into the unnamed identity only — a named identity's
+  // slots are still filled from their own tiles, which is where their context is.
+  let filledDefaultSlots = new Set<string>();
+  // Repaints the intake queue. Assigned further down (the queue's own render
+  // needs helpers declared after this point); declared here as a mutable so
+  // paintLogos can keep the chips' "Place" / "Replace" labels honest without a
+  // temporal-dead-zone reference.
+  let renderIntake: () => void = () => {};
+  // Drains marks handed over by another view (the #/pdf exploder's "Send to the
+  // Design System studio"). Same forward-declared shape as renderIntake above
+  // and for the same reason: the paint runs before the queue's own helpers
+  // exist, and the real drain needs addLogoFiles.
+  let drainPendingLogos: () => void = () => {};
   const paintLogos = async (): Promise<void> => {
     const mount = $('[data-be-logos]') as HTMLElement | null; if (!mount) return;
     logoUrls.forEach(u => URL.revokeObjectURL(u)); logoUrls = [];
     const slots = await listLogos(fontsHost).catch(() => [] as LogoSlot[]);
     logoUrls = slots.map(s => s.url);
+    filledDefaultSlots = new Set(slots.filter(s => s.identity === 'default').map(s => s.variant));
     // default leads, then stored identities in first-seen order, then this
     // session's still-empty additions.
     const identities: string[] = ['default'];
@@ -2882,7 +3995,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <input type="text" data-addidentity-name placeholder="${escape(t('Another logo? Name it — Product, Event…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('New logo name'))}">
         <button type="submit" class="be-btn">${t('+ Add another logo')}</button>
       </form>`;
-    if (root.isConnected) mount.innerHTML = sections + addIdentity;
+    // A room that went away mid-paint drains NOTHING. `takePendingLogoFiles()`
+    // empties the one-shot stash and nothing can re-arm it, so draining into a
+    // torn-down room does not just waste the paint — it destroys the hand-off,
+    // and the marks cannot be sent again without re-opening the document.
+    if (!root.isConnected) return;
+    mount.innerHTML = sections + addIdentity;
+    renderIntake();
+    // Only the FIRST paint has anything to drain (the stash is one-shot and the
+    // drain latches), so the repaint after every placement costs one boolean.
+    drainPendingLogos();
   };
   void paintLogos();
   cleanups.push(() => logoUrls.forEach(u => URL.revokeObjectURL(u)));
@@ -2891,34 +4013,639 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const slugify = (name: string): string =>
     name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 
-  // The logo-colour pathway: an SVG mark carries the brand's real colours, so
-  // offer (or on a still-unbranded install, simply apply) its first colour as
-  // the primary — the Colour tab picks it up from here.
+  // The logo-colour pathway: an SVG mark carries the design system's real
+  // colours, so offer (or on a still-unbranded install, simply apply) its first
+  // colour. The note lives in the Add hero, where the colour lands.
   const suggestEl = $('[data-be-suggest]') as HTMLElement | null;
+  /** Add the colour, give it the primary role, and point the Generate wing's
+   *  picker at it — one motion, persisted immediately (plan 97 §6). */
+  const takePrimaryFromLogo = (hex: string): void => {
+    const name = nameColor(hex);
+    const path = addSwatch(doc, 'custom', name, serializeColor(hex, 'lch'));
+    // walkSwatches owns the path→key mapping (it strips the set prefix), so read
+    // the key back off the swatch rather than re-deriving it here.
+    const swatchKey = path
+      ? walkSwatches(doc, currentTheme).find(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i]))?.key
+      : undefined;
+    // Deliberately UNSCOPED (no theme): a mark's colour is the brand's primary
+    // in both themes, unlike surface and text, which each theme inverts.
+    if (swatchKey) assignRole(doc, 'primary', swatchKey);
+    setPrimaryTo(hex); // the Generate wing's picker follows the new primary
+    repaintPalette();
+    persist(true);
+  };
+  // The candidate tray (plan 97 §8) — the HOST's, whenever it has one, because
+  // two live trays over one storage key erase each other (see BrandEditorOptions
+  // .tray). Only a host that mounts no tray of its own falls through to the
+  // second branch, which creates one lazily — and only when a mark actually has
+  // colours to hand over, so a session that never touches a logo pays nothing.
+  // `load()` runs before the first add either way: the tray persists the whole
+  // candidate list on every write, so adding to an unloaded one would erase
+  // whatever a source scan left there earlier.
+  let tray: Tray | null = null;
+  const trayHandle = async (): Promise<Tray | null> => {
+    if (opts.tray) return opts.tray;
+    if (tray) return tray;
+    try {
+      const made = createTray(host);
+      await made.load();
+      tray = made;
+      return tray;
+    } catch { return null; }
+  };
+  /**
+   * The colours a mark carries beyond the one the hero offers. They used to be
+   * dropped on the floor; now they wait in the tray for as long as the user
+   * likes (plan 97 §8) and nothing is added to the palette on their account.
+   */
+  const trayColorsFromLogo = async (colors: string[], label: string): Promise<void> => {
+    if (!colors.length) return;
+    const handle = await trayHandle();
+    if (!handle) return;
+    // censusFromSvgColors appends an implied white ground when the artwork
+    // carries none — a claim about the PAGE a mark sits on, which is right for
+    // the role proposer and wrong for a shopping list. Candidates are filtered
+    // back to the colours the file actually paints with.
+    const own = new Set(colors.map(c => censusHex(c)).filter((h): h is string => !!h));
+    const candidates = candidatesFromCensus(censusFromSvgColors(colors, label))
+      .filter(c => c.type === 'color' && own.has(censusHex(c.value) ?? ''));
+    if (!candidates.length) return;
+    try {
+      const added = await handle.add(candidates);
+      if (added > 0) announce(t('Other colours from this file are waiting in the tray.'));
+    } catch { /* the tray is a convenience; a failed add never fails an install */ }
+  };
   const suggestFromLogo = async (file: File): Promise<void> => {
     if (!/svg/i.test(file.type) || file.size > 10 * 1024 * 1024) return;
     let colors: string[] = [];
     try { colors = extractSvgColors(await file.text()).map(c => colorToHex(c) ?? '').filter(c => /^#/.test(c)); } catch { return; }
     const first = colors[0];
+    // The leading colour keeps its privileged path below; every other one is a
+    // candidate, not a decision.
+    void trayColorsFromLogo(colors.slice(1), file.name);
     if (!first || !suggestEl) return;
     if (!isUserBrand) {
-      // Nothing of the user's to clobber yet — set it, say so, let Save keep it.
-      setPrimaryTo(first);
-      suggestEl.innerHTML = `<span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>${t('Primary set from your logo — <strong>Save colour</strong> keeps it.')}</span>`;
+      // Nothing of the user's to clobber yet — take it, and say what happened.
+      takePrimaryFromLogo(first);
+      // ONCE, though. That call just wrote a custom swatch, gave it the primary
+      // role and persisted, so from here on there IS something of the user's:
+      // the second file of a multi-file drop must OFFER rather than take (plan
+      // 97 §7.3 keeps exactly one auto-set, primary on a first-ever install).
+      // Without this line every extra logo adds another swatch and reassigns the
+      // role, and the last file dropped silently wins.
+      isUserBrand = true;
+      suggestEl.innerHTML = `<span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>${t('Primary set from the logo.')}</span>`;
       suggestEl.hidden = false;
-      announce(t('Primary colour set from your logo'));
+      announce(t('Primary set from the logo.'));
       return;
     }
     suggestEl.innerHTML = `
-      <span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>${t('Found in your logo:')} <code>${escape(first)}</code></span>
+      <span class="be-suggest-note"><span class="be-suggest-sw" style="--sw:${escape(first)}" aria-hidden="true"></span>${t('Found in the logo:')} <code>${escape(first)}</code></span>
       <button type="button" class="be-btn be-btn--sm" data-be-suggest-use="${escape(first)}">${t('Use as primary')}</button>
       <button type="button" class="be-suggest-dismiss" data-be-suggest-dismiss aria-label="${escape(t('Dismiss suggestion'))}">&#x2715;</button>`;
     suggestEl.hidden = false;
   };
   suggestEl?.addEventListener('click', (e) => {
     const use = (e.target as HTMLElement).closest<HTMLElement>('[data-be-suggest-use]');
-    if (use) { setPrimaryTo(use.dataset.beSuggestUse!); suggestEl.hidden = true; playSfx('click'); return; }
+    if (use) {
+      takePrimaryFromLogo(use.dataset.beSuggestUse!);
+      suggestEl.hidden = true; playSfx('click');
+      announce(t('Primary set from the logo.'));
+      return;
+    }
     if ((e.target as HTMLElement).closest('[data-be-suggest-dismiss]')) suggestEl.hidden = true;
+  });
+
+  // ── Level 0: multi-file intake → classify → confirm chip (plan 97 §7.3) ─────
+  // A dropped file is never filed silently. Each one is classified by the pure
+  // heuristics in classify-logo.ts, proposes one of the eight slots, and waits as
+  // a confirm chip; under LOGO_CONFIRM_MIN the chip leads with the slot menu
+  // instead, because a guess is not a proposal. Every placement (chip or per-slot
+  // tile) runs the shared trim offer first, and a placed colour SVG then offers
+  // its generated mono / reverse siblings as further chips.
+
+  /** Mirrors brand-logos.ts's own ACCEPT gate (not exported there): what enters
+   *  the queue has to be something installLogo will actually take, so a chip
+   *  never promises a placement that cannot happen. */
+  const LOGO_ACCEPT_TYPES = /^image\/(png|jpeg|svg\+xml|webp)$/;
+  /** The OTHER half of that gate, mirrored for the same reason: installLogo
+   *  refuses anything over 4 MB, and a chip that led to that refusal would have
+   *  cost a classification, a trim answer and a tap to say no. */
+  const LOGO_MAX_BYTES = 4 * 1024 * 1024;
+  const isSvgLogoFile = (f: File): boolean => /^image\/svg(\+xml)?$/i.test(f.type);
+  /** Below this the classification is guesswork, so the chip leads with the slot
+   *  menu and nothing is one tap away (plan 97 §14.5: an ambiguous file always
+   *  gets the confirm chip, never a silent placement). */
+  const LOGO_CONFIRM_MIN = 0.6;
+  /** How many files may wait at once — past this a queue stops being a list and
+   *  becomes a backlog. */
+  const LOGO_INTAKE_MAX = 12;
+  /** Classification decode budget: the readback holds four bytes a pixel, and a
+   *  logo is not a hero photo. */
+  const CLASSIFY_MAX_PIXELS = 24_000_000;
+  /** At most this many samples feed the colour census — a mark's ink is no more
+   *  legible for having counted every pixel of a 4000px export. */
+  const CLASSIFY_MAX_SAMPLES = 120_000;
+  /** Census bucket size per channel (16 levels), so an anti-aliased edge does not
+   *  read as a hundred separate inks. */
+  const CLASSIFY_QUANT = 16;
+  /** Alpha at or below this is not ink. */
+  const CLASSIFY_ALPHA_MIN = 8;
+  /** The ink a generated mono mark falls back to when the document names no text
+   *  colour. Near-black rather than pure black, the same restraint the palette keeps. */
+  const MONO_INK_FALLBACK = '#111111';
+
+  type RasterLogoStats = Parameters<typeof classifyLogoRasterStats>[0];
+
+  /**
+   * A raster mark's stats for the classifier: content bounds for the shape, a
+   * quantized census for the ink, and how much of the frame is transparent. The
+   * decode lives here because classify-logo.ts is deliberately DOM-free.
+   */
+  const rasterLogoStats = async (file: File): Promise<RasterLogoStats | null> => {
+    let bitmap: ImageBitmap;
+    try { bitmap = await createImageBitmap(file); } catch { return null; }
+    const { width, height } = bitmap;
+    if (!width || !height || width * height > CLASSIFY_MAX_PIXELS) { bitmap.close?.(); return null; }
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) { bitmap.close?.(); return null; }
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+    let data: Uint8ClampedArray;
+    try { data = ctx.getImageData(0, 0, width, height).data; } catch { return null; }
+    // Sample on a grid rather than every pixel: the census needs the ink's
+    // proportions, and a stride keeps a 12 Mpx export as cheap as a 300px one.
+    const stride = Math.max(1, Math.ceil(Math.sqrt((width * height) / CLASSIFY_MAX_SAMPLES)));
+    const q = (v: number): string =>
+      Math.min(255, Math.round(v / CLASSIFY_QUANT) * CLASSIFY_QUANT).toString(16).padStart(2, '0');
+    const counts = new Map<string, number>();
+    let sampled = 0;
+    let clear = 0;
+    for (let y = 0; y < height; y += stride) {
+      for (let x = 0; x < width; x += stride) {
+        const i = (y * width + x) * 4;
+        sampled++;
+        if (data[i + 3]! <= CLASSIFY_ALPHA_MIN) { clear++; continue; }
+        const key = `#${q(data[i]!)}${q(data[i + 1]!)}${q(data[i + 2]!)}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    // Orientation reads CONTENT bounds, never the canvas: a mark centred in a
+    // padded export is the same shape whatever the padding.
+    const box = rasterAlphaBounds(data, width, height, { alphaMin: CLASSIFY_ALPHA_MIN });
+    return {
+      width: box?.width || width,
+      height: box?.height || height,
+      colors: [...counts].sort((a, b) => b[1] - a[1]).slice(0, 16).map(([hex, weight]) => ({ hex, weight })),
+      transparentShare: sampled > 0 ? clear / sampled : 0,
+      // Deliberately not a number: classifyLogoRasterStats recomputes the light
+      // share from `colors` against its own OKLCH threshold, and passing one here
+      // would mean duplicating that threshold and then drifting from it.
+      lightShare: Number.NaN,
+    };
+  };
+
+  const classifyLogoFile = async (file: File): Promise<LogoClassification | null> => {
+    if (isSvgLogoFile(file)) {
+      try { return classifyLogoSvg(await file.text()); } catch { return null; }
+    }
+    const stats = await rasterLogoStats(file);
+    return stats ? classifyLogoRasterStats(stats) : null;
+  };
+
+  // ── The trim offer, in front of every placement ─────────────────────────────
+  const trimMount = $('[data-be-logo-trim]') as HTMLElement | null;
+  let trimTeardown: (() => void) | null = null;
+  let trimAbandon: (() => void) | null = null;
+  /** Close whatever offer is open. A placement still waiting on it resolves with
+   *  its ORIGINAL file — the non-destructive answer, the same one Escape gives. */
+  const closeTrimOffer = (): void => {
+    const teardown = trimTeardown; trimTeardown = null;
+    const abandon = trimAbandon; trimAbandon = null;
+    teardown?.();
+    if (trimMount) trimMount.hidden = true;
+    abandon?.();
+  };
+  cleanups.push(closeTrimOffer);
+  /** True while a trim card is on screen. One mount, one decision: a second
+   *  placement started now would tear that card down under the user, so every
+   *  entry point checks this first. */
+  const trimBusy = (): boolean => trimTeardown !== null;
+  /**
+   * Run the shared trim offer over a file on its way to becoming an asset and
+   * resolve with the bytes to ingest. NULL means the user backed out (Escape, or
+   * the card's ✕): the placement is abandoned and nothing is installed.
+   *
+   * `restore` hands the keyboard back after the card is answered — the card took
+   * focus on mount and its buttons are about to be removed, so without it every
+   * placement drops the user on <body>. Called for a USER answer only; on the
+   * abandon path the whole surface is going away.
+   *
+   * ORDERING (trim-offer.ts's own rule, plan 97 §4 gap 4): this MUST run BEFORE
+   * the store path — storeUserUpload's normaliser strips the root width/height,
+   * after which a viewBox rewrite has nothing left to bite on. A file with no
+   * margin worth removing never sees a card at all.
+   */
+  const withTrimOffer = (file: File, restore?: () => void): Promise<File | null> => new Promise<File | null>((resolve) => {
+    void (async () => {
+      let proposal: Awaited<ReturnType<typeof prepareTrim>> = null;
+      try { proposal = await prepareTrim(file); } catch { /* unreadable — no offer */ }
+      if (!proposal || !trimMount || !root.isConnected) { resolve(file); return; }
+      closeTrimOffer();
+      trimMount.hidden = false;
+      let settled = false;
+      const finish = (chosen: File | null, restoreFocus = false): void => {
+        if (settled) return;
+        settled = true;
+        closeTrimOffer();
+        if (restoreFocus) restore?.();
+        resolve(chosen);
+      };
+      // The room repainting under an open card is not the user backing out: the
+      // file they picked still installs, with the margins it arrived with.
+      trimAbandon = () => finish(file);
+      trimTeardown = mountTrimOffer(trimMount, proposal, {
+        t,
+        onResolve: chosen => finish(chosen, true),
+        onCancel: () => finish(null, true),
+      });
+      trimMount.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    })();
+  });
+
+  /** installLogo expresses the unnamed identity by OMITTING it (passing
+   *  'default' is refused as a reserved name), so every install funnels through
+   *  here rather than repeating that ternary at each call site. */
+  const installLogoFile = (variant: string, identity: string, file: File, label?: string): Promise<void> =>
+    installLogo(fontsHost, variant, file, {
+      ...(identity && identity !== 'default' ? { identity } : {}),
+      ...(label ? { label } : {}),
+    });
+
+  // ── The confirm-chip queue ──────────────────────────────────────────────────
+  interface LogoCandidateChip {
+    key: string;
+    file: File;
+    /** The slot this chip fills: the classifier's proposal until the user picks
+     *  another from the menu. */
+    variant: string;
+    confidence: number;
+    reasons: string[];
+    url: string;
+    menuOpen: boolean;
+    busy: boolean;
+    /** True for a mark this room generated (mono / reverse), not one dropped. */
+    generated: boolean;
+  }
+
+  const queueEl = $('[data-be-logo-queue]') as HTMLElement | null;
+  let intake: LogoCandidateChip[] = [];
+  let intakeSeq = 0;
+  /** A selector to focus after the next render — the queue re-renders whole, so
+   *  a menu toggle, a placement or a dismissal would otherwise drop the keyboard
+   *  where it stood, i.e. on <body>. EVERY path that re-renders says where the
+   *  keyboard goes; the only exception is the queue emptying, which is
+   *  `intakeEmptyFocus` below because there is no chip left to name. */
+  let intakeFocus: string | null = null;
+  let intakeEmptyFocus = false;
+
+  /** Focus something in the room right now, if it is still there. Used to hand
+   *  the keyboard back the instant a card closes, ahead of whatever repaint the
+   *  answer triggers (which re-anchors it through `intakeFocus`). */
+  const refocus = (sel: string): void => { root.querySelector<HTMLElement>(sel)?.focus(); };
+
+  /** The chip element itself. It carries `tabindex="-1"` for the one moment its
+   *  own buttons cannot hold focus: while a placement is busy and they are
+   *  disabled. */
+  const chipSel = (key: string): string => `[data-logo-chip="${key}"]`;
+  /** The chip's first control — Place on a confident chip, Change slot on an
+   *  unsure one, the dismiss ✕ when it has neither. */
+  const chipActionSel = (key: string): string => `${chipSel(key)} button`;
+  /**
+   * Where the keyboard lands when a chip leaves the queue: the chip that took its
+   * place (or the one before it, when the tail went), and the drop zone that
+   * started all this when nothing is left.
+   */
+  const focusAfterChip = (index: number): void => {
+    const next = intake[index] ?? intake[index - 1];
+    intakeEmptyFocus = !next;
+    intakeFocus = next ? chipActionSel(next.key) : null;
+  };
+
+  /** Returns the index the candidate held, so the caller can say where the
+   *  keyboard goes next (-1 when there was no such chip). */
+  const dropCandidate = (key: string): number => {
+    const i = intake.findIndex(c => c.key === key);
+    if (i < 0) return -1;
+    URL.revokeObjectURL(intake[i]!.url);
+    intake.splice(i, 1);
+    return i;
+  };
+  cleanups.push(() => { for (const c of intake) URL.revokeObjectURL(c.url); intake = []; });
+
+  const slotMenuHtml = (c: LogoCandidateChip): string =>
+    `<div class="be-logo-chip-menu" data-logo-menu-for="${escape(c.key)}" role="group" aria-label="${escape(t('Choose a slot'))}">
+        ${LOGO_ORIENTATIONS.flatMap(o => LOGO_TREATMENTS.map(tr => {
+      const v = `${o}-${tr}` as LogoVariant;
+      return `<button type="button" class="be-btn be-btn--sm be-logo-chip-slot${v === c.variant ? ' is-suggested' : ''}" data-logo-place="${escape(c.key)}" data-variant="${escape(v)}">
+            <span>${escape(variantLabel(v))}</span>${filledDefaultSlots.has(v) ? `<span class="be-logo-chip-taken">${t('in use')}</span>` : ''}
+          </button>`;
+    })).join('')}
+      </div>`;
+
+  const candidateChipHtml = (c: LogoCandidateChip): string => {
+    const label = variantLabel(c.variant);
+    const sure = c.generated || c.confidence >= LOGO_CONFIRM_MIN;
+    const lead = c.generated
+      ? tRaw('Generated {variant}', { variant: label })
+      : sure ? tRaw('Looks like the {variant}', { variant: label }) : t('Not sure which slot this is');
+    // The classifier's own reason fragments, verbatim — they say what was measured.
+    const why = c.reasons.filter(Boolean).join(', ');
+    const act = c.generated ? t('Add') : filledDefaultSlots.has(c.variant) ? t('Replace') : t('Place');
+    return `<div class="be-logo-chip" data-logo-chip="${escape(c.key)}" tabindex="-1"${c.generated ? ' data-generated="1"' : ''}>
+        <span class="be-logo-chip-art"><img src="${escape(c.url)}" alt="" loading="lazy"></span>
+        <div class="be-logo-chip-body">
+          <p class="be-logo-chip-lead">${escape(lead)}${c.generated ? `<span class="be-logo-chip-tag">${t('Generated')}</span>` : ''}</p>
+          <p class="be-logo-chip-why" title="${escape(why)}">${escape(c.file.name)}${why ? ` · ${escape(why)}` : ''}</p>
+        </div>
+        <div class="be-logo-chip-acts">
+          ${sure ? `<button type="button" class="be-cta be-btn--sm" data-logo-place="${escape(c.key)}" data-variant="${escape(c.variant)}"${c.busy ? ' disabled' : ''}>${escape(act)}</button>` : ''}
+          ${c.generated ? '' : `<button type="button" class="be-btn be-btn--sm" data-logo-menu="${escape(c.key)}" aria-expanded="${c.menuOpen ? 'true' : 'false'}"${c.busy ? ' disabled' : ''}>${t('Change slot')}</button>`}
+          <button type="button" class="be-logo-chip-x" data-logo-dismiss="${escape(c.key)}" aria-label="${escape(tRaw('Dismiss {name}', { name: c.file.name }))}">&#x2715;</button>
+        </div>
+        ${c.menuOpen && !c.generated ? slotMenuHtml(c) : ''}
+      </div>`;
+  };
+
+  renderIntake = (): void => {
+    if (!queueEl) return;
+    // A generated chip whose slot has SINCE been filled has nothing left to
+    // offer: it was only ever an offer for an empty sibling (see
+    // offerDerivedVariants), and a chip that lingered would keep an action that
+    // displaces the mark the user just chose. Pruned here rather than at offer
+    // time alone, because the slot can fill after the chip appears.
+    for (const c of intake.filter(x => x.generated && !x.busy && filledDefaultSlots.has(x.variant))) {
+      dropCandidate(c.key);
+    }
+    if (!intake.length) {
+      queueEl.innerHTML = '';
+      queueEl.hidden = true;
+      intakeFocus = null;
+      // The last chip went and took the keyboard with it: hand it to the drop
+      // zone, which is where the queue came from and where the next file starts.
+      if (intakeEmptyFocus) {
+        intakeEmptyFocus = false;
+        root.querySelector<HTMLElement>('[data-be-logo-multi]')?.focus();
+      }
+      return;
+    }
+    queueEl.hidden = false;
+    // Chips remain, so the "hand it back to the drop zone" answer no longer
+    // applies: drop it rather than letting it fire at some later empty render.
+    intakeEmptyFocus = false;
+    queueEl.innerHTML = `<p class="be-logo-queue-head">${t('Waiting for a slot')}</p>`
+      + intake.map(candidateChipHtml).join('');
+    if (intakeFocus) {
+      queueEl.querySelector<HTMLElement>(intakeFocus)?.focus();
+      intakeFocus = null;
+    }
+  };
+
+  const addLogoFiles = async (files: File[]): Promise<void> => {
+    if (!files.length) return;
+    showLogoErr('');
+    const typed = files.filter(f => LOGO_ACCEPT_TYPES.test(f.type));
+    if (typed.length < files.length) showLogoErr(t('Use a PNG, JPEG, SVG or WebP image.'));
+    const usable = typed.filter(f => f.size <= LOGO_MAX_BYTES);
+    const tooBig = typed.find(f => f.size > LOGO_MAX_BYTES);
+    // The same sentence installLogo throws, said before the classify/trim/tap
+    // rather than after all three.
+    if (tooBig) showLogoErr(tRaw('That logo is {size} MB — the limit is 4 MB.', { size: (tooBig.size / 1024 / 1024).toFixed(1) }));
+    const room = Math.max(0, LOGO_INTAKE_MAX - intake.length);
+    if (usable.length > room) showLogoErr(t('Place or dismiss the marks already waiting, then drop the rest.'));
+    for (const file of usable.slice(0, room)) {
+      const judged = await classifyLogoFile(file);
+      if (!root.isConnected) return;
+      intake.push({
+        key: `belg${++intakeSeq}`,
+        file,
+        variant: judged ? `${judged.orientation}-${judged.treatment}` : 'horizontal-primary',
+        confidence: judged ? judged.confidence : 0,
+        reasons: judged ? judged.reasons : [t('this file could not be read')],
+        url: URL.createObjectURL(file),
+        menuOpen: !judged || judged.confidence < LOGO_CONFIRM_MIN,
+        busy: false,
+        generated: false,
+      });
+      renderIntake(); // chips appear as each file is judged, not in one late batch
+    }
+  };
+
+  /**
+   * Marks sent over from another view (plan 97 §8, M5 — the PDF exploder's
+   * "Send to the Design System studio"). They go through addLogoFiles, the very
+   * same door a multi-file drop uses: classified, chipped, and waiting for a tap.
+   * A mark lifted off page 3 of a guidelines PDF is exactly as much of a guess as
+   * one dropped by hand, so it is never placed into a slot on arrival.
+   *
+   * Drained once. `takePendingLogoFiles()` empties the stash, so a second call
+   * would find nothing anyway — the latch says so at the call site rather than
+   * leaving the guarantee to a module the paint cannot see.
+   */
+  let pendingLogosDrained = false;
+  drainPendingLogos = (): void => {
+    if (pendingLogosDrained || !hasPendingLogoFiles()) return;
+    pendingLogosDrained = true;
+    const arrived = takePendingLogoFiles();
+    void addLogoFiles(arrived).then(() => {
+      if (!root.isConnected) return;
+      // What actually reached the queue, not what was handed over: the type,
+      // size and room gates above can turn some of it away, and they say so
+      // themselves in the error line. Counting the chips keeps this sentence
+      // from claiming marks the room refused.
+      const n = intake.filter(c => arrived.includes(c.file)).length;
+      if (!n) return;
+      announce(tRaw(n === 1 ? '{n} mark arrived from the PDF' : '{n} marks arrived from the PDF', { n }));
+    });
+  };
+
+  /** The ink a generated mono mark is painted in: the design system's own text
+   *  colour, read from the LIGHT theme deliberately — a mono mark is the one that
+   *  has to read on paper, and a dark theme's text is nearly white, which would
+   *  generate an invisible mark. */
+  const monoInk = (): string => {
+    try {
+      return colorToHex(createTokenSet(doc, { theme: 'light' }).resolve('color.semantic.text')) ?? MONO_INK_FALLBACK;
+    } catch { return MONO_INK_FALLBACK; }
+  };
+
+  const derivedName = (name: string, suffix: string): string =>
+    `${name.replace(/\.[a-z0-9]+$/i, '') || 'logo'}-${suffix}.svg`;
+
+  /**
+   * A colour SVG placed in a primary slot can father its own siblings: a
+   * single-ink mono and a light-for-dark reverse (recolor-logo.ts, pure). They
+   * arrive as chips marked Generated and are placed only on a tap, and only into
+   * an EMPTY sibling — a generated mark never displaces one the user chose. A
+   * mark the recolour cannot honestly derive from (a gradient, a pattern) gets no
+   * chip at all, never a disabled one.
+   */
+  const offerDerivedVariants = async (file: File, variant: string, identity: string): Promise<void> => {
+    if (identity !== 'default' || !isSvgLogoFile(file)) return;
+    const { orientation, treatment } = splitVariant(variant);
+    if (!orientation || treatment !== 'primary') return;
+    let text = '';
+    try { text = await file.text(); } catch { return; }
+    const eligible = eligibleForDerivedVariants(text);
+    if (!eligible.mono && !eligible.reverse) return;
+    const wanted: Array<{ slot: string; suffix: string; svg: string | null; why: string }> = [];
+    if (eligible.mono) {
+      wanted.push({
+        slot: `${orientation}-mono`, suffix: 'mono', svg: deriveMonoSvg(text, monoInk()),
+        why: t('one ink, recoloured from the colour mark'),
+      });
+    }
+    if (eligible.reverse) {
+      wanted.push({
+        slot: `${orientation}-primary-reverse`, suffix: 'reverse', svg: deriveReverseSvg(text),
+        why: t('dark ink turned white, so it reads on a dark background'),
+      });
+    }
+    let offered = false;
+    for (const w of wanted) {
+      if (!w.svg || filledDefaultSlots.has(w.slot)) continue;
+      if (intake.some(c => c.generated && c.variant === w.slot)) continue;
+      const made = new File([w.svg], derivedName(file.name, w.suffix), { type: 'image/svg+xml' });
+      intake.push({
+        key: `belg${++intakeSeq}`, file: made, variant: w.slot, confidence: 1,
+        reasons: [w.why], url: URL.createObjectURL(made), menuOpen: false, busy: false, generated: true,
+      });
+      offered = true;
+    }
+    if (offered) { renderIntake(); announce(t('Generated marks are offered for the empty slots.')); }
+  };
+
+  const placeCandidate = async (key: string, variant: string): Promise<void> => {
+    const c = intake.find(x => x.key === key);
+    if (!c || c.busy || !LOGO_SLUG_RE.test(variant)) return;
+    if (trimBusy()) { showLogoErr(t('Answer the trim card above first.')); return; }
+    // A generated mark is an offer for an EMPTY slot and never displaces one the
+    // user chose (offerDerivedVariants states the rule; this is where it is kept).
+    // The slot can fill between the chip appearing and the tap, so the check
+    // belongs at the moment of the act, not only at offer time.
+    if (c.generated && filledDefaultSlots.has(variant)) {
+      const i = dropCandidate(key);
+      focusAfterChip(i);
+      renderIntake();
+      showLogoErr(t('That slot holds a mark you added, so the generated one was dropped.'));
+      return;
+    }
+    c.busy = true; c.variant = variant;
+    // The button the user just pressed is about to be re-rendered as a disabled
+    // one, so the chip itself holds the keyboard until the placement settles.
+    intakeFocus = chipSel(key);
+    renderIntake();
+    showLogoErr('');
+    try {
+      // A generated mark is derived from bytes the user already resolved, so it
+      // is not offered a second trim.
+      const file = c.generated ? c.file : await withTrimOffer(c.file, () => refocus(chipSel(key)));
+      if (!root.isConnected) return;
+      if (!file) {
+        // Backed out of the trim card: the chip stays exactly as it was, with the
+        // keyboard back on its action.
+        c.busy = false;
+        intakeFocus = chipActionSel(key);
+        renderIntake();
+        return;
+      }
+      await installLogoFile(variant, 'default', file);
+      playSfx('saveProfile');
+      const i = dropCandidate(key);
+      focusAfterChip(i);
+      renderIntake();     // the chip goes now, whatever the matrix repaint does
+      focusAfterChip(i);  // …and the matrix repaint re-renders the queue under it
+      await paintLogos(); // repaints the matrix, and the queue's labels with it
+      notify('logos');
+      announce(tRaw('{variant} logo added', { variant: variantLabel(variant) }));
+      if (!c.generated) {
+        void suggestFromLogo(file);
+        void offerDerivedVariants(file, variant, 'default');
+      }
+    } catch (err) {
+      c.busy = false;
+      intakeFocus = chipActionSel(key);
+      renderIntake();
+      showLogoErr(String((err as { message?: unknown })?.message ?? err));
+    }
+  };
+
+  const intakeZone = $('[data-be-logo-intake]') as HTMLElement | null;
+  if (intakeZone) {
+    intakeZone.addEventListener('change', (e) => {
+      const input = (e.target as HTMLElement).closest<HTMLInputElement>('[data-be-logo-multi]');
+      if (!input) return;
+      const picked = [...(input.files ?? [])];
+      input.value = '';
+      void addLogoFiles(picked);
+    });
+    const over = (e: DragEvent): void => { e.preventDefault(); intakeZone.classList.add('is-over'); };
+    intakeZone.addEventListener('dragenter', over);
+    intakeZone.addEventListener('dragover', over);
+    intakeZone.addEventListener('dragleave', (e) => {
+      // Crossing into a child fires dragleave on the parent; only a real exit counts.
+      const to = e.relatedTarget as Node | null;
+      if (to && intakeZone.contains(to)) return;
+      intakeZone.classList.remove('is-over');
+    });
+    intakeZone.addEventListener('drop', (e) => {
+      // preventDefault also stops the wrapped file input claiming the drop itself,
+      // so the files are read here exactly once; stopPropagation keeps a
+      // view-level drop router (drop-router.ts, attached per view) from ALSO
+      // opening the front-door chooser over a drop that named its destination.
+      e.preventDefault();
+      e.stopPropagation();
+      intakeZone.classList.remove('is-over');
+      void addLogoFiles([...(e.dataTransfer?.files ?? [])]);
+    });
+  }
+
+  queueEl?.addEventListener('click', (e) => {
+    const el = e.target as HTMLElement;
+    const place = el.closest<HTMLElement>('[data-logo-place]');
+    if (place) { void placeCandidate(place.dataset.logoPlace ?? '', place.dataset.variant ?? ''); return; }
+    const menu = el.closest<HTMLElement>('[data-logo-menu]');
+    if (menu) {
+      const c = intake.find(x => x.key === menu.dataset.logoMenu);
+      if (!c) return;
+      c.menuOpen = !c.menuOpen;
+      intakeFocus = c.menuOpen
+        ? `[data-logo-menu-for="${c.key}"] .be-logo-chip-slot`
+        : `[data-logo-menu="${c.key}"]`;
+      renderIntake();
+      return;
+    }
+    const dismiss = el.closest<HTMLElement>('[data-logo-dismiss]');
+    if (dismiss) {
+      // The ✕ the user pressed is about to be removed with its chip, so say where
+      // the keyboard goes before the queue re-renders.
+      focusAfterChip(dropCandidate(dismiss.dataset.logoDismiss ?? ''));
+      renderIntake();
+    }
+  });
+  queueEl?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-logo-chip]');
+    const c = chip ? intake.find(x => x.key === chip.dataset.logoChip) : null;
+    // Only a menu the user OPENED closes: on a low-confidence chip the menu IS
+    // the chip's body, and closing it would leave nothing to act on.
+    if (!c || !c.menuOpen || c.confidence < LOGO_CONFIRM_MIN) return;
+    e.stopPropagation();
+    c.menuOpen = false;
+    intakeFocus = `[data-logo-menu="${c.key}"]`;
+    renderIntake();
   });
 
   $('[data-be-logos]')?.addEventListener('change', async (e) => {
@@ -2935,10 +4662,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       if (!file) return;
       showLogoErr('');
       if (!slug || !LOGO_SLUG_RE.test(slug)) { showLogoErr(t('Name the mark first — letters and numbers, e.g. "Icon".')); nameInput?.focus(); return; }
+      if (trimBusy()) { showLogoErr(t('Answer the trim card above first.')); return; }
+      // The picker that started this is inside the form, which paintLogos
+      // rebuilds; the keyboard goes back to the same control on the fresh markup.
+      const addmarkSel = `[data-logo-addmark][data-identity="${identity}"] [data-addmark-name]`;
       try {
-        await installLogo(fontsHost, slug, file, { identity, label });
+        const picked = await withTrimOffer(file, () => refocus(addmarkSel));
+        if (!root.isConnected) return;
+        if (!picked) return;   // backed out of the trim card: nothing is installed
+        // installLogoFile, not installLogo: the unnamed identity has to be
+        // OMITTED, and the literal 'default' this path used to pass is refused
+        // outright ("default is reserved") — so no custom mark could be added to
+        // the first logo at all.
+        await installLogoFile(slug, identity, picked, label);
         playSfx('saveProfile'); await paintLogos(); notify('logos');
-        void suggestFromLogo(file);
+        refocus(addmarkSel);
+        void suggestFromLogo(picked);
         announce(tRaw('{label} mark added', { label }));
       } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
       return;
@@ -2948,10 +4687,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const identity = input.dataset.identity || 'default';
     const file = input.files?.[0]; input.value = ''; if (!file) return;
     showLogoErr('');
+    if (trimBusy()) { showLogoErr(t('Answer the trim card above first.')); return; }
+    // paintLogos rebuilds the whole matrix, so the keyboard is handed back to the
+    // same tile's file input on the fresh markup rather than left on <body>.
+    const tileSel = `[data-logo-file="${variant}"][data-identity="${identity}"]`;
     try {
-      await installLogo(fontsHost, variant, file, identity === 'default' ? undefined : { identity });
+      // The same trim offer the intake chips get — the affordance belongs to
+      // "a user file becomes an asset", not to one control (plan 97 §7.3).
+      const picked = await withTrimOffer(file, () => refocus(tileSel));
+      if (!root.isConnected) return;
+      if (!picked) return;   // backed out of the trim card: nothing is installed
+      await installLogoFile(variant, identity, picked);
       playSfx('saveProfile'); await paintLogos(); notify('logos');
-      void suggestFromLogo(file);
+      refocus(tileSel);
+      void suggestFromLogo(picked);
+      void offerDerivedVariants(picked, variant, identity);
       announce(tRaw('{variant} logo added', { variant: variantLabel(variant) }));
     } catch (err) { showLogoErr(String((err as { message?: unknown })?.message ?? err)); }
   });
@@ -3103,47 +4853,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   };
   // Something replaced the installed tokens underneath us (a pack import, the
   // host view's own JSON/SVG install path) — reload the doc and repaint every
-  // panel so the studio shows what's actually installed. The Colour panel's
-  // derive CONTROLS re-seed too (primary, shade count, ramp anchors, the
-  // preview): they were captured from the pre-import doc at mount, and leaving
-  // them stale would make "Use this colour" silently derive from the old brand.
+  // panel so the studio shows what's actually installed. The Generate wing's
+  // CONTROLS re-seed too (primary, shade count, ramp anchors, the preview):
+  // they were captured from the pre-import doc at mount, and leaving them stale
+  // would make Replace palette silently derive from the old brand.
   const reload = async (): Promise<void> => {
     tokens?.bust?.();
     doc = ((await tokens?.raw().catch(() => null)) as Record<string, unknown> | null) ?? doc;
     isUserBrand = true; // every reload() caller just installed on the user's behalf
-    try {
-      const set = createTokenSet(doc, { theme: 'light' });
-      primary = tokenValueToHex(set.resolve('color.semantic.primary')) ?? primary;
-      const g = set.query({ type: 'color' }).filter(t => /^color\.ramp\.primary\.\d+$/.test(t.path));
-      if (g.length >= RAMP_STEPS_MIN) steps = Math.min(RAMP_STEPS_MAX, g.length);
-      neutralStep = anchorStep(steps); secondaryStep = anchorStep(steps);
-    } catch { /* tokenless/malformed doc — keep the previous seeds */ }
-    if (stepsSlider) stepsSlider.value = String(steps);
-    if (stepsVal) stepsVal.textContent = String(steps);
-    // Re-load per-ramp tonal curves from the freshly installed doc (a pack import
-    // may carry them; a plain brand won't, leaving curves empty → pure derive).
-    // Any open editor described the OLD brand, so close it first — without a
-    // preview repaint (reload owns the repaint below, sans chrome broadcast).
-    closeCurveEditor(false);
-    for (const ramp of RAMP_IDS) { delete curves[ramp]; const st = getRampCurve(doc, ramp); if (st) curves[ramp] = deserializeCurve(st); }
-    curveAnchorPrimary = primary;
-    const wrap = $('[data-be-primary-field]') as HTMLElement | null;
-    if (wrap) {
-      wrap.innerHTML = colorFieldHtml('be-primary', primary, { inline: true, modes: true });
-      wireColorField(wrap, { onChange: onPrimaryFieldChange });
-    }
-    // Refresh the decorative ramp preview WITHOUT applyDraftChrome/broadcast —
-    // the imported doc's real accents just landed via applyChromeBrandVars, and
-    // a derive draft would immediately paint over them. Overlay the re-loaded
-    // curves so the preview matches the installed (curve-baked) ramp literals.
-    const fresh = deriveSafe({ primary, scheme, surface, contrast, steps, foreground });
-    if (fresh) overlayRampCurves(fresh, curves, steps);
-    if (preview && fresh) preview.innerHTML = previewHtml(fresh, { neutral: neutralStep, secondary: secondaryStep, steps, curves: curveMarks() });
-    renderScreen();
-    primaryLock?.render();
-    renderGenerator();
-    setDeriveActive(false);
-    repaintPalette(); await paintFonts(); await paintLogos(); void applyChromeBrandVars(host); setDirty(false);
+    reseedFromDoc();
+    repaintPalette(); await paintFonts(); await paintLogos(); void applyChromeBrandVars(host);
   };
   const importPack = async (file: File): Promise<void> => {
     await importBrandPack(transferHost, await file.arrayBuffer());
@@ -3155,13 +4874,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     teardown: () => {
       clearTimeout(saveTimer); cleanups.forEach(fn => fn());
       paletteObservers.clear();
-      // A live-previewed but unsaved colour draft must not outlive the editor —
-      // restore the chrome accent from whatever's actually installed (unless
-      // the caller already committed it via saveDraft() first).
+      // The chrome already reflects what is installed; this is the cheap resync
+      // after an unmount (nothing here was ever a draft).
       void applyChromeBrandVars(host);
     },
-    saveDraft: () => { if (saveBtn && !saveBtn.hidden) persist(true); },
-    isDirty: () => !!saveBtn && !saveBtn.hidden,
+    saveDraft: () => {},   // no-op: every commit persists immediately (plan 97 §6)
+    isDirty: () => false,  // nothing is ever pending
+    addColors: (entries) => addColorEntries(entries),
     exportPack,
     importPack,
     reload,
@@ -3173,5 +4892,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       chartDetails.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       return true;
     },
+    openWing: (key) => openWing(key),
+    undo: () => undoLast(),
+    canUndo: () => undoStack.length > 0,
   };
 }

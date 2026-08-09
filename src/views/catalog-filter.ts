@@ -22,6 +22,7 @@
  */
 
 import type { AssetRef } from '@lolly-tools/core/host-v1';
+import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 
 /** The sticky filetype-filter buckets. 'all' admits everything. */
 export type TypeFilter = 'all' | 'image' | 'vector' | 'motion' | 'audio';
@@ -54,9 +55,11 @@ export function visibleAssets(
 }
 
 /**
- * The search index: asset id → one lowercased haystack string. Built once and
- * reused across keystrokes (the view memoises it and drops it when the asset list
- * changes), because rebuilding per keystroke is O(assets) per character.
+ * The search index: asset id → one FOLDED haystack string (lib/search fold —
+ * lowercase + diacritics stripped, so "café" and "cafe" index identically).
+ * Built once and reused across keystrokes (the view memoises it and drops it
+ * when the asset list changes), because rebuilding per keystroke is O(assets)
+ * per character.
  *
  * `categoryOf` is injected so this module needs neither the category registry nor
  * the user's overrides — it is the only part of the haystack that is not intrinsic
@@ -71,19 +74,35 @@ export function buildSearchHaystack(
     const tags = ((a.meta?.tags as string[] | undefined) ?? []).join(' ');
     index.set(
       a.id,
-      `${String(a.meta?.name ?? '')} ${a.id} ${tags} ${categoryOf(a)} ${a.format ?? a.type}`.toLowerCase(),
+      fold(`${String(a.meta?.name ?? '')} ${a.id} ${tags} ${categoryOf(a)} ${a.format ?? a.type}`),
     );
   }
   return index;
 }
 
+// matchesQuery runs once per asset per keystroke over one unchanging query, so
+// the tokenization (fold + split) is memoised on the last query seen rather
+// than recomputed per asset.
+let lastQuery = '';
+let lastTokens: string[] = [];
+function queryTokens(query: string): string[] {
+  if (query !== lastQuery) {
+    lastQuery = query;
+    lastTokens = tokenize(query);
+  }
+  return lastTokens;
+}
+
 /**
- * Search predicate. An empty query passes everything — the search box is a
- * filter, not a mode, so clearing it must restore the full list.
+ * Search predicate — lib/search semantics (plans/99 M3, principle 1): the query
+ * is folded + tokenized, and every token must appear in the asset's haystack
+ * (AND across terms, so "logo dark" narrows rather than widens; word order is
+ * free). An empty query passes everything — the search box is a filter, not a
+ * mode, so clearing it must restore the full list.
  *
- * `query` is expected already lowercased and trimmed by the caller (the view
- * lowercases once per keystroke rather than once per asset); a query the index
- * has never seen simply does not match, rather than throwing.
+ * `query` may arrive lowercased and trimmed by the caller (the view still does,
+ * harmlessly — fold is idempotent); an asset the index has never seen simply
+ * does not match, rather than throwing.
  */
 export function matchesQuery(
   asset: AssetRef,
@@ -91,7 +110,9 @@ export function matchesQuery(
   haystack: ReadonlyMap<string, string>,
 ): boolean {
   if (!query) return true;
-  return (haystack.get(asset.id) ?? '').includes(query);
+  const text = haystack.get(asset.id);
+  if (text === undefined) return false;
+  return scoreHaystack([{ text, weight: 1 }], queryTokens(query)) > 0;
 }
 
 /**
@@ -117,12 +138,17 @@ export function favItems(
 }
 
 /**
- * The ids bulk actions may act on: visible, matching the current search AND the
- * current filetype filter, and user-owned (catalog assets cannot be deleted).
+ * The ids a selection may hold: visible, matching the current search AND the
+ * current filetype filter. The search and the filter both belong here for the
+ * same reason: a bulk action must only ever touch what the user can actually
+ * SEE. Anything else acts invisibly.
  *
- * The search and the filter both belong here for the same reason: a bulk delete
- * must only ever touch what the user can actually SEE. Anything else deletes
- * invisibly.
+ * `scope` — 'uploads' restricts to user-owned assets; 'all' admits shared
+ * catalog assets too (2026-08-09: every tile is selectable now — people expect
+ * a grid to marquee — and the DESTRUCTIVE actions gate per-kind instead:
+ * Duplicate/Download/Delete only light up when the whole selection is uploads,
+ * since catalog assets are a permanent contract that can only be favourited or
+ * hidden). The uploads section's own "Select all" button stays 'uploads'.
  */
 export function selectableIds(
   visible: readonly AssetRef[],
@@ -130,11 +156,12 @@ export function selectableIds(
     query: string;
     haystack: ReadonlyMap<string, string>;
     typeFilter: TypeFilter;
+    scope?: 'uploads' | 'all';
   },
 ): Set<string> {
   const out = new Set<string>();
   for (const a of visible) {
-    if (a.source !== 'user') continue;
+    if ((opts.scope ?? 'uploads') === 'uploads' && a.source !== 'user') continue;
     if (!matchesQuery(a, opts.query, opts.haystack)) continue;
     if (!matchesType(a, opts.typeFilter)) continue;
     out.add(a.id);

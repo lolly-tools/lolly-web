@@ -39,6 +39,7 @@ import {
   relTime as relTimeAt, VIDEO_FMTS, RASTER_MOTION_FMTS, IMG_FORMATS,
 } from './picker-formats.ts';
 import { fmtBytes } from '../lib/format.ts';
+import { fold, tokenize, scoreHaystack, SEARCH_DEBOUNCE_MS } from '../lib/search/match.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { wireTabs } from '../lib/tabs.ts';
@@ -523,6 +524,9 @@ async function render(
         <div class="asset-picker-toolcard-host" hidden></div>
       </div>
       ${opts.allowUpload ? `
+        <!-- Where the shared trim-to-content card mounts, between the scrolling body and
+             the upload row that raised the question (plan 97 §7.3). Empty + hidden at rest. -->
+        <div class="asset-picker-trim trimo-host" hidden></div>
         <footer class="asset-picker-footer">
           <label class="asset-picker-upload">
             <input type="file" class="visually-hidden" accept="${UPLOAD_ACCEPT}" />
@@ -554,12 +558,18 @@ async function render(
   // On-screen-gated waveform upgrader over the whole picker body (see refreshAudioThumbs);
   // torn down with the dialog so an in-flight decode can't paint into a dead grid.
   let audioThumbs: { destroy(): void } | null = null;
+  // Answers an open trim-to-content card on the user's behalf (keeping the original
+  // margins) if the dialog goes away while it is still asking — see offerTrim below.
+  let pendingTrim: (() => void) | null = null;
   let trap: FocusTrap | undefined;
   const close = (value: AssetRef | null): void => {
     NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
     trap?.release();
     lottieThumbs?.destroy();
     audioThumbs?.destroy();
+    // Before the wipe: the card's teardown revokes its preview URLs, and the upload
+    // it is blocking still has to reach storeUserUpload with an answer.
+    pendingTrim?.();
     root.innerHTML = '';
     if (opener instanceof HTMLElement) opener.focus();
     resolve(value);
@@ -1048,6 +1058,67 @@ async function render(
     if (labelEl) labelEl.textContent = t('Upload your own…');
   }
 
+  /**
+   * The trim-to-content offer on the picker's upload flow (plan 97 §7.3) — the path
+   * EVERY tool's asset input goes through, so a padded logo dropped straight into a
+   * tool gets the same before/after card as one added in the design-system studio.
+   *
+   * The card mounts INSIDE this dialog (the `.asset-picker-trim` slot above the
+   * upload row), never as a second dialog over it. Resolves to the file to actually
+   * store: the trimmed bytes, or the original when the user keeps the margins, when
+   * the file is not an image, or when it is already tight (no card shown at all).
+   *
+   * NULL means the user backed out (Escape, or the card's ✕): the upload is
+   * abandoned, nothing is stored and the picker stays open on the library where
+   * they left it. A dismissal must not quietly ingest the file it was asking about.
+   *
+   * MUST run before storeUserUpload — its normaliser strips an SVG's root
+   * width/height, leaving a viewBox rewrite nothing to bite on. Never rejects: a
+   * failed measurement is not a reason to fail an upload.
+   *
+   * Deliberately not on the webcam / screen-capture paths: a captured frame has no
+   * authored artboard, so there are no margins to offer back.
+   */
+  async function offerTrim(file: File): Promise<File | null> {
+    const mount = root.querySelector<HTMLElement>('.asset-picker-trim');
+    if (!mount) return file;
+    // One slot, one card. The upload row stays reachable under an open card, so a
+    // second pick would otherwise overwrite the mount and strand the first upload on
+    // a promise nothing settles. That file just ingests as it arrived.
+    if (pendingTrim) return file;
+    // Lazy chunk — the measure/crop code loads only when a file actually arrives.
+    const trim = await import('../lib/design-system/trim-offer.ts').catch(() => null);
+    if (!trim) return file;
+    const proposal = await trim.prepareTrim(file).catch(() => null);
+    if (!proposal || !mount.isConnected) return file;
+    mount.hidden = false;
+    return new Promise<File | null>((resolve) => {
+      // Assigned by the mount call below; a decision can only arrive from a click or
+      // an Escape, so the null check is the "already answered" latch, not a race.
+      let teardown: (() => void) | null = null;
+      // `restoreFocus` only when the USER answered: the card held focus and its buttons
+      // are about to go. On the dialog-is-closing path close() restores the opener.
+      const finish = (chosen: File | null, restoreFocus = false): void => {
+        if (!teardown) return;
+        teardown();
+        teardown = null;
+        mount.hidden = true;
+        pendingTrim = null;
+        if (restoreFocus) root.querySelector<HTMLElement>('.asset-picker-upload input[type="file"]')?.focus();
+        resolve(chosen);
+      };
+      teardown = trim.mountTrimOffer(mount, proposal, {
+        t,
+        onResolve: (chosen) => finish(chosen, true),
+        onCancel: () => finish(null, true),
+      });
+      // The DIALOG going away under an open card is not the user backing out of the
+      // upload: they asked for this file, so it still ingests, with its original
+      // margins (see close(), which calls this before the wipe).
+      pendingTrim = () => finish(proposal.originalFile);
+    });
+  }
+
   if (opts.allowUpload) {
     const fileInput = root.querySelector<HTMLInputElement>('input[type="file"]')!;
     fileInput.addEventListener('change', async () => {
@@ -1081,7 +1152,11 @@ async function render(
           if (refs[0]) close(refs[0]);
           return;
         }
-        const ref = await storeUserUpload(host, file);
+        // The trim question, then the ingest — and with the answer's file, never the
+        // one the input handed over (offerTrim's doc comment says why the order matters).
+        const answered = await offerTrim(file);
+        if (!answered) return;   // backed out of the card: nothing stored, dialog stays open
+        const ref = await storeUserUpload(host, answered);
         if (collect) { collectToast(await collect.onAsset(ref)); return; }
         close(ref);
       } catch (e) {
@@ -1401,6 +1476,25 @@ async function render(
     root.appendChild(holder);
   }
 
+  // ── Search matching (all four panes) ───────────────────────────────────────
+  // One matcher instead of the old four per-tab `.includes()` copies (plans/99
+  // M3, principle 1): fold both sides, AND across tokens via lib/search. Each
+  // pane keeps its exact field set at the call site. `q` arrives trimmed +
+  // lowercased from the search box; tokenize() folds it the rest of the way
+  // (diacritics), so "café" finds "cafe" and the reverse. Empty query matches
+  // everything — search is a filter here, not a mode.
+  let lastQ = '';
+  let lastQTokens: string[] = [];
+  const searchMatches = (q: string, ...fields: Array<string | null | undefined>): boolean => {
+    if (!q) return true;
+    // The pane render filters many items against ONE query — memoise its tokens.
+    if (q !== lastQ) { lastQ = q; lastQTokens = tokenize(q); }
+    return scoreHaystack(
+      fields.filter((f): f is string => !!f).map(text => ({ text: fold(text), weight: 1 })),
+      lastQTokens,
+    ) > 0;
+  };
+
   // Library candidates resolve async (host.assets.query); `restoreLibrary` filters
   // them and is safe to call before they land (shows the loading state until then).
   let libraryCandidates: AssetRef[] = [];
@@ -1410,9 +1504,7 @@ async function render(
     renderUserAssets();
     if (!libraryLoaded) { libraryEl.innerHTML = `<div class="asset-picker-loading">${t('Loading…')}</div>`; return; }
     if (!q) { renderLibrary(libraryCandidates); return; }
-    renderLibrary(libraryCandidates.filter(c =>
-      ((c.meta?.name ?? c.id) as string).toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
-    ));
+    renderLibrary(libraryCandidates.filter(c => searchMatches(q, String(c.meta?.name ?? c.id), c.id)));
   }
 
   // ── Favourites — a pinned, collapsible section at the top of the library pane ──
@@ -1451,10 +1543,7 @@ async function render(
   function renderSessions(q: string): void {
     if (!sessionsPane) return;
     if (sessions === null) { sessionsPane.innerHTML = `<div class="asset-picker-loading">${t('Loading…')}</div>`; return; }
-    const list = q
-      ? sessions.filter(s => (s.toolName ?? '').toLowerCase().includes(q)
-          || (s.label ?? '').toLowerCase().includes(q) || s.toolId.includes(q))
-      : sessions;
+    const list = q ? sessions.filter(s => searchMatches(q, s.toolName, s.label, s.toolId)) : sessions;
     if (list.length === 0) {
       sessionsPane.innerHTML = `<p class="asset-picker-empty">${sessions.length
         ? t('No saved creations match.')
@@ -1550,18 +1639,18 @@ async function render(
       return;
     }
 
-    const kids = childFolders(folders, projectFolder).filter(f => !q || f.name.toLowerCase().includes(q));
+    const kids = childFolders(folders, projectFolder).filter(f => searchMatches(q, f.name));
     const cur = projectFolder ? folders.find(f => f.id === projectFolder) ?? null : null;
     const itemCards: string[] = [];
     if (cur) {
       for (const it of pickableFolderItems(cur)) {
         if (it.type === 'session') {
           const s = (sessions ?? []).find(x => x.slot === it.ref)!;
-          if (q && !((s.toolName ?? '').toLowerCase().includes(q) || (s.label ?? '').toLowerCase().includes(q))) continue;
+          if (!searchMatches(q, s.toolName, s.label)) continue;
           itemCards.push(sessionCard(s));
         } else {
           const a = userAssets.find(x => x.id === it.ref)!;
-          if (q && !String(a.meta?.name ?? '').toLowerCase().includes(q)) continue;
+          if (!searchMatches(q, String(a.meta?.name ?? ''))) continue;
           itemCards.push(projectImageCard(a));
         }
       }
@@ -1579,10 +1668,7 @@ async function render(
   // ── Tools (configure first, then insert) ───────────────────────────────────
   function renderTools(q: string): void {
     if (!toolsPane) return;
-    const list = q
-      ? embedTools.filter(t => t.name.toLowerCase().includes(q)
-          || (t.description ?? '').toLowerCase().includes(q) || t.id.includes(q))
-      : embedTools;
+    const list = q ? embedTools.filter(t => searchMatches(q, t.name, t.description, t.id)) : embedTools;
     if (list.length === 0) { toolsPane.innerHTML = `<p class="asset-picker-empty">${t('No tools match.')}</p>`; return; }
     const head = collect ? t('Start a new creation from a tool') : t('Make an image from a tool');
     toolsPane.innerHTML =
@@ -2026,15 +2112,16 @@ async function render(
         setFooter(activeTab === 'library');
       }
       // Debounce only the filter dispatch (rebuilds the whole pane DOM) so fast typing
-      // doesn't rebuild per keystroke; 120 ms matches the Catalog view. q is captured
-      // at schedule time. The URL detection + pane-restore above stay immediate.
+      // doesn't rebuild per keystroke; the shared search debounce (lib/search/match.ts)
+      // keeps this in step with every other search field. q is captured at schedule
+      // time. The URL detection + pane-restore above stay immediate.
       clearTimeout(searchDebounce);
       searchDebounce = setTimeout(() => {
         if (activeTab === 'library') restoreLibrary(q);
         else if (activeTab === 'sessions') renderSessions(q);
         else if (activeTab === 'projects') renderProjects(q);
         else if (activeTab === 'tools') renderTools(q);
-      }, 120);
+      }, SEARCH_DEBOUNCE_MS);
     });
   } catch (e) {
     libraryEl.innerHTML = `<p class="asset-picker-error">${t('Failed to load: {message}', { message: (e as Error).message })}</p>`;

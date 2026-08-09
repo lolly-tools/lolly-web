@@ -11,7 +11,8 @@
    the padding at a factor of ~1.05. Fixing it here would mean scaling `padding`, which the
    a11y contract deliberately forbids at a use site (that is how the multiplier turns back
    into a whole-UI zoom); it wants a scaled TOKEN in styles/tokens.css instead. */
-.projects { padding: calc(52px + var(--chrome-grow)) 20px calc(5rem + env(safe-area-inset-bottom, 0px)); min-height: 100vh; box-sizing: border-box; }
+/* (Footer clearance comes from #view's shared .has-search-footer padding — gallery.css.) */
+.projects { padding: calc(52px + var(--chrome-grow)) 20px 0; min-height: 100vh; box-sizing: border-box; }
 
 /* Tools | Projects segmented toggle — FIXED at the SAME top as the profile/history
    cluster (.gallery-topright top:.5em) and horizontally centred, so it's vertically
@@ -102,15 +103,26 @@
    featured hero (.featured, 3.4rem top pad) or the .tool-masonry (3.6rem top pad, when
    no hero) already holds that space, so a .gallery padding-top just doubled it up. */
 
-/* Fixed-width tiles packed top-left (file-manager convention). Tiles top-align
-   (`align-items: start`) at their natural height — folders + create tiles are compact
-   (short preview banner, uniform, so their names line up in a tidy row) and saved-session
-   tiles keep their taller 4/3 preview. (Earlier this stretched every tile to the tallest
-   via `grid-auto-rows: 1fr`, which made folders tower over their names — dropped.) */
+/* Fixed-width tiles packed top-left (file-manager convention). Every tile is the
+   SAME size (2026-08-09, per Andy): folders regain the full 4/3 cover the sessions
+   have (the scoped override below beats folders.css's compact 90px banner — which
+   stays for the folder OVERLAY + picker, the other two consumers of that sheet),
+   and `grid-auto-rows: 1fr` + stretch equalises every row so a mixed
+   folders-and-sessions grid reads as one even lattice. (This reverses the earlier
+   compact-folders pass; "all tiles the same size" is the newer call.) */
 .projects-grid {
-  grid-template-columns: repeat(auto-fill, 180px); justify-content: start; gap: 16px;
-  align-items: start;
+  grid-template-columns: repeat(auto-fill, 180px); justify-content: start;
+  gap: var(--grid-gap);   /* tokens.css — collapses to --grid-gap-tight ≤640px */
+  align-items: stretch;
+  grid-auto-rows: 1fr;
   padding:3.6rem 0 1rem;
+}
+/* Folder + create covers back to the sessions' 4/3 — projects grid only, and NOT in
+   list mode (whose own row rule sizes covers to a 52×40 chip and must keep winning). */
+.projects-grid:not(.projects-list) .folder-tile--folder .folder-mosaic,
+.projects-grid:not(.projects-list) .folder-tile--folder .tile-cover,
+.projects-grid:not(.projects-list) .tile-cover--create {
+  aspect-ratio: 4 / 3; height: auto;
 }
 
 /* Mobile: the fixed 180px columns drop to a SINGLE column below ~376px (a 360px
@@ -120,7 +132,7 @@
    Scoped `:not(.projects-list)` so list mode (a flex column) is unaffected. */
 @media (max-width: 560px) {
   .projects-grid:not(.projects-list) {
-    grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--grid-gap-tight);
   }
 }
 
@@ -140,14 +152,10 @@
    move the selection toggle into the right gutter, just inside the ⋯ menu button. */
 .projects-list .tile-check { top: 50%; left: auto; right: 42px; transform: translateY(-50%); }
 
-/* ── Search field (filters the tree; a query reaches INTO sub-folders) ────────
-   Lives in the fixed footer bar (.projects-footer, reusing the gallery's .gallery-footer
-   chrome), centred between the nav links via .gallery-search-wrap. The field
-   itself is the shared gallerySearchBox now (gallery.css owns its chrome) —
-   the old hand-rolled .projects-search-box/-icon/-input/-clear set is retired. */
-.projects-search { margin: 0; display: flex; }
-
-/* Results mode. */
+/* ── Search results mode (a query reaches INTO sub-folders) ────────
+   The field itself is the shell's persistent bar (components/search-bar.ts,
+   plans/99 M1 — gallery.css owns its chrome); this block styles only the
+   in-body results chrome. */
 .projects-search-status { margin: 0.6rem 0 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .projects-search-grid { padding-top: 0.7rem; }
 

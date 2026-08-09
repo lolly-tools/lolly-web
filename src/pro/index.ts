@@ -33,6 +33,7 @@ import { mountZoomHud } from '../components/zoom-hud.ts';
 import { mountModal } from '../components/modal.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
+import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { askExportLock } from '../lib/export-lock.ts';
 import { getTool, renderRowToBlob, isExportable } from './render-export.ts';
 import { planBatch, notesFromFindings } from './batch.ts';
@@ -617,7 +618,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     pop.className = 'pro-popover pro-tpl-popover';
     pop._row = row.uid;
     pop.innerHTML = `
-      <input type="search" class="pro-tpl-search" role="combobox" aria-expanded="true" aria-controls="pro-tpl-listbox" aria-autocomplete="list" aria-activedescendant="" placeholder="Search templates…" autocomplete="off" spellcheck="false" aria-label="Search templates">
+      <input type="search" class="pro-tpl-search" role="combobox" aria-expanded="true" aria-controls="pro-tpl-listbox" aria-autocomplete="list" aria-activedescendant="" placeholder="${escape(t('Search templates…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Search templates'))}">
       <ul class="pro-tpl-list" id="pro-tpl-listbox" role="listbox"></ul>`;
     document.body.appendChild(pop);
     _tplPop = pop;
@@ -640,14 +641,19 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       search.setAttribute('aria-activedescendant', listEl.querySelector('.pro-tpl-opt.is-active')?.id ?? '');
     };
     const draw = (q: string) => {
-      const ql = q.trim().toLowerCase();
-      shown = ql ? tools.filter(t => (t.name ?? t.id).toLowerCase().includes(ql)) : tools;
+      // lib/search matching (plans/99 M3): folded token AND over the NAME only —
+      // deliberately narrow (plan §1 documents the scope), this list is short
+      // and its rows show nothing but the name.
+      const tokens = tokenize(q);
+      shown = tokens.length
+        ? tools.filter(t => scoreHaystack([{ text: fold(t.name ?? t.id), weight: 1 }], tokens) > 0)
+        : tools;
       active = Math.min(active, Math.max(0, shown.length - 1));
       listEl.innerHTML = shown.length
         ? shown.map((t, i) => `<li><button type="button" role="option" id="pro-tpl-opt-${i}" aria-selected="${i === active ? 'true' : 'false'}" class="pro-tpl-opt${i === active ? ' is-active' : ''}" data-tool="${escape(t.name)}">
             <span class="pro-tpl-opt-name">${escape(t.name)}</span>${t.status === 'experimental' ? '<span class="pro-tpl-opt-exp">exp</span>' : ''}
           </button></li>`).join('')
-        : `<li class="pro-tpl-none">No templates match “${escape(q)}”.</li>`;
+        : `<li class="pro-tpl-none">${t('No templates match “{query}”.', { query: q })}</li>`;
       syncActiveDescendant();
     };
     const highlight = () => {

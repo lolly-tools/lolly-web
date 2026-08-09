@@ -6,8 +6,8 @@
 .catalog-view { display: block; }
 /* Full-bleed like the gallery/projects; top clears the fixed toggle band + topright
    cluster (both position:fixed), matching .projects' own clearance. */
-/* Bottom padding clears the fixed footer search bar (the same .gallery-footer as Tools). */
-.catalog { padding: 52px 20px calc(5.5rem + env(safe-area-inset-bottom)); min-height: 100vh; box-sizing: border-box; }
+/* (Footer clearance comes from #view's shared .has-search-footer padding — gallery.css.) */
+.catalog { padding: 52px 20px 0; min-height: 100vh; box-sizing: border-box; }
 
 /* Full-bleed like the Tools masonry — fill the whole window width (minus the
    .catalog side gutters) instead of centring in a fixed 1200px column. */
@@ -117,7 +117,7 @@
 .catalog .cat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  gap: var(--grid-gap);   /* tokens.css — collapses to --grid-gap-tight ≤640px */
 }
 
 /* ── Asset tile ──
@@ -902,9 +902,21 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-crop-actions .cat-dl-section { margin-bottom: 0; }
 .cat-crop-actions .cat-dl-actions { margin-top: 0; }
 
+/* ── Inline trim mode (details modal) ── "Trim margins" mounts the shared trim-to-content
+   card (lib/design-system/trim-offer.ts, styled in parts/dropzone.css) under the action
+   row. Same shape as inline crop: while the question is open the normal actions step
+   aside, so a stray Delete/Crop can't land behind the card. Only the mount's own inset
+   differs here — the details body already carries one — and the note the already-tight
+   answer leaves behind. */
+.cat-details.is-trimming .cat-details-actions { display: none; }
+.cat-details-body .trimo-host { padding: 12px 0 0; max-height: none; overflow: visible; }
+.cat-trim-note { margin: 10px 0 0; color: hsl(var(--muted-foreground)); font-size: calc(.8rem * var(--a11y-fs)); }
+
 @media (max-width: 640px) {
-  .catalog { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) 12px calc(5.5rem + env(safe-area-inset-bottom)); }
-  .catalog .cat-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  /* Bottom stays 0 like the base rule — #view's shared .has-search-footer padding
+     is the footer clearance; repeating it here doubled the dead space above the bar. */
+  .catalog { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) 12px 0; }
+  .catalog .cat-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   /* Narrow tiles: the caption sub-line ("Catalog · SVG") is tight, so collapse the
      GEN AI pill to just the sparkle in a circle. The details-modal pill is untouched
      (it's a dialog, not a .cat-tile-sub) — it always shows the full "GEN AI" text. */

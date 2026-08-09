@@ -45,8 +45,7 @@ import type { ModalHandle } from '../components/modal.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { viewTopbarHtml, mountViewTopbar } from '../components/view-topbar.ts';
-import { footerNav, gallerySearchBox } from '../components/footer-nav.ts';
-import { flagEnabled, PRO_FLAG } from '../feature-flags.ts';
+import { claimSearchBar, clearSearchBar } from '../components/search-bar.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { segHtml } from '../lib/seg.ts';
@@ -66,8 +65,13 @@ import {
   loadHiddenAssets, saveHiddenAssets,
 } from '../lib/asset-favourites.ts';
 import { mountUploadDropzone } from '../lib/upload-dropzone.ts';
+// Type only — the trim module itself is a lazy chunk, loaded when the action is used.
+import type { TrimProposal } from '../lib/design-system/trim-offer.ts';
 import { icon } from '../lib/icons.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
+import { wireTileContextMenu, menuItemHtml } from '../lib/context-menu.ts';
+import { bulkBarHtml as buildBulkBar, syncBulkBar as syncSharedBulkBar, wireEscapeClearsSelection } from '../lib/bulk-bar.ts';
+import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import type { PickerHost } from './picker.ts';
 import type { UpscaleHost } from './upscale-dialog.ts';
 import type { MatteHost } from './matte-dialog.ts';
@@ -164,6 +168,24 @@ const TYPE_FILTERS: { key: TypeFilter; label: string; icon: string; sfx?: string
 /** Stand-in for the search index when there is no query to match against. */
 const EMPTY_HAYSTACK: ReadonlyMap<string, string> = new Map();
 
+/** One stored user-upload record — mirrors bridge/assets.ts's non-exported
+ *  UserAssetRecord for the fields the trim rewrite reads and carries forward
+ *  (the same local mirror views/picker.ts keeps for its upload write). */
+interface UserAssetRecordLike {
+  id: string;
+  type: AssetRef['type'];
+  format: string;
+  blob?: Blob;
+  version?: string;
+  checksum?: string;
+  width?: number;
+  height?: number;
+  meta?: Record<string, unknown>;
+  credential?: Uint8Array;
+  credentialFormat?: string;
+  aiGenerated?: 'full' | 'partial';
+}
+
 // The web shell's concrete host exposes more than the tool-facing HostV1 contract; we
 // reach for the user-asset helpers + profile.set(). main.ts passes the concrete WebHost
 // (assignable to HostV1), so the parameter stays HostV1 and this narrows locally.
@@ -174,6 +196,10 @@ interface CatalogHost extends HostV1 {
     _duplicateUserAsset(id: string): Promise<string | null>;
     _renameUserAsset(id: string, name: string): Promise<void>;
     _restampUserAsset(id: string, patch: { blob: Blob; credential: Uint8Array; credentialFormat: string }): Promise<void>;
+    // The retro-trim's read + write (see measureTrim / commitTrim). Records, not
+    // AssetRefs: a rewrite has to carry forward everything the ref does not surface.
+    _exportUserAssets(): Promise<readonly UserAssetRecordLike[]>;
+    _uploadUserAsset(record: UserAssetRecordLike): Promise<void>;
     _iconThemes?(): Promise<IconTheme[]>;
     _photoTreatments?(): Promise<PhotoTreatment[]>;
   };
@@ -531,7 +557,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let showHidden = false;
   let loadFailed = false;                    // the catalog query threw — a total sync failure, distinct from an empty catalogue
   let typeFilter: TypeFilter = 'all';        // filetype filter in the sticky toolbar (all/image/vector/motion/audio)
-  let query = '';                            // footer search text (lowercased); filters the asset grid
+  // Footer search text (lowercased); filters the asset grid. Seeded from #/c?q=… on
+  // mount (plans/99 M0) with the same trim+lowercase the input handler applies.
+  let query = (new URLSearchParams(params).get('q') || '').trim().toLowerCase();
   let iconThemes: IconTheme[] = [];          // two-colour pairings for themable icons (styler)
   let catIconTheme: string | null = null;    // colour applied to a themable category's grid (null = base)
   const iconSvgCache = new Map<string, string>();  // base SVG text per themable-icon id — the recolour source
@@ -605,6 +633,78 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     noStart: '.cat-tile, button, a, input, label, textarea, select, dialog, .cat-bulkbar, '
       + '.cat-toolbar, .cat-fav-strip, .featured, .gallery-topbar, .gallery-footer, .updz, '
       + '[data-dropzone-mount], .cat-dl-section, .cat-uploads-bar',
+  });
+
+  // ── Context menu: right-click / long-press on any asset tile (lib/context-menu.ts,
+  // shared with gallery + projects). Exposes the actions that previously lived only
+  // behind the details modal; a tile inside a multi-selection of uploads opens the
+  // BULK menu mirroring the bulk bar. Single-item Duplicate/Delete reuse the
+  // (confirmed) bulk flows over a one-item selection — see onTileMenuAction.
+  function catTileMenuHtml(id: string): string {
+    const ref = assetById.get(id);
+    if (!ref) return '';
+    const base = assetBaseId(id);
+    const isUser = ref.source === 'user';
+    return [
+      menuItemHtml('open', icon('externalLink'), t('Details')),
+      menuItemHtml('fav', icon('star'), favSet.has(base) ? t('Remove from favourites') : t('Add to favourites')),
+      menuItemHtml('download', icon('download'), t('Download…')),
+      menuItemHtml('share', icon('link'), t('Copy link')),
+      menuItemHtml('select', icon('check'), selected.has(id) ? t('Deselect') : t('Select')),
+      isUser ? menuItemHtml('duplicate', icon('duplicate'), t('Duplicate')) : '',
+      menuItemHtml('hide', icon('eye'), hiddenSet.has(base) ? t('Unhide') : t('Hide')),
+      isUser ? menuItemHtml('delete', icon('trash'), t('Delete'), { danger: true }) : '',
+    ].join('');
+  }
+  // Mirrors the bulk bar's gating: favourite/hide for any selection, the
+  // destructive rows only when the whole selection is the user's own uploads.
+  function catBulkMenuHtml(): string {
+    const uploads = allSelectedUploads();
+    return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
+      + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
+        menuItemHtml('fav', icon('star'), allSelectedFav() ? t('Unfavourite') : t('Favourite')),
+        menuItemHtml('hide', icon('eye'), allSelectedHidden() ? t('Unhide') : t('Hide')),
+        uploads ? menuItemHtml('duplicate', icon('duplicate'), t('Duplicate')) : '',
+        uploads ? menuItemHtml('download', icon('download'), t('Download')) : '',
+        uploads ? menuItemHtml('delete', icon('trash'), t('Delete'), { danger: true }) : '',
+      ].join('')}</div>`;
+  }
+  async function onTileMenuAction(act: string, id: string | null): Promise<void> {
+    if (id === null) { handleBulk(act); return; }   // bulk menu mirrors the bulk bar
+    const ref = assetById.get(id);
+    if (!ref) return;
+    if (act === 'open') { openDetails(ref); return; }
+    if (act === 'fav') { await toggleFavourite(id); return; }
+    if (act === 'download') { await openDownloadDialog(ref); return; }
+    if (act === 'share') {
+      try { await navigator.clipboard.writeText(assetLink(ref)); announce(t('Link copied')); }
+      catch { announce(t('Couldn’t copy the link'), { assertive: true }); }
+      return;
+    }
+    if (act === 'select') { toggleSelect(id); return; }
+    if (act === 'duplicate' || act === 'delete') {
+      // "This tile", not "the selection": a multi-selection containing the tile would
+      // have opened the bulk menu instead, so replacing the selection here is faithful.
+      selected.clear(); selected.add(id);
+      for (const tile of viewEl.querySelectorAll<HTMLElement>('.cat-tile')) {
+        const on = selected.has(tile.dataset.id ?? '');
+        tile.classList.toggle('is-selected', on);
+        tile.querySelector('.cat-check')?.setAttribute('aria-pressed', String(on));
+      }
+      syncSelectAll(); syncBulkBar();
+      handleBulk(act);
+      return;
+    }
+    if (act === 'hide') { await setHidden(assetBaseId(id), !hiddenSet.has(assetBaseId(id))); }
+  }
+  const tileMenu = wireTileContextMenu({
+    host: viewEl,
+    tileSelector: '.cat-tile[data-id]',
+    refOf: (tile) => tile.dataset.id ?? null,
+    isBulkTarget: (id) => selected.size > 1 && selected.has(id),
+    singleHtml: (tgt) => catTileMenuHtml(tgt.ref),
+    bulkHtml: () => catBulkMenuHtml(),
+    onAction: (act, tgt) => { void onTileMenuAction(act, tgt?.ref ?? null); },
   });
 
   // Favourites strip presentation — the same cinematic component as the Tools hero,
@@ -912,12 +1012,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // upload's C2PA credential. Shows a violet GEN AI pill in the caption; collapses to a
     // sparkle circle on narrow tiles (see catalog.css).
     const aiKind = assetAiKind(ref);
-    // Only the user's own uploads carry a selection checkbox (catalog assets can't be
-    // bulk-deleted). The whole tile body (bar the star + checkbox) opens the details modal.
-    const sel = isUser && selected.has(ref.id);
+    // EVERY tile carries a selection checkbox (2026-08-09 — people expect a grid to
+    // marquee): catalog assets select for bulk favourite/hide; the destructive bulk
+    // actions gate on an all-uploads selection instead (catalog assets are a permanent
+    // contract). The whole tile body (bar the star + checkbox) opens the details modal.
+    const sel = selected.has(ref.id);
     return `
       <div class="cat-tile${fav ? ' is-fav' : ''}${hidden ? ' is-hidden-asset' : ''}${sel ? ' is-selected' : ''}" data-id="${escape(ref.id)}">
-        ${isUser ? `<button type="button" class="cat-check" data-select="${escape(ref.id)}" aria-pressed="${sel}" aria-label="${escape(tRaw('Select {name}', { name }))}" title="${escape(t('Select'))}">${CHECK_ICON}</button>` : ''}
+        <button type="button" class="cat-check" data-select="${escape(ref.id)}" aria-pressed="${sel}" aria-label="${escape(tRaw('Select {name}', { name }))}" title="${escape(t('Select'))}">${CHECK_ICON}</button>
         <button type="button" class="cat-tile-open" data-open="${escape(ref.id)}" aria-label="${escape(tRaw('View {name} details', { name }))}">
           <span class="cat-tile-fig">${thumbHtml(ref, true)}</span>
           <span class="cat-tile-cap">
@@ -1082,7 +1184,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ? t('No assets match “{query}”.', { query })
           : t('No {type} assets in the catalogue.', { type: typeLabel });
       // A "clear search" button when a query is active (mirrors projects.ts) — routed to
-      // clearSearch() via the body's delegated [data-search-clear] handler in wire().
+      // the shell bar's clearSearchBar() via the body's delegated [data-search-clear] handler in wire().
       const clearBtn = query ? ` <button type="button" class="projects-linkbtn" data-search-clear>${t('Clear search')}</button>` : '';
       parts.push(`<p class="cat-empty" role="status">${msg}${clearBtn}</p>`);
     }
@@ -1225,6 +1327,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     { fmt: 'tokens-json', label: 'Design tokens (JSON)' },
     { fmt: 'css-vars', label: 'CSS variables' },
     { fmt: 'css-classes', label: 'CSS classes' },
+    { fmt: 'scss', label: 'SCSS variables' },
     { fmt: 'ase', label: 'Adobe swatches (.ase)' },
     { fmt: 'gpl', label: 'GIMP palette (.gpl)' },
   ];
@@ -1282,20 +1385,25 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   const bodyHtml = (): string =>
     `${assetsSectionHtml()}${(query || typeFilter !== 'all') ? '' : swatchesSectionHtml() + fontsSectionHtml()}`;
 
-  // Floating bulk-action bar for a multi-selection of uploads (mirrors the projects
-  // view's bar). Rendered once per render(); shown/populated by syncBulkBar().
-  function bulkBarHtml(): string {
-    return `
-      <div class="cat-bulkbar" role="region" aria-label="${escape(t('Selection actions'))}" hidden>
-        <span class="cat-bulkbar-count" aria-live="polite"></span>
-        <div class="cat-bulkbar-actions">
-          <button type="button" class="btn" data-bulk="duplicate" title="${escape(t('Make a copy of each selected image — the copies are selected, ready to move or edit'))}">${COPY_ICON}<span>${t('Duplicate')}</span></button>
-          <button type="button" class="btn" data-bulk="download" title="${escape(t('Download the selection as one zip — Content Credentials checked and preserved'))}">${DOWNLOAD_ICON}<span>${t('Download')}</span></button>
-          <button type="button" class="btn cat-bulk-danger" data-bulk="delete">${TRASH_ICON}<span>${t('Delete')}</span></button>
-        </div>
-        <button type="button" class="cat-bulkbar-clear" data-bulk="clear" aria-label="${escape(t('Clear selection'))}">✕</button>
-      </div>`;
-  }
+  // Floating bulk-action bar for a multi-selection of uploads — markup + sync live in
+  // lib/bulk-bar.ts (shared with projects and the gallery); this view supplies its
+  // action set. Rendered once per render(); shown/populated by syncBulkBar().
+  // Favourite/Hide apply to ANY selection; Duplicate/Download/Delete only light up
+  // when the whole selection is the user's own uploads (catalog assets are a
+  // permanent contract — favourite and hide are the only honest bulk verbs there).
+  const bulkBarCfg: BulkBarConfig = {
+    prefix: 'cat-bulkbar',
+    rootSelector: '.catalog',
+    count: () => selected.size,
+    actions: [
+      { id: 'fav', icon: STAR_ICON, label: () => (allSelectedFav() ? t('Unfavourite') : t('Favourite')) },
+      { id: 'hide', icon: icon('eye'), label: () => (allSelectedHidden() ? t('Unhide') : t('Hide')) },
+      { id: 'duplicate', icon: COPY_ICON, label: () => t('Duplicate'), title: () => t('Make a copy of each selected image — the copies are selected, ready to move or edit'), hidden: () => !allSelectedUploads() },
+      { id: 'download', icon: DOWNLOAD_ICON, label: () => t('Download'), title: () => t('Download the selection as one zip — Content Credentials checked and preserved'), hidden: () => !allSelectedUploads() },
+      { id: 'delete', icon: TRASH_ICON, label: () => t('Delete'), extraClass: 'cat-bulk-danger', hidden: () => !allSelectedUploads() },
+    ],
+  };
+  const bulkBarHtml = (): string => buildBulkBar(bulkBarCfg);
 
   function render(): void {
     pruneSelection();
@@ -1304,16 +1412,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         ${catalogTopbarHtml()}
         <h1 class="visually-hidden">${t('Catalogue')}</h1>
         <div class="catalog-body">${bodyHtml()}</div>
-        ${footerNav({
-          proEnabled: flagEnabled(profile, PRO_FLAG.id),
-          // The shared gallery search field + ✕ clear button (component-audit rec 11 —
-          // previously a hand-rolled field borrowing projects' .projects-search-clear chrome).
-          searchHtml: gallerySearchBox({
-            placeholder: t('Search the catalogue…'),
-            ariaLabel: t('Search the catalogue'),
-            value: query,
-          }),
-        })}
         ${bulkBarHtml()}
       </div>`;
     wire();
@@ -1559,6 +1657,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const canUpscale = zoomable && ref.type === 'raster' && host.upscale?.isAvailable() === true;
     const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
       && host.matte?.isAvailable() === true && host.matte.models().length > 0;
+    // "Trim margins" (plan 97 §7.3): the retro-trim of an upload that arrived padded,
+    // offering the same before/after card every ingest surface shows. Uploads only —
+    // a catalog asset is an immutable, checksum-validated contract. A still raster or
+    // a vector only: an animated raster would come back as a single-frame PNG, which
+    // is a different asset, not a trimmed one.
+    const trimmable = isUser && !ref.meta?._placeholder && !ref.meta?.animated
+      && (ref.type === 'raster' || ref.type === 'vector');
     const wasOpen = !!detailsDialog; // paging (←/→) replaces an open modal — cue only a FRESH open
     closeDetails();
     const content = `
@@ -1600,6 +1705,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
           <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>
           <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
+          ${trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : ''}
           ${isUser
             ? `<button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>${t('Rename')}</span></button>
                <button type="button" class="btn cat-act-danger" data-act="delete">${TRASH_ICON}<span>${t('Delete')}</span></button>`
@@ -1608,6 +1714,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
                 : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>${t('Hide')}</span></button>`)}
         </div>
       </div>`;
+    // Exits inline trim mode, or null when no card is up. Assigned by enterInlineTrim
+    // below; declared here so the modal's onClose can answer an open card (its teardown
+    // revokes the two preview object URLs) when the dialog goes away under it.
+    let inlineTrim: (() => void) | null = null;
     const modal = mountModal(content, {
       className: 'cat-details',
       initialFocus: (el) => el.querySelector<HTMLElement>('.cat-details-close'),
@@ -1625,6 +1735,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         const wav = modal.el.querySelector<HTMLAudioElement>('[data-audio-preview]')?.dataset.wavBlob;
         if (wav) URL.revokeObjectURL(wav);
         cropModeActive = false;   // clear the attachZoom pause if the modal closed mid-crop (backdrop/paging)
+        inlineTrim?.();           // …and answer an open trim card, so its preview URLs are revoked
         detailsDialog = null;
         detailsModal = null;
       },
@@ -1777,6 +1888,124 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       });
     }
 
+    /**
+     * Inline trim mode: "Trim margins" measures the STORED bytes and, when a trim
+     * would buy something, shows the shared before/after card in the body under the
+     * actions — the same card the dropzone and the asset picker show at upload time,
+     * offered here after the fact. It stays in THIS modal, like crop.
+     *
+     * "Trim" rewrites the bytes in place (commitTrim) and reopens the details on the
+     * fresh asset; "Keep original margins", the card's ✕ and Escape all leave the
+     * upload untouched (nothing is being ingested here, so backing out and keeping
+     * the margins land in the same place). An upload that is already tight gets a
+     * note instead, and the action stays where it is. `inlineTrim` (declared beside
+     * the modal) holds the exit fn while a card is up, so onClose can answer one the
+     * dialog outlived.
+     */
+    let trimEntering = false;   // the same double-click guard enterInlineCrop documents
+    async function enterInlineTrim(): Promise<void> {
+      if (inlineTrim || trimEntering) return;   // already trimming, or mid-entry
+      const actions = dlg.querySelector<HTMLElement>('.cat-details-actions');
+      if (!actions) return;
+      trimEntering = true;
+      const [trim, measured] = await Promise.all([
+        import('../lib/design-system/trim-offer.ts').catch(() => null),
+        measureTrim(ref).catch((err) => {
+          host.log?.('error', 'Catalog trim measure failed', { id: ref.id, error: String(err) });
+          return null;
+        }),
+      ]);
+      trimEntering = false;
+      if (detailsDialog !== dlg) return;   // modal paged/closed during the read — abandon
+      if (!trim || !measured) return;      // unreadable: say nothing rather than something wrong
+      const { record, proposal } = measured;
+      if (!proposal) { showTrimNote(actions, t('Already tight to its content')); return; }
+
+      const mount = document.createElement('div');
+      mount.className = 'trimo-host';
+      actions.after(mount);
+      dlg.classList.add('is-trimming');   // the action row steps aside, exactly as crop's does
+      // Escape backs out of the TRIM, not the whole modal. The card stops the event
+      // propagating (so the dlg keydown handler below never sees it), but a native
+      // <dialog>'s close watcher fires off the keydown itself unless it was cancelled
+      // — so cancel it here in the capture phase, before the card's own listener
+      // answers. Same rule inline crop follows.
+      //
+      // The card's own listener is bound to the card, so it only ever sees an
+      // Escape pressed INSIDE it. Focus is free to leave (the close ✕ and the
+      // prev/next controls stay reachable), and there this preventDefault would
+      // otherwise be the whole story: the modal can't close, the card can't hear
+      // it, and the keyboard has no way out. So answer for the card when the
+      // press came from outside it.
+      const keys = new AbortController();
+      dlg.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        if (!mount.contains(e.target as Node | null)) exit(true);
+      }, { capture: true, signal: keys.signal });
+
+      // Assigned by the mount call below; a decision can only arrive from a click or
+      // an Escape, so the null check is the "already exited" latch, not a race.
+      let teardown: (() => void) | null = null;
+      // `restoreFocus` only when the USER answered: the card held focus, and its
+      // buttons are about to be removed. Left false for the onClose path, where
+      // focusing into a dialog that is on its way out would fight the modal.
+      const exit = (restoreFocus = false): void => {
+        if (!teardown) return;
+        teardown();                      // revokes the two preview object URLs
+        teardown = null;
+        keys.abort();
+        mount.remove();
+        dlg.classList.remove('is-trimming');
+        inlineTrim = null;
+        if (restoreFocus) dlg.querySelector<HTMLElement>('.cat-act-trim')?.focus();
+      };
+      teardown = trim.mountTrimOffer(mount, proposal, {
+        t,
+        onResolve: (file, trimmed) => {
+          exit(true);
+          if (trimmed) void applyTrim(record, file);
+        },
+        // Nothing is being ingested here — the asset already exists — so backing
+        // out and "keep the original margins" land in the same place: the card
+        // closes and the stored bytes are untouched.
+        onCancel: () => exit(true),
+      });
+      inlineTrim = exit;
+    }
+
+    /** Write the trimmed bytes, then show the asset as it now is. */
+    async function applyTrim(record: UserAssetRecordLike, file: File): Promise<void> {
+      try {
+        await commitTrim(record, file);
+      } catch (err) {
+        host.log?.('error', 'Catalog trim failed', { id: ref.id, error: String(err) });
+        // Quota errors carry a user-ready message; everything else gets a plain one.
+        announce((err as { code?: unknown }).code ? (err as Error).message : t('Couldn’t trim that image.'), { assertive: true });
+        return;
+      }
+      if (!mounted) return;
+      await reload();                    // the record changed under _listUserAssets
+      if (!mounted) return;
+      rerender();
+      announce(t('Margins trimmed.'));
+      // Reopen on the fresh ref (new version ⇒ new object URL) so the preview shows
+      // the trimmed bytes rather than the ones the modal opened with.
+      const fresh = assetById.get(ref.id);
+      if (fresh && detailsDialog === dlg) openDetails(fresh, dTheme, dTreatment);
+    }
+
+    /** The quiet answer when there is nothing to trim. Replaces any earlier note so
+     *  repeat clicks can't stack them, and leaves the action in place. */
+    function showTrimNote(actions: HTMLElement, message: string): void {
+      const existing = dlg.querySelector<HTMLElement>('.cat-trim-note');
+      const note = existing ?? document.createElement('p');
+      note.className = 'cat-trim-note';
+      note.textContent = message;
+      if (!existing) actions.after(note);
+      announce(message);
+    }
+
     dlg.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
       // Prev/next lightbox paging — reopen the modal on the neighbouring asset, carrying the
@@ -1864,6 +2093,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // Crop stays IN this detail modal — an inline mode over the current preview, not a
       // separate dialog — so it must be handled before the closeDetails() below.
       if (act === 'crop') { await enterInlineCrop(); return; }
+      // Trim is the same shape: the offer card mounts in this body, under the actions.
+      if (act === 'trim') { await enterInlineTrim(); return; }
       // The remaining actions leave this asset's detail context, so close first.
       closeDetails();
       if (act === 'download') {
@@ -1901,6 +2132,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inlineCrop(); }
         return;
       }
+      // With a trim card up, paging is off for the same reason: it would tear the card
+      // down mid-question. Its Escape is handled by the card itself (and cancelled in
+      // the capture listener enterInlineTrim arms), so nothing to do here.
+      if (inlineTrim) return;
       if (e.key === 'ArrowLeft' && nav.prev) { e.preventDefault(); openDetails(nav.prev, dTheme, dTreatment); }
       else if (e.key === 'ArrowRight' && nav.next) { e.preventDefault(); openDetails(nav.next, dTheme, dTreatment); }
     });
@@ -2503,6 +2738,105 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     rerender();
   }
 
+  // ── trim margins (plan 97 §7.3) ─────────────────────────────────────────────────
+  // The retro-trim of an upload that arrived padded — the same offer the dropzone and
+  // the asset picker make at ingest, made again later against the STORED bytes. The
+  // card is the confirmation (§14.4): nothing is written until the user takes "Trim",
+  // and what is written replaces the original margins for good.
+
+  /**
+   * Read the record behind a user upload and measure a trim of its stored bytes.
+   * Null = it could not be read at all; `proposal: null` = it was read and there is
+   * nothing worth trimming (already tight to its content).
+   *
+   * The read is `_exportUserAssets` because the bridge exposes no get-one-record
+   * call, and `_getBlob` hands back bytes without the metadata a rewrite has to carry
+   * forward. It walks the rows, not the pixels — an IndexedDB blob is a file-backed
+   * handle — which is what makes it fine on an explicit one-shot action (the storage
+   * meter's `_userAssetsSize` takes the same read on every visit).
+   */
+  async function measureTrim(ref: AssetRef): Promise<{ record: UserAssetRecordLike; proposal: TrimProposal | null } | null> {
+    const { prepareTrim } = await import('../lib/design-system/trim-offer.ts');
+    const record = (await host.assets._exportUserAssets()).find(r => r.id === ref.id);
+    if (!record?.blob) return null;
+    // A File, not the raw Blob: the measure routes on magic bytes first but falls back
+    // to the MIME type and then the name, and a stored blob's type can be blank.
+    const name = String(record.meta?.name ?? ref.id.split('/').pop() ?? 'image');
+    const file = new File([record.blob], name, { type: record.blob.type || '' });
+    return { record, proposal: await prepareTrim(file) };
+  }
+
+  /**
+   * The stored dimensions for the bytes a trim actually produced. Measured from the
+   * RESULT rather than taken from the proposal: the card's padding stepper may have
+   * moved since it was built, and it resolves with a file, not a box. Empty when they
+   * can't be read — the record then carries no dimensions rather than the old ones,
+   * which after a trim would be a wrong aspect for every tool that reads them.
+   */
+  async function trimmedDimensions(file: File): Promise<{ width?: number; height?: number }> {
+    if (/svg/i.test(file.type)) {
+      const { svgArtboardBox } = await import('../lib/design-system/trim-offer.ts');
+      const box = svgArtboardBox(await file.text().catch(() => ''));
+      // User units, so keep the fraction the viewBox rewrite wrote (to 3 places).
+      return box ? { width: Math.round(box.width * 1000) / 1000, height: Math.round(box.height * 1000) / 1000 } : {};
+    }
+    try {
+      const bitmap = await createImageBitmap(file);
+      const dims = { width: bitmap.width, height: bitmap.height };
+      bitmap.close?.();
+      return dims;
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Commit a trim: replace one upload's stored bytes, keeping its id.
+   *
+   * A read-modify-write in the discipline of the bridge's own `_renameUserAsset` /
+   * `_restampUserAsset` — read the record, change only what the trim changed, put it
+   * back under the SAME id. `user/…` ids are a permanent contract: sessions, project
+   * folders and tool inputs already point at this one, and minting a new id would
+   * quietly orphan every one of them. `version` is bumped for the same reason
+   * `_restampUserAsset` bumps it: object URLs are cached as `user:<id>:<format>:
+   * <version>`, so without it the grid would keep painting the untrimmed bytes.
+   *
+   * The write goes through `_uploadUserAsset`, the one narrow helper the bridge
+   * exposes for a whole record, so the quota guard at that boundary still runs. It
+   * measures the WHOLE blob rather than the delta (the caveat `_restampUserAsset`
+   * documents) — for a trim that is the safe direction, since the new bytes all but
+   * always weigh less than the ones they replace.
+   *
+   * Carried forward on purpose: `credential` / `credentialFormat` / `aiGenerated`. A
+   * trim is a derivative edit, and ingest already keeps a re-encoded upload's original
+   * credential so a download can carry it as an ingredient; dropping it here would
+   * launder an AI image's disclosure out of the library. `checksum` is the one field
+   * deliberately left behind — it describes bytes that no longer exist.
+   */
+  async function commitTrim(record: UserAssetRecordLike, file: File): Promise<void> {
+    const format = /svg/i.test(file.type) ? 'svg' : /png/i.test(file.type) ? 'png' : record.format;
+    const prevName = String(record.meta?.name ?? '');
+    const { checksum: _staleChecksum, ...carried } = record;
+    const { width, height } = await trimmedDimensions(file);
+    await host.assets._uploadUserAsset({
+      ...carried,
+      // A plain Blob like every other stored record, and a slice rather than a
+      // re-wrap so the bytes are viewed, not copied.
+      blob: file.slice(0, file.size, file.type),
+      format,
+      width,
+      height,
+      version: String(Date.now()),
+      meta: {
+        ...record.meta,
+        // A raster trim re-encodes to PNG, so a "logo.webp" would now be lying about
+        // its own bytes — the same honesty ingest keeps with renameExt.
+        ...(prevName && format !== record.format ? { name: `${prevName.replace(/\.[^./\\]+$/, '')}.${format}` } : {}),
+        bytes: file.size,
+      },
+    });
+  }
+
   // ── selection (user uploads only) ───────────────────────────────────────────────
   // The set of currently-selectable ids — exactly the uploads the grid is SHOWING right now.
   // The same three filters assetsSectionHtml() builds the uploads section from (visible +
@@ -2512,9 +2846,21 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   const selectableIds = (): Set<string> => selectableIdsRule(
     visibleAssets(),
     // An empty query short-circuits inside the rule, so hand it an empty index
-    // rather than building one nobody will read.
-    { query, haystack: query ? haystack() : EMPTY_HAYSTACK, typeFilter },
+    // rather than building one nobody will read. Scope 'all': every visible tile
+    // is selectable; destructive bulk actions gate per-kind (allSelectedUploads).
+    { query, haystack: query ? haystack() : EMPTY_HAYSTACK, typeFilter, scope: 'all' },
   );
+  // The uploads section's "Select all" button keeps its uploads-only scope.
+  const uploadSelectableIds = (): Set<string> => selectableIdsRule(
+    visibleAssets(),
+    { query, haystack: query ? haystack() : EMPTY_HAYSTACK, typeFilter, scope: 'uploads' },
+  );
+  const allSelectedUploads = (): boolean =>
+    selected.size > 0 && [...selected].every(id => assetById.get(id)?.source === 'user');
+  const allSelectedFav = (): boolean =>
+    selected.size > 0 && [...selected].every(id => favSet.has(assetBaseId(id)));
+  const allSelectedHidden = (): boolean =>
+    selected.size > 0 && [...selected].every(id => hiddenSet.has(assetBaseId(id)));
 
   // Drop selected ids that are gone (deleted, or filtered out by a search) so the count
   // stays honest. Runs at the top of every render().
@@ -2534,7 +2880,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   function selectAllUploads(): void {
-    const ids = selectableIds();
+    const ids = uploadSelectableIds();
     const allSel = ids.size > 0 && [...ids].every(id => selected.has(id));
     if (allSel) for (const id of ids) selected.delete(id);
     else for (const id of ids) selected.add(id);
@@ -2553,21 +2899,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   // Keep the "Select all / Deselect all" label + pressed state in sync after a single toggle.
   function syncSelectAll(): void {
-    const ids = selectableIds();
+    const ids = uploadSelectableIds();
     const allSel = ids.size > 0 && [...ids].every(id => selected.has(id));
     const btn = viewEl.querySelector<HTMLElement>('.cat-uploads-selectall');
     if (btn) { btn.textContent = allSel ? t('Deselect all') : t('Select all'); btn.setAttribute('aria-pressed', String(allSel)); }
   }
 
-  function syncBulkBar(): void {
-    const bar = viewEl.querySelector<HTMLElement>('.cat-bulkbar');
-    if (!bar) return;
-    const n = selected.size;
-    bar.hidden = n === 0;
-    const count = bar.querySelector('.cat-bulkbar-count');
-    if (count) count.textContent = t('{n} selected', { n });
-    viewEl.querySelector('.catalog')?.classList.toggle('has-selection', n > 0);
-  }
+  const syncBulkBar = (): void => syncSharedBulkBar(viewEl, bulkBarCfg);
+
+  // Escape drops the selection (yielding to any open menu/dialog/field first) —
+  // the keyboard exit the ✕ button and an empty-canvas click already provide.
+  const unwireEscape = wireEscapeClearsSelection({
+    active: () => mounted && selected.size > 0,
+    clear: () => handleBulk('clear'),
+  });
 
   function handleBulk(action: string): void {
     if (action === 'clear') {
@@ -2582,9 +2927,46 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       tileSelect.resetAnchor();
       syncSelectAll();
       syncBulkBar();
-    } else if (action === 'delete') void deleteSelection();
-    else if (action === 'download') void downloadSelection();
-    else if (action === 'duplicate') void duplicateSelection();
+    }
+    // The destructive trio is hidden unless the whole selection is uploads; the
+    // guard re-checks at dispatch so a selection that changed under a stale menu
+    // can never route a catalog asset into a delete.
+    else if (action === 'delete') { if (allSelectedUploads()) void deleteSelection(); }
+    else if (action === 'download') { if (allSelectedUploads()) void downloadSelection(); }
+    else if (action === 'duplicate') { if (allSelectedUploads()) void duplicateSelection(); }
+    else if (action === 'fav') void favouriteSelection();
+    else if (action === 'hide') void hideSelection();
+  }
+
+  // Bulk favourite/unfavourite — smart toggle (all starred → unstar all), one
+  // profile write, tiles + strip reflected in place. Works on ANY selection kind.
+  async function favouriteSelection(): Promise<void> {
+    if (!selected.size) return;
+    const on = !allSelectedFav();
+    const bases = new Set([...selected].map(assetBaseId));
+    for (const b of bases) { if (on) favSet.add(b); else favSet.delete(b); }
+    if (profile) await saveFavouriteAssets(host, profile, favSet);
+    if (!mounted) return;
+    for (const b of bases) reflectFavInGrid(b, on);
+    refreshFavStrip();
+    syncBulkBar();
+    announce(on ? t('{n} added to favourites', { n: bases.size }) : t('{n} removed from favourites', { n: bases.size }));
+  }
+
+  // Bulk hide/unhide — smart toggle, one profile write, then a full re-render
+  // (hiding relocates tiles between the category grids and the Hidden section,
+  // and the selection is cleared with it — the tiles are leaving the view).
+  async function hideSelection(): Promise<void> {
+    if (!selected.size) return;
+    const unhide = allSelectedHidden();
+    const bases = new Set([...selected].map(assetBaseId));
+    for (const b of bases) { if (unhide) hiddenSet.delete(b); else hiddenSet.add(b); }
+    if (profile) await saveHiddenAssets(host, profile, hiddenSet);
+    if (!mounted) return;
+    selected.clear();
+    tileSelect.resetAnchor();
+    announce(unhide ? t('{n} unhidden', { n: bases.size }) : t('{n} hidden', { n: bases.size }));
+    rerender();
   }
 
   /**
@@ -3414,23 +3796,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const body = viewEl.querySelector<HTMLElement>('.catalog-body');
     if (!body) return;
 
-    // Clear the search from either affordance — the ✕ in the footer field or the "clear
-    // search" button in the no-results copy. The footer (input + ✕) survives renderBody(),
-    // so we re-query live rather than capture a possibly-stale node.
-    const clearSearch = (): void => {
-      const input = viewEl.querySelector<HTMLInputElement>('.gallery-search');
-      if (input) input.value = '';
-      viewEl.querySelector<HTMLElement>('.gallery-search-clear')?.setAttribute('hidden', '');
-      if (query) { query = ''; renderBody(); }
-      input?.focus();
-    };
-
     body.addEventListener('click', async (e) => {
       const target = e.target as HTMLElement;
 
-      // "Clear search" link in the no-results copy (the footer ✕ is wired separately).
+      // "Clear search" link in the no-results copy (the shell bar owns its own ✕;
+      // its onQuery('') notification lands in the claim below and re-renders).
       const clr = target.closest<HTMLElement>('[data-search-clear]');
-      if (clr) { e.preventDefault(); clearSearch(); return; }
+      if (clr) { e.preventDefault(); clearSearchBar({ focus: true }); return; }
 
       // Swatches-section palette download — exports the palette exactly as shown.
       const sdl = target.closest<HTMLElement>('[data-swatch-dl]');
@@ -3597,29 +3969,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (b) handleBulk(b.dataset.bulk!);
     });
 
-    // ── Footer search (gallery field + a ✕ clear button) ────────────────────────
-    // Lives in the fixed footer, OUTSIDE .catalog-body, so a search re-renders only the
-    // body (renderBody) and this input keeps its focus + caret between keystrokes.
-    const searchInput = viewEl.querySelector<HTMLInputElement>('.gallery-search');
-    const clearBtn = viewEl.querySelector<HTMLButtonElement>('.gallery-search-clear');
-    let searchDebounce: ReturnType<typeof setTimeout>;
-    searchInput?.addEventListener('input', () => {
-      // Reflect the field state on the ✕ immediately (before the debounce): the footer isn't
-      // rebuilt on renderBody(), so its visibility is toggled imperatively as you type.
-      clearBtn?.toggleAttribute('hidden', !searchInput.value);
-      clearTimeout(searchDebounce);
-      searchDebounce = setTimeout(() => {
-        const q = searchInput.value.trim().toLowerCase();
-        if (q === query) return;
-        query = q;
-        renderBody();
-      }, 120);
-    });
-    // The ✕ clears + re-filters; Esc does the same for an active query.
-    clearBtn?.addEventListener('click', clearSearch);
-    searchInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && (query || searchInput.value)) { e.stopPropagation(); clearSearch(); }
-    });
+    // (The search field, its ✕, debounce and Escape ladder live in the shell's
+    // persistent bar — see the claimSearchBar call in the mount section. Its input
+    // sits outside this view's DOM entirely, so renderBody() can never touch it —
+    // the old footer-outside-the-body focus trick, now structural.)
 
     // ── View-options popover (favourites view mode + strip on/off) ──────────────
     const voBtn = viewEl.querySelector<HTMLElement>('.cat-viewopts-btn');
@@ -3674,12 +4027,29 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // A lighter, brighter arrival "ahhh" led in by four rising "stacking" clicks — the catalog's
   // counterpart to the gallery's bassy one. One-shot, gesture-gated, silent when sound's off.
   playCatalogAah();
+  // Claim the shell's persistent search bar (plans/99 M1). The tap applies the same
+  // trim+lowercase the old inline handler did, so filtering is byte-identical.
+  const releaseSearch = claimSearchBar({
+    placeholder: t('Search the catalogue…'),
+    ariaLabel: t('Search the catalogue'),
+    value: query,
+    onQuery: (raw) => {
+      if (!mounted) return;
+      const q = raw.trim().toLowerCase();
+      if (q === query) return;
+      query = q;
+      renderBody();
+    },
+  });
   (viewEl as ViewElement)._cleanup = () => {
     mounted = false;
     cancelArrivalAah();
+    releaseSearch();
     // Not optional: the marquee's mousedown is bound to viewEl (#view), which the router
     // REUSES for every route — leave it bound and the next mount stacks another copy.
     tileSelect.destroy();
+    tileMenu.destroy();
+    unwireEscape();
     featuredHandle?.destroy();
     featuredHandle = null;
     lottieThumbs?.destroy();

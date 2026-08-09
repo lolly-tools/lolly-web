@@ -65,6 +65,11 @@
 
 /* Specimen stage — a neutral, subtly-checkered field so translucency reads, with
    the live sample centred. It is NOT the app background; it's a viewing surface. */
+/* The footerNav SPECIMEN renders in-flow inside its stage (like the back pill's
+   in-flow form) — .gallery-footer is position:fixed for the real shell bar, which
+   would pin the demo copy over the viewport bottom (plans/99 M1). */
+.cl-view .gallery-footer { position: static; }
+
 .cl-stage {
   position: relative; flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
   gap: .6rem; flex-wrap: wrap; min-height: 108px; padding: 1.1rem;

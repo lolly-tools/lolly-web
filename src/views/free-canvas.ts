@@ -49,16 +49,24 @@
 // ships one and users still lose work to it — time→selection is destructive.
 
 import {
-  boxRect, withRect, boxCorners, rectCentre, hitTest, marqueeHit, boxAABB,
+  boxRect, withRect, boxCorners, rectCentre, boxAABB,
   moveBoxes, resizeRect, alignBoxes, distributeBoxes, reorderZ,
   seedBox, normDragRect, snapAngle, normAngle, clampBoxToCanvas, selectionAABB,
   snapMove, snapPoint, scaleGroup, rotateGroup, num,
-  edgeBorderPt, edgeWaypoints, edgeNested, roundedEdgePath, smoothEdgePath,
-  edgeArrowHead, edgeHeadInset, isEdgePoint, edgeEndRect, formatEdgePoint,
+  edgeWaypoints, edgeNested, roundedEdgePath, smoothEdgePath,
+  edgeArrowHead, edgeHeadInset, isEdgePoint, edgeEndRect,
+  // plan 96 P3/P5 — a BOUND path is drawn by connector management, through the engine's
+  // ONE routed-line renderer and its ONE kind→route mapping, so the live overlay, the
+  // committed render and a headless CLI cannot disagree about where the line goes.
+  routedLineSvg, pathRouteStyle, formatEdgePoint,
   gradientLine, gradientPosAt, gradientAngleAt, resolveFrame, renumberFrameOrder,
-  sequenceFramesInOrder, framesAreSequenced,
+  sequenceFramesInOrder, framesAreSequenced, parseDashArray, formatDashArray,
+  pathEndPoints, pathEndTangents,
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
+// Phase-A spatial-index pick: grid-accelerated on large docs, identical result to the
+// linear hitTest/marqueeHit on small ones (plans/98 §6.1; proven in canvas-scene.test.ts).
+import { pickTopmost, pickMarquee } from './canvas-scene.ts';
 import {
   toCssPx,
   parseColor, colorToHexString, interpolateColor,
@@ -158,6 +166,33 @@ interface CanvasCfg {
    *  keyword plus the line cap and join. Keywords, not authored dash arrays — see the
    *  hook's `dashArrayFor` for why the compact URL form cannot carry a comma. */
   strokeDashField?: string; strokeCapField?: string; strokeJoinField?: string;
+  /** Power-user dash sub-fields (plan 96 P0). `strokeDashArrayField` holds the AUTHORED
+   *  pattern as a SPACE-separated numeric string ("6 4") — a string, not a list, because a
+   *  block sub-field is one scalar and space is the one separator the compact blocks URL
+   *  survives (see lib/blocks-url.ts; a comma would split the row). It WINS over the
+   *  keyword style when set. `dashFitField` is the boolean "fit the pattern to the path's
+   *  corners" (Illustrator's corner-aligned dashes), applied by the tool's hook. */
+  strokeDashArrayField?: string; dashFitField?: string;
+  /** PATH DECORATION sub-fields (plan 96 P0 — the unified path primitive). An arrowhead
+   *  shape at each end of an authored path, drawn at its end tangents: none · triangle ·
+   *  open · circle · diamond · bar, the same vocabulary the connector heads use, because
+   *  a spline, a line and a connector are one primitive that carries one decoration set. */
+  headStartField?: string; headEndField?: string;
+  /** PATH ENDPOINT BINDING (plan 96 P0). The id of the box each end is attached to, `''`
+   *  for a free end. Model only at this stage: nothing reads them yet — P3 adds the bind
+   *  gesture and hands a bound path to connector routing. Declared now so the fields ship
+   *  in the manifests' wire order before anything depends on them. */
+  bindStartField?: string; bindEndField?: string;
+  /** PATH ROUTE OVERRIDE (plan 96 P3). A bound path's route is normally read off its own
+   *  spline kind; six kinds cannot name the engine's thirteen routes, so this field carries
+   *  the explicit one (elbow-src, curved-v, arc-wide …). '' = auto. It is also what makes
+   *  the plan-90 edge migration lossless. */
+  routeField?: string;
+  /** The class the tool's hook puts on its committed BOUND-PATH `<svg>` (plan 96 P5) —
+   *  hidden for the duration of a drag so the live overlay does not double up with the
+   *  stale committed one. Named here for the same reason `canvas.connect.layerClass` was:
+   *  only the manifest knows what its own hook emits. */
+  pathLayerClass?: string;
   /** Timeline time-model sub-fields (phase 1: schema/manifest only — inert until a
    *  timeline panel mounts and reads them; see engine 1.65.0 CHANGELOG entry). */
   startField?: string; durField?: string; clipInField?: string; speedField?: string;
@@ -193,7 +228,7 @@ interface CanvasCfg {
  * timeline: the docked panel is a second surface alongside the canvas, not a different
  * reading of a canvas press, so it stays a plain toggle and outlives any tool change.
  */
-type EditorMode = 'select' | 'create' | 'pen' | 'connect' | 'line';
+type EditorMode = 'select' | 'create' | 'pen' | 'line';
 
 /** `canvas.connect` — how the editor authors + stores connector edges. */
 interface ConnectCfg {
@@ -232,6 +267,10 @@ interface FieldCfg {
   kindField: string;
   pathField: string; strokeField: string; strokeWField: string; fillRuleField: string;
   strokeDashField: string; strokeCapField: string; strokeJoinField: string;
+  strokeDashArrayField: string; dashFitField: string;
+  headStartField: string; headEndField: string;
+  bindStartField: string; bindEndField: string;
+  routeField: string;
 }
 
 interface ModelItem { id: string; value: any }
@@ -240,7 +279,14 @@ interface RuntimeApi {
   setInput(id: string, value: any): void;
   subscribe(fn: () => void): (() => void) | void;
 }
-interface HostApi { assets?: { pick(opts: any): Promise<any> } }
+interface HostApi {
+  assets?: { pick(opts: any): Promise<any> };
+  /** Feature-detected (plan 96): the engine's dash-fit primitives, once the running
+   *  engine carries them. `parse` is the AUTHORITY on what the Dash array field accepts,
+   *  so the panel prefers it and falls back to free-canvas-math's own `parseDashArray`
+   *  (the same contract) on an engine that predates it. */
+  connectors?: { dashFit?: { parse?(text: string): number[] | null } };
+}
 interface DocInfo {
   getFilename?(): string;
   setFilename?(name: string): void;
@@ -378,8 +424,11 @@ interface GestureBase { pointerId: number; startClient: Point; origin?: Point }
 interface TapGesture extends GestureBase { type: 'tap' }
 interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; additive: boolean }
 interface CreateGesture extends GestureBase { type: 'create'; origin: Point; seed: Box; others: AABB[]; corner?: Point }
-// Line tool — draw a line/arrow whose ends are a box id OR an `@x,y` free point (plan 90).
-interface LineGesture extends GestureBase { type: 'line'; origin: Point; fromEnd: string; toEnd?: string }
+// Line tool — one drag draws a TWO-NODE authored path (plan 96 P2; it made a connector
+// edge under plan 90). Both ends are plain canvas points: a line is a path box like any
+// pen shape, and attaching an end to a box is P3's bind gesture, not a side effect of
+// releasing over one.
+interface LineGesture extends GestureBase { type: 'line'; origin: Point; to?: Point }
 interface MoveGesture extends GestureBase { type: 'move'; start: Map<number, Rect>; sel: number[]; selAABB: AABB | null; others: AABB[]; moveDelta?: { dx: number; dy: number } }
 interface ResizeGesture extends GestureBase { type: 'resize'; index: number; handle: HandleName; startRect: Rect; others: AABB[]; liveRect?: Rect }
 interface RotateGesture extends GestureBase { type: 'rotate'; index: number; startRect: Rect; centerClient: Point; pointerStartDeg: number; liveRect?: Rect }
@@ -389,7 +438,12 @@ interface GRotateGesture extends GestureBase { type: 'grotate'; sel: number[]; s
 // the path itself is a draft that outlives any single press (see `penDraft`). The other
 // three belong to node-edit mode on an already-committed path box.
 interface PenDrawGesture extends GestureBase { type: 'pendraw'; origin: Point; index: number }
-interface PenNodeGesture extends GestureBase { type: 'pennode'; origin: Point; indices: number[]; start: SplineNode[]; moved?: boolean }
+interface PenNodeGesture extends GestureBase {
+  type: 'pennode'; origin: Point; indices: number[]; start: SplineNode[]; moved?: boolean;
+  /** plan 96 P3 — which END of the path is being dragged, when exactly one END node is.
+   *  Set at press; drives the bind affordance during the drag and the write on drop. */
+  bindEnd?: 'start' | 'end';
+}
 interface PenHandleGesture extends GestureBase { type: 'penhandle'; origin: Point; index: number; which: 'in' | 'out'; moved?: boolean }
 interface PenMarqueeGesture extends GestureBase { type: 'penmarquee'; origin: Point; additive: boolean }
 /** One contour's slice of the combined node-edit path: how many nodes it owns, and the
@@ -425,8 +479,6 @@ const SVG = {
   // Object below the arrow = moving up (forward/front); above it = moving down.
   front: '<rect x="6" y="13" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M3 3h18"/><path d="M12 10V6"/><path d="m8.5 9.5 3.5-3.5 3.5 3.5"/>',
   align: '<line x1="3" y1="4" x2="3" y2="20"/><rect x="6" y="7" width="12" height="4" rx="1"/><rect x="6" y="14" width="7" height="4" rx="1"/>',
-  // Connect mode — two nodes joined by a link (start linking cards).
-  connect: '<circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8 8l8 8"/>',
   // Line tool — a diagonal shaft ending in an arrowhead (draw a line or arrow).
   line: '<path d="M5 19 L19 5"/><path d="M12 5h7v7"/>',
   // Snap-to-grid toggle — a magnet in a box (snapping = magnetic pull to the grid).
@@ -753,6 +805,40 @@ const FONT_STACK: Record<string, string> = {
   'mono': 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   'sans': "var(--font-brand, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif)",
 };
+/**
+ * The arrowhead vocabulary (plan 96 P1) — EXACTLY the strings `edgeArrowHead` in
+ * engine/src/connectors.ts branches on, and in its order, because a spline, a line and a
+ * connector are one primitive and must not offer two different sets of heads. Anything
+ * outside this list falls through to the engine's triangle, which is why the menu is
+ * closed rather than free text.
+ */
+const HEAD_CHOICES: Array<[string, string]> = [
+  ['none', 'None'], ['triangle', 'Arrow'], ['open', 'Open arrow'],
+  ['circle', 'Circle'], ['diamond', 'Diamond'], ['bar', 'Bar'],
+];
+/**
+ * The route choices a BOUND path offers (plan 96 P3), in the engine's own order. '' is
+ * "auto", i.e. read the route off the spline kind — which is what an unbound path has
+ * always done and what a bound one does until someone says otherwise. The other thirteen
+ * are `CONNECTOR_ROUTE_STYLES`, spelled with their labels here because six spline kinds
+ * cannot name thirteen routes.
+ */
+const ROUTE_CHOICES: Array<[string, string]> = [
+  ['', 'Auto, from the spline type'],
+  ['straight', 'Straight'],
+  ['elbow', 'Elbow, auto'], ['elbow-v', 'Elbow, vertical'], ['elbow-h', 'Elbow, horizontal'],
+  ['elbow-src', 'Elbow, bend at the start'], ['elbow-tgt', 'Elbow, bend at the end'],
+  ['curved', 'Curved, auto S'], ['curved-v', 'Curved, vertical S'], ['curved-h', 'Curved, horizontal S'],
+  ['arc', 'Arc, bow'], ['arc-wide', 'Arc, wide bow'],
+  ['arc-flip', 'Arc, reverse bow'], ['arc-flip-wide', 'Arc, wide reverse bow'],
+];
+
+/** Is a dash pattern relevant to this box? A dash keyword is on, OR an array is already
+ *  authored — the second half is what stops a stored pattern becoming unreachable the
+ *  moment someone flips the keyword back to Solid. */
+function dashRowOn(styleVal: string, arrVal: string): boolean {
+  return styleVal === 'dashed' || styleVal === 'dotted' || String(arrVal).trim() !== '';
+}
 // ligatures default ON (off → disable liga/clig); alternates default OFF (on → salt).
 function featureSettings(ligOn: boolean, altOn: boolean): string {
   const feat: string[] = [];
@@ -817,12 +903,36 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     strokeDashField: cv.strokeDashField || 'strokeDash',
     strokeCapField: cv.strokeCapField || 'strokeCap',
     strokeJoinField: cv.strokeJoinField || 'strokeJoin',
+    // Plan 96 P0. Same defaulting rule as the three above and for the same reason: the
+    // shipped manifests declare these on the canvas block AND as `boxes` sub-fields, and
+    // a tool that predates them simply has no box carrying the field, so every read below
+    // resolves to '' / false and every write lands on a row nothing reads.
+    strokeDashArrayField: cv.strokeDashArrayField || 'strokeDashArray',
+    dashFitField: cv.dashFitField || 'dashFit',
+    headStartField: cv.headStartField || 'headStart',
+    headEndField: cv.headEndField || 'headEnd',
+    bindStartField: cv.bindStartField || 'bindStart',
+    bindEndField: cv.bindEndField || 'bindEnd',
+    routeField: cv.routeField || 'route',
   }) as FieldCfg;
   // The vector operations' own field view. `cfg` is a superset of `VectorFieldConfig`
   // and vector-ops resolves each name defensively (a non-string falls back to the
   // Layout Studio default), so the resolved config is handed over unchanged.
   // Null until the manifest declares `canvas.pathField` — see CanvasCfg.pathField.
   const vectorCfg: VectorFieldConfig | null = cv.pathField ? cfg : null;
+  // Plan 96's path decorations are DECLARED, not defaulted-into-existence: the field names
+  // above default (so the reads are simple), but a tool that never named them in its canvas
+  // block has a hooks.js that cannot draw an arrowhead or an authored dash pattern, and
+  // authoring one into its boxes would store a decoration the render silently ignores —
+  // worse, one the compact URL drops on the way out because the field is undeclared. Both
+  // Layout Studio packs declare the set; Sequence Studio (the other `pathField` tool) does
+  // not, so it gets the Line tool and no head controls, which is exactly what it can draw.
+  const hasHeadCfg = !!(cv.headStartField || cv.headEndField);
+  const hasBindCfg = !!(cv.bindStartField || cv.bindEndField);
+  const hasRouteCfg = !!cv.routeField;
+  /** The committed bound-path layer's class, hidden while a drag re-routes it live. */
+  const boundLayerClass = cv.pathLayerClass || 'lolly-connectors';
+  const hasDashArrayCfg = !!cv.strokeDashArrayField;
   const unwrapColor = (v: ColorFieldValue) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
   const minSize = cv.minSize ?? 8;
   // ── Manifest-driven typography ────────────────────────────────────────────────
@@ -1003,8 +1113,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let gesture: Gesture | null = null;          // active pointer gesture
   let editing: EditingState | null = null;     // { id, el, prev } while editing a box's text inline
   let disposed = false;
-  let connectSource: string | null = null;     // the pending source box id while linking
-  let liveConnectHidden = false;                // the tool's real connector layer is hidden mid-drag
+  let bindHover: string | null = null;          // the box an end node would attach to on drop
+  let liveConnectHidden = false;                // the tool's real bound-path layer is hidden mid-drag
   let selectedEdges = new Set<string>();        // connector ids being inspected (click / shift-click / marquee)
   let edgePanel: HTMLElement | null = null;     // the connector-properties popover
   let hoverEdge: string | null = null;          // connector id under the cursor (hover affordance)
@@ -1101,12 +1211,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function selectHit(boxes: Box[], px: number, py: number): number {
     const skip = seqHiddenSkip(boxes);
-    if (!frameCfg) return hitTest(boxes, px, py, cfg, skip);
+    if (!frameCfg) return pickTopmost(boxes, px, py, cfg, skip);
     const fk = frameCfg.frameKind;
     const isFrame = (i: number): boolean => String(boxes[i]?.[cfg.kindField]) === fk;
-    const nonFrame = hitTest(boxes, px, py, cfg, (i) => (skip ? skip(i) : false) || isFrame(i));
+    const nonFrame = pickTopmost(boxes, px, py, cfg, (i) => (skip ? skip(i) : false) || isFrame(i));
     if (nonFrame >= 0) return nonFrame;
-    return hitTest(boxes, px, py, cfg, skip);
+    return pickTopmost(boxes, px, py, cfg, skip);
   }
 
   let idSeq = 0;
@@ -1442,50 +1552,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     onDirty?.(connectCfg.input);
     runtime.setInput(connectCfg.input, next);
   }
-  function freshEdgeId(edges: Box[]): string {
-    const used = new Set(edges.map((e, i) => (e && e.id != null && e.id !== '' ? String(e.id) : String(i))));
-    let id: string;
-    do { id = 'e' + (Date.now().toString(36).slice(-4)) + (idSeq++).toString(36) + Math.floor(Math.random() * 46656).toString(36); }
-    while (used.has(id));
-    return id;
-  }
-  // Add an edge from→to, or remove it if one already joins the two boxes (either way).
-  function toggleEdge(from: string, to: string): void {
-    if (!connectCfg || from === to) return;
-    const edges = getEdges();
-    const ff = connectCfg.fromField!, tf = connectCfg.toField!;
-    const at = edges.findIndex((e) => {
-      const a = String(e?.[ff]), b = String(e?.[tf]);
-      return (a === from && b === to) || (a === to && b === from);
-    });
-    if (at >= 0) { commitEdges(edges.filter((_, i) => i !== at)); return; }
-    const ne: Box = { id: freshEdgeId(edges), [ff]: from, [tf]: to };
-    if (connectCfg.styleField) ne[connectCfg.styleField] = connectCfg.defaultStyle;
-    if (connectCfg.arrowField) ne[connectCfg.arrowField] = connectCfg.defaultArrow;
-    if (connectCfg.dashField) ne[connectCfg.dashField] = 'solid';
-    if (connectCfg.colorField) ne[connectCfg.colorField] = connectCfg.defaultColor;
-    if (connectCfg.headField) ne[connectCfg.headField] = connectCfg.defaultHead;
-    if (connectCfg.widthField && connectCfg.defaultWidth != null) ne[connectCfg.widthField] = connectCfg.defaultWidth;
-    commitEdges([...edges, ne]);
-  }
-  // Create a line/arrow edge between two endpoints, each a box id OR an `@x,y` free point
-  // (the Line tool). Unlike toggleEdge this NEVER removes an existing pair — you draw as
-  // many as you like — and returns the new edge id so the caller can select it.
-  function createLine(fromEnd: string, toEnd: string): string | null {
-    if (!connectCfg) return null;
-    const edges = getEdges();
-    const ff = connectCfg.fromField!, tf = connectCfg.toField!;
-    const id = freshEdgeId(edges);
-    const ne: Box = { id, [ff]: fromEnd, [tf]: toEnd };
-    if (connectCfg.styleField) ne[connectCfg.styleField] = connectCfg.defaultStyle;
-    if (connectCfg.arrowField) ne[connectCfg.arrowField] = connectCfg.defaultArrow;
-    if (connectCfg.dashField) ne[connectCfg.dashField] = 'solid';
-    if (connectCfg.colorField) ne[connectCfg.colorField] = connectCfg.defaultColor;
-    if (connectCfg.headField) ne[connectCfg.headField] = connectCfg.defaultHead;
-    if (connectCfg.widthField && connectCfg.defaultWidth != null) ne[connectCfg.widthField] = connectCfg.defaultWidth;
-    commitEdges([...edges, ne]);
-    return id;
-  }
+  // `freshEdgeId` + `toggleEdge` (plan 90) lived here: Connect mode's write into the
+  // connectors input. Plan 96 P4 deleted both with the mode. An edge is not a thing any
+  // more — a connector is a path box whose `bindStart`/`bindEnd` name the boxes its ends
+  // are attached to, written by the endpoint-bind gesture below, and every tool's hook
+  // converts any surviving edge row to one of those on load. `commitEdges` above stays as
+  // the DRAIN: nothing calls it today, but a tool that still declares `canvas.connect`
+  // keeps its read-only inspector rather than silently losing the ability to delete a row.
+  // `createLine` (plan 90) lived here: the Line tool's write into the connectors input.
+  // Plan 96 P2 deleted it. A line is a PATH BOX now — `commitPathBox`, the same call the
+  // pen commits through — so there is no second place a line can come from, and the edge
+  // row it used to mint had no nodes to edit. `toggleEdge` above stays: it is the Connect
+  // mode's own write, which P4 migrates.
   const gridRound = (v: number): number => Math.round(v / gridSize) * gridSize;
 
   // ── coordinate mapping (transform-agnostic via the live canvas rect) ────────
@@ -1988,8 +2066,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let arrangeBtn: HTMLButtonElement | null = null;   // popover anchor (captured, not by index)
   /** The mode buttons, captured by buildToolbar — see syncModeUI. Absent ones stay null:
    *  pen and connect are opt-in, so not every tool has all four. */
-  const modeBtns: Record<'select' | 'create' | 'pen' | 'connect' | 'line', HTMLButtonElement | null> =
-    { select: null, create: null, pen: null, connect: null, line: null };
+  const modeBtns: Record<'select' | 'create' | 'pen' | 'line', HTMLButtonElement | null> =
+    { select: null, create: null, pen: null, line: null };
   let nodeToolBtn: HTMLButtonElement | null = null;   // the Node tool (opt-in, cv.pathField)
   function closePopover() { popover?.remove(); popover = null; }
   buildToolbar();   // after arrangeBtn exists (buildToolbar assigns it)
@@ -2160,6 +2238,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Node tool (Inkscape's N): click a shape to edit its points directly.
       nodeToolBtn = toolBtn(t('Edit points (N) - click a shape to edit its nodes directly'), SVG.nodes,
         () => toggleNodeTool(), 'fc-btn-nodes');
+      // Line — the pen's other gesture (plan 96 P2). One drag makes a two-node path box,
+      // arrowhead on by default; it lives beside the Pen because it is the SAME primitive
+      // drawn a different way, and it is opt-in on `pathField` for the same reason the pen
+      // is: a tool with nowhere to store an authored path cannot hold a line either.
+      modeBtns.line = toolBtn(t('Line — drag to draw a line or arrow'), SVG.line,
+        () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line');
     }
     // Timeline (opt-in via the canvas time-model fields — a tool with nowhere to store
     // a start/duration has no timeline). Toggles the docked panel; the panel module
@@ -2178,14 +2262,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         (b) => { if (morePanel?.classList.contains('fc-frames-panel')) closeMorePanel(); else openFramesPanel(b); }, 'fc-btn-frames');
       framesBtn.setAttribute('data-tip', t('Artboards — reorder'));
     }
-    // Connect mode (opt-in): link cards with routed connector lines. Click a source
-    // card, then each target; click a card twice or hit Esc to stop.
-    if (connectCfg) {
-      modeBtns.connect = toolBtn(t('Connect cards — click a card, then the ones it links to'), SVG.connect,
-        () => { mode === 'connect' ? toPointer() : setMode('connect'); }, 'fc-btn-connect');
-      // Line tool — drag anywhere to draw a line/arrow; ends snap to a card or float free.
-      modeBtns.line = toolBtn(t('Line — drag to draw a line or arrow'), SVG.line,
-        () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line');
+    // Auto-arrange, for a tool whose boxes can be JOINED (opt-in via canvas.bindStartField).
+    // It used to hang off `canvas.connect`, the edge input; the graph it walks is now the
+    // bindings on the path boxes themselves, so the button follows the bindings.
+    if (hasBindCfg) {
       toolBtn(t('Auto-arrange the connected cards'), SVG.tidy, () => autoLayout());
     }
     // One "Arrange" menu — align + distribute + stacking order + group + clip
@@ -3512,6 +3592,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
+   * Validate a typed dash pattern. The ENGINE owns this contract (it is the same parse the
+   * tool's hook runs on the stored value), so the running engine's primitive wins whenever
+   * it is there; `parseDashArray` in free-canvas-math.ts is the identical fallback for a
+   * build that predates it, so the field never stops validating. Feature-detected at the
+   * call, not cached, because the bridge is assembled asynchronously.
+   */
+  function parseDashText(text: string): number[] | null {
+    // An emptied field is "no authored array", never an error — decided here rather than
+    // delegated, so clearing the control cannot depend on how the engine reads a blank.
+    if (!text.trim()) return [];
+    const viaHost = host?.connectors?.dashFit?.parse;
+    if (typeof viaHost === 'function') {
+      try { return viaHost(text); } catch { /* a refusing primitive is not a reason to lose the field */ }
+    }
+    return parseDashArray(text);
+  }
+
+  /**
    * ── Stroke panel: width / style / ends / corners / fill rule ───────────────────
    *
    * A path box's stroke had a colour control and nothing else, so the width and the two
@@ -3525,6 +3623,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * Stroke ALIGNMENT (inside / centre / outside) is deliberately absent: SVG strokes on the
    * centreline only, so inside/outside is not a paint setting but a real outline conversion —
    * which the context menu already offers, exactly, as "Outline stroke".
+   *
+   * Plan 96 adds three things a keyword-only stroke could not say: the two ARROWHEADS (a
+   * spline, a line and a connector are one primitive, so they share one decoration set), the
+   * authored DASH ARRAY for anyone who wants the actual numbers, and the corner FIT that
+   * makes a dashed rectangle land a dash on each corner instead of a half one.
    */
   function openStrokePanel(anchor: HTMLElement): void {
     closeMorePanel();
@@ -3537,7 +3640,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const capCur = String(b[cfg.strokeCapField] || 'round');
     const joinCur = String(b[cfg.strokeJoinField] || 'round');
     const ruleCur = String(b[cfg.fillRuleField] || 'nonzero');
+    const dashArrCur = String(b[cfg.strokeDashArrayField] ?? '');
+    const dashFitCur = b[cfg.dashFitField] === true || String(b[cfg.dashFitField]) === 'true';
+    const headStartCur = String(b[cfg.headStartField] || 'none');
+    const headEndCur = String(b[cfg.headEndField] || 'none');
+    // Route is a property of a CONNECTOR, so it is offered only once an end is attached:
+    // on a free spline it would be a control with nothing to act on. `pathRouteStyle`
+    // supplies the label for what Auto currently resolves to, so "auto" is never a mystery.
+    const routeCur = String(b[cfg.routeField] ?? '');
+    const routeBound = hasRouteCfg && isBoundPath(b);
     const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" title="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
+    const headSelect = (field: string, cur: string, lbl: string): string =>
+      `<select class="field-select field-select--sm" data-sp-head="${escape(field)}" aria-label="${escape(lbl)}">` +
+      HEAD_CHOICES.map(([v, l]) => `<option value="${v}"${cur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('') +
+      '</select>';
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel fc-stroke-panel';
     p.innerHTML =
@@ -3548,11 +3664,39 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         ['dashed', t('Dashed'), SVG.dashDashed],
         ['dotted', t('Dotted'), SVG.dashDotted],
       ])) +
+      // The power-user pair, where the manifest declares them (hasDashArrayCfg). Shown when
+      // a dash style is on, or whenever an array is already authored — so a pattern can
+      // never become unreachable by switching the keyword back to Solid, and a solid stroke
+      // is not asked about dashes it has none of.
+      (hasDashArrayCfg
+        ? `<label class="fc-row" data-sp-row="dasharray"${dashRowOn(dashCur, dashArrCur) ? '' : ' hidden'}>` +
+          `<span class="fc-row-lbl" title="${escape(t('Dash array'))}">${icon(SVG.dashDotted)}<span>${t('Dash array')}</span></span>` +
+          `<input type="text" data-sp="dasharray" inputmode="decimal" spellcheck="false" autocomplete="off"` +
+          ` value="${escape(dashArrCur)}" placeholder="6 4" aria-label="${escape(t('Dash array'))}"></label>` +
+          `<label class="fc-row fc-row-toggle field-toggle" data-sp-row="dashfit"${dashRowOn(dashCur, dashArrCur) ? '' : ' hidden'}>` +
+          `<span class="fc-row-lbl" title="${escape(t('Fit dashes to corners'))}">${icon(SVG.joinMiter)}<span>${t('Fit dashes to corners')}</span></span>` +
+          `<input type="checkbox" class="field-check" data-sp="dashfit"${dashFitCur ? ' checked' : ''}></label>`
+        : '') +
       segRow(SVG.capRound, t('Line ends'), segHtml(cfg.strokeCapField, capCur, [
         ['round', t('Round ends'), SVG.capRound],
         ['butt', t('Flat ends'), SVG.capButt],
         ['square', t('Square ends'), SVG.capSquare],
       ])) +
+      // Arrowheads. Two plain menus rather than twelve icon buttons: the six shapes are
+      // named things, and the row already carries three other segmented controls. Offered
+      // only where the manifest declares them — see hasHeadCfg.
+      (hasHeadCfg
+        ? segRow(SVG.line, t('Path start'), headSelect(cfg.headStartField, headStartCur, t('Path start'))) +
+          segRow(SVG.line, t('Path end'), headSelect(cfg.headEndField, headEndCur, t('Path end')))
+        : '') +
+      // Route — how a line with an attached end is bent between the two boxes. One plain
+      // menu, beside the heads, because the three of them are the connector's whole shape.
+      (routeBound
+        ? segRow(SVG.tidy, t('Route'),
+          `<select class="field-select field-select--sm" data-sp-route aria-label="${escape(t('Route'))}">` +
+          ROUTE_CHOICES.map(([v, l]) => `<option value="${v}"${routeCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('') +
+          '</select>')
+        : '') +
       segRow(SVG.joinRound, t('Corners'), segHtml(cfg.strokeJoinField, joinCur, [
         ['round', t('Round corners'), SVG.joinRound],
         ['miter', t('Sharp corners'), SVG.joinMiter],
@@ -3563,12 +3707,51 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         ['evenodd', t('Punch holes (even-odd)'), SVG.ruleEvenOdd],
       ]));
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
-    wireSegs(p);
+    // The dash-style segment also decides whether the two dash rows are on screen, so it
+    // needs the write PLUS the reveal — hence a custom onSet rather than wireSegs' default.
+    const dashArrEl = p.querySelector<HTMLInputElement>('input[data-sp="dasharray"]');
+    const syncDashRows = (styleVal: string): void => {
+      const on = dashRowOn(styleVal, dashArrEl?.value ?? dashArrCur);
+      p.querySelectorAll<HTMLElement>('[data-sp-row="dasharray"], [data-sp-row="dashfit"]')
+        .forEach((row) => { row.hidden = !on; });
+    };
+    wireSegs(p, (field, v) => {
+      setField(field, v);
+      if (field === cfg.strokeDashField) syncDashRows(String(v ?? ''));
+    });
     p.querySelectorAll<HTMLInputElement>('input[data-sp="width"]').forEach((rng) => rng.addEventListener('input', () => {
       const valEl = p.querySelector<HTMLElement>('[data-sp-val="width"]');
       if (valEl) valEl.textContent = rng.value;
       setField(cfg.strokeWField, Number(rng.value));
     }));
+    // Dash array: validated on every keystroke, but a REFUSAL writes nothing at all rather
+    // than a repaired guess. That is what keeps the hook's injection stance intact — only
+    // numbers ever reach `stroke-dasharray` — and it is also the honest answer to "6 x":
+    // there is no pattern there to store, and silently dropping the 'x' would author a
+    // pattern the user did not type.
+    if (dashArrEl) {
+      dashArrEl.addEventListener('input', () => {
+        const nums = parseDashText(dashArrEl.value);
+        const bad = nums === null;
+        dashArrEl.setAttribute('aria-invalid', String(bad));
+        if (bad) return;
+        setField(cfg.strokeDashArrayField, nums.length ? formatDashArray(nums) : '');
+      });
+      // Leaving the field with something unparseable puts back what is actually stored,
+      // so the control never shows a value the document does not have.
+      dashArrEl.addEventListener('blur', () => {
+        if (dashArrEl.getAttribute('aria-invalid') !== 'true') return;
+        const cur = getBoxes()[selIndices(getBoxes())[0] ?? -1] as Box | undefined;
+        dashArrEl.value = String(cur?.[cfg.strokeDashArrayField] ?? '');
+        dashArrEl.setAttribute('aria-invalid', 'false');
+      });
+    }
+    p.querySelectorAll<HTMLInputElement>('input[data-sp="dashfit"]').forEach((cb) =>
+      cb.addEventListener('change', () => setField(cfg.dashFitField, cb.checked)));
+    p.querySelectorAll<HTMLSelectElement>('select[data-sp-head]').forEach((sel) =>
+      sel.addEventListener('change', () => setField(sel.dataset.spHead, sel.value)));
+    p.querySelectorAll<HTMLSelectElement>('select[data-sp-route]').forEach((sel) =>
+      sel.addEventListener('change', () => setField(cfg.routeField, sel.value)));
     stageEl.appendChild(p);
     morePanel = p;
     const ar = anchor.getBoundingClientRect();
@@ -4657,10 +4840,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     penCursor = null;
     penWarm = null;
     clearGuides();
-    if (!draft || !cfg.pathField) { renderChrome(); return; }
+    if (!draft) { renderChrome(); return; }
+    if (!commitPathBox(draft)) renderChrome();
+  }
+
+  /**
+   * A finished authored path → a committed path box. ONE `setInput`, so one undo step
+   * removes the whole thing.
+   *
+   * Extracted from `penFinishDraw` for plan 96 P2: the Line tool draws the same primitive
+   * with a different gesture (one drag, two nodes) and must land the same box — same
+   * seeding, same paint fallback, same single commit — or a line would be a second-class
+   * shape the moment anyone tried to node-edit or restyle it. `extra` is the per-gesture
+   * decoration the line adds on top (its default arrowhead and its empty bindings).
+   *
+   * Returns false when nothing was committed (fewer than two nodes, an unlowerable kind, a
+   * tool with no `pathField`) — the caller's cue to repaint its own chrome.
+   */
+  function commitPathBox(draft: AuthoredPath, extra?: Box): boolean {
+    if (!cfg.pathField) return false;
     const made = penCommitFromNative(draft);
     const value = made ? encodePathField(made.path) : '';
-    if (!made || !value) { renderChrome(); return; }
+    if (!made || !value) return false;
     const boxes = getBoxes();
     const id = freshId(boxes);
     const pathSeed: Box = { ...(addKinds.find((k) => k.id === 'path')?.seed || {}) };
@@ -4687,9 +4888,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     box[cfg.kindField] = 'path';
     if (cfg.shapeField) box[cfg.shapeField] = 'rect';
     box[cfg.pathField] = value;
+    // The gesture's own decoration goes on LAST so it beats the tool's `path` seed: the
+    // Line tool's arrowhead is what the user asked for by picking that tool, and a brand
+    // seed that says "paths are plain" should not silently take it off.
+    if (extra) for (const k of Object.keys(extra)) box[k] = extra[k];
     selection = new Set([id]);
     penLastPaint = pickPathPaint(penPaintFields, box);
     commit([...boxes, box]);
+    return true;
   }
 
   /** The colour the pen preview is drawn in, as a concrete hex — always a usable value, since
@@ -5105,6 +5311,44 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return closed ? d + 'Z' : d;
   }
 
+  /**
+   * The arrowheads of the box being node-edited, as an SVG fragment in BOX-LOCAL px (the
+   * caller wraps it in the frame transform, so a rotated box's heads rotate with it).
+   *
+   * Why it is here at all: a node drag hides the box's own `<svg>` and paints this hairline
+   * outline instead, so without it the arrowheads blink out for the whole gesture — exactly
+   * while you are moving the point one of them sits on. The geometry is the engine's
+   * `edgeArrowHead`, the same call the committed render reaches through the host bridge, so
+   * the preview head is the head.
+   *
+   * Heads go on a SINGLE OPEN contour only, matching pathHtmlFor: "the path's ends" is not
+   * a thing a multi-contour boolean result or a closed loop has. The ink is `currentColor`
+   * (the guide colour of the outline it decorates), not the box's stroke: this is chrome,
+   * and a head painted in a stroke colour that happens to match the artboard would vanish.
+   * No shaft pullback either — a 1.6px hairline cannot poke through a filled head visibly,
+   * and the inset belongs to the committed render, which is what the export reads.
+   */
+  function penEditHeadsSvg(contours: AuthoredPath[]): string {
+    if (!hasHeadCfg || !penEdit || contours.length !== 1 || contours[0]!.closed) return '';
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, penEdit.id);
+    if (i < 0) return '';
+    const b = boxes[i] || {};
+    const hs = String(b[cfg.headStartField] || 'none');
+    const he = String(b[cfg.headEndField] || 'none');
+    if (hs === 'none' && he === 'none') return '';
+    const low = lowerAuthored(contours[0]!, penWarm);
+    if (!low.cubics.length) return '';
+    const tips = pathEndPoints(low.cubics);
+    const dir = pathEndTangents(low.cubics);
+    if (!tips || !dir) return '';
+    // The same clamp `pathHeadSize` applies before the engine sizes a head, so the preview
+    // head is the committed head at every stroke width, not just under 20.
+    const size = Math.max(9, clampN(b[cfg.strokeWField], 2.5, 0.5, 20) * 4);
+    return (hs !== 'none' ? edgeArrowHead(tips.start, dir.start.x, dir.start.y, size, 'currentColor', hs) : '')
+      + (he !== 'none' ? edgeArrowHead(tips.end, dir.end.x, dir.end.y, size, 'currentColor', he) : '');
+  }
+
   /** The pen layer: the draft (plus the segment under the cursor) while drawing, and the
    *  edited path's live outline while node-editing. */
   function paintPen(): void {
@@ -5140,11 +5384,91 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const fr = penEdit.frame;
       if (ds.length) {
         const tf = `translate(${cf2(fr.x)} ${cf2(fr.y)})` + (fr.rot ? ` rotate(${cf2(fr.rot)} ${cf2(fr.w / 2)} ${cf2(fr.h / 2)})` : '');
-        body += `<g transform="${tf}"><path d="${escape(ds.join(' '))}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/></g>`;
+        body += `<g transform="${tf}"><path d="${escape(ds.join(' '))}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`
+          + penEditHeadsSvg(contours) + '</g>';
       }
     }
     penLayer.innerHTML = body;
     penLayer.style.display = '';
+  }
+
+  // ── endpoint binding (plan 96 P3) ─────────────────────────────────────────────
+  //
+  // Dragging one END of a path onto a box ATTACHES that end to it: the path becomes a
+  // connector and the engine routes it from that box's border, re-solving as the box moves.
+  // Dragging the same end off every box detaches it and the path is a plain spline again.
+  // There is no mode and no separate tool — the gesture is the one the shape suggests, and
+  // it is the thing Connect mode used to be (plan 96 P4 deleted that).
+
+  /** Which end of the edited path a node-drag is moving, or undefined when it is not a
+   *  single END node (an interior node has nothing to attach; two at once is a reshape).
+   *  A CLOSED path has no ends, and a multi-contour path has no single pair of them. */
+  function bindEndFor(indices: number[]): 'start' | 'end' | undefined {
+    if (!hasBindCfg || !penEdit || indices.length !== 1) return undefined;
+    if (penEdit.parts.length !== 1 || penEdit.path.closed) return undefined;
+    const i = indices[0]!, n = penEdit.path.nodes.length;
+    if (n < 2) return undefined;
+    return i === 0 ? 'start' : i === n - 1 ? 'end' : undefined;
+  }
+
+  /** The box an end node would attach to at this native point: the topmost hit that is not
+   *  the path itself and not a frame (a page is a container, not a thing to point at). */
+  function bindableAt(x: number, y: number, selfId: string): string | null {
+    const boxes = getBoxes();
+    const hit = pickTopmost(boxes, x, y, cfg, seqHiddenSkip(boxes));
+    if (hit < 0) return null;
+    const b = boxes[hit] || {};
+    const id = idOf(b, hit);
+    if (id === selfId) return null;
+    if (frameCfg && String(b[cfg.kindField]) === (frameCfg.frameKind || 'frame')) return null;
+    return id;
+  }
+
+  /** The snap ring over the box an end would attach to. Drawn in the connector preview
+   *  layer (native coordinates, already placed) so it pans and zooms with everything else.
+   *  Same dashed outline Connect mode used to put round its pending source card — the
+   *  affordance survived the mode. */
+  function setBindHover(id: string | null): void {
+    if (id === bindHover) return;
+    bindHover = id;
+    if (!id) { if (!penEdit) hideConnectLayer(); else { connectLayer.innerHTML = ''; } return; }
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, id);
+    if (i < 0) { bindHover = null; return; }
+    const r = boxRect(boxes[i], cfg);
+    placeConnectLayer(metrics());
+    connectLayer.innerHTML =
+      `<rect x="${cf2(r.x - 4)}" y="${cf2(r.y - 4)}" width="${cf2(r.w + 8)}" height="${cf2(r.h + 8)}" rx="10"` +
+      ' fill="none" stroke="#30ba78" stroke-width="3" stroke-dasharray="7 5"/>';
+    connectLayer.style.display = '';
+  }
+
+  /**
+   * Write one end's binding — the whole commit, one `setInput`, one undo step.
+   *
+   * A no-op write is skipped so re-dragging an already-attached end does not mint an undo
+   * step that changes nothing. Attaching also seeds a head on the far end when the path has
+   * neither: an undecorated connector reads as a divider rather than as a link, and this is
+   * the moment the user said "this points at that".
+   */
+  function applyBinding(id: string, which: 'start' | 'end', to: string): void {
+    const field = which === 'start' ? cfg.bindStartField : cfg.bindEndField;
+    if (!field) return;
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, id);
+    if (i < 0) return;
+    const b = boxes[i] || {};
+    if (String(b[field] ?? '') === to) return;
+    const next: Box = { ...b, [field]: to };
+    if (to && hasHeadCfg
+      && String(b[cfg.headStartField] || 'none') === 'none'
+      && String(b[cfg.headEndField] || 'none') === 'none') {
+      next[which === 'start' ? cfg.headStartField : cfg.headEndField] = 'triangle';
+    }
+    commit(boxes.map((row, k) => (k === i ? next : row)));
+    announce(to
+      ? t('Attached to {name}. The line routes to it now, and follows it.', { name: to })
+      : t('Detached. The line is a free shape again.'));
   }
 
   /** Every node's position in NATIVE px, in node order — the one place the two modes'
@@ -5231,6 +5555,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     penChromeNodes = { nodes, arms, dots };
   }
 
+  /** The MODEL row of the box being node-edited (the bindings live there, not on the
+   *  denormalised local path `penEdit` holds). null when the edit is over. */
+  function penEditBox(): Box | null {
+    if (!penEdit) return null;
+    const boxes = getBoxes();
+    const i = indexOfId(boxes, penEdit.id);
+    return i >= 0 ? (boxes[i] || null) : null;
+  }
+
   function positionPenChrome(): void {
     const nodes = penChromeNodes;
     if (!nodes) return;
@@ -5251,6 +5584,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // The first node of an OPEN draft is the one a click closes on, so it reads as a
       // target rather than as another placed point.
       el.classList.toggle('is-close-target', !!penDraft && i === 0 && pts.length >= 3);
+      // plan 96 P3 — an ATTACHED end reads as filled, so "this line is pinned to that box"
+      // is visible without dragging it to find out. Only the two ends can carry one.
+      const end = penEdit ? (i === 0 ? 'start' : i === pts.length - 1 ? 'end' : null) : null;
+      el.classList.toggle('is-bound', !!end && !!penEditBox() && bindOf(penEditBox()!, end) !== '');
     }
     for (let k = 0; k < nodes.dots.length; k++) {
       const i = k >> 1;
@@ -5407,8 +5744,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * leaves it — the same way switching tools leaves a text edit.
    */
   function setMode(next: EditorMode, o: { kind?: AddKind; draft?: 'commit' | 'discard' } = {}): void {
-    if (next === 'connect' && !connectCfg) return;
-    if (next === 'line' && !connectCfg) return;   // the line tool writes to the connectors input
+    // The line tool writes a PATH BOX now (plan 96 P2), so it is gated on the same config
+    // the pen is — `pathField` — and no longer on the connectors input it used to write to.
+    if (next === 'line' && !cfg.pathField) return;
     if (next === 'pen' && !cfg.pathField) return;
     if (next === 'create' && !o.kind && !armedKind) return;
     if (next !== 'select') nodeToolActive = false;   // any other tool exits the Node tool
@@ -5427,10 +5765,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (gesture && (gesture.type === 'create' || gesture.type === 'line')) endGesture();
       if (from === 'create') exitCreate();
       else if (from === 'pen') exitPen();
-      else if (from === 'connect') exitConnect();
       else if (from === 'line') exitLine();
       if (next === 'pen') enterPen();
-      else if (next === 'connect') enterConnect();
       else if (next === 'line') enterLine();
     }
     if (next === 'create') enterCreate(o.kind);
@@ -5481,39 +5817,43 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     pendingAddAtMs = null;   // an abandoned arm must not time the NEXT box drawn by hand
     stageEl.classList.remove('fc-arming');
   }
-  function enterConnect(): void {
-    deselectEdge();                            // drop any connector selection
-    // …and its highlight with it. `deselectEdge` leaves the overlay layer alone while
-    // connect mode is on (the mode's own preview lives there), so the outgoing selection's
-    // highlight has to be cleared here or it hangs around over an empty selection.
-    hideConnectLayer();
-    connectSource = null;
-    selection = new Set<string>();
-    stageEl.classList.add('fc-connecting');
-    setHoverEdge(null);
-    announce(t('Connect mode on — click a card, then the card to link it to. Esc to finish.'));
-    renderChrome();
-  }
-  function exitConnect(): void {
-    connectSource = null;
-    stageEl.classList.remove('fc-connecting');
-    hideConnectLayer();
-  }
-  // The Line tool (plan 90) — like Connect, but a drag draws ONE line whose ends snap to a
-  // card or float as a free point. No pending source: the gesture carries both ends.
+  // `enterConnect` / `exitConnect` (plan 90) lived here. Plan 96 P4 deleted Connect mode
+  // outright: clicking a card and then another card was a third way to make the one
+  // primitive the Pen and the Line tool already make, and P3 replaced it with the gesture
+  // the shape itself suggests — drag a line's endpoint onto a box and it attaches. There is
+  // no mode to enter, so there is no mode to be trapped in and none to leave.
+  // The Line tool (plan 96 P2) — the pen's other gesture. One drag draws a straight
+  // two-node authored path, committed as an ordinary path box: selectable, node-editable,
+  // and carrying the same stroke + arrowhead decorations any spline does.
   function enterLine(): void {
     deselectEdge();
     hideConnectLayer();
     selection = new Set<string>();
     stageEl.classList.add('fc-lining');
     setHoverEdge(null);
-    announce(t('Line tool — drag on the canvas to draw a line or arrow. Release on a card to attach it. Esc to finish.'));
+    announce(t('Line tool — drag on the canvas to draw a line or arrow. Esc to finish.'));
     renderChrome();
   }
   function exitLine(): void {
     stageEl.classList.remove('fc-lining');
     hideConnectLayer();
+    clearGuides();
   }
+  /**
+   * What the Line tool adds to a path box beyond the pen's own seeding.
+   *
+   * An arrowhead at the END and nothing at the start: someone reaching for a line tool on a
+   * layout canvas is nearly always pointing at something, and an undecorated straight
+   * segment is what the pen already gives. The head is a normal field, so the stroke panel
+   * takes it straight back off.
+   *
+   * Both bindings are written EMPTY rather than left absent, so a line drawn today carries
+   * the same shape of row as one bound in P3 — the field exists, it just names no box.
+   */
+  const lineBoxSeed = (): Box => ({
+    ...(hasHeadCfg ? { [cfg.headStartField]: 'none', [cfg.headEndField]: 'triangle' } : {}),
+    ...(hasBindCfg ? { [cfg.bindStartField]: '', [cfg.bindEndField]: '' } : {}),
+  });
 
   /**
    * The rail's one job: say which tool is live. Attributes only, on buttons captured at
@@ -5529,29 +5869,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     flag(modeBtns.select, mode === 'select' && !nodeToolActive);
     flag(modeBtns.create, mode === 'create');
     flag(modeBtns.pen, mode === 'pen');
-    flag(modeBtns.connect, mode === 'connect');
     flag(modeBtns.line, mode === 'line');
     flag(nodeToolBtn, nodeToolActive);
   }
 
   // Auto-arrange the connected cards into a tidy top-down hierarchy. Roots (cards with
-  // no incoming edge) are laid out left-to-right; each child sits under its parent, and
-  // a parent is centred over the span of its children. Unconnected cards are left where
+  // nothing pointing AT them) are laid out left-to-right; each child sits under its parent,
+  // and a parent is centred over the span of its children. Unconnected cards are left where
   // they are. One commit → one undo step.
+  //
+  // The graph is read off the path boxes' BINDINGS (plan 96 P4). It used to be read off the
+  // `connectors` edge input; a connector is a path box now, and `bindStart` → `bindEnd` is
+  // the same directed pair `from` → `to` was, so the walk below is unchanged.
   function autoLayout(): void {
-    if (!connectCfg) return;
+    if (!hasBindCfg) return;
     const boxes = getBoxes();
     if (!boxes.length) return;
-    const edges = getEdges();
-    const ff = connectCfg.fromField!, tf = connectCfg.toField!;
     const idAt = new Map<string, number>();
     boxes.forEach((b, i) => idAt.set(idOf(b, i), i));
     const children = new Map<string, string[]>();
     const hasParent = new Set<string>();
-    for (const e of edges) {
-      if (!e) continue;
-      const from = String(e[ff]), to = String(e[tf]);
-      if (!idAt.has(from) || !idAt.has(to) || from === to) continue;
+    for (const b of boxes) {
+      if (!b) continue;
+      const from = String(b[cfg.bindStartField] ?? ''), to = String(b[cfg.bindEndField] ?? '');
+      if (!from || !to || !idAt.has(from) || !idAt.has(to) || from === to) continue;
       if (!children.has(from)) children.set(from, []);
       if (!children.get(from)!.includes(to)) children.get(from)!.push(to);
       hasParent.add(to);
@@ -5804,7 +6145,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (vectorCfg && !penEdit) {
       const pnat = clientToNative(e.clientX, e.clientY);
       const pboxes = getBoxes();
-      const phit = hitTest(pboxes, pnat.x, pnat.y, cfg, seqHiddenSkip(pboxes));
+      const phit = pickTopmost(pboxes, pnat.x, pnat.y, cfg, seqHiddenSkip(pboxes));
       if (phit >= 0 && boxOutlineKind(pboxes[phit], vectorCfg) === 'path') {
         e.preventDefault();
         startPenEdit(idOf(pboxes[phit], phit));
@@ -6490,16 +6831,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     rubber.hidden = false;
     return true;
   }
-  // Line tool press: start a line from the pressed point — a card under it (attach) or a
-  // free `@x,y` point. The drag previews the rubber; release commits (see onGestureEnd).
+  // Line tool press: start a line at the pressed point. The drag previews the rubber;
+  // release commits a two-node path box (see onGestureEnd). Snapped and grid-rounded the
+  // same way a pen node and a created box are, so a line lands on the guides the rest of
+  // the editor draws. Alt opts out of both, exactly as it does for the pen.
   function tryLineDrawAt(e: PointerEvent, nat: Point): boolean {
-    if (mode !== 'line' || !connectCfg) return false;
-    const boxes = getBoxes();
-    const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
-    const fromEnd = hit >= 0 ? idOf(boxes[hit], hit) : formatEdgePoint(nat.x, nat.y);
-    beginGesture(e, { type: 'line', origin: nat, fromEnd });
-    drawLineRubber(fromEnd, nat);
+    if (mode !== 'line' || !cfg.pathField) return false;
+    const at = lineSnap(nat, e.altKey);
+    beginGesture(e, { type: 'line', origin: at });
+    drawLineRubber(at, at);
     return true;
+  }
+  /** A line endpoint's landing spot: grid first (when the grid is on), then the smart
+   *  guides, whose guide lines are drawn as a side effect — the same order tryPenDrawAt
+   *  uses, so the two gestures agree about where "here" is. */
+  function lineSnap(nat: Point, alt: boolean): Point {
+    let px = nat.x, py = nat.y;
+    if (gridOn && !alt) { px = gridRound(px); py = gridRound(py); }
+    if (alt) { clearGuides(); return { x: px, y: py }; }
+    const snap = snapPoint(px, py, otherAABBs(getBoxes(), new Set<number>()) as MathAABB[], canvasWH(), snapThreshNative());
+    drawGuides(snap.guides);
+    return { x: snap.x, y: snap.y };
   }
 
   function onCanvasPointerDown(e: PointerEvent): void {
@@ -6521,21 +6873,6 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closePopover();
     const nat = clientToNative(e.clientX, e.clientY);
     const boxes = getBoxes();
-
-    // Connect mode: click a source card, then each target it links to. Clicking the
-    // same card again (or empty canvas) drops the pending source; Esc / the rail button
-    // exits the mode. Never starts a drag gesture.
-    if (mode === 'connect') {
-      const chit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
-      if (chit < 0) { connectSource = null; hideConnectLayer(); e.stopPropagation(); e.preventDefault(); return; }
-      const cid = idOf(boxes[chit], chit);
-      if (!connectSource) connectSource = cid;
-      else if (connectSource === cid) { connectSource = null; hideConnectLayer(); e.stopPropagation(); e.preventDefault(); return; }
-      else { toggleEdge(connectSource, cid); connectSource = cid; }   // chain from the same source
-      drawConnectRubber(nat);
-      e.stopPropagation(); e.preventDefault();
-      return;
-    }
 
     // Line tool: press starts a line (drag → release attaches to a card or floats free).
     if (tryLineDrawAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
@@ -6576,10 +6913,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (e.shiftKey || e.metaKey || e.ctrlKey) { penSel.has(ni) ? penSel.delete(ni) : penSel.add(ni); }
         else if (!penSel.has(ni)) { penSel = new Set([ni]); penHandleSel = new Set<string>(); }
         setPathSvgHidden(true);
+        const indices = penSel.size ? [...penSel] : [ni];
         beginGesture(e, {
           type: 'pennode', origin: nat,
-          indices: penSel.size ? [...penSel] : [ni],
+          indices,
           start: penEdit.path.nodes.map((n) => ({ ...n })),
+          // plan 96 P3: dragging exactly ONE of the path's two ends is the bind gesture.
+          // Two nodes at once is a reshape, and an interior node has no end to attach.
+          bindEnd: bindEndFor(indices),
         });
         ctxSelKey = null;                        // the continuity control reflects the new pick
         renderChrome();
@@ -6614,7 +6955,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // so the tool doesn't trap you on a shape it can't edit. Runs only when no node-edit
     // session is live (that case is handled by the penEdit block above).
     if (nodeToolActive && vectorCfg && !penEdit) {
-      const nh = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
+      const nh = pickTopmost(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
       if (nh >= 0 && boxOutlineKind(boxes[nh], vectorCfg) === 'path') {
         startPenEdit(idOf(boxes[nh], nh));
         e.stopPropagation(); e.preventDefault();
@@ -6808,6 +7149,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const b = frameToLocal(fr, sx, sy);
       gesture.moved = Math.hypot(sx - gesture.origin.x, sy - gesture.origin.y) > 0.01;
       penEdit = { ...penEdit, path: moveNodes(penEdit.path, gesture.indices, b.x - a.x, b.y - a.y, gesture.start) };
+      // plan 96 P3 — the bind affordance. The ring follows the pointer, not the node: the
+      // node is under the finger and the box is what the drop acts on.
+      if (gesture.bindEnd) setBindHover(bindableAt(sx, sy, penEdit.id));
       paintPen();
       positionPenChrome();
       return;
@@ -6835,11 +7179,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
     if (gesture.type === 'line') {
-      const boxes = getBoxes();
-      const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
-      const hoverId = hit >= 0 ? idOf(boxes[hit], hit) : null;
-      gesture.toEnd = hoverId != null ? hoverId : formatEdgePoint(nat.x, nat.y);
-      drawLineRubber(gesture.fromEnd, nat, hoverId);
+      const to = lineSnap(nat, e.altKey);
+      gesture.to = to;
+      drawLineRubber(gesture.origin, to);
       return;
     }
     if (gesture.type === 'move') {
@@ -6941,17 +7283,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     const nat = clientToNative(e.clientX, e.clientY);
     if (g.type === 'line') {
-      const boxes = getBoxes();
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
-      const hit = hitTest(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
-      const toEnd = hit >= 0 ? idOf(boxes[hit], hit) : formatEdgePoint(nat.x, nat.y);
+      const to = g.to ?? lineSnap(nat, e.altKey);
       endGesture();
-      hideConnectLayer();   // BEFORE selectEdge, which draws its own highlight into the layer
-      // A tap (no drag) or a self-loop back onto the same card draws nothing.
-      if (moved < 6 || (!isEdgePoint(g.fromEnd) && g.fromEnd === toEnd)) return;
-      const newId = createLine(g.fromEnd, toEnd);
+      hideConnectLayer();
+      clearGuides();
+      // A tap is a mis-click, and a zero-length line is not a shape: neither commits — the
+      // same floor `penFinishDraw` puts under a one-node draft.
+      if (moved < 6 || (Math.abs(to.x - g.origin.x) < 0.5 && Math.abs(to.y - g.origin.y) < 0.5)) { toPointer(); return; }
+      commitPathBox({
+        kind: 'line', closed: false,
+        nodes: [{ x: g.origin.x, y: g.origin.y, continuity: 'corner' }, { x: to.x, y: to.y, continuity: 'corner' }],
+      }, lineBoxSeed());
       toPointer();
-      if (newId) selectEdge(newId);   // exits line mode + opens the connector inspector
       return;
     }
     const boxes = getBoxes();
@@ -6969,10 +7313,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (g.type === 'pennode' || g.type === 'penhandle') {
       const moved = g.moved === true;
       const next = penEdit ? penEdit.path : null;
+      // plan 96 P3 — landing an end node ON a box attaches it; landing it anywhere else
+      // detaches it. Read BEFORE endGesture(), which clears the hover.
+      const bindTo = g.type === 'pennode' && g.bindEnd && moved
+        ? { which: g.bindEnd, id: bindHover ?? '' } : null;
+      const editId = penEdit?.id ?? '';
       setPathSvgHidden(false);
+      setBindHover(null);
       endGesture();
       if (moved && next) penEditWrite(next);
       else renderChrome();
+      if (bindTo && editId) applyBinding(editId, bindTo.which, bindTo.id);
       return;
     }
     if (g.type === 'penmarquee') {
@@ -7080,7 +7431,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // A marquee grabs cards AND any connector lines it crosses — a mixed selection
         // (card handles + the connector panel editing every selected line at once).
         const rect = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
-        const hits = marqueeHit(boxes, rect, cfg, seqHiddenSkip(boxes)).map((i: number) => idOf(boxes[i], i));
+        const hits = pickMarquee(boxes, rect, cfg, seqHiddenSkip(boxes)).map((i: number) => idOf(boxes[i], i));
         const edgeHits = edgesInRect(rect);
         if (g.additive) {
           for (const id of hits) selection.add(id);
@@ -7089,7 +7440,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           selection = new Set(hits);
           selectedEdges = new Set(edgeHits);
         }
-        if (selectedEdges.size) { if (mode === 'connect') toPointer(); setHoverEdge(null); }
+        if (selectedEdges.size) setHoverEdge(null);
       }
       endGesture();
       renderChrome();                                  // card chrome + edge highlights (via renderChrome)
@@ -7204,6 +7555,74 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   const clearGuides = (): void => { guidesEl.innerHTML = ''; };
 
+  // ── bound paths (plan 96 P3) ──────────────────────────────────────────────────
+  //
+  // A path box with an end attached to another box is a CONNECTOR: connector management
+  // draws it, routed from the bound box's border toward the other end. The editor's live
+  // overlay reads the SAME model the tool's hook reads (bindStart/bindEnd + the decoration
+  // fields) and draws it with the SAME engine call (`routedLineSvg`), so what tracks the
+  // cursor during a drag is what lands in the committed render on drop.
+
+  /** One end's binding: the id of the box it is attached to, '' for a free end. */
+  const bindOf = (b: Box, which: 'start' | 'end'): string =>
+    String(b[which === 'start' ? cfg.bindStartField : cfg.bindEndField] ?? '').trim();
+  /** Is this box a connector? ONE binding is enough — a path pinned at one end and loose at
+   *  the other still routes, from the border toward the loose point. */
+  const isBoundPath = (b: Box): boolean =>
+    hasBindCfg && String(b[cfg.kindField]) === 'path' && (bindOf(b, 'start') !== '' || bindOf(b, 'end') !== '');
+
+  /**
+   * A bound path as the engine's endpoint pair + decoration record, or null when it is not
+   * a connector (or when a HALF-bound path's free end cannot be read — half a connector is
+   * worse than none). `rectFor` resolves a box id to the rect to route from, which is the
+   * LIVE DOM rect mid-drag and the model rect otherwise.
+   *
+   * This mirrors `boundPathRow` in the tool hooks field-for-field, deliberately: the hook
+   * cannot import from the shell and the shell cannot call the hook, so the ONE thing that
+   * has to be shared is the geometry, and that is `routedLineSvg`.
+   */
+  function boundPathParts(b: Box): { from: string; to: string; decor: Parameters<typeof routedLineSvg>[2] } | null {
+    if (!isBoundPath(b)) return null;
+    const bs = bindOf(b, 'start'), be = bindOf(b, 'end');
+    const ends = (!bs || !be) ? pathEndsNative(b) : null;
+    if ((!bs || !be) && !ends) return null;
+    const contours = decodePathContours(b[cfg.pathField]);
+    const sole = contours[0];
+    const route = pathRouteStyle(sole ? sole.kind : '', b[cfg.routeField], sole ? sole.nodes.length : 2);
+    const sw = clampN(b[cfg.strokeWField], 0, 0, 400);
+    const dashKw = String(b[cfg.strokeDashField] ?? '');
+    return {
+      from: bs || formatEdgePoint(ends!.start.x, ends!.start.y),
+      to: be || formatEdgePoint(ends!.end.x, ends!.end.y),
+      decor: {
+        style: route,
+        headStart: String(b[cfg.headStartField] || 'none'),
+        headEnd: String(b[cfg.headEndField] || 'none'),
+        dash: dashKw === 'dashed' || dashKw === 'dotted' ? dashKw : 'solid',
+        dashArray: parseDashText(String(b[cfg.strokeDashArrayField] ?? '')) || null,
+        dashFit: boolOf(b[cfg.dashFitField], false),
+        color: cAttr(String(b[cfg.strokeField] || '#64748b')),
+        width: sw > 0 ? Math.min(20, Math.max(0.5, sw)) : 3,
+      },
+    };
+  }
+
+  /** A path box's first and last node in NATIVE canvas px. Nodes are stored normalised to
+   *  the frame; rotation is ignored for the same reason the hook ignores it — a bound path
+   *  is drawn between two rects and the router re-solves both ends anyway. */
+  function pathEndsNative(b: Box): { start: Point; end: Point } | null {
+    const contours = decodePathContours(b[cfg.pathField]);
+    const ns = contours[0]?.nodes;
+    if (!ns || ns.length < 2) return null;
+    const r = boxRect(b, cfg);
+    const w = Math.max(1, r.w), h = Math.max(1, r.h);
+    const a = ns[0]!, z = ns[ns.length - 1]!;
+    return {
+      start: { x: r.x + a.x * w, y: r.y + a.y * h },
+      end: { x: r.x + z.x * w, y: r.y + z.y * h },
+    };
+  }
+
   // ── connector preview layer ───────────────────────────────────────────────────
   // The routing math (edgeWaypoints / roundedEdgePath / smoothEdgePath / edgeBorderPt /
   // edgeNested) lives in free-canvas-math.ts so it is unit-tested (tests/connector-
@@ -7226,11 +7645,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     el.setAttribute('preserveAspectRatio', 'none');
   }
   const placeConnectLayer = (m: Metrics): void => placeNativeLayer(connectLayer, m);
-  // Hide/show the tool's committed connector <svg> (so it doesn't double up with the
+  // Hide/show the tool's committed bound-path <svg> (so it doesn't double up with the
   // live preview mid-drag). Re-shown on gesture end; the commit re-renders it anyway.
+  // The class is the manifest's (`canvas.pathLayerClass`) for the same reason it used to be
+  // `canvas.connect.layerClass`: only a tool knows what its own hook emits.
   function setRealConnectorsHidden(hidden: boolean): void {
-    if (!connectCfg?.layerClass) return;
-    const el = canvasEl.querySelector<HTMLElement>('.' + connectCfg.layerClass);
+    const cls = connectCfg?.layerClass || boundLayerClass;
+    const el = canvasEl.querySelector<HTMLElement>('.' + cls);
     if (el) el.style.visibility = hidden ? 'hidden' : '';
     liveConnectHidden = hidden;
   }
@@ -7283,16 +7704,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     return { pts, heads };
   }
-  // Redraw every edge from the current (possibly live) box rects. Called each frame of a
-  // drag involving connected cards, so the lines track the boxes in real time.
-  function drawLiveConnectors(): void {
-    if (!connectCfg) return;
-    const boxes = getBoxes();
-    const edges = getEdges();
-    placeConnectLayer(metrics());
-    // Resolve every box's (possibly live) rect ONCE — a single querySelectorAll + one pass
-    // over boxes — so a connected drag redraws in O(boxes + edges), not O(edges × boxes)
-    // with two DOM queries per edge. Mirrors boxRectById's live-DOM-else-model logic.
+  /** Every box's rect for routing: the LIVE DOM rect when there is one (mid-drag), else
+   *  the model rect. Resolved in ONE querySelectorAll + one pass, so a connected drag
+   *  redraws in O(boxes + lines) rather than two DOM queries per line. */
+  function liveRectById(boxes: Box[]): Map<string, EdgeRect> {
     const liveEls = new Map<string, HTMLElement>();
     canvasEl.querySelectorAll<HTMLElement>('.lolly-box[data-box-id]').forEach((el) => {
       const id = el.getAttribute('data-box-id');
@@ -7310,7 +7725,54 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         rectById.set(id, { x: r.x, y: r.y, w: r.w, h: r.h });
       }
     }
+    return rectById;
+  }
+
+  /**
+   * Redraw every BOUND PATH from the current (possibly live) box rects — the plan 96 P3
+   * live re-route. Called each frame of a drag that moves a box a line is attached to, so
+   * the line follows in real time while the tool's committed layer is hidden.
+   *
+   * The geometry is `routedLineSvg`, the engine's committed renderer, called with the same
+   * decoration record the hook builds — not a preview approximation of it. So nothing jumps
+   * on release: what the drag showed IS what the commit re-renders.
+   *
+   * Returns the number of lines drawn, so the caller knows whether the layer is worth
+   * showing at all.
+   */
+  function drawLiveBoundPaths(boxes: Box[], rectById: Map<string, EdgeRect>): string {
+    if (!hasBindCfg) return '';
     let body = '';
+    for (const b of boxes) {
+      const parts = b && boundPathParts(b);
+      if (!parts) continue;
+      const a = edgeEndRect(parts.from, rectById);
+      const z = edgeEndRect(parts.to, rectById);
+      if (!a || !z) continue;                       // a dangling id draws nothing
+      if (!isEdgePoint(parts.from) && !isEdgePoint(parts.to) && edgeNested(a, z)) continue;
+      body += routedLineSvg(a, z, parts.decor);
+    }
+    return body;
+  }
+
+  // Redraw every edge from the current (possibly live) box rects. Called each frame of a
+  // drag involving connected cards, so the lines track the boxes in real time.
+  function drawLiveConnectors(): void {
+    const boxes = getBoxes();
+    if (hasBindCfg && !connectCfg) {
+      // The plan-96 path: every connector is a bound path box, and there is no edge input.
+      placeConnectLayer(metrics());
+      connectLayer.innerHTML = drawLiveBoundPaths(boxes, liveRectById(boxes));
+      connectLayer.style.display = '';
+      return;
+    }
+    if (!connectCfg) return;
+    const edges = getEdges();
+    placeConnectLayer(metrics());
+    const rectById = liveRectById(boxes);
+    // A tool that still declares BOTH (an un-migrated pack on a new shell) draws each from
+    // its own model, once — the bound paths first so they sit under the legacy edges.
+    let body = drawLiveBoundPaths(boxes, rectById);
     for (const e of edges) {
       if (!e) continue;
       // An endpoint is a box id OR a free point (`@x,y`); edgeEndRect resolves either (a
@@ -7337,73 +7799,48 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     connectLayer.innerHTML = body;
     connectLayer.style.display = '';
   }
-  // The dashed "rubber" from the pending source card toward the cursor while linking.
-  function drawConnectRubber(cursorNative: Point): void {
-    if (!connectCfg || !connectSource) return;
-    const boxes = getBoxes();
-    const i = indexOfId(boxes, connectSource);
-    if (i < 0) { connectSource = null; hideConnectLayer(); return; }
-    const r = boxRect(boxes[i], cfg);
-    const a = { cx: r.x + r.w / 2, cy: r.y + r.h / 2, hw: r.w / 2, hh: r.h / 2 };
-    const p = edgeBorderPt(a, cursorNative.x, cursorNative.y);
-    const col = cAttr(connectCfg.defaultColor || '#94a3b8');
-    // Preview the default arrowhead at the cursor so the pending link shows what it becomes;
-    // the dashed shaft stops an inset short so a filled head isn't pierced.
-    const arrow = String(connectCfg.defaultArrow || 'end');
-    const head = String(connectCfg.defaultHead || 'triangle');
-    const w = Math.min(20, Math.max(0.5, Number(connectCfg.defaultWidth) || 2.5));
+  // `drawConnectRubber` (plan 90) lived here — the dashed rubber from a pending source
+  // card to the cursor. It went with Connect mode (plan 96 P4); `drawBindRing` below is
+  // its replacement, and it hangs off the endpoint being dragged rather than off a mode.
+  /**
+   * The Line tool's rubber (plan 96 P2): a dashed shaft between the two canvas points of
+   * the drag, with the head the committed box will carry previewed at the far end.
+   *
+   * Both ends are plain points now. Under plan 90 the start resolved through `edgeEndRect`
+   * (a card border or an `@x,y`) and the far end outlined whatever card a release would
+   * attach to — honest then, misleading now: releasing over a box binds nothing until P3,
+   * and an outline promising an attachment that does not happen is worse than no outline.
+   *
+   * Drawn in the SAME ink and at the same head size as `commitPathBox` will use, so the
+   * preview is the shape you get rather than a stand-in for it.
+   */
+  function drawLineRubber(from: Point, to: Point): void {
+    const col = cAttr(drawnInkHex());
+    const w = lineDraftWidth();
+    const head = 'triangle';                      // lineBoxSeed's default headEnd
     const headSize = Math.max(9, w * 4);
-    const dirL = Math.hypot(cursorNative.x - p.x, cursorNative.y - p.y) || 1;
-    const ux = (cursorNative.x - p.x) / dirL, uy = (cursorNative.y - p.y) / dirL;
-    const showHead = arrow !== 'none' && head !== 'none';
-    const inset = showHead ? edgeHeadInset(head, headSize) : 0;
-    const tipMark = showHead
-      ? edgeArrowHead(cursorNative, ux, uy, headSize, col, head)
-      : `<circle cx="${cf2(cursorNative.x)}" cy="${cf2(cursorNative.y)}" r="5" fill="${col}"/>`;
-    placeConnectLayer(metrics());
-    connectLayer.innerHTML =
-      `<rect x="${cf2(r.x - 3)}" y="${cf2(r.y - 3)}" width="${cf2(r.w + 6)}" height="${cf2(r.h + 6)}" rx="10" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="6 5"/>` +
-      `<path d="M${cf2(p.x)} ${cf2(p.y)}L${cf2(cursorNative.x - ux * inset)} ${cf2(cursorNative.y - uy * inset)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="8 6" stroke-linecap="round"/>` +
-      tipMark;
-    connectLayer.style.display = '';
-  }
-  // The Line tool's rubber (plan 90): a dashed shaft from the start endpoint (a card border
-  // OR a free point) to the cursor, with the default arrowhead previewed at the cursor.
-  // Modeled on drawConnectRubber but the START resolves via edgeEndRect (id | @x,y), not a
-  // pending connectSource; `hoverId` outlines the card a release would attach to.
-  function drawLineRubber(fromEnd: string, cursorNative: Point, hoverId?: string | null): void {
-    if (!connectCfg) return;
-    const boxes = getBoxes();
-    const rectById = new Map<string, EdgeRect>();
-    for (let i = 0; i < boxes.length; i++) {
-      const r = boxRect(boxes[i], cfg);
-      rectById.set(idOf(boxes[i], i), { x: r.x, y: r.y, w: r.w, h: r.h });
-    }
-    const fromRect = edgeEndRect(fromEnd, rectById);
-    if (!fromRect) { hideConnectLayer(); return; }
-    const fa = { cx: fromRect.x + fromRect.w / 2, cy: fromRect.y + fromRect.h / 2, hw: fromRect.w / 2, hh: fromRect.h / 2 };
-    const p = edgeBorderPt(fa, cursorNative.x, cursorNative.y);
-    const col = cAttr(connectCfg.defaultColor || '#94a3b8');
-    const head = String(connectCfg.defaultHead || 'triangle');
-    const arrow = String(connectCfg.defaultArrow || 'end');
-    const w = Math.min(20, Math.max(0.5, Number(connectCfg.defaultWidth) || 2.5));
-    const headSize = Math.max(9, w * 4);
-    const dirL = Math.hypot(cursorNative.x - p.x, cursorNative.y - p.y) || 1;
-    const ux = (cursorNative.x - p.x) / dirL, uy = (cursorNative.y - p.y) / dirL;
-    const showHead = arrow !== 'none' && head !== 'none';
+    const dirL = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+    const ux = (to.x - from.x) / dirL, uy = (to.y - from.y) / dirL;
+    // Below the head's own length there is no room for both, so the dot stands in — the
+    // same "there is an endpoint here" mark the connect rubber uses.
+    const showHead = dirL > headSize;
     const inset = showHead ? edgeHeadInset(head, headSize) : 0;
     const tip = showHead
-      ? edgeArrowHead(cursorNative, ux, uy, headSize, col, head)
-      : `<circle cx="${cf2(cursorNative.x)}" cy="${cf2(cursorNative.y)}" r="5" fill="${col}"/>`;
-    const hoverRect = hoverId != null ? rectById.get(hoverId) : null;
-    const hoverOutline = hoverRect
-      ? `<rect x="${cf2(hoverRect.x - 3)}" y="${cf2(hoverRect.y - 3)}" width="${cf2(hoverRect.w + 6)}" height="${cf2(hoverRect.h + 6)}" rx="10" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="6 5"/>`
-      : '';
+      ? edgeArrowHead(to, ux, uy, headSize, col, head)
+      : `<circle cx="${cf2(to.x)}" cy="${cf2(to.y)}" r="5" fill="${col}"/>`;
     placeConnectLayer(metrics());
-    connectLayer.innerHTML = hoverOutline +
-      `<path d="M${cf2(p.x)} ${cf2(p.y)}L${cf2(cursorNative.x - ux * inset)} ${cf2(cursorNative.y - uy * inset)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="8 6" stroke-linecap="round"/>` +
+    connectLayer.innerHTML =
+      `<path d="M${cf2(from.x)} ${cf2(from.y)}L${cf2(to.x - ux * inset)} ${cf2(to.y - uy * inset)}" fill="none" stroke="${col}" stroke-width="${cf2(w)}" stroke-dasharray="8 6" stroke-linecap="round"/>` +
       tip;
     connectLayer.style.display = '';
+  }
+  /** The stroke width a line draft previews at: whatever the committed box will take —
+   *  the last path paint, else the tool's own `path` seed, else `penFinishDraw`'s own 4px
+   *  last resort — so the rubber is not a different weight from the shape it becomes. */
+  function lineDraftWidth(): number {
+    const seed = { ...(addKinds.find((k) => k.id === 'path')?.seed || {}) } as Box;
+    const w = Number(penLastPaint?.[cfg.strokeWField] ?? seed[cfg.strokeWField] ?? 0);
+    return Math.min(20, Math.max(0.5, w > 0 ? w : 4));
   }
   function hideConnectLayer(): void {
     connectLayer.style.display = 'none';
@@ -7412,18 +7849,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Called each frame of a drag that moves connected cards: hide the tool's committed
   // connector layer once, then redraw every edge live so the lines follow the boxes.
   function liveConnUpdate(): void {
-    if (!connectCfg) return;
+    if (!connectCfg && !hasBindCfg) return;
     if (!liveConnectHidden) setRealConnectorsHidden(true);
     drawLiveConnectors();
   }
   // On drop, keep the preview one extra paint so the committed connectors re-render
   // underneath before we drop it (avoids a flash), then restore + clear.
   function endLiveConnectors(): void {
-    if (!connectCfg || !liveConnectHidden) return;
+    if (!liveConnectHidden) return;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (disposed) return;
       setRealConnectorsHidden(false);
-      if (mode !== 'connect' && !selectedEdges.size) hideConnectLayer();
+      if (!selectedEdges.size) hideConnectLayer();
     }));
   }
 
@@ -7483,7 +7920,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // so the edgeAt hit-test never runs more than once per frame.
   function updateHover(): void {
     hoverRaf = 0;
-    if (!connectCfg || mode === 'connect' || selectedEdges.size || gesture || !lastPointer) { setHoverEdge(null); return; }
+    if (!connectCfg || selectedEdges.size || gesture || !lastPointer) { setHoverEdge(null); return; }
     const nat = clientToNative(lastPointer.x, lastPointer.y);
     setHoverEdge(edgeAt(nat.x, nat.y));
   }
@@ -7501,7 +7938,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         connectLayer.innerHTML = `<path d="${d}" fill="none" stroke="#30ba78" stroke-width="${cf2(w + 6)}" stroke-linejoin="round" stroke-linecap="round" opacity="0.18"/>`;
         connectLayer.style.display = '';
       }
-    } else if (!selectedEdges.size && mode !== 'connect') {
+    } else if (!selectedEdges.size) {
       hideConnectLayer();
     }
   }
@@ -7537,7 +7974,6 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // otherwise it becomes the sole selection. Either way it clears the card selection —
   // a marquee is what mixes cards + connectors (see the marquee gesture end).
   function selectEdge(eid: string, additive?: boolean): void {
-    if (mode === 'connect') toPointer();
     setHoverEdge(null);
     if (additive && selectedEdges.size) {
       if (selectedEdges.has(eid)) selectedEdges.delete(eid); else selectedEdges.add(eid);
@@ -7546,7 +7982,6 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       selectedEdges = new Set([eid]);
     }
     selection = new Set<string>();     // a connector and a card can't be selected by a plain click
-    connectSource = null;
     renderChrome();                    // clear any card chrome + draw the highlight(s)
     openEdgePanel();                   // rebuild (count / values may have changed)
   }
@@ -7554,7 +7989,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!selectedEdges.size && !edgePanel) return;
     selectedEdges = new Set<string>();
     closeEdgePanel();
-    if (mode !== 'connect') hideConnectLayer();
+    hideConnectLayer();
   }
   function closeEdgePanel(): void { edgePanel?.remove(); edgePanel = null; }
   // Redraw EVERY selected edge's highlight (native coords in the connect layer) + keep
@@ -8352,12 +8787,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       paintPen();
       return;
     }
-    // Connect mode: while a source card is pending, the "rubber" tracks the cursor.
-    if (mode === 'connect' && connectSource && e && typeof e.clientX === 'number' && !e.buttons) {
-      drawConnectRubber(clientToNative(e.clientX, e.clientY));
-    }
     // Hover affordance over connector lines (idle hover only, throttled to one rAF/frame).
-    if (connectCfg && mode !== 'connect' && !selectedEdges.size && !gesture && e && !e.buttons && typeof e.clientX === 'number') {
+    if (connectCfg && !selectedEdges.size && !gesture && e && !e.buttons && typeof e.clientX === 'number') {
       if (!hoverRaf) hoverRaf = requestAnimationFrame(updateHover);
     }
     if (e && e.buttons) scheduleSync();

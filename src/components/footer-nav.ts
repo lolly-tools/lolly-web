@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
-// footer-nav.ts — the shared bottom nav bar used by the Tools gallery, Projects and
-// Catalogue views: [Pro?] [Dashboard]  <search>  [Verify] [What?]. Kept in one place
-// so the links, icons, labels and layout stay identical across every listing view
-// (previously duplicated in gallery.ts / projects.ts, and missing entirely on the
-// Catalogue). Each view supplies its own search-field markup + handler (the field's
-// classes/behaviour differ), but the surrounding nav links are shared verbatim.
+// footer-nav.ts — the bottom nav bar's MARKUP: [Pro?] [Dashboard]  <search>  [Verify]
+// [What?]. Since plans/99 M1 the live bar is a shell-level singleton rendered and
+// wired ONCE by components/search-bar.ts (views claim its field instead of building
+// their own footer); the only other consumer is the component library's in-flow
+// specimen. This module stays markup-only so that split holds.
 import { escape } from '../utils.ts';
 import { t, docsHref } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
@@ -28,9 +27,18 @@ export const NAV_ICONS = {
  *  cancel button doesn't double up with ours. The ✕ starts `hidden` unless `value` is
  *  already non-empty (a restored query) — each view toggles the `hidden` attribute as
  *  the field's content changes. */
-export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string; value?: string; className?: string; clearLabel?: string }): string {
+export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string; value?: string; className?: string; clearLabel?: string; kbdHint?: { label: string; title: string } }): string {
   const cls = opts.className ?? 'gallery-search';
   const value = opts.value ?? '';
+  // The spotlight chord hint (plans/99 §2f): a decorative <kbd> chip right-aligned
+  // inside the box. aria-hidden — it duplicates nothing (the chord is a shortcut,
+  // not the only path) and screen-reader users get the combobox semantics instead.
+  // Starts hidden when the field already has text (the ✕ takes that corner);
+  // search-bar's syncClear toggles it as the content changes, and gallery.css
+  // hides it on coarse pointers and under 640px.
+  const kbd = opts.kbdHint
+    ? `<kbd class="gallery-search-kbd" aria-hidden="true" title="${escape(opts.kbdHint.title)}"${value ? ' hidden' : ''}>${escape(opts.kbdHint.label)}</kbd>`
+    : '';
   // Jelly effects mode swaps the native field for a <jelly-input>. Every caller
   // keeps working untouched: they query by the same class, `.value` is a live
   // getter/setter on the host, and the inner field's `input`/keydown events are
@@ -52,6 +60,7 @@ export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string;
       <span class="gallery-search-icon" aria-hidden="true">${NAV_ICONS.search}</span>
       ${field}
       <button type="button" class="gallery-search-clear" data-search-clear aria-label="${escape(opts.clearLabel ?? t('Clear search'))}"${value ? '' : ' hidden'}>✕</button>
+      ${kbd}
     </div>
   </div>`;
 }
@@ -59,10 +68,8 @@ export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string;
 export interface FooterNavOpts {
   /** Pro link only shows when Batch mode is enabled (flagEnabled(profile, PRO_FLAG.id)). */
   proEnabled: boolean;
-  /** The middle search field — e.g. gallerySearchBox(...) or a view's custom box. */
+  /** The middle search field — gallerySearchBox(...). */
   searchHtml: string;
-  /** Extra class(es) on the <footer> (e.g. 'projects-footer'). */
-  footerClass?: string;
 }
 
 // Jelly nav items are <jelly-button>s (the component is a real <button>, not a
@@ -99,7 +106,7 @@ function navItem(o: { href: string; nativeClass: string; variant?: string; style
 }
 
 /** The shared bottom bar: [Pro?] [Dashboard]  <search>  [Verify] [What?]. */
-export function footerNav({ proEnabled, searchHtml, footerClass }: FooterNavOpts): string {
+export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   if (jellyActive()) ensureNavHandler();
   const label = (txt: string) => `<span class="gallery-nav-label">${txt}</span>`;
   const pro = proEnabled ? navItem({
@@ -122,7 +129,7 @@ export function footerNav({ proEnabled, searchHtml, footerClass }: FooterNavOpts
     aria: t('What is Lolly? — about & help'), inner: `${NAV_ICONS.help}${label(t('What?'))}`,
   });
   return `
-    <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}${footerClass ? ' ' + footerClass : ''}">
+    <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}">
       ${pro}
       ${dashboard}
       ${searchHtml}

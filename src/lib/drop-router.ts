@@ -7,10 +7,16 @@
  * only the routes that genuinely apply:
  *
  *   design file (.fig/.penpot/.idml/.indd/SVG/zip) → Layout Studio, parsed to boxes
- *   PDF / .ai   → edit as a design · pages → SVG library assets · compress
+ *   token doc / .penpot / design-system pack zip → the Design System studio
+ *   PDF / .ai   → edit as a design · pages → SVG library assets · compress ·
+ *                 the Design System studio (a guidelines PDF's colours, marks
+ *                 and embedded faces — plan 97 §8)
  *   PowerPoint  → slides → SVG library assets
  *   image/video/audio → the asset library · /verify (Content Credentials)
  *   unknown / C2PA-looking bytes → /verify
+ *
+ * A `.penpot` reaches TWO doors (Layout Studio and the studio), so both label
+ * where they land rather than what they do (plan 97 §14.9).
  *
  * Design files travel by the same one-shot in-memory handoff pattern
  * lib/verify-handoff.ts proves: the File is stashed here, we navigate to
@@ -64,6 +70,14 @@ const MEDIA_EXT_RE = /\.(png|apng|jpe?g|webp|gif|avif|heic|heif|svg|svgz|bmp|ico
 const ARCHIVE_EXT_RE = /\.(zip|tar|tar\.gz|tgz)$/i;
 const PURE_DESIGN_EXT_RE = /\.(fig|penpot|idml|indd)$/i;
 const CONTAINER_DOC_EXT_RE = /\.(xlsx|docx|pptx|epub|odt)$/i;
+// Design-system shapes (plan 97 §8). A Penpot project always carries a token
+// document; the zip/JSON cases need evidence, below.
+const PENPOT_EXT_RE = /\.penpot$/i;
+const JSON_EXT_RE = /\.json$/i;
+/** How much of a JSON drop the router is willing to parse just to decide which
+ *  routes to OFFER. Bigger token documents still import fine through the
+ *  studio's own source picker; they just don't get the shortcut here. */
+export const TOKENS_SNIFF_MAX_BYTES = 4 * 1024 * 1024;
 
 // ── one-shot handoff stashes (the verify-handoff pattern) ──────────────────────
 
@@ -74,6 +88,26 @@ let pendingDesign: File | null = null;
 export function takePendingDesignImport(): File | null {
   const f = pendingDesign;
   pendingDesign = null;
+  return f;
+}
+
+let pendingDesignSystemFile: File | null = null;
+
+/**
+ * Consume the file stashed by the "Use as the design system" route — single use,
+ * cleared on read, never written to disk. `views/start.ts` reads it on mount and
+ * routes it by what it IS (a PDF opens the PDF source and scans it; a token
+ * document, Penpot project or pack lands on the design-file card), so the studio
+ * never asks a second time for a file the person already handed over.
+ *
+ * Every route below that reaches the studio arms it, including the PDF one — a
+ * guidelines PDF is design-system material even though the sniff files it under
+ * `pdf` (its colours, marks and embedded faces are the whole point of plan 97 §8's
+ * PDF source).
+ */
+export function takePendingDesignSystemFile(): File | null {
+  const f = pendingDesignSystemFile;
+  pendingDesignSystemFile = null;
   return f;
 }
 
@@ -109,7 +143,7 @@ export function takePendingToolSeed(toolId: string): Record<string, unknown> | n
 
 // ── sniffing ───────────────────────────────────────────────────────────────────
 
-interface Sniff {
+export interface Sniff {
   design: boolean;
   pdf: boolean;
   pptx: boolean;
@@ -119,10 +153,86 @@ interface Sniff {
   layers: boolean;
   /** A plain archive (.zip/.tar/.tar.gz) we can explode into member assets. */
   archive: boolean;
+  /** Design-system material (plan 97 §8): a DTCG/Tokens-Studio token document,
+   *  a Penpot project, or a zip whose parts say design-system pack. Additive —
+   *  it never suppresses a route another flag already earned. */
+  designSystem: boolean;
 }
 
 const isMediaFile = (f: File): boolean =>
   /^(image|video|audio)\//.test(f.type) || MEDIA_EXT_RE.test(f.name);
+
+/**
+ * True when a zip's head lists the parts a design-system container is made of.
+ * A zip's LOCAL FILE HEADERS store entry names uncompressed, so a bounded head
+ * read can name a zip's first entries even when their bodies are deflated —
+ * which is the whole reason this is affordable at drop time. The pairings
+ * mirror what `design-system/sources/file.ts` keys on when it really opens the
+ * archive: a Lolly pack (`manifest.json` + `tokens.json`), a Penpot project
+ * (same pair, tokens per file), a loose token-set export (`$metadata.json` /
+ * `$themes.json`). Deliberately a heuristic: the authoritative read happens in
+ * the studio, and the cost of a wrong guess here is one extra route offered.
+ * Pure — exported for the co-located test.
+ */
+export function zipListsDesignSystemParts(head: string): boolean {
+  if (head.includes('$metadata.json') || head.includes('$themes.json')) return true;
+  return head.includes('manifest.json') && head.includes('tokens.json');
+}
+
+/**
+ * True when an already-parsed JSON object is shaped like a token document:
+ * Tokens-Studio container keys, a DTCG `$value` leaf, or the legacy
+ * Tokens-Studio `{ value, type }` leaf. `coerceTokensDoc` alone answers yes to
+ * ANY JSON object (it only rejects arrays/primitives), so a dropped Lottie or
+ * GeoJSON would otherwise be offered as a design system.
+ *
+ * Bounded on purpose — a fixed node/depth budget, so the check costs the same
+ * on a 40-token file and on a huge unrelated document. A token doc puts its
+ * leaves shallow, so the budget only ever truncates material we would not have
+ * recognised anyway. Pure — exported for the co-located test.
+ */
+export function looksLikeTokenDoc(doc: unknown, maxNodes = 4000, maxDepth = 8): boolean {
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return false;
+  const root = doc as Record<string, unknown>;
+  // Own keys only, everywhere: a token set is user-supplied JSON, so an
+  // inherited `value`/`type` must never pass for a token leaf.
+  if (Object.hasOwn(root, '$themes') || Object.hasOwn(root, '$metadata')) return true;
+  let budget = maxNodes;
+  const stack: Array<{ node: Record<string, unknown>; depth: number }> = [{ node: root, depth: 0 }];
+  while (stack.length) {
+    const { node, depth } = stack.pop()!;
+    if (budget-- <= 0) return false;
+    if (Object.hasOwn(node, '$value')) return true;
+    if (Object.hasOwn(node, 'value') && Object.hasOwn(node, 'type') && typeof node.type === 'string') return true;
+    if (depth >= maxDepth) continue;
+    for (const child of Object.values(node)) {
+      if (typeof child === 'object' && child !== null && !Array.isArray(child)) {
+        stack.push({ node: child as Record<string, unknown>, depth: depth + 1 });
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * The JSON half of the design-system sniff: a `.json` drop small enough to
+ * parse, whose first non-blank byte is `{` (the head read answers that without
+ * touching the rest), that survives the engine's own `coerceTokensDoc` and then
+ * looks like tokens. The engine import is lazy so a JPEG drop never pays for it.
+ */
+async function looksLikeTokensFile(file: File, head: string): Promise<boolean> {
+  const jsonish = JSON_EXT_RE.test(file.name) || /^(application|text)\/json$/.test(file.type);
+  if (!jsonish || file.size > TOKENS_SNIFF_MAX_BYTES) return false;
+  // Leading whitespace, or a UTF-8 BOM (latin1-decoded to EF BB BF), then '{'.
+  if (!/^[\s\uFEFF\u00EF\u00BB\u00BF]*\{/.test(head)) return false;
+  try {
+    const { coerceTokensDoc } = await import('@lolly/engine');
+    const { doc } = coerceTokensDoc(JSON.parse(await file.text()));
+    return !!doc && looksLikeTokenDoc(doc);
+  } catch {
+    return false; // unreadable or not JSON after all — no route, no error
+  }
+}
 
 /**
  * Classify one file by name/MIME plus (when `deep`) a bounded head read — 64 KB,
@@ -160,14 +270,150 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
   // "unpack" route never competes for a .penpot or shreds a .xlsx.
   const archive = !layers && !PURE_DESIGN_EXT_RE.test(file.name) && !CONTAINER_DOC_EXT_RE.test(file.name)
     && (ARCHIVE_EXT_RE.test(file.name) || (zipMagic && !DESIGN_EXT_RE.test(file.name)));
+  // Design-system material (plan 97 §8), sniffed LAST and only on the deep
+  // (single-file) path — the route is a single-file journey, and every flag
+  // above is computed exactly as it was before this one existed. A .penpot is
+  // one by extension; a zip needs its parts named; a .json has to parse.
+  const designSystem = deep && !pdf && !pptx && !layers
+    && (PENPOT_EXT_RE.test(file.name)
+      ? true
+      : zipMagic || /\.zip$/i.test(file.name)
+        ? zipListsDesignSystemParts(text)
+        : await looksLikeTokensFile(file, text));
   // A PSD/XCF often carries an image/* MIME — the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
-  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive };
+  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem };
 }
 
 const toolExists = (id: string): boolean =>
   ((window as { __toolIndex?: { tools?: Array<{ id: string }> } }).__toolIndex?.tools ?? [])
     .some((tool) => tool.id === id);
+
+// ── what the sheet offers, and what it says (pure) ─────────────────────────────
+// Extracted from openDropChooser so the routing decisions can be pinned by a node
+// test: which routes appear, which one LEADS, and which sentence names the
+// destination. Everything below is a function of the sniff — no DOM, no navigation.
+
+/** The chooser's surroundings: how many files, whether they can all be ingested
+ *  as media, and which tools this build actually has. */
+export interface ChooserContext {
+  single: boolean;
+  count: number;
+  allIngestable: boolean;
+  has: (toolId: string) => boolean;
+}
+
+/**
+ * The routes on offer, in the order they are shown, with exactly one marked
+ * `primary` (the highlighted default).
+ *
+ * A note on the archive route: it leads for a plain zip, because exploding it
+ * into member assets is what a dropped archive usually means. It must NOT lead
+ * for a zip the sniff positively identified as a design-system pack — unpacking
+ * that shreds it into loose library files, which is the opposite of installing
+ * it, and it is the one archive whose real destination we know (plan 97 §14.9:
+ * a door names where it lands). So the studio goes first there, and unpack
+ * stays available underneath.
+ */
+export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[] {
+  const { single, allIngestable, has } = ctx;
+  const choices: DialogChoice[] = [];
+  const packZip = single && s.archive && s.designSystem;
+  if (single && s.layers && has('layer-stack')) {
+    choices.push({ id: 'layers', label: t('Open as layers'), primary: true });
+  }
+  if (single && s.layers && has('layout-studio')) {
+    choices.push({ id: 'design', label: t('Edit in Layout Studio') });
+  }
+  if (single && s.layers) {
+    choices.push({ id: 'flatten', label: t('Add the flattened image to your library') });
+  }
+  if (packZip) {
+    choices.push({ id: 'design-system', label: t('Use as the design system'), primary: true });
+  }
+  // A plain archive leads with "unpack": a dropped .zip/.tar explodes into member
+  // assets, each re-imported through the normal library path. Kept above the design
+  // route so a data zip isn't primarily offered to Layout Studio (where it errors).
+  if (single && s.archive) {
+    choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: !packZip });
+  }
+  if (single && (s.design || s.pdf) && has('layout-studio')) {
+    choices.push({ id: 'design', label: t('Edit in Layout Studio'), primary: !s.archive });
+  }
+  // The Design System studio door, next to the Layout Studio one so the two
+  // .penpot destinations read as a pair (plan 97 §14.9). It leads only when no
+  // earlier route already claimed the call-to-action, so nothing above it moves.
+  if (single && s.designSystem && !packZip) {
+    choices.push({
+      id: 'design-system',
+      label: t('Use as the design system'),
+      primary: !choices.some((c) => c.primary),
+    });
+  }
+  // Frames → timed scenes: the same design/PDF sniff can open as a video sequence
+  // (free-canvas's scene-mode import consumes the stash on mount).
+  if (single && (s.design || s.pdf) && has('sequence-studio')) {
+    choices.push({ id: 'sequence', label: t('Make a video from its frames') });
+  }
+  // A .penpot can carry per-shape export marks; the ingest bakes them through an
+  // offscreen Layout Studio render, so the route needs that tool. Whether the zip
+  // really is a marked-up Penpot file resolves inside the ingest (it throws a
+  // user-ready message otherwise).
+  if (single && s.design && has('layout-studio')) {
+    choices.push({ id: 'exports', label: t('Add its marked exports to your library') });
+  }
+  if (single && s.pdf) {
+    choices.push({ id: 'library', label: t('Add pages to your library') });
+    // A guidelines PDF is the richest design-system file most teams have — its
+    // artwork carries the marks and the palette, and it embeds the real font
+    // programs (plan 97 §8's PDF source). It sits with the other "what is inside
+    // this document" routes and never LEADS: a PDF's first meaning is a document,
+    // and the sniff cannot tell guidelines from an invoice. The guard is
+    // defensive — `sniffFile` never reports `designSystem` for a PDF, so the
+    // branch above cannot have offered this door, but a door offered twice in one
+    // sheet would be a worse bug than one line of belt and braces.
+    if (!choices.some((c) => c.id === 'design-system')) {
+      choices.push({ id: 'design-system', label: t('Use as the design system') });
+    }
+    if (has('compress-pdf')) choices.push({ id: 'compress', label: t('Compress this PDF') });
+  }
+  if (single && s.pptx) {
+    choices.push({ id: 'library', label: t('Add slides to your library'), primary: true });
+  }
+  if ((single && s.media && !s.pdf && !s.pptx) || (!single && allIngestable)) {
+    choices.push({ id: 'library', label: t('Add to your library'), primary: choices.length === 0 });
+  }
+  const unknown = single && !s.design && !s.pdf && !s.pptx && !s.media;
+  // Provenance applies to media, to anything carrying C2PA-looking bytes, to
+  // unknown formats — and as the last resort when no other route landed.
+  if (s.media || s.c2pa || unknown || choices.length === 0) {
+    choices.push({ id: 'verify', label: t('Check Content Credentials') });
+  }
+  return choices;
+}
+
+/**
+ * The sentence above the routes. The ladder is ordered by how much it tells the
+ * user: "an archive" says almost nothing, so a zip the sniff can actually name
+ * (a design-system pack) is named first — otherwise the file's real destination
+ * never appears in the copy at all.
+ */
+export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext): string {
+  if (!ctx.single) return t('{n} files are ready to import.', { n: ctx.count });
+  if (s.layers) return tRaw('“{name}” is a layered image (Photoshop/GIMP).', { name });
+  if (s.pdf) return tRaw('“{name}” is a PDF or Illustrator document.', { name });
+  if (s.pptx) return tRaw('“{name}” is a PowerPoint deck.', { name });
+  // Two doors, so the sentence names both destinations rather than leaving
+  // "design file" to stand for either of them (plan 97 §14.9).
+  if (s.designSystem && s.design && ctx.has('layout-studio')) {
+    return tRaw('“{name}” can open in Layout Studio or install as the design system.', { name });
+  }
+  if (s.designSystem) return tRaw('“{name}” looks like a design system.', { name });
+  if (s.archive) return tRaw('“{name}” is an archive.', { name });
+  if (s.design) return tRaw('“{name}” looks like a design file.', { name });
+  if (s.media) return tRaw('“{name}” is ready to import.', { name });
+  return tRaw('“{name}” isn’t a format Lolly can import directly.', { name });
+}
 
 // ── the chooser sheet ──────────────────────────────────────────────────────────
 
@@ -194,63 +440,9 @@ export async function openDropChooser(
     (f) => isMediaFile(f) || picker.isPdfUpload(f) || picker.isPptxUpload(f),
   );
 
-  const choices: DialogChoice[] = [];
-  if (single && s.layers && toolExists('layer-stack')) {
-    choices.push({ id: 'layers', label: t('Open as layers'), primary: true });
-  }
-  if (single && s.layers && toolExists('layout-studio')) {
-    choices.push({ id: 'design', label: t('Edit in Layout Studio') });
-  }
-  if (single && s.layers) {
-    choices.push({ id: 'flatten', label: t('Add the flattened image to your library') });
-  }
-  // A plain archive leads with "unpack": a dropped .zip/.tar explodes into member
-  // assets, each re-imported through the normal library path. Kept above the design
-  // route so a data zip isn't primarily offered to Layout Studio (where it errors).
-  if (single && s.archive) {
-    choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: true });
-  }
-  if (single && (s.design || s.pdf) && toolExists('layout-studio')) {
-    choices.push({ id: 'design', label: t('Edit in Layout Studio'), primary: !s.archive });
-  }
-  // Frames → timed scenes: the same design/PDF sniff can open as a video sequence
-  // (free-canvas's scene-mode import consumes the stash on mount).
-  if (single && (s.design || s.pdf) && toolExists('sequence-studio')) {
-    choices.push({ id: 'sequence', label: t('Make a video from its frames') });
-  }
-  // A .penpot can carry per-shape export marks; the ingest bakes them through an
-  // offscreen Layout Studio render, so the route needs that tool. Whether the zip
-  // really is a marked-up Penpot file resolves inside the ingest (it throws a
-  // user-ready message otherwise).
-  if (single && s.design && toolExists('layout-studio')) {
-    choices.push({ id: 'exports', label: t('Add its marked exports to your library') });
-  }
-  if (single && s.pdf) {
-    choices.push({ id: 'library', label: t('Add pages to your library') });
-    if (toolExists('compress-pdf')) choices.push({ id: 'compress', label: t('Compress this PDF') });
-  }
-  if (single && s.pptx) {
-    choices.push({ id: 'library', label: t('Add slides to your library'), primary: true });
-  }
-  if ((single && s.media && !s.pdf && !s.pptx) || (!single && allIngestable)) {
-    choices.push({ id: 'library', label: t('Add to your library'), primary: choices.length === 0 });
-  }
-  const unknown = single && !s.design && !s.pdf && !s.pptx && !s.media;
-  // Provenance applies to media, to anything carrying C2PA-looking bytes, to
-  // unknown formats — and as the last resort when no other route landed.
-  if (s.media || s.c2pa || unknown || choices.length === 0) {
-    choices.push({ id: 'verify', label: t('Check Content Credentials') });
-  }
-
-  let message: string;
-  if (!single) message = t('{n} files are ready to import.', { n: files.length });
-  else if (s.layers) message = tRaw('“{name}” is a layered image (Photoshop/GIMP).', { name: first.name });
-  else if (s.pdf) message = tRaw('“{name}” is a PDF or Illustrator document.', { name: first.name });
-  else if (s.pptx) message = tRaw('“{name}” is a PowerPoint deck.', { name: first.name });
-  else if (s.archive) message = tRaw('“{name}” is an archive.', { name: first.name });
-  else if (s.design) message = tRaw('“{name}” looks like a design file.', { name: first.name });
-  else if (s.media) message = tRaw('“{name}” is ready to import.', { name: first.name });
-  else message = tRaw('“{name}” isn’t a format Lolly can import directly.', { name: first.name });
+  const ctx: ChooserContext = { single, count: files.length, allIngestable, has: toolExists };
+  const choices = dropChooserChoices(s, ctx);
+  const message = dropChooserMessage(s, first.name, ctx);
 
   const chosen = await choiceDialog({
     title: single ? t('What should Lolly do with this file?') : t('What should Lolly do with these files?'),
@@ -299,6 +491,19 @@ export async function openDropChooser(
     case 'sequence':
       pendingDesign = first;
       routeToConsumer('#/tool/sequence-studio', onToolRoute('sequence-studio'));
+      break;
+    case 'design-system':
+      // The studio's own import flow owns the parsing — colours, fonts, logos,
+      // the semantic-mapping review and the PDF scan all live there — so this
+      // route hands over the FILE and names the source it needs. views/start.ts
+      // consumes the stash on mount (takePendingDesignSystemFile) and opens the
+      // stage that file wants; the `?source=` is what it falls back to if the
+      // stash has already been spent.
+      pendingDesignSystemFile = first;
+      routeToConsumer(
+        s.pdf ? '#/start?source=pdf' : '#/start?source=file',
+        /^#\/start([?/]|$)/.test(window.location.hash),
+      );
       break;
     case 'compress':
       pendingToolFile = { toolId: 'compress-pdf', file: first };

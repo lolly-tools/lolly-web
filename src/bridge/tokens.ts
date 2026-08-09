@@ -3,13 +3,31 @@
  * TokensAPI — design tokens for the host UI and token-aware tools.
  *
  * The canonical brand tokens live in the catalog as a `tokens`-type asset (a
- * DTCG document). Discovery is brand-agnostic: the bridge takes the FIRST
- * catalog asset with `type: 'tokens'` — the same rule the MCP server's tokens
- * resource applies — rather than pinning a brand-specific id, so a different
- * brand profile's catalog supplies its own tokens with no shell change. The
- * document is handed to engine/src/tokens.js for resolution — so the colour
- * picker can source its swatches from tokens, brand-bound input values can
+ * DTCG document). Discovery is brand-agnostic: the bridge takes the first
+ * `type: 'tokens'` asset that is not a published VERSION of another one — the
+ * same rule the MCP server's tokens resource and the CLI apply (see
+ * pickHeadAssetId, plans/97 §6a) — rather than pinning a brand-specific id, so a
+ * different brand profile's catalog supplies its own tokens with no shell
+ * change. The document is handed to engine/src/tokens.js for resolution — so the
+ * colour picker can source its swatches from tokens, brand-bound input values can
  * resolve their references, and a token-aware tool can read the whole tree.
+ *
+ * Versioning (plans/97 §6a) is layered on top and costs an unversioned install
+ * nothing: the head asset IS the edit head, and `forVersion(slug)` opens a
+ * read-only surface over a published sibling `<headId>/<slug>`.
+ *
+ * THE DEFAULT READS ARE THE RENDER SURFACE, not the head. `get`/`colors`/
+ * `resolve`/`themes` answer for whatever the §6a ladder lands on — the `?designv=`
+ * override on the current route, else the active version, else the head — because
+ * every render on this shell reads them through `host.tokens`: the tool canvas's
+ * brand vars, the picker swatches, the engine's token-bound inputs, the export
+ * palette. Resolving the ladder at each of those sites instead would be a rule
+ * some future call site forgets, and the shell would paint one design system
+ * while the tools it frames painted another. `raw()` is the exception and stays
+ * the HEAD: it is the document the studio edits and re-installs, and handing an
+ * editor a frozen version to write back over the head would destroy the head.
+ * With nothing published the ladder answers `latest` and the render surface reads
+ * the head document, so an unversioned install resolves exactly as it always did.
  *
  * Loading is offline-safe and degrades gracefully. Discovery prefers the
  * synced asset metadata in IndexedDB (the service worker deliberately BYPASSES
@@ -29,6 +47,14 @@
  */
 
 import { createTokenSet, aliasPath } from '../../../../engine/src/tokens.ts';
+// The versioned design-system model. The ENGINE leaf, not `@lolly/engine` and not
+// lib/design-system/versions.ts (its studio re-export): this module is on the boot
+// path, and both of those pull the barrel — the same rule the engine imports above
+// and below already follow. See scripts/check-bundle-budget.ts.
+import {
+  DESIGN_VERSION_LATEST, applyPinnedAssets, isVersionSlug, pickHeadAssetId, readVersionIndex,
+  resolveDesignVersion, versionAssetId,
+} from '../../../../engine/src/design-version.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import type { TokensAPI, TokenSet } from '@lolly-tools/core/host-v1';
 // The exclusion read lives in its own leaf module (not lib/brand-doc.ts, whose
@@ -53,22 +79,42 @@ interface TokensHost {
     _getBlob(id: string): Promise<Blob | null>;
     _findMetaByType(type: string, opts?: { catalogOnly?: boolean }): Promise<TokensAssetMeta | null>;
   };
+  /** Optional: the host log, used once per unreadable version (see forVersion).
+   *  Optional so the narrow stub every test builds keeps satisfying this slice. */
+  log?(level: string, message: string, ctx?: unknown): void;
 }
 
-/** The web shell's tokens surface: HostV1's TokensAPI plus the cache-buster and
- *  the brand-lock query. */
+/** A document-shaped token surface: the HostV1 reads plus the raw document and
+ *  the cache-buster. What `createTokensAPI` returns for the head, and what
+ *  `forVersion` returns for a published version — one implementation, so a
+ *  version can never resolve by different rules from the head. */
+export type TokenDocSurface = TokensAPI & { raw(): Promise<unknown>; bust(): void };
+
+/** The web shell's tokens surface: HostV1's TokensAPI plus the cache-buster, the
+ *  brand-lock query and the version reads (plans/97 §6a). */
 export interface WebTokensAPI extends TokensAPI {
   /** Drop caches (e.g. after the user imports their own tokens). */
   bust(): void;
   /**
-   * The raw effective DTCG document — the user install if present, else the
-   * shipped catalog brand (a locked build always yields the catalog doc). This
-   * is the SAME document get()/resolve() read, handed back unresolved so the
-   * brand editor can mutate a colour leaf's `$value` and re-install it. Null
-   * when no tokens are reachable yet. Memoised alongside the token sets, so a
-   * bust() (after installUserTokens) makes the next call re-load the new doc.
+   * The raw effective DTCG document of the EDIT HEAD — the user install if
+   * present, else the shipped catalog brand (a locked build always yields the
+   * catalog doc). Handed back unresolved so the brand editor can mutate a colour
+   * leaf's `$value` and re-install it. Null when no tokens are reachable yet.
+   * Memoised alongside the token sets, so a bust() (after installUserTokens)
+   * makes the next call re-load the new doc.
+   *
+   * Deliberately the head, NOT what get()/resolve() answer for: under an active
+   * version those read the version (see the module header), and an editor that
+   * wrote a frozen version back over the head would erase the head.
    */
   raw(): Promise<unknown>;
+  /**
+   * The asset id the head document was discovered at (`user/tokens/brand` for a
+   * user install, `<ns>/tokens/brand` for a pack), or null when none is
+   * reachable. A published version is addressed RELATIVE to it — the studio's
+   * version IO reads `<headId>/<slug>`, which is not always a `user/` id.
+   */
+  headId(): Promise<string | null>;
   /**
    * True when the SHIPPED catalog brand declares itself authoritative
    * (`brandLock` on its tokens asset): the app resolves ITS colours/fonts and
@@ -76,6 +122,28 @@ export interface WebTokensAPI extends TokensAPI {
    * disabled. False for a customisable brand (e.g. lolly-start). Cached.
    */
   isLocked(): Promise<boolean>;
+  /**
+   * The version this page resolves against right now: the whole §6a ladder — the
+   * `?designv=` override on the current route, else the active version, else
+   * `latest` (the head). This is what the default reads already answer for; it is
+   * exposed so a caller can NAME the answer (a banner, a log line) without
+   * re-deriving the rule. Nothing published and no override ⇒ always `latest`,
+   * which is what makes an unversioned system behave exactly as it did before §6a.
+   */
+  activeSlug(): Promise<string>;
+  /**
+   * A read-only surface over ONE named document. `latest` returns the head
+   * surface, so a caller that resolved the ladder can use the answer
+   * unconditionally without branching.
+   *
+   * Memoised per slug and cleared by bust(). Asset tokens are rewritten through
+   * the version's pins at load (applyPinnedAssets), so `{asset.logo.x}` resolves
+   * to the preserved bytes wherever the head's have since changed. A version
+   * whose asset or bytes are unreadable falls back to the HEAD document and logs
+   * once: a missing version must degrade to today's behaviour, never to a blank
+   * render.
+   */
+  forVersion(slug: string): TokenDocSurface;
 }
 
 const ASSET_INDEX_URL = '/catalog/assets/index.json';
@@ -99,7 +167,15 @@ interface InstallTokensHost {
       blob: Blob;
       version?: string;
       meta?: Record<string, unknown>;
-    }): Promise<void>;
+    }, opts?: { skipQuota?: boolean }): Promise<void>;
+    /** Required for a VERSION write, and only for that: immutability cannot be
+     *  enforced without reading the ledger the head already carries. Optional so
+     *  every existing (head-only) caller keeps satisfying this slice. */
+    _getBlob?(id: string): Promise<Blob | null>;
+    /** Read for its `meta.name` when a head write names no label — see the
+     *  install below. Optional: a host without it just falls back to the default
+     *  name, which is what every caller got before. */
+    _getUserRecord?(id: string): Promise<{ meta?: Record<string, unknown> } | null>;
   };
   tokens?: TokensAPI & { bust?(): void; isLocked?(): Promise<boolean> };
 }
@@ -115,6 +191,22 @@ export class BrandLockedError extends Error {
 }
 
 /**
+ * Thrown when a publish names a version the head's ledger already lists. A
+ * published version is a permanent contract — the same rule the asset schema
+ * states for every id — so the name is refused rather than the bytes replaced.
+ *
+ * The LEDGER is what makes a version permanent, not the asset: an orphan asset
+ * left by a half-finished publish (the version written, the ledger write lost)
+ * names nothing and is reclaimable, which is why this check reads the head.
+ */
+export class VersionExistsError extends Error {
+  constructor(slug: string) {
+    super(`A version named “${slug}” already exists, and a published version can’t be replaced.`);
+    this.name = 'VersionExistsError';
+  }
+}
+
+/**
  * Install the user's own brand tokens (plans/archive/brand-token-contract.md §5):
  * validate + write the DTCG document as the well-known `user/tokens/brand`
  * asset, then bust the tokens caches so the very next get()/resolve() re-runs
@@ -125,103 +217,124 @@ export class BrandLockedError extends Error {
  * write chokepoint every override path funnels through (the #/start wizard,
  * brand-file import, and every set/add/remove-font action), so one guard here
  * covers them all.
+ *
+ * `versionSlug` switches to the VERSION path (plans/97 §6a): the document is
+ * written as the immutable sibling `user/tokens/brand/<slug>` instead of the
+ * head. Immutability is enforced HERE, at the same chokepoint, because that is
+ * the only place no caller can go around. Everything about the head write below
+ * is unchanged, so a system that never publishes writes the same bytes it always
+ * did.
  */
 export async function installUserTokens(
-  host: InstallTokensHost, doc: unknown, opts: { label?: string } = {},
+  host: InstallTokensHost, doc: unknown,
+  opts: {
+    label?: string; versionSlug?: string; allowVersionWrite?: boolean;
+    /**
+     * Skip the quota guard on this write. For ONE caller: the copy-on-write
+     * preserver repointing pins while a delete is in flight
+     * (bridge/version-assets.ts). That write is a few KB of JSON replacing a few
+     * KB of JSON at the same id, inside an operation that is net-freeing space —
+     * charging it full size lets a near-full device refuse the delete, which
+     * leaves the user unable to free the storage the refusal is about.
+     */
+    skipQuota?: boolean;
+  } = {},
 ): Promise<void> {
   if (await host.tokens?.isLocked?.()) throw new BrandLockedError();
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
     throw new Error('installUserTokens: expected a DTCG token document (a plain object)');
   }
+
+  if (!opts.versionSlug) {
+    await host.assets._uploadUserAsset({
+      id: USER_TOKENS_ID,
+      type: 'tokens',
+      format: 'json',
+      blob: new Blob([JSON.stringify(doc)], { type: 'application/json' }),
+      version: '1.0.0',
+      meta: { name: await headName(host, opts.label) },
+    }, { skipQuota: opts.skipQuota });
+    // The web tokens API memoises the doc + per-theme sets (see createTokensAPI);
+    // bust so nothing keeps serving the outgoing brand. Optional-chained: a host
+    // without the tokens capability just installs for the next boot.
+    host.tokens?.bust?.();
+    return;
+  }
+
+  const slug = opts.versionSlug;
+  // Publishing is deliberate, so it has to be asked for in words: a caller that
+  // merely passed a slug through from somewhere cannot mint a permanent version.
+  if (!opts.allowVersionWrite) {
+    throw new Error('installUserTokens: a version write must be explicit (allowVersionWrite)');
+  }
+  if (!isVersionSlug(slug)) {
+    throw new Error(`installUserTokens: “${slug}” is not a usable version name`);
+  }
+  // Fail closed. Without a read there is no ledger, and without the ledger this
+  // write could silently replace a published version — the one thing versioning
+  // promises it never does.
+  if (!host.assets._getBlob) {
+    throw new Error('installUserTokens: a version write needs assets._getBlob to check the ledger');
+  }
+  const headDoc = await readJsonBlob(await host.assets._getBlob(USER_TOKENS_ID).catch(() => null));
+  if (readVersionIndex(headDoc).versions.some(v => v.slug === slug)) throw new VersionExistsError(slug);
+  // A version is a leaf of the head's history and never carries a ledger of its
+  // own — a stale copy of the list would be a second source of truth the moment
+  // the next version lands. Callers pass stripVersionIndex output.
+  if (readVersionIndex(doc).versions.length) {
+    throw new Error('installUserTokens: a version payload must not carry a version ledger');
+  }
+
   await host.assets._uploadUserAsset({
-    id: USER_TOKENS_ID,
+    id: versionAssetId(USER_TOKENS_ID, slug),
     type: 'tokens',
     format: 'json',
     blob: new Blob([JSON.stringify(doc)], { type: 'application/json' }),
     version: '1.0.0',
-    meta: { name: opts.label ?? 'Brand tokens' },
+    meta: { name: opts.label ?? slug, kind: 'design-version', slug },
   });
-  // The web tokens API memoises the doc + per-theme sets (see createTokensAPI);
-  // bust so nothing keeps serving the outgoing brand. Optional-chained: a host
-  // without the tokens capability just installs for the next boot.
-  host.tokens?.bust?.();
+  // No bust(): the head document is untouched, so every cache still holds what
+  // the app is actually rendering. The ledger write that follows busts.
 }
 
-export function createTokensAPI(host: TokensHost): WebTokensAPI {
+/**
+ * What a head write should call the design system.
+ *
+ * A caller's own `label` wins. With none, the name already on the record is kept
+ * rather than reset: every head write is a read-modify-write of the SAME asset,
+ * and the machinery that writes it for its own reasons (copy-on-write pin
+ * repointing, publish, activate, restore) has no business renaming a system
+ * somebody called "Acme". 'Brand tokens' is only the name of a system that never
+ * had one — which is exactly what an unlabelled write produced before, so a
+ * first install is unchanged.
+ */
+async function headName(host: InstallTokensHost, label?: string): Promise<string> {
+  if (label) return label;
+  try {
+    const prev = (await host.assets._getUserRecord?.(USER_TOKENS_ID))?.meta?.name;
+    if (typeof prev === 'string' && prev) return prev;
+  } catch { /* unreadable store — fall through to the default */ }
+  return 'Brand tokens';
+}
+
+/** Parse a JSON blob, or null when there is nothing readable there. */
+async function readJsonBlob(blob: Blob | null): Promise<unknown> {
+  if (!blob) return null;
+  try { return JSON.parse(await blob.text()); } catch { return null; }
+}
+
+/**
+ * The read surface over ONE document loader: get/colors/resolve/themes/raw/bust.
+ *
+ * Factored out so the head and a published version cannot drift — the per-theme
+ * memo, the never-cache-an-empty-set rule and the swatch-exclusion filter are
+ * written once and both surfaces get them. `loadDoc` is called at most once per
+ * successful load; a null result is not memoised, so a document that was not
+ * reachable yet (boot sync still running) is retried on the next call.
+ */
+function tokenSurface(loadDoc: () => Promise<unknown>): TokenDocSurface {
   const setByTheme = new Map<string, TokenSet>(); // theme key ('' = default) → token set, cached once non-empty
   let docPromise: Promise<unknown> | null = null;
-  let catalogMetaPromise: Promise<TokensAssetMeta | null> | null = null;
-
-  /** The first catalog asset with `type: 'tokens'`, or null if there is none
-   *  reachable. Synced metadata first — present and offline-safe once boot
-   *  sync ran — then the network index (cold first load, before sync).
-   *  `catalogOnly` reads the SHIPPED brand (skips the user store) — used to read
-   *  the un-shadowable `brandLock` flag. */
-  async function findTokensAsset(catalogOnly = false): Promise<TokensAssetMeta | null> {
-    try {
-      const meta = await host.assets._findMetaByType('tokens', { catalogOnly });
-      if (meta) return meta;
-    } catch { /* IDB unavailable / not synced yet — fall through to the index */ }
-    try {
-      // The catalog index carries only shipped assets, so it is catalog-only by
-      // construction — the right cold-load source for both callers.
-      const resp = await instanceFetch(instancePath(ASSET_INDEX_URL));
-      if (resp.ok) {
-        const idx = await resp.json() as { assets?: Array<TokensAssetMeta & { type?: string }> };
-        return idx.assets?.find(a => a.type === 'tokens') ?? null;
-      }
-    } catch { /* offline with nothing synced */ }
-    return null;
-  }
-
-  /** The SHIPPED brand's tokens asset (never a user install). Memoised — its
-   *  brandLock flag is a build fact that doesn't change within a session. */
-  function catalogTokensAsset(): Promise<TokensAssetMeta | null> {
-    if (!catalogMetaPromise) {
-      catalogMetaPromise = findTokensAsset(true).then(m => { if (!m) catalogMetaPromise = null; return m; });
-    }
-    return catalogMetaPromise;
-  }
-
-  /** Read + parse one tokens asset's DTCG document (cached blob first, then a
-   *  direct fetch of its file). Null when neither is reachable yet. */
-  async function readAssetDoc(asset: TokensAssetMeta): Promise<unknown> {
-    // 1) The core-prefetched blob — present and offline-safe once boot sync ran.
-    //    Read the bytes directly; minting/fetching an object URL just to re-parse
-    //    in-memory JSON would pin an unused URL in the asset bridge's cache.
-    try {
-      const blob = await host.assets._getBlob(asset.id);
-      if (blob) return JSON.parse(await blob.text());
-    } catch { /* not cached yet — fall through to a direct fetch */ }
-    // 2) Direct fetch of the asset's file — first load, before the blob is cached.
-    try {
-      const url = asset.formats[0]?.url;
-      if (url) {
-        // instancePath: cold-load metas come from the raw network index, whose
-        // format URLs are root-relative (synced metas are already absolute).
-        const resp = await instanceFetch(instancePath(url), { cache: 'no-store' });
-        if (resp.ok) return await resp.json();
-      }
-    } catch { /* offline and not yet prefetched */ }
-    return null;
-  }
-
-  async function loadDoc(): Promise<unknown> {
-    // A LOCKED brand is authoritative: resolve the shipped catalog doc and
-    // ignore any user install (which the guard in installUserTokens also
-    // prevents from ever being written — but a leftover from an earlier,
-    // unlocked profile must still be shadowed here).
-    const catalog = await catalogTokensAsset();
-    if (catalog?.brandLock) return readAssetDoc(catalog);
-    // Unlocked: a USER install wins. _findMetaByType is user-first AND IDB-only
-    // (the index fallback lives here in the bridge, not in it), so consult it for
-    // a user asset and otherwise reuse the catalog asset already resolved above —
-    // this avoids a second index fetch on a cold boot.
-    let userMeta: TokensAssetMeta | null = null;
-    try { userMeta = await host.assets._findMetaByType('tokens'); } catch { /* IDB unavailable */ }
-    if (userMeta && userMeta.id.startsWith('user/')) return readAssetDoc(userMeta);
-    return catalog ? readAssetDoc(catalog) : null; // no tokens anywhere → empty set, retried next call
-  }
 
   async function doc(): Promise<unknown> {
     // Memoise a successful load; clear on failure so the next call retries
@@ -265,10 +378,236 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     raw: () => doc(),
     /** Theme names declared in the document. */
     themes: async () => (await ensure()).themes(),
-    /** True when the shipped brand is locked (see WebTokensAPI.isLocked). */
-    async isLocked() { return !!(await catalogTokensAsset())?.brandLock; },
-    /** Drop caches (e.g. after the user imports their own tokens). The lock is a
-     *  build fact, not user state, so its cache survives a bust. */
+    /** Drop the memoised document and per-theme sets. */
     bust() { setByTheme.clear(); docPromise = null; },
   };
+}
+
+/**
+ * The `?designv=` render override on the current route, or null.
+ *
+ * Top rung of the §6a ladder and the author's testing lever ("check against
+ * `latest`, fix, then publish"). It is read HERE, in the bridge, rather than
+ * threaded from the view that mounted a tool, for the same reason the rest of
+ * the ladder lives here: a render reads `host.tokens`, and a rule applied at
+ * each mount site is a rule the next mount site forgets. The reserved name is
+ * the engine's (`RESERVED` in url-mode.ts, documented in docs/url-mode.md).
+ *
+ * A plain hand-written string read, not `parseUrlState`: this is on the boot
+ * path, the engine's URL parser wants a manifest it has no business having, and
+ * the common answer has to cost an `indexOf` — which is what the `includes`
+ * guard buys, since a URL with no `designv` in it never builds a params object.
+ * Reading the raw query also cannot miss a packed (`z=`) link, because
+ * `serializeUrlState` never writes `designv` into one: a version belongs to the
+ * design system it was published in, not to whoever opens the link.
+ */
+function urlDesignVersion(): string | null {
+  try {
+    const hash = typeof location === 'undefined' ? '' : (location.hash || '');
+    if (!hash.includes('designv=')) return null;
+    const q = hash.indexOf('?');
+    if (q < 0) return null;
+    return new URLSearchParams(hash.slice(q + 1)).get('designv') || null;
+  } catch { return null; }   // sandboxed / no location — the head, as always
+}
+
+export function createTokensAPI(host: TokensHost): WebTokensAPI {
+  let catalogMetaPromise: Promise<TokensAssetMeta | null> | null = null;
+
+  /** The first catalog asset with `type: 'tokens'`, or null if there is none
+   *  reachable. Synced metadata first — present and offline-safe once boot
+   *  sync ran — then the network index (cold first load, before sync).
+   *  `catalogOnly` reads the SHIPPED brand (skips the user store) — used to read
+   *  the un-shadowable `brandLock` flag. */
+  async function findTokensAsset(catalogOnly = false): Promise<TokensAssetMeta | null> {
+    try {
+      const meta = await host.assets._findMetaByType('tokens', { catalogOnly });
+      if (meta) return meta;
+    } catch { /* IDB unavailable / not synced yet — fall through to the index */ }
+    try {
+      // The catalog index carries only shipped assets, so it is catalog-only by
+      // construction — the right cold-load source for both callers.
+      const resp = await instanceFetch(instancePath(ASSET_INDEX_URL));
+      if (resp.ok) {
+        const idx = await resp.json() as { assets?: Array<TokensAssetMeta & { type?: string }> };
+        // The SAME descendant-exclusion rule _findMetaByType applies (plans/97
+        // §6a): a pack that ships published versions puts several `type:'tokens'`
+        // entries in this index, and index order must never decide which of them
+        // is the design system. This reader also supplies the un-shadowable
+        // brandLock flag, so a mis-pick here would be a mis-picked LOCK too.
+        const tokens = (idx.assets ?? []).filter(a => a.type === 'tokens');
+        const headId = pickHeadAssetId(tokens.map(a => a.id));
+        return tokens.find(a => a.id === headId) ?? null;
+      }
+    } catch { /* offline with nothing synced */ }
+    return null;
+  }
+
+  /** The SHIPPED brand's tokens asset (never a user install). Memoised — its
+   *  brandLock flag is a build fact that doesn't change within a session. */
+  function catalogTokensAsset(): Promise<TokensAssetMeta | null> {
+    if (!catalogMetaPromise) {
+      catalogMetaPromise = findTokensAsset(true).then(m => { if (!m) catalogMetaPromise = null; return m; });
+    }
+    return catalogMetaPromise;
+  }
+
+  /** Read + parse one tokens asset's DTCG document (cached blob first, then a
+   *  direct fetch of its file). Null when neither is reachable yet. */
+  async function readAssetDoc(asset: TokensAssetMeta): Promise<unknown> {
+    // 1) The core-prefetched blob — present and offline-safe once boot sync ran.
+    //    Read the bytes directly; minting/fetching an object URL just to re-parse
+    //    in-memory JSON would pin an unused URL in the asset bridge's cache.
+    try {
+      const blob = await host.assets._getBlob(asset.id);
+      if (blob) return JSON.parse(await blob.text());
+    } catch { /* not cached yet — fall through to a direct fetch */ }
+    // 2) Direct fetch of the asset's file — first load, before the blob is cached.
+    try {
+      const url = asset.formats[0]?.url;
+      if (url) {
+        // instancePath: cold-load metas come from the raw network index, whose
+        // format URLs are root-relative (synced metas are already absolute).
+        const resp = await instanceFetch(instancePath(url), { cache: 'no-store' });
+        if (resp.ok) return await resp.json();
+      }
+    } catch { /* offline and not yet prefetched */ }
+    return null;
+  }
+
+  /** The tokens asset the app resolves against — the HEAD of the design system.
+   *  Split out of the document load because a version asset is addressed
+   *  relative to it (`<headId>/<slug>`), so both readers need the same answer. */
+  async function headAsset(): Promise<TokensAssetMeta | null> {
+    // A LOCKED brand is authoritative: resolve the shipped catalog doc and
+    // ignore any user install (which the guard in installUserTokens also
+    // prevents from ever being written — but a leftover from an earlier,
+    // unlocked profile must still be shadowed here).
+    const catalog = await catalogTokensAsset();
+    if (catalog?.brandLock) return catalog;
+    // Unlocked: a USER install wins. _findMetaByType is user-first AND IDB-only
+    // (the index fallback lives here in the bridge, not in it), so consult it for
+    // a user asset and otherwise reuse the catalog asset already resolved above —
+    // this avoids a second index fetch on a cold boot.
+    let userMeta: TokensAssetMeta | null = null;
+    try { userMeta = await host.assets._findMetaByType('tokens'); } catch { /* IDB unavailable */ }
+    if (userMeta && userMeta.id.startsWith('user/')) return userMeta;
+    return catalog; // no tokens anywhere → empty set, retried next call
+  }
+
+  async function loadHeadDoc(): Promise<unknown> {
+    const asset = await headAsset();
+    return asset ? readAssetDoc(asset) : null;
+  }
+
+  const head = tokenSurface(loadHeadDoc);
+  /** slug → surface. Cleared by bust(), so a republish/import can't be served
+   *  stale. Empty for the whole life of an install that never publishes. */
+  const versionSurfaces = new Map<string, TokenDocSurface>();
+  /** Slugs already reported unreadable — one warning each, not one per read. */
+  const warned = new Set<string>();
+
+  /** The published version's document, with its pinned assets applied. Falls
+   *  back to the HEAD document (with a single warning) whenever the version is
+   *  not readable: an author's pin to a version this device never imported must
+   *  still draw something honest, and the head is the next rung of the ladder. */
+  async function loadVersionDoc(slug: string): Promise<unknown> {
+    const headDoc = await head.raw();
+    const fallback = (why: string): unknown => {
+      if (!warned.has(slug)) {
+        warned.add(slug);
+        host.log?.('warn', `tokens: design version “${slug}” ${why} — rendering the current design system instead`);
+      }
+      return headDoc;
+    };
+    const entry = readVersionIndex(headDoc).versions.find(v => v.slug === slug);
+    if (!entry) return fallback('is not published on this device');
+    const asset = await headAsset();
+    if (!asset) return fallback('has no design system to belong to');
+    let doc: unknown = null;
+    try { doc = await readJsonBlob(await host.assets._getBlob(versionAssetId(asset.id, slug))); }
+    catch { /* IDB unavailable — treated as unreadable below */ }
+    if (!doc) return fallback('could not be read');
+    return applyPinnedAssets(doc, entry.assets ?? []);
+  }
+
+  /** A memoised read surface over one published version. */
+  function versionSurface(slug: string): TokenDocSurface {
+    let surface = versionSurfaces.get(slug);
+    if (!surface) {
+      surface = tokenSurface(() => loadVersionDoc(slug));
+      versionSurfaces.set(slug, surface);
+    }
+    return surface;
+  }
+
+  /**
+   * The §6a ladder over an already-loaded head document. No `pin` rung: a
+   * manifest pin belongs to ONE mounted tool, and this bridge is the whole page's.
+   */
+  const ladder = (headDoc: unknown): string =>
+    resolveDesignVersion({ override: urlDesignVersion(), index: readVersionIndex(headDoc) });
+
+  /**
+   * The document every RENDER on this page reads.
+   *
+   * Both branches go through a memo that already exists — the head surface's, or
+   * the named version's — so nothing is loaded twice however many surfaces a
+   * caller holds. An unversioned install therefore loads exactly one document and
+   * pays one extra `readVersionIndex` over an object already in memory.
+   */
+  async function loadRenderDoc(): Promise<unknown> {
+    const headDoc = await head.raw();
+    if (!headDoc) return null;
+    const slug = ladder(headDoc);
+    return slug === DESIGN_VERSION_LATEST ? headDoc : versionSurface(slug).raw();
+  }
+  const render = tokenSurface(loadRenderDoc);
+
+  /** Which `?designv=` the memoised render surface was built for. The bridge
+   *  outlives any one route, so navigating off a `designv` link (or onto one) has
+   *  to drop that memo — and only that one, since the head never moved. */
+  let builtFor: string | null = urlDesignVersion();
+  function syncOverride(): void {
+    const now = urlDesignVersion();
+    if (now === builtFor) return;   // the overwhelmingly common case: both null
+    builtFor = now;
+    render.bust();
+  }
+
+  const api: WebTokensAPI = {
+    // The DEFAULT reads are the render surface, not the head — see the module
+    // header. Written out rather than spread so the split is visible here.
+    get: async (opts = {}) => { syncOverride(); return render.get(opts); },
+    colors: async (opts = {}) => { syncOverride(); return render.colors(opts); },
+    resolve: async (ref, opts = {}) => { syncOverride(); return render.resolve(ref, opts); },
+    themes: async () => { syncOverride(); return render.themes(); },
+    /** The EDIT HEAD's document (see WebTokensAPI.raw). */
+    raw: () => head.raw(),
+    /** The id the head was discovered at (see WebTokensAPI.headId). */
+    async headId() { return (await headAsset())?.id ?? null; },
+    /** True when the shipped brand is locked (see WebTokensAPI.isLocked). */
+    async isLocked() { return !!(await catalogTokensAsset())?.brandLock; },
+    /** The version this page resolves against (see WebTokensAPI.activeSlug). */
+    async activeSlug() {
+      syncOverride();
+      return ladder(await head.raw().catch(() => null));
+    },
+    /** A read-only surface over one named document (see WebTokensAPI.forVersion). */
+    forVersion(slug: string): TokenDocSurface {
+      // The head surface itself, not a copy: `latest` means the head, and a
+      // second surface over the same document would re-read and re-resolve it.
+      return slug === DESIGN_VERSION_LATEST ? head : versionSurface(slug);
+    },
+    /** Drop caches (e.g. after the user imports their own tokens). The lock is a
+     *  build fact, not user state, so its cache survives a bust — but every
+     *  version surface goes, since a fresh ledger may repoint or retire one. */
+    bust() {
+      head.bust();
+      render.bust();
+      versionSurfaces.clear();
+      warned.clear();
+    },
+  };
+  return api;
 }

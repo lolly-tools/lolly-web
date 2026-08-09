@@ -45,6 +45,14 @@ import { noteScrubSource } from '../lib/scrub-registry.ts';
 // The `zzfxm:` procedural-audio id — an ENGINE-owned asset-id scheme, exactly like
 // tool-url.ts's, because every shell that resolves an asset has to recognise it.
 import { isZzfxmRef, parseZzfxmRef, formatZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
+// Tokens discovery must skip a published design-system VERSION (plans/97 §6a).
+// The engine leaf, like the imports above: the web bridge, the MCP server and the
+// CLI all apply this one predicate rather than each writing the rule out.
+import { pickHeadAssetId } from '../../../../engine/src/design-version.ts';
+// Where copy-on-write parks bytes a published version pins. Imported (not
+// re-spelled) so the listing filter below and the preserver that writes them can
+// never disagree about which rows are machine-owned.
+import { FROZEN_PREFIX } from './version-assets.ts';
 import type { AssetRef, AssetQuery } from '@lolly-tools/core/host-v1';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -223,7 +231,28 @@ function userIdTime(id: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export function createAssetsAPI(db: AssetsDb) {
+/** Options the shell wires in at bridge-assembly time (bridge/index.ts). */
+export interface AssetsApiOptions {
+  /**
+   * Runs BEFORE anything replaces or removes the bytes stored at a user-asset
+   * id. Its job is to preserve bytes a published design-system version pins
+   * (plans/97 §6a copy-on-write) — see bridge/version-assets.ts.
+   *
+   * A THROW REFUSES the write: losing a version's bytes is not an acceptable
+   * success, and a version that silently changed what it renders would make
+   * "published is permanent" a lie. Called from the four methods that destroy
+   * bytes at an existing id and nowhere else, so no caller can forget it.
+   *
+   * `reclaiming` marks the DELETE case, where the preserved copy is a move
+   * rather than a second copy — the bytes it writes are the bytes about to be
+   * released, so it must not be quota-checked. Without that, a device near its
+   * quota refuses the delete that would have freed the space, and the user is
+   * locked out of their own storage with no way forward (see _deleteUserAsset).
+   */
+  preservePinned?: (id: string, opts?: { reclaiming?: boolean }) => Promise<void>;
+}
+
+export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
   const api = {
     async get(id: string, opts: { format?: string; version?: string } = {}): Promise<AssetRef> {
       // A PROCEDURAL asset: `zzfxm:<seed>[:<style>]` names a song that is
@@ -455,9 +484,18 @@ export function createAssetsAPI(db: AssetsDb) {
      * No count cap (see USER_ASSET_MILESTONES) — assertQuotaRoom() is the only
      * guard, at the bridge boundary so it can't be bypassed by a different caller,
      * and it refuses a write only when device storage is genuinely tight.
+     *
+     * `skipQuota` is for the ONE write that is not a net addition: the
+     * copy-on-write preservation of bytes that are being released in the same
+     * breath (a delete). Nothing outside bridge/version-assets.ts passes it, and
+     * it is not on the record, so a caller cannot set it by accident.
      */
-    async _uploadUserAsset(record: UserAssetRecord): Promise<void> {
-      await assertQuotaRoom(record.blob?.size ?? 0);
+    async _uploadUserAsset(record: UserAssetRecord, upOpts: { skipQuota?: boolean } = {}): Promise<void> {
+      // Before assertQuotaRoom on purpose: the preserved copy has to exist before
+      // the incoming write can fail on quota, or a tight device would drop a
+      // published version's bytes on the floor while refusing the replacement.
+      await opts.preservePinned?.(record.id);
+      if (!upOpts.skipQuota) await assertQuotaRoom(record.blob?.size ?? 0);
       // Compute the AI-provenance flag once, at ingest, from the captured credential.
       if (record.aiGenerated === undefined && record.credential && record.credentialFormat) {
         const kind = detectAiGenerated(record, await loadC2paVerify());
@@ -489,9 +527,20 @@ export function createAssetsAPI(db: AssetsDb) {
       return record.id;
     },
 
-    /** Internal: list the user's saved images, newest first, as resolved AssetRefs. */
+    /** Internal: one stored user-asset record (type/format/meta/version/blob) by
+     *  id, or null. The copy-on-write preserver needs the RECORD, not just the
+     *  blob, to write a faithful frozen copy of what it is about to lose. */
+    async _getUserRecord(id: string): Promise<UserAssetRecord | null> {
+      return (await db.get('user-assets', id)) ?? null;
+    },
+
+    /** Internal: list the user's saved images, newest first, as resolved AssetRefs.
+     *  Frozen rows (bytes a published design-system version pins, preserved by
+     *  copy-on-write) are machine-owned and hidden: the user never chose them and
+     *  cannot meaningfully act on them. They still COUNT toward _userAssetsSize —
+     *  storage honesty — and the Versions panel reports their total separately. */
     async _listUserAssets(): Promise<AssetRef[]> {
-      const all = await db.getAll('user-assets');
+      const all = (await db.getAll('user-assets')).filter(r => !String(r.id).startsWith(FROZEN_PREFIX));
       // Only older records (pre-dating the persisted flag) need the provenance
       // reader; when none do, the whole c2pa cluster is never fetched.
       const needsRead = all.some(r => r.aiGenerated === undefined && r.credential && r.credentialFormat);
@@ -527,6 +576,9 @@ export function createAssetsAPI(db: AssetsDb) {
      * for being "too big" on arrival.
      */
     async _importUserAsset(record: UserAssetRecord): Promise<void> {
+      // A restore rewrites ids on faith, so it can land on top of bytes a
+      // published version pins exactly like an upload can.
+      await opts.preservePinned?.(record.id);
       await db.put('user-assets', record);
       // The one path that REWRITES an existing id rather than minting a new one.
       // A restore normally puts identical bytes back, but a proxy read has no
@@ -561,6 +613,12 @@ export function createAssetsAPI(db: AssetsDb) {
 
     /** Internal: delete one user image and revoke its cached object URL. */
     async _deleteUserAsset(id: string): Promise<void> {
+      // Deleting is the most complete way to destroy pinned bytes, so it gets
+      // the same preservation pass as a replacement — but marked `reclaiming`,
+      // because here the preserved copy REPLACES the bytes it saves instead of
+      // joining them. Quota-checking it would let a full device refuse the one
+      // action that frees space, which is a dead end with no way out.
+      await opts.preservePinned?.(id, { reclaiming: true });
       // Read the record first: the deletion event below carries its type so
       // listeners can react without re-querying a store the record just left.
       const rec = await db.get('user-assets', id).catch(() => undefined) as { type?: string } | undefined;
@@ -608,6 +666,9 @@ export function createAssetsAPI(db: AssetsDb) {
      * bytes out of OBJECT_URL_CACHE. No-op if the asset is gone.
      */
     async _restampUserAsset(id: string, patch: { blob: Blob; credential: Uint8Array; credentialFormat: string }): Promise<void> {
+      // The stamp rewrites the bytes at an existing id — pinned or not, the
+      // previous bytes are what a published version checksummed.
+      await opts.preservePinned?.(id);
       const rec = await db.get('user-assets', id);
       if (!rec) return;
       await assertQuotaRoom(Math.max(0, patch.blob.size - (rec.blob?.size ?? 0)));
@@ -675,28 +736,38 @@ export function createAssetsAPI(db: AssetsDb) {
     },
 
     /**
-     * Internal: the first asset of a given type, or null — the USER'S OWN store
+     * Internal: the HEAD asset of a given type, or null — the USER'S OWN store
      * first, then the synced catalog metadata. Lets a sibling bridge discover a
      * well-known singleton document (e.g. the brand `tokens` asset) — offline-
      * safe once boot sync has run — instead of hardcoding a brand-specific id.
+     *
+     * "Head" rather than "first" because of design-system versions (plans/97
+     * §6a): a published version is a sibling asset one segment DEEPER than the
+     * system it belongs to (`user/tokens/brand/jupiter`), and it must never be
+     * picked as the design system. pickHeadAssetId — the engine predicate the
+     * MCP server and the CLI apply too — drops any id that is a proper
+     * descendant of another id of the same type, and is otherwise
+     * order-preserving: with zero or one asset of a type it returns exactly what
+     * a bare `.find(...)` did.
      * User-first is deliberate: an installed `user/tokens/brand` beats the
      * shipped brand (and the flip of the returned id is exactly how the shell
      * detects "branded" — see bridge/tokens.ts installUserTokens). A user
      * record holds one already-resolved blob and no catalog URLs, so it's
      * shaped as a metadata record with empty `formats`; readers get the bytes
      * via _getBlob, which resolves `user/…` ids from the user store. The
-     * catalog scan keeps the MCP server's rule (`idx.assets.find(a => a.type
-     * === …)`); getAll returns id order rather than index order, which only
-     * differs if a catalog ships more than one asset of a singleton type.
+     * catalog scan keeps the MCP server's rule; getAll returns id order rather
+     * than index order, which only differs if a catalog ships more than one
+     * asset of a singleton type.
      *
-     * `opts.catalogOnly` skips the user store — for reading a property that is a
-     * fact about the SHIPPED brand a user asset must not be able to shadow (the
-     * `brandLock` flag on the catalog tokens asset; see bridge/tokens.ts).
+     * `queryOpts.catalogOnly` skips the user store — for reading a property that
+     * is a fact about the SHIPPED brand a user asset must not be able to shadow
+     * (the `brandLock` flag on the catalog tokens asset; see bridge/tokens.ts).
      */
-    async _findMetaByType(type: AssetRef['type'], opts: { catalogOnly?: boolean } = {}): Promise<AssetMetaRecord | null> {
-      if (!opts.catalogOnly) {
+    async _findMetaByType(type: AssetRef['type'], queryOpts: { catalogOnly?: boolean } = {}): Promise<AssetMetaRecord | null> {
+      if (!queryOpts.catalogOnly) {
         const users = await db.getAll('user-assets');
-        const u = users.find(r => r.type === type);
+        const userHeadId = pickHeadAssetId(users.filter(r => r.type === type).map(r => r.id));
+        const u = userHeadId ? users.find(r => r.id === userHeadId) : undefined;
         if (u) {
           const name = u.meta?.name;
           return {
@@ -713,7 +784,8 @@ export function createAssetsAPI(db: AssetsDb) {
         }
       }
       const all = await db.getAll('asset-meta');
-      return all.find(m => m.type === type) ?? null;
+      const headId = pickHeadAssetId(all.filter(m => m.type === type).map(m => m.id));
+      return (headId ? all.find(m => m.id === headId) : undefined) ?? null;
     },
 
     async _blobCacheSize(): Promise<number> {

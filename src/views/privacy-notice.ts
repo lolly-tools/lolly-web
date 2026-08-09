@@ -64,8 +64,10 @@ export function mountPrivacyNotice(viewEl: HTMLElement): void {
   viewEl.classList.add('has-privacy-notice');
 
   // Sit exactly on top of the footer — measure it rather than hard-code a height
-  // that the safe-area inset and wrapped controls would make wrong on mobile.
-  const footer = viewEl.querySelector<HTMLElement>('.gallery-footer');
+  // that the safe-area inset and wrapped controls would make wrong on mobile. The
+  // bar is a shell-level singleton OUTSIDE #view now (plans/99 M1), so query the
+  // document, not the view.
+  const footer = document.querySelector<HTMLElement>('.gallery-footer');
   let ro: ResizeObserver | undefined;
   if (footer && typeof ResizeObserver !== 'undefined') {
     const syncOffset = () => notice.style.setProperty('--footer-h', `${footer.offsetHeight}px`);

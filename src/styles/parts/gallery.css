@@ -1,11 +1,10 @@
 /* ─── Gallery ───────────────────────────────────────────────────────────── */
 
 /* Sticky footer bar: Batch link on the far left, "what is this?" on the right —
-   both plain .btn-styled links flanking the centered search. Shared with the
-   Profile view's bottom toolbar (.profile-footer), which reuses this fixed-bar
-   chrome and adds its own button layout in profile.css. */
-.gallery-footer,
-.profile-footer {
+   both plain .btn-styled links flanking the centered search. One shell-level
+   singleton mounted after #view (components/search-bar.ts, plans/99 M1), shown
+   on every browse route — no view renders its own copy any more. */
+.gallery-footer {
   position: fixed;
   /* --vv-* (set by the VisualViewport shim) keep the fixed bar on the visible
      edge while the page is pinch-zoomed; all 0px when not zoomed. */
@@ -25,6 +24,10 @@
   backdrop-filter: blur(10px);
   border-top: 1px solid hsl(var(--border));
 }
+/* The singleton bar hides via the [hidden] attribute on editing routes — this must
+   out-specify the display:flex above (an author display beats the UA's [hidden]
+   rule, so without this the bar would stay visible on tool views). */
+.gallery-footer[hidden] { display: none; }
 /* Jelly mode: the soft-body controls carry their own vertical bulk, so the bar's
    own .6rem block padding just doubled the height. Drop it (top fully, bottom to
    only the iOS home-indicator inset) and tighten the gap. */
@@ -33,7 +36,10 @@
   padding-bottom: env(safe-area-inset-bottom);
   gap: .5rem;
 }
-.app-view.gallery-view { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); } /* clear the fixed footer */
+/* Clear the fixed footer bar on every route that shows it — the class is toggled
+   by the search-bar singleton's applyRoute (plans/99 M1), so dashboard/profile get
+   the clearance without a per-view rule. */
+.app-view.has-search-footer { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
 
 /* First-visit privacy notice — a slim transparency strip pinned just above the
    footer (--footer-h is measured live in privacy-notice.js so it tracks the
@@ -216,7 +222,8 @@
   background: none; border: 0; box-shadow: none; padding: 0; border-radius: 0;
 }
 .gallery-search-wrap--jelly .gallery-search-icon,
-.gallery-search-wrap--jelly .gallery-search-clear { z-index: 1; }
+.gallery-search-wrap--jelly .gallery-search-clear,
+.gallery-search-wrap--jelly .gallery-search-kbd { z-index: 1; }
 
 .gallery-search {
   width: 100%;
@@ -258,6 +265,35 @@
 .gallery-search-clear[hidden] { display: none; }
 .gallery-search-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .gallery-search-clear:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+
+/* Spotlight chord hint (plans/99 §2f) — the ⌃␣ <kbd> chip right-aligned inside
+   the box. Advertises Control-Space ONLY (⌘Space stays bound but silent — the
+   locked decision). Decorative: aria-hidden, pointer-events none; search-bar's
+   syncClear flips [hidden] the moment the field has text, so it and the ✕
+   never share the corner. Hidden outright on coarse pointers (no keyboard to
+   hint at) and under 640px (the field is full-width and tight). */
+.gallery-search-kbd {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: calc(11px * var(--a11y-fs));
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.55);
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 0.75);
+  pointer-events: none;
+}
+.gallery-search-kbd[hidden] { display: none; }
+@media (pointer: coarse) {
+  .gallery-search-kbd { display: none; }
+}
+@media (max-width: 640px) {
+  .gallery-search-kbd { display: none; }
+}
 
 .gallery-no-results {
   font-size: calc(13px * var(--a11y-fs));
@@ -698,7 +734,7 @@ stroke-width:.81;
      width-driven breakpoints the masonry used. */
   display: grid;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--grid-gap);   /* tokens.css — collapses to --grid-gap-tight ≤640px */
   align-items: stretch;   /* every tile fills its row height → equal-size cards */
   /* Top padding clears the fixed top-right cluster (filter / saved / profile) now
      that the sticky pill bar — which used to hold this space — is gone. */
@@ -735,7 +771,7 @@ stroke-width:.81;
   }
   #view.gallery-view .gtile-name {
     scroll-snap-align: end;
-    scroll-margin-bottom: 14px;
+    scroll-margin-bottom: var(--grid-gap-tight);   /* tracks the grid's phone gap */
   }
 }
 
@@ -849,6 +885,45 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
    thumbs + observers survive) — display:none drops them from the column flow entirely.
    Higher specificity than the base `.gtile { display: block }` above so it wins. */
 .tool-masonry .gtile.is-filtered { display: none; }
+
+/* ── Multi-select ──
+   Every tile carries the shared top-left .tile-check dot (folder-tiles.ts /
+   folders.css own its geometry + pressed state); this block adds the gallery's
+   reveal states — folders.css only reveals it inside .folder-tile. The dot sits
+   OUTSIDE .gtile-actions on purpose: that cluster paints with
+   mix-blend-mode:difference over previews, which would invert the dot. */
+.gtile:hover .tile-check,
+.gtile.is-selected .tile-check,
+.gallery.has-selection .tile-check { opacity: 1; }
+/* .gtile is borderless (shadow card) — the selection ring is a box-shadow pair. */
+.gtile.is-selected { box-shadow: 0 0 0 2px hsl(var(--primary)), 0 .1rem .4rem #0002; }
+/* Long-press opens the context menu on touch — suppress the OS link preview /
+   text-selection callout that would race it. */
+.gtile { -webkit-touch-callout: none; }
+@media (pointer: coarse) {
+  .gtile { -webkit-user-select: none; user-select: none; }
+}
+
+/* ── Hidden tools ──
+   A hidden tile only shows while the "Show hidden tools" reveal is on — dimmed and
+   desaturated so the state reads at a glance (hover restores most of it for reading).
+   The dim rides `filter` (opacity()), NOT the opacity property: the entrance
+   cascade's card-in animation is fill-mode:both, which pins `opacity` at its final
+   keyframe forever and silently beats any cascade value. */
+.tool-masonry .gtile.is-hidden-tool:not(.is-filtered) { filter: saturate(0.5) opacity(0.55); }
+.tool-masonry .gtile.is-hidden-tool:not(.is-filtered):hover { filter: saturate(0.8) opacity(0.9); }
+/* The grey reveal box, last in the grid — a plain-text button, deliberately muted
+   (no dashes: dashed borders mean drop areas). Overrides the .gtile card base. */
+.tool-masonry .gtile--hiddenbox {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 84px; height: auto; padding: 14px;
+  border: none; border-radius: calc(var(--radius) * 1.1);
+  background: hsl(var(--muted) / 0.5); color: hsl(var(--muted-foreground));
+  font-size: calc(13px * var(--a11y-fs)); font-weight: 600; text-align: center;
+  cursor: pointer; box-shadow: none;
+}
+.tool-masonry .gtile--hiddenbox:hover { background: hsl(var(--muted) / 0.75); color: hsl(var(--foreground)); }
+
 /* Restrained hover — border highlight only, no lift, no glow shadow. */
 .gtile:hover { border-color: hsl(var(--primary) / 0.45); }
 .gtile:hover .tool-card-icon svg { opacity: 1; }
@@ -1762,3 +1837,35 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile.gtile--has-preview .gtile
 .gtile--view .gtile-name { font-size: inherit; }
 
 @media (prefers-reduced-motion: reduce) { .gtile--view { transition: none; } }
+
+/* ── Multi-select bulk-action bar ────────────────────────────────────────────
+   The shared lib/bulk-bar.ts markup with this view's skin — fixed bottom-centre
+   pill above the persistent footer, mirroring .cat-bulkbar/.projects-bulkbar
+   (each view keeps its own surface + offsets by design). */
+.gallery-bulkbar {
+  position: fixed; left: 50%; bottom: calc(4.8rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); z-index: 9000;
+  display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 24px);
+  padding: 8px 8px 8px 16px; border-radius: 999px;
+  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border)); box-shadow: 0 .6rem 2rem #0006;
+}
+.gallery-bulkbar[hidden] { display: none; }
+.gallery-bulkbar-count { font-size: calc(.9rem * var(--a11y-fs)); font-weight: 700; white-space: nowrap; }
+.gallery-bulkbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gallery-bulkbar-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.gallery-bulkbar-actions .btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
+.gallery-bulkbar-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: calc(30px * var(--a11y-fs)); height: calc(30px * var(--a11y-fs)); flex: none;
+  border-radius: 999px; cursor: pointer;
+  font-size: calc(16px * var(--a11y-fs)); line-height: 1; color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / .6); border: none;
+}
+.gallery-bulkbar-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+/* Reserve room so the fixed bar never buries the last tile row. */
+.gallery.has-selection { padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 640px) {
+  /* Phones: the footer wraps to two rows, so lift the bar higher and let it wrap. */
+  .gallery-bulkbar { flex-wrap: wrap; justify-content: center; width: min(92vw, 420px); border-radius: var(--radius); bottom: calc(7rem + env(safe-area-inset-bottom, 0px)); }
+}

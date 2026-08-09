@@ -4,11 +4,16 @@
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /*
- * #/start — the brand studio shell (views/start.ts). Async CSS chunk, loaded
- * with the view. The heart of the page is the brand studio (lib/brand-editor.ts,
- * .be-* styles from brand-studio.css, imported by that module); this sheet only
- * styles the shell around it — header, step tabs, the persistent action row,
- * the import panel and the finish card. Chrome colours flow through tokens.css.
+ * #/start — the Design System studio shell (views/start.ts). Async CSS chunk,
+ * loaded with the view. The rooms themselves are the brand studio's panels
+ * (lib/brand-editor.ts, .be-* styles from brand-studio.css, imported by that
+ * module); this sheet styles what sits around them — header, the rail of rooms
+ * (a left sidebar from 900px, a horizontal chip strip below it), the rail's
+ * foot actions, the Overview room, and the import card. Chrome colours flow
+ * through tokens.css.
+ *
+ * `.ds-*` is the design-system studio's own namespace (plan 97 §10); `.start-*`
+ * is what the surrounding page has always been called.
  */
 
 /* Full-viewport on EVERY tab: the hero wash (.start::before) paints on this
@@ -66,11 +71,10 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   margin-bottom: 12px;
-  /* Leave the fixed top-right cluster its room. It used to be one 44px FAB the
-     sub-line could pass under; it now carries Import and Export too, and a
-     sentence running beneath three controls is unreadable. Capped against the
+  /* Leave the fixed top-right cluster its room — the language FAB alone now
+     that the whole-system actions sit in the rail's foot. Capped against the
      viewport so a narrow window doesn't reserve most of the line. */
-  padding-right: min(19rem, 30vw);
+  padding-right: min(8rem, 24vw);
 }
 .start-eyebrow {
   margin: 0;
@@ -91,134 +95,188 @@
   .start-sub { display: none; }
 }
 
-/* ── Step tabs — numbered, in working order. The active step is filled; a step
-      with fresh changes nudges the NEXT one (a quiet pulse on its number), so
-      the way forward is always visible without shouting. ───────────────────── */
-.start-tabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: nowrap;
-  margin-bottom: 10px;
+/* ── The studio: a rail of rooms beside the open room ─────────────────────────
+      The rooms are PEERS. There is no order to walk, so there is nothing here
+      that counts, numbers or nudges — an item is either where you are or where
+      you could go.
+
+      Stacking: this takes `.start > *`'s z-index 1, so the rail (15) and the
+      swatch popover (.be-editor, 30) both live in THIS context — the popover
+      paints over the rail, and the palette sheet (a direct child of .start at
+      50) still paints over everything, exactly as before. ───────────────────── */
+.ds-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
 }
-/* Every step takes an equal share of the row — flex-basis 0 + grow, so the active
-   tab (or a longer label) never resizes its neighbours. min-width:0 lets a long
-   label ellipsis rather than force a tab wider than its share. */
-.start-tab {
-  flex: 1 1 0;
-  min-width: 0;
+@media (min-width: 900px) {
+  .ds-shell { grid-template-columns: 13.5rem minmax(0, 1fr); gap: 20px; }
+}
+
+.ds-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Phones: the rail folds to a wrapping chip strip under the header. Only the
+   CHIPS pin (the wayfinding); the action buttons scroll away with the page —
+   pinning both ate a fifth of a phone screen. */
+@media (max-width: 899px) {
+  .ds-rail { gap: 6px; }
+  .ds-rooms {
+    position: sticky;
+    top: 0;
+    z-index: 15; /* under the swatch popover (30) and the palette sheet (50) */
+    padding: 6px 0;
+    background: hsl(var(--background) / 0.92);
+    backdrop-filter: blur(8px);
+  }
+}
+@media (min-width: 900px) {
+  .ds-rail { position: sticky; top: 14px; max-height: calc(100dvh - 28px); overflow-y: auto; }
+}
+
+.ds-rooms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
+}
+@media (max-width: 899px) {
+  /* Wrap, never scroll: a room chip off the page is a room the user doesn't
+     know exists (and a scroll container clips the focus ring). Two rows on a
+     phone beats six chips with three hidden. */
+  .ds-rooms { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .ds-rooms > li { flex: none; }
+}
+
+.ds-room {
+  display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) *1.5);
-  background: hsl(var(--card));
+  width: 100%;
+  min-height: 44px;      /* a real touch target on every width */
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
   color: hsl(var(--muted-foreground));
   font: inherit;
   font-size: calc(13px * var(--a11y-fs));
   font-weight: 600;
+  text-align: start;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
-  min-height: 120px;
+  transition: background 0.12s, color 0.12s;
 }
-.start-tab:hover { border-color: hsl(var(--primary) / 0.55); color: hsl(var(--foreground)); }
-.start-tab.is-active {
-  background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+.ds-room:hover { background: hsl(var(--muted) / 0.7); color: hsl(var(--foreground)); }
+/* The current room reads as a TINTED FILL, never a coloured outline — the house
+   rule for anything with a border-radius. */
+.ds-room[aria-current="page"] { background: hsl(var(--primary) / 0.14); color: hsl(var(--foreground)); }
+.ds-room[aria-current="page"] .ds-room-ic { color: hsl(var(--primary)); }
+.ds-room-ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(18px * var(--a11y-fs));
+  height: calc(18px * var(--a11y-fs));
 }
-.start-tab-icon {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2em;
-  height: 2em;
-  color: currentColor;
-}
-.start-tab-icon svg {
-  width: 100%;
-  height: 100%;
-  stroke-width: 1.5;
-}
-.start-tab-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.start-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.start-tab-n {
-    color: hsl(var(--muted-foreground));
-    font-variant-numeric: tabular-nums;
-    transtion: all .3s ease-out !important;
-    transform: scale(.3) translateY(-1.5em);
-    flex: none;
-    place-items: center;
-    font-size: 7em;opacity:.12;
-    font-weight: 900;
-    position:absolute; 
-    top:-.1em;
-}
-.start-tab.is-active .start-tab-n { background: hsl(var(--primary-foreground) / 0.22); color: hsl(var(--primary-foreground)); }
-.start-tab.is-nudge .start-tab-n { background: hsl(var(--primary) / 0.18); color: hsl(var(--primary)); }
-@media (prefers-reduced-motion: no-preference) {
-  .start-tab.is-nudge .start-tab-n { animation: start-nudge 1.8s ease-in-out infinite; }
-}
-@keyframes start-nudge {
-  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.35); }
-  50%      { box-shadow: 0 0 0 5px hsl(var(--primary) / 0); }
+.ds-room-ic svg { width: 100%; height: 100%; }
+.ds-room-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 899px) {
+  .ds-room { width: auto; border-radius: 999px; padding: 8px 14px; }
 }
 
-/* ── The brand-file actions in the top-right chrome cluster, on the language
-      selector's line. They act on the WHOLE brand, not the open step, so they
-      belong to the chrome — and the in-flow row they used to occupy spent a band
-      of the first screen on two buttons that are never step-specific. ───────── */
-.start-topright .be-btn {
-  /* --chrome-h is the shared height of every control in this row (tokens.css), so
-     the two buttons and the language FAB line up by construction rather than by a
-     hand-matched number. */
-  height: var(--chrome-h);
+/* Foot: the whole-system actions and the transient note. */
+.ds-rail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid hsl(var(--border));
+}
+@media (min-width: 900px) {
+  .ds-rail-actions { flex-direction: column; align-items: stretch; }
+}
+.ds-rail-actions .be-btn {
+  /* --chrome-h is the shared height of every top-level control (tokens.css). */
+  min-height: var(--chrome-h);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.35em;
   padding-inline: 0.85rem;
   border-radius: var(--radius);
   white-space: nowrap;
 }
-/* Narrow screens: the labels go and the two become glyph buttons the size of the
-   language FAB. Their aria-label/title carry the name (start.ts). */
-@media (max-width: 640px) {
-  .start-topright .be-btn { width: var(--chrome-h); padding: 0; justify-content: center; }
-  .start-topright .start-act-label { display: none; }
+.ds-rail-note {
+  /* width, not a flex-basis: the foot is a ROW on phones (where 100% width puts
+     the note on its own line) and a COLUMN on desktop (where a 100% basis would
+     be a height). */
+  width: 100%;
+  flex: none;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
 }
+.ds-rail-note.is-error { color: hsl(var(--destructive)); }
 
-/* ── The action row: the primary Save & continue plus the transient note, and
-      NOTHING at rest — start.ts hides the row whenever both are empty, so a step
-      you're only reading spends no vertical space on it. Sticky under the top of
-      the viewport so it never scrolls out of reach once it's there. ─────────── */
-.start-actions[hidden] { display: none; }
-.start-actions {
-  position: sticky;
-  top: 10px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  margin-bottom: 12px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--card) / 0.92);
-  backdrop-filter: blur(8px);
+.ds-main { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.ds-panel[hidden] { display: none; }
+
+/* ── The Overview room — counts and doors, no progress ─────────────────────── */
+.ds-ov { display: flex; flex-direction: column; gap: 14px; }
+.ds-ov-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.ds-ov-title { margin: 0; font-size: calc(17px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
+.ds-ov-sub { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); max-width: 62ch; }
+
+.ds-ov-doors {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
 }
-.start-actions-note { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.start-actions-note.is-error { color: hsl(var(--destructive)); }
-.start-save { margin-inline-start: auto; }
-.start-save[hidden] { display: none; }
+.ds-ov-door,
+.ds-ov-card {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  text-align: start;
+  padding: 16px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.2);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.ds-ov-door:hover,
+.ds-ov-card:hover { background: hsl(var(--muted) / 0.5); box-shadow: 0 2px 10px -6px hsl(var(--foreground) / 0.4); }
+.ds-ov-door-ic {
+  display: grid;
+  place-items: center;
+  width: calc(22px * var(--a11y-fs));
+  height: calc(22px * var(--a11y-fs));
+  color: hsl(var(--primary));
+}
+.ds-ov-door-ic svg { width: 100%; height: 100%; }
+.ds-ov-door-name { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; }
+.ds-ov-door-note { font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+
+.ds-ov-cards {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+}
+.ds-ov-card-label { font-size: calc(11px * var(--a11y-fs)); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.ds-ov-card-value { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
+.ds-ov-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ds-ov-chip {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
+}
+.ds-ov-more { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ds-ov-exit { font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
 /* ── The import card, and the modal it now opens in ──────────────────────── */
 /* Import is the inviting way in — bringing your existing brand across is the best
@@ -356,10 +414,10 @@
 .start-cta--import { align-self: flex-start; }
 
 /* ── The studio mount ────────────────────────────────────────────────────── */
-/* z-index auto (overriding .start > *'s 1) keeps this from becoming a stacking
-   context: the swatch popover inside (.be-editor, z-index 30) then joins the
-   page context and paints ABOVE the sticky action row (z-index 20), while the
-   studio's normal-flow panels still scroll beneath it. */
+/* z-index auto: the wrap must not become a stacking context of its own, so the
+   swatch popover inside it (.be-editor, z-index 30) shares a context with the
+   sticky rail (15) and paints above it, while the rooms' normal-flow panels
+   still scroll beneath. */
 .start-editor-wrap { display: flex; flex-direction: column; gap: 22px; z-index: auto; }
 .start-editor-mount { display: block; }
 .start-editor-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
@@ -377,12 +435,14 @@
   .start-editor-mount .be-tab--split { column-gap: 0; }
 }
 
-/* ── Colour tab, ≥1100px: a viewport-fit page. The ONLY scrolling happens
+/* ── Colours room, ≥1100px: a viewport-fit page. The ONLY scrolling happens
       inside the split's two panes (brand-studio.css gives each overflow-y:auto
       and stretches them to the split's height), so their bottoms anchor to the
       viewport and the page itself never scrolls. The chain hands 100dvh down
-      view → wrap → mount → .be → split; every grid link needs a minmax(0,1fr)
-      track (or min-height:0) or it would size to its content instead. */
+      view → shell → main → wrap → mount → .be → split; every grid link needs a
+      minmax(0,1fr) track (or min-height:0) or it would size to its content
+      instead. Any other room (Overview parks `overview` on the same attribute)
+      simply doesn't match, and the page scrolls normally. */
 @media (min-width: 1100px) {
   .start:has(.be[data-active-tab="color"]) {
     height: 100dvh;
@@ -391,6 +451,8 @@
     padding-bottom: 14px;
     overflow: clip; /* not hidden: clip can't become a scroll container, so the page stays put */
   }
+  .start:has(.be[data-active-tab="color"]) .ds-shell { flex: 1; min-height: 0; align-items: stretch; }
+  .start:has(.be[data-active-tab="color"]) .ds-main { min-height: 0; }
   .start:has(.be[data-active-tab="color"]) .start-editor-wrap { flex: 1; min-height: 0; }
   .start:has(.be[data-active-tab="color"]) .start-editor-mount {
     display: grid;
@@ -401,23 +463,10 @@
     min-height: 0;
     grid-template-rows: minmax(0, 1fr); /* the one visible panel (the split) gets the full height */
   }
+  /* The rail is a grid item in a stretched row here, so cap it to the row
+     rather than letting six items decide the page's height. */
+  .start:has(.be[data-active-tab="color"]) .ds-rail { max-height: 100%; }
 }
-
-/* ── Finish card — the three ways onward, revealed by the last step's save. ── */
-.start-finish {
-  margin-top: 26px;
-  padding: 22px 24px;
-  border: 1px solid hsl(var(--primary) / 0.35);
-  border-radius: var(--radius);
-  background: hsl(var(--primary) / 0.06);
-}
-.start-finish[hidden] { display: none; }
-.start-finish-title { margin: 0 0 6px; font-size: calc(18px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
-.start-finish-sub { margin: 0 0 14px; font-size: calc(13.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-.start-finish-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.start-finish-links a { text-decoration: none; }
-.start-finish-primary { display: inline-flex; align-items: center; gap: 6px; }
-.start-finish-or { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin-inline: 4px; }
 
 /* ── SVG colour review (the "no formal tokens — pick which colours to keep"
       path) — a checkbox grid, each chip a uniform-border rounded swatch card
@@ -460,8 +509,490 @@
   white-space: nowrap;
 }
 
+/* ── The source picker (plan 97 §8) ──────────────────────────────────────────
+      Stage 1 asks WHAT you have; stage 2 is that source's own control. Only the
+      sources that can actually be used are here — there is no disabled tile and
+      no "coming soon" line, because a control nobody can press is an apology
+      taking up a slot. ─────────────────────────────────────────────────────── */
+.ds-src-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+}
+.ds-src-tiles[hidden] { display: none; }
+.ds-src-tile {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  text-align: start;
+  width: 100%;
+  min-height: 44px;
+  padding: 16px;
+  /* A uniform border on all four sides — the house rule for a rounded card. */
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.2);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.ds-src-tile:hover { background: hsl(var(--muted) / 0.5); box-shadow: 0 2px 10px -6px hsl(var(--foreground) / 0.4); }
+.ds-src-tile:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.ds-src-tile-ic {
+  display: grid;
+  place-items: center;
+  width: calc(22px * var(--a11y-fs));
+  height: calc(22px * var(--a11y-fs));
+  color: hsl(var(--primary));
+}
+.ds-src-tile-ic svg { width: 100%; height: 100%; }
+.ds-src-tile-name { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; }
+.ds-src-tile-note { font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+
+.ds-src-stage { display: flex; flex-direction: column; gap: 12px; }
+.ds-src-stage[hidden] { display: none; }
+/* The only way back out of a stage, on every stage — so it holds the same 44px
+   floor .ds-src-tile, .ds-src-url-go, .ds-pdf-add and .ds-roles-chip hold to.
+   .be-btn--sm's padding alone leaves it near 27px, which is a thumb-sized miss
+   on the one control that undoes a wrong turn. */
+.ds-src-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+.ds-src-back:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+/* The image drop card composes .start-import-drop, so it inherits the dashed
+   edge — this file's dashed borders mark drop areas and nothing else. */
+.ds-src-drop:has(.ds-src-imgfile:focus-visible) {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.ds-src-drop-ic {
+  display: grid;
+  place-items: center;
+  width: calc(30px * var(--a11y-fs));
+  height: calc(30px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.ds-src-drop-ic svg { width: 100%; height: 100%; }
+.ds-src-drop:has(.ds-src-pdffile:focus-visible) {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.ds-src-stage-note,
+.ds-src-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+/* Colour is NOT the signal. Every refusal in the picker — a bad address, a page
+   that would not answer, a mark over the limit — arrives through this one line,
+   and `color: hsl(var(--destructive))` on 12.5px text is the case tokens.css
+   writes up under KNOWN LIMITS: Lc 16.6 on the dark page, Lc 23.5 with the
+   darkened value, against a bar of 75, and no red reaches it. It would make the
+   error state markedly LESS readable than the muted state it replaces. So the
+   ink stays --foreground with a weight, and the semantics ride a mark that does
+   not depend on telling two colours apart — exactly what .ds-v-slugline.is-error
+   does on the Versions panel, and what that KNOWN LIMITS entry prescribes. */
+.ds-src-note.is-error { color: hsl(var(--foreground)); font-weight: 600; }
+.ds-src-note.is-error::before { content: '\26A0'; color: hsl(var(--destructive)); margin-inline-end: 0.4em; }
+
+/* ── The PDF source's result (plan 97 M5) ────────────────────────────────────
+      What one scan found, and the presses that act on it: the marks hand-off,
+      the embedded faces with the caveats the DOCUMENT stated, and the way out to
+      the full exploder. Same card shell as the design-file result, so the two
+      stages read as one family. */
+.ds-src-pdf-result,
+.ds-src-site-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+}
+.ds-src-pdf-result[hidden],
+.ds-src-site-result[hidden] { display: none; }
+.ds-pdf-fonts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* A uniform border on all four sides — the house rule for a rounded card. */
+.ds-pdf-font {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 0.6);
+}
+.ds-pdf-font-name { font-size: calc(13px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
+.ds-pdf-font-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ds-pdf-chip {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: calc(10.5px * var(--a11y-fs));
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* The warning chip carries the SUBSET / reuse-forbidden caveat, so it has to be
+   the most readable thing in the row, not the least. Destructive-on-destructive
+   measured 3.86 : 1 in light, 2.49 : 1 in dark and 2.00 : 1 in teal against a
+   4.5 : 1 requirement — and at 10.5px uppercase nothing here is large text. The
+   tint alone carries the warning and the text keeps the sheet's own foreground,
+   which is what .pdfx-tag--warn does on the sibling surface. */
+.ds-pdf-chip--warn { background: hsl(var(--destructive) / 0.18); color: hsl(var(--foreground)); }
+.ds-pdf-font-note {
+  flex: 1 1 12rem;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+/* 44px on every width, the same floor .ds-src-tile and .ds-roles-chip hold to. */
+.ds-pdf-add,
+.ds-pdf-logos,
+.ds-pdf-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+.ds-pdf-add { margin-inline-start: auto; }
+/* Busy and added are aria-disabled, never `disabled` — the control keeps focus
+   (views/start.ts), so it needs the resting look the attribute usually brings. */
+.ds-pdf-add[aria-disabled="true"] { cursor: default; }
+/* Added reads as a tinted fill, never a coloured edge on a rounded control. */
+.ds-pdf-add.is-added { background: hsl(var(--primary) / 0.16); font-weight: 700; }
+.ds-pdf-more { align-self: flex-start; text-decoration: none; }
+
+/* ── The website source (plan 97 §9, M6) ─────────────────────────────────────
+      One field and one button, because that is the whole interaction: type an
+      address, press the button that names the host it is about to read. The
+      stage only exists on a device that can actually read a page (views/start.ts
+      renders nothing here otherwise), so there is no disabled state to style. */
+.ds-src-url { display: flex; flex-direction: column; gap: 6px; }
+.ds-src-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* The field takes the row and the button hugs; below ~26rem the button wraps to
+   its own line and both stay full-width targets rather than shrinking. */
+/* The 44px floor applies to the field too, not just the button: it is the one
+   thing on this stage a thumb has to hit first, and the shared .field-input
+   sits nearer 35px. */
+.ds-src-urlfield { flex: 1 1 16rem; min-width: 0; min-height: 44px; }
+.ds-src-url-go {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* The same 44px floor .ds-src-tile, .ds-roles-chip and .ds-pdf-add hold to. */
+  min-height: 44px;
+  /* The label grows and shrinks with the host it names ("Read the page" →
+     "Read suse.com"), so it must not reflow the field beside it into a jump. */
+  min-width: 10rem;
+}
+/* The consent line: what will be read, and by what. Muted because it is a
+   statement of fact rather than a warning — there is nothing to alarm anyone
+   about until they press, and nothing happens if they do not. */
+.ds-src-url-consent {
+  margin: 0;
+  font-size: calc(12.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+/* The result card's presses, on the same floor as the PDF card's. Busy and done
+   are aria-disabled, never `disabled` — the control keeps focus
+   (views/start.ts), so it needs the resting look the attribute usually brings. */
+.ds-site-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+.ds-site-act[aria-disabled="true"] { cursor: default; }
+/* Done reads as a tinted fill, never a coloured edge on a rounded control. */
+.ds-site-act.is-added { background: hsl(var(--primary) / 0.16); font-weight: 700; }
+
+/* ── The semantic mapping review — ONE decision, in the result card ────────── */
+.ds-roles-card { display: flex; flex-direction: column; gap: 8px; }
+.ds-roles-q { margin: 0; font-size: calc(13.5px * var(--a11y-fs)); font-weight: 700; }
+.ds-roles-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ds-roles-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* The same 44px .ds-src-tile and .ds-tray-row hold to — this is the one
+     decision the mapping card asks for, on every width including a phone. */
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: calc(12px * var(--a11y-fs));
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ds-roles-chip:hover { background: hsl(var(--muted) / 0.7); }
+/* Chosen reads as a tinted fill, never a coloured edge on a rounded control. */
+.ds-roles-chip[aria-pressed="true"] { background: hsl(var(--primary) / 0.16); font-weight: 700; }
+.ds-roles-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+/* The result card's action row wraps: an install, its skip and a "keep it for
+   later" can be three controls on a phone. */
+.start-color-actions { flex-wrap: wrap; align-items: center; }
+
+/* ── The tray's rail toggle ──────────────────────────────────────────────────
+      Hidden while the tray is empty (views/start.ts owns that), so this only
+      styles the state where there is something to see. */
+.ds-tray-toggle[hidden] { display: none; }
+.ds-tray-toggle-ic {
+  display: grid;
+  place-items: center;
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
+}
+.ds-tray-toggle-ic svg { width: 100%; height: 100%; }
+.ds-tray-toggle-n {
+  min-width: calc(18px * var(--a11y-fs));
+  padding: 0 6px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / 0.16);
+  color: hsl(var(--foreground));
+  font-size: calc(11px * var(--a11y-fs));
+  font-weight: 700;
+  line-height: calc(18px * var(--a11y-fs));
+  text-align: center;
+}
+.ds-tray-toggle-n:empty { display: none; }
+
+/* Phones: the foot actions share the line evenly rather than one of them
+   wrapping alone under the others. */
 @media (max-width: 640px) {
-  .start-actions { top: 6px; flex-wrap: wrap; }
-  .start-save { flex: 1 1 100%; margin-inline-start: 0; }
+  .ds-rail-actions .be-btn { flex: 1 1 auto; }
+}
+
+/* ── The Versions panel (plan 97 §6a) ─────────────────────────────────────────
+      A foot-pinned panel, not a room, and it looks like one: the same quiet
+      surface the Overview room uses, no colour of its own, and NO ANIMATION
+      anywhere — there is nothing here worth drawing the eye to, and reduced
+      motion then needs no exception because there is no motion to reduce.
+
+      The one place colour is spent is the breaking half of the compat card
+      (--destructive on the disclosure's own text) and the Active pill (a tinted
+      FILL, never a coloured outline — the house rule for anything rounded). */
+.ds-versions-toggle[hidden] { display: none; }
+.ds-versions-toggle-ic {
+  display: grid;
+  place-items: center;
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
+}
+.ds-versions-toggle-ic svg { width: 100%; height: 100%; }
+
+.ds-versions { display: flex; flex-direction: column; gap: 14px; }
+.ds-v-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.ds-v-title { margin: 0; font-size: calc(17px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
+/* The heading is the landing spot after an action removes the control that was
+   pressed, so it takes focus programmatically — and must show a ring when it
+   does, without growing one on a mouse click. */
+.ds-v-title:focus { outline: none; }
+.ds-v-title:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 4px; }
+.ds-v-sub,
+.ds-v-nothing,
+.ds-v-empty,
+.ds-v-follow-note,
+.ds-v-permanent,
+.ds-v-storage-note {
+  margin: 0;
+  font-size: calc(12.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  max-width: 62ch;
+}
+.ds-v-h3 { margin: 0; font-size: calc(13px * var(--a11y-fs)); font-weight: 700; }
+
+/* Every control in the panel is a real touch target on every width. */
+.ds-versions .be-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+}
+.ds-v-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ds-v-err {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: hsl(var(--destructive) / 0.12);
+  color: hsl(var(--destructive));
+  font-size: calc(12.5px * var(--a11y-fs));
+  overflow-wrap: anywhere;
+}
+.ds-v-err[hidden] { display: none; }
+
+.ds-v-ahead,
+.ds-v-restored {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.55);
+}
+.ds-v-ahead-txt,
+.ds-v-restored-txt {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-size: calc(12.5px * var(--a11y-fs));
+}
+
+/* ── Publish ──────────────────────────────────────────────────────────────── */
+.ds-v-publish {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.35);
+}
+.ds-v-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+.ds-v-slugline {
+  margin: 0;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+/* Colour is not the signal — the two states put the same neutral sentence in the
+   same place, so a mark and a weight carry the refusal for anyone who cannot
+   tell them apart. The programmatic half is aria-invalid on the field
+   (rooms/versions.ts). */
+.ds-v-slugline.is-error { color: hsl(var(--destructive)); font-weight: 600; }
+.ds-v-slugline.is-error::before { content: '⚠'; margin-inline-end: 0.4em; }
+
+.ds-v-compat { display: flex; flex-direction: column; gap: 6px; }
+.ds-v-compat-head,
+.ds-v-compat-sub,
+.ds-v-compat-none {
+  margin: 0;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.ds-v-compat-head { font-weight: 700; color: hsl(var(--foreground)); }
+/* `display: flex` on a <summary> takes it out of `list-item`, which removes the
+   native disclosure triangle in every engine — so one is drawn back. Without it
+   the diff rows read as plain bold sentences with nothing saying the token paths
+   are behind them, and the breaking set is the one thing here a person must not
+   skim past. Same construction as .lab-diag-summary (color-lab.css). The 44px is
+   the panel's own touch-target rule: these toggles are the ONLY way to open the
+   lists, so they are controls like any other. */
+.ds-v-diff-sum {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  list-style: none;
+  font-size: calc(12.5px * var(--a11y-fs));
+  cursor: pointer;
+}
+.ds-v-diff-sum::-webkit-details-marker { display: none; }
+.ds-v-diff-sum::before {
+  content: '';
+  flex: none;
+  width: 0.45em; height: 0.45em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  rotate: -45deg;                    /* points to the reading direction when closed */
+  transition: rotate 0.15s ease;
+}
+.ds-v-diff[open] > .ds-v-diff-sum::before { rotate: 45deg; }
+.ds-v-diff-sum:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .ds-v-diff-sum::before { transition: none; }
+}
+html[data-a11y-motion="reduce"] .ds-v-diff-sum::before { transition: none; }
+/* The breaking set is the one thing on this page a person must not skim past. */
+.ds-v-diff--break > .ds-v-diff-sum { color: hsl(var(--destructive)); font-weight: 700; }
+.ds-v-paths,
+.ds-v-assets {
+  list-style: none;
+  margin: 4px 0 0;
+  /* Logical, not physical: the indent has to follow the reading direction
+     (styles/parts/rtl.css does not patch what is already direction-aware). */
+  padding: 0;
+  padding-inline-start: 14px;
+  max-height: 12rem;
+  overflow-y: auto;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+.ds-v-asset--break { color: hsl(var(--destructive)); }
+
+/* ── The published list ───────────────────────────────────────────────────── */
+.ds-v-list-sec { display: flex; flex-direction: column; gap: 10px; }
+.ds-v-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ds-v-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.35);
+}
+.ds-v-row.is-active { background: hsl(var(--primary) / 0.1); }
+.ds-v-row-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.ds-v-row-label { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
+.ds-v-row-slug,
+.ds-v-row-date,
+.ds-v-row-pins {
+  margin: 0;
+  font-size: calc(11.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.ds-v-row-slug { font-family: var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.ds-v-row-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); overflow-wrap: anywhere; }
+.ds-v-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / 0.18);
+  color: hsl(var(--foreground));
+  font-size: calc(11px * var(--a11y-fs));
+  font-weight: 700;
+}
+.ds-v-row-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ds-v-storage {
+  margin: 0;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
 }
 }

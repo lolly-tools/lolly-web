@@ -530,6 +530,18 @@
 .fc-pen-node.is-on { background: hsl(var(--primary)); border-color: #ffffff; }
 /* The first node of an open draft, i.e. the point a click closes the path on. */
 .fc-pen-node.is-close-target { width: 13px; height: 13px; margin-left: -6.5px; margin-top: -6.5px; border-width: 2px; }
+/* An end ATTACHED to a box (plan 96 P3): the line is a connector at that end, routed to
+   the box's border and following it. FILLED rather than hollow, which is the one read the
+   other three states leave free — corner is square, symmetric is ringed, selected is the
+   primary fill with a white rim, and this is the primary fill with the ordinary rim. Drag
+   it off every box and it goes hollow again, which is exactly what detaching does. */
+.fc-pen-node.is-bound {
+  background: hsl(var(--primary));
+  box-shadow:
+    0 0 0 1px var(--pen-edge),
+    0 0 0 3px hsl(var(--primary) / 0.28),
+    0 1px 3px rgba(0, 0, 0, 0.28);
+}
 .fc-pen-node[hidden] { display: none; }
 .fc-pen-handle {
   position: absolute; width: 7px; height: 7px;
@@ -899,6 +911,16 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-panel input[type="number"]:not(.field-input), .fc-panel input[type="text"]:not(.field-input) {
   flex: 1; min-width: 0; font: inherit; font-size: calc(12.5px * var(--a11y-fs)); padding: 4px 6px;
   border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
+}
+/* A panel field the code has JUDGED wrong — today only the stroke panel's Dash array,
+   whose validity is a parse ("6 4" yes, "6 x" no) that no HTML constraint expresses, so
+   `:user-invalid` (fields.css) can never fire for it. Same destructive ring as the
+   primitive's, matched on the attribute the panel already sets for assistive tech, so the
+   visual state and the announced state cannot drift apart. `="true"` only: the field
+   carries aria-invalid="false" the rest of the time. */
+.fc-panel input[aria-invalid="true"] {
+  border-color: hsl(var(--destructive) / .8);
+  box-shadow: 0 0 0 2px hsl(var(--destructive) / .35);
 }
 .fc-panel .fc-cfield { flex: 1; }
 

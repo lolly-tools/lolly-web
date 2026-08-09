@@ -25,8 +25,15 @@ import { escapeHtml } from '../lib/html.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { icon } from '../lib/icons.ts';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
-/** A parsed, validated entry from a manifest's `templates[]`. */
+/**
+ * A parsed template entry. Its metadata (id/name/category/description/thumb) is what
+ * the synced index carries and the chooser renders the grid from; `values` is the heavy
+ * input seed, which now lives in an EXTERNAL per-template file (tools/<id>/templates/
+ * <tid>.json) and is FETCHED ON DEMAND (preview render + select). For a metadata-only
+ * entry `values` is `{}` — fetchTemplateValues() supplies the real seed lazily.
+ */
 export interface TemplateVariant {
   id: string;
   name: string;
@@ -34,6 +41,28 @@ export interface TemplateVariant {
   category?: string;
   thumb?: string;
   values: Record<string, InputValue>;
+}
+
+/**
+ * Fetch one template's full input seed from its external file
+ * (tools/<toolId>/templates/<tid>.json) through the instance base / profile view — the
+ * same static namespace the card-preview paths use. Returns the `values` map, or `null`
+ * on any failure (network, missing file, malformed JSON, non-object `values`) so a
+ * caller falls through to a blank/default open rather than throwing. The heavy seed is
+ * never packed into a URL — this fetch is the on-demand path for both the chooser select
+ * and the reserved `?template=<id>` launcher.
+ */
+export async function fetchTemplateValues(toolId: string, tid: string): Promise<Record<string, InputValue> | null> {
+  try {
+    const { instanceFetch, instancePath } = await import('../lib/instance.ts');
+    const resp = await instanceFetch(instancePath(`/tools/${encodeURIComponent(toolId)}/templates/${encodeURIComponent(tid)}.json`));
+    if (!resp.ok) return null;
+    const data = await resp.json() as { values?: unknown };
+    const v = data?.values;
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, InputValue>) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -89,7 +118,17 @@ const BLANK_ID = '__blank__';
 
 interface ChooserOpts {
   toolName: string;
+  /** The tool id — needed to fetch each template's external values file. */
+  toolId: string;
   templates: TemplateVariant[];
+  /**
+   * Host bridge — enables the live VISUAL PREVIEW (each tile fetches its values file and
+   * live-renders via renderFeaturedVariant). Omit (e.g. offline / no render path) and the
+   * chooser shows glyph tiles; select still fetches values.
+   */
+  host?: HostV1;
+  /** The tool's render.formats — the preview renders vector-first at displayFormatOf. */
+  formats?: readonly string[];
 }
 
 /**
@@ -102,8 +141,36 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
     const root = document.createElement('div');
     root.className = 'tmpl-chooser-modal';
     document.body.appendChild(root);
+    // The documented contract is "never rejects (close = {})" - make it structurally
+    // true: any throw below (markup build, icon lookup, preview wiring) would REJECT
+    // this promise and strand the caller's await, leaving the tool stuck on its
+    // loading screen with an invisible empty modal (the :empty CSS hides the root).
+    // Trade the whole chooser for a blank open instead.
+    const settleBlank = (e: unknown): void => {
+      try { root.remove(); } catch { /* already gone */ }
+      console.warn('template chooser failed - resolving blank', e);
+      resolve({});
+    };
+    try {
 
     const byId = new Map<string, TemplateVariant>(opts.templates.map(t => [t.id, t]));
+
+    // Memoised values seed per template. An inline entry that already carries a non-empty
+    // `values` (the optional inline-fallback shape) is used verbatim; otherwise the seed is
+    // fetched once from the external file and cached, so the preview render and a later
+    // select share a single fetch. Resolves null on failure → the caller falls back to a
+    // blank/default open.
+    const valuesById = new Map<string, Promise<Record<string, InputValue> | null>>();
+    const getValues = (id: string): Promise<Record<string, InputValue> | null> => {
+      const cached = valuesById.get(id);
+      if (cached) return cached;
+      const inline = byId.get(id)?.values;
+      const p = inline && Object.keys(inline).length
+        ? Promise.resolve(inline)
+        : fetchTemplateValues(opts.toolId, id);
+      valuesById.set(id, p);
+      return p;
+    };
 
     // Group by category, preserving first-seen order; uncategorised templates
     // fall into a "Templates" bucket rendered after the named groups.
@@ -114,14 +181,23 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
       groups.get(key)!.push(t);
     }
+    // Categories only earn their headings when at least one holds two entries -
+    // all-singleton categories would render a ladder of one-tile sections with
+    // two empty columns each, so they flatten into one grid.
+    if (![...groups.values()].some(list => list.length > 1)) {
+      groups.clear(); groupOrder.length = 0;
+      groups.set('Templates', [...opts.templates]); groupOrder.push('Templates');
+    }
 
     const tileHtml = (t: TemplateVariant): string => {
+      // The media slot starts as the authored thumb (if any) or a category glyph; when a
+      // host + formats are supplied, renderPreviews() swaps in a live-rendered <img>.
       const media = t.thumb
         ? `<img class="tmpl-chooser-tile-thumb" src="${escapeHtml(t.thumb)}" alt="" loading="lazy">`
         : `<span class="tmpl-chooser-tile-icon" aria-hidden="true">${icon(glyphFor(t), { size: 22 })}</span>`;
       const search = `${t.name} ${t.description ?? ''} ${t.category ?? ''}`.toLowerCase();
       return `<button type="button" class="tmpl-chooser-tile" data-template-id="${escapeHtml(t.id)}" data-search="${escapeHtml(search)}">
-        ${media}
+        <span class="tmpl-chooser-tile-media">${media}</span>
         <span class="tmpl-chooser-tile-name">${escapeHtml(t.name)}</span>
         ${t.description ? `<span class="tmpl-chooser-tile-desc">${escapeHtml(t.description)}</span>` : ''}
       </button>`;
@@ -189,8 +265,11 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       if (!tile) return;
       const id = tile.dataset.templateId!;
       if (id === BLANK_ID) { finish({}); return; }
-      const chosen = byId.get(id);
-      finish(chosen ? chosen.values : {});
+      // Reflect the fetch in the tile so a slow network doesn't read as a dead click.
+      tile.setAttribute('aria-busy', 'true');
+      // Fetch (or reuse) the template's external values seed, THEN resolve. A null result
+      // (unknown id / network failure) falls back to a blank open, exactly like Escape.
+      void getValues(id).then(values => finish(values ?? {}));
     });
 
     // Live filter: hide non-matching tiles (Blank always shows) and any group left
@@ -212,5 +291,88 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       emptyEl.hidden = anyTemplateVisible || !term;
       emptyTermEl.textContent = term;
     });
+
+    // ── Live visual previews (fire-and-forget) ──────────────────────────────────
+    // Each template tile fetches its external values seed and live-renders a vector-first
+    // thumbnail via the SAME off-screen engine path an export takes (renderFeaturedVariant,
+    // memoised under `template:<toolId>:<tid>:<fmt>` — a namespace that never collides with
+    // the featured/example `featured:` records). Rendered SERIALLY and only once a tile
+    // scrolls into view (IntersectionObserver), so opening the chooser never stampedes the
+    // engine. A still poster-frame is fine for an animated template (v1). With no host /
+    // formats — or an authored `thumb` — the glyph/thumb placeholder stays.
+    if (opts.host && opts.formats && opts.formats.length && typeof IntersectionObserver !== 'undefined') {
+      const host = opts.host;
+      const formats = opts.formats;
+      const queue: string[] = [];
+      const queued = new Set<string>();
+      let draining = false;
+      const drain = async (): Promise<void> => {
+        if (draining) return;
+        draining = true;
+        try {
+          const { renderFeaturedVariant } = await import('../lib/featured-render.ts');
+          while (queue.length && !settled) {
+            const id = queue.shift()!;
+            const values = await getValues(id).catch(() => null);
+            if (!values || settled) continue;
+            try {
+              const src = await renderFeaturedVariant(
+                host as Parameters<typeof renderFeaturedVariant>[0],
+                opts.toolId, formats, id, values as Record<string, unknown>, 'template',
+              );
+              if (settled || !src) continue;
+              const media = root.querySelector<HTMLElement>(
+                `.tmpl-chooser-tile[data-template-id="${CSS.escape(id)}"] .tmpl-chooser-tile-media`,
+              );
+              if (media) {
+                const img = document.createElement('img');
+                img.className = 'tmpl-chooser-tile-thumb';
+                img.alt = '';
+                img.src = src;
+                media.replaceChildren(img);
+              }
+            } catch { /* leave the glyph placeholder for this tile */ }
+          }
+        } finally {
+          draining = false;
+        }
+      };
+      const enqueue = (id: string): void => {
+        if (queued.has(id) || byId.get(id)?.thumb) return; // authored thumb already shows art
+        queued.add(id);
+        queue.push(id);
+        void drain();
+      };
+
+      // Eager: enqueue every renderable template on open so previews render even if the
+      // IntersectionObserver never delivers an intersecting entry (a false-negative on the
+      // first async callback — panel mid-layout, backgrounded/occluded tab, or a stale
+      // bundle — was permanent, since each tile is unobserved on first intersect and the IO
+      // callback was the ONLY producer for the queue). There are only a handful of templates,
+      // and the serial drain renders one at a time, so this cannot stampede the engine.
+      // enqueue() dedups via `queued` and skips authored-thumb tiles, so it can't double-render.
+      for (const t of opts.templates) {
+        if (t.id !== BLANK_ID) enqueue(t.id);
+      }
+
+      // IntersectionObserver stays as an off-screen prioritisation nicety — with the eager
+      // loop above it is no longer load-bearing (its enqueue() calls dedup to no-ops against
+      // `queued`). Root to the real scroll container (the body panel; see template-chooser.css
+      // `.tmpl-chooser-body { overflow-y: auto }`), falling back to the viewport — the modal is
+      // a fixed overlay filling it — so a missing body never means a dead observer.
+      const bodyEl = root.querySelector('.tmpl-chooser-body');
+      const io = new IntersectionObserver((entries, obs) => {
+        for (const en of entries) {
+          if (!en.isIntersecting) continue;
+          obs.unobserve(en.target);
+          const id = (en.target as HTMLElement).dataset.templateId;
+          if (id && id !== BLANK_ID) enqueue(id);
+        }
+      }, { root: bodyEl, rootMargin: '200px' });
+      for (const tile of root.querySelectorAll<HTMLElement>('.tmpl-chooser-tile')) {
+        if (tile.dataset.templateId !== BLANK_ID) io.observe(tile);
+      }
+    }
+    } catch (e) { settleBlank(e); }
   });
 }

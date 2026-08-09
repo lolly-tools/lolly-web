@@ -30,6 +30,11 @@ interface StateRecord {
   data: SavedStateData;
   thumb: string | null;
   updatedAt: string;
+  /** First-save time, preserved across re-saves (save() rewrites updatedAt but
+   *  carries this forward) — the "Date added" sort key. Optional: rows written
+   *  before it existed have none; readers fall back to the slot's minted
+   *  timestamp (`<toolId>:<Date.now()>`) and then updatedAt. */
+  createdAt?: string;
   /** Record-layout version + the engine that wrote it (see engine/session-record.ts).
    *  Optional so records written before versioning still type-check on read. */
   formatVersion?: number;
@@ -53,7 +58,7 @@ export interface StateDb {
 export interface WebStateAPI extends StateAPI {
   save(slot: string, data: SavedStateData, thumb?: string | null): Promise<void>;
   load(slot: string): Promise<SavedStateData | null>;
-  list(): Promise<(StateEntry & { filename: string | null; thumb: string | null })[]>;
+  list(): Promise<(StateEntry & { filename: string | null; thumb: string | null; createdAt?: string })[]>;
   /** Bytes used per slot (rough: the JSON-serialised record size). */
   sizes(): Promise<Record<string, number>>;
   /** Blob keys (id:format:version) referenced across all saved sessions —
@@ -64,6 +69,11 @@ export interface WebStateAPI extends StateAPI {
 export function createStateAPI(db: StateDb): WebStateAPI {
   return {
     async save(slot, data, thumb = null) {
+      // Re-saves reuse the slot, so the original creation time only survives by
+      // carrying it forward off the existing record (one extra read per save —
+      // saves are user actions, never a hot path).
+      const prior = await db.get('state', slot).catch(() => undefined);
+      const now = new Date().toISOString();
       const record: StateRecord = {
         slot,
         toolId: data.__toolId,
@@ -71,7 +81,8 @@ export function createStateAPI(db: StateDb): WebStateAPI {
         label: data.__label,
         data,
         thumb,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
+        createdAt: prior?.createdAt ?? now,
         ...sessionVersionStamp(),
       };
       await db.put('state', record);
@@ -96,6 +107,7 @@ export function createStateAPI(db: StateDb): WebStateAPI {
         filename: r.data?.__export_filename || null,
         thumb: r.thumb ?? null,
         updatedAt: r.updatedAt,
+        ...(r.createdAt ? { createdAt: r.createdAt } : {}),
       }));
     },
 

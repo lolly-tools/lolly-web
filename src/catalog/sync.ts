@@ -54,7 +54,11 @@ interface ToolIndex {
   /** Rolls only when the tool set actually changes (build-catalog-index.ts keeps
    *  it stable on idempotent regeneration) — the pin-refresh watermark. */
   generatedAt?: string;
-  tools: Array<{ id: string } & Record<string, unknown>>;
+  /** Each entry may carry `en` — the pristine English name/description, stashed
+   *  by localizeToolIndex before it overlays a translation (in-memory only, never
+   *  serialized) so search haystacks can keep matching the English name in any
+   *  session (plans/99 §2e). */
+  tools: Array<{ id: string; en?: { name: unknown; description: unknown } } & Record<string, unknown>>;
 }
 
 /** The asset catalog index as fetched from /catalog/assets/index.json. */
@@ -85,6 +89,11 @@ export function localizeToolIndex(index: ToolIndex): void {
     const i18n = tool.i18n as Record<string, { name?: string; description?: string; blurb?: string }> | undefined;
     const overlay = i18n?.[lang];
     if (!overlay) continue;
+    // Stash the pristine English strings BEFORE overlaying — once (the guard keeps
+    // a second localize pass from stashing already-localized strings) — so a search
+    // in any language still finds "Compress PDF" by "compress" (plans/99 §2e). The
+    // localStorage index cache is unaffected: it stores the pre-localize JSON.
+    if (!tool.en) tool.en = { name: tool.name, description: tool.description };
     if (overlay.name) tool.name = overlay.name;
     if (overlay.description) tool.description = overlay.description;
     if (overlay.blurb && tool.featured && typeof tool.featured === 'object') {

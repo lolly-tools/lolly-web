@@ -68,6 +68,11 @@ import { attachDropRouter } from '../lib/drop-router.ts';
 import type { PickerHost } from './picker.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+// The deep-link destination registry (plans/99 M2): every section's data-flag
+// keyword set lives THERE, interpolated here via dashFlag() — never as a string
+// literal in this file — so the spotlight settings provider and applyDeepLink
+// read the same single source (dashboard-registry.test.ts pins it both ways).
+import { DASH_SECTIONS, dashFlag } from './dashboard-registry.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -88,12 +93,10 @@ const TAB_ICON: Record<string, string> = {
   // Bars — activity & stats.
   activity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><rect x="5" y="11" width="3.4" height="6" rx="0.6"/><rect x="10.3" y="7" width="3.4" height="10" rx="0.6"/><rect x="15.6" y="4" width="3.4" height="13" rx="0.6"/></svg>`,
 };
-const DASH_TABS: ReadonlyArray<{ key: string; label: string }> = [
-  { key: 'device', label: 'This device' },
-  { key: 'brand', label: 'Design system' },
-  { key: 'caps', label: 'Capabilities' },
-  { key: 'activity', label: 'Activity & stats' },
-];
+// Derived from the registry's tab rows (the flagless entries) so the tab bar
+// and the search registry can't disagree on keys or labels.
+const DASH_TABS: ReadonlyArray<{ key: string; label: string }> =
+  DASH_SECTIONS.filter((s) => !s.flag && s.tab).map((s) => ({ key: s.tab!, label: s.label }));
 const DASH_TAB_KEYS = new Set(DASH_TABS.map((tab) => tab.key));
 
 // The tablist. Roving tabindex (only the active tab is focusable) + arrow-key nav
@@ -170,7 +173,7 @@ function brandHero(): string {
   ] as Array<{ face: LiveFace; cssVar: string; role: string } | null>)
     .filter(Boolean) as Array<{ face: LiveFace; cssVar: string; role: string }>;
   return `
-    <section class="plat-section dash-section dash-hero" id="dash-brand" aria-label="${escape(t('Your brand'))}" data-flag="brand logo colour colours palette fonts">
+    <section class="plat-section dash-section dash-hero" id="dash-brand" aria-label="${escape(t('Your brand'))}" data-flag="${escape(dashFlag('dash-brand'))}">
       <div class="dash-hero-main">
         <div class="dash-hero-id">
           <span class="dash-hero-eyebrow">${t('The brand in force')}</span>
@@ -202,7 +205,7 @@ function brandHero(): string {
 // whole section off the page.
 function tokensSection(): string {
   return `
-    <section class="plat-section dash-section dash-tokens" id="dash-tokens" data-flag="tokens radius spacing shadow gradient" hidden>
+    <section class="plat-section dash-section dash-tokens" id="dash-tokens" data-flag="${escape(dashFlag('dash-tokens'))}" hidden>
       ${sectionHead(t('Brand tokens'), 'dash-tokens-h', tRaw('The primitives the tokens document carries — shape, space, effects — exactly as tools consume them. Adjusted at {link}.', { link: `<a href="#/start?tab=tokens">${t('Start')}</a>` }))}
       <ul class="dash-token-grid" data-token-grid></ul>
     </section>`;
@@ -354,7 +357,7 @@ function paletteSection(palette: readonly PaletteEntry[]): string {
 
   return collapse({
     id: 'dash-palette',
-    flag: 'color colour colours',
+    flag: dashFlag('dash-palette'),
     title: t('Colour palette'),
     desc: t('Shown in every colour picker. <strong>{n} of {total}</strong> carry a locked ink value (CMYK or spot), substituted directly into CMYK PDF exports — the tick on a bar marks one.', { n: measuredCount, total: palette.length }),
     body: `${ribbon}${fullGrid}`,
@@ -682,7 +685,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             <div class="dash-device-col">
               ${collapse({
                 id: 'dash-device',
-                flag: 'device',
+                flag: dashFlag('dash-device'),
                 title: t('This Machine'),
                 cls: 'dash-device',
                 open: false,
@@ -700,7 +703,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             <div class="dash-bento">
               ${collapse({
                 id: 'dash-sound',
-                flag: 'sound audio neurospicy focus volume',
+                flag: dashFlag('dash-sound'),
                 title: t('Sound'),
                 cls: 'dash-card dash-sound',
                 desc: t('Interface sounds and Neurospicy focus loops — set them here; the choice follows you across the app.'),
@@ -708,7 +711,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
               })}
               ${collapse({
                 id: 'dash-storage',
-                flag: 'storage',
+                flag: dashFlag('dash-storage'),
                 title: t('Storage'),
                 cls: 'dash-card',
                 desc: t('What Lolly is keeping on this device.'),
@@ -720,13 +723,13 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
 
         ${panel('brand', initialTab, `
           ${brandHero()}
-          <section class="plat-section dash-section dash-lock" id="dash-lock" data-flag="lock locked fixed brand" hidden></section>
+          <section class="plat-section dash-section dash-lock" id="dash-lock" data-flag="${escape(dashFlag('dash-lock'))}" hidden></section>
           <div class="dash-bento">
-            <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="color colour colours palette wheel greys neutrals">
+            <section class="plat-section dash-section dash-card" id="dash-palette-wheel" data-flag="${escape(dashFlag('dash-palette-wheel'))}">
               ${sectionHead(t('Palette on the wheel'), 'dash-wheel-h', t('Every brand colour plotted by hue (the angle) and chroma (distance out from the centre). Greys have no hue, so they ride the rail beside it, by lightness. Hover a dot to read it.'))}
               ${renderPaletteWheel(wheelColors)}
             </section>
-            <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="type typography font motion kinetic">
+            <section class="plat-section dash-section dash-card dash-typedemo" id="dash-typedemo" data-flag="${escape(dashFlag('dash-typedemo'))}">
               ${sectionHead(t('Type in motion'), 'dash-typedemo-h', t('The faces in force — the fonts loaded on this device, live. The axes themselves are the animation.'))}
               ${renderTypeDemo()}
               ${typeFacts()}
@@ -734,7 +737,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
           </div>
           ${paletteSection(palette)}
           ${tokensSection()}
-          ${refPanel('print cmyk', false, 'dash-print', t('Print & CMYK'), printBody(palette))}
+          ${refPanel(dashFlag('dash-print'), false, 'dash-print', t('Print & CMYK'), printBody(palette))}
           <p class="plat-note dash-foot" role="note">
             ${tRaw('<strong>This page is read-only</strong> — it renders the brand this device is wearing; every tool, page and export follows it. The brand itself is adjusted at {start}; personal preferences — theme and sound — live on your {profile}.', { start: `<a href="#/start">${t('Start')}</a>`, profile: `<a href="#/profile">${t('Profile')}</a>` })}
             ${' '}${tRaw('Building the UI? Browse the shell’s primitives & views in the {link}.', { link: `<a href="#/components">${t('Component library')}</a>` })}
@@ -753,20 +756,20 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
             </div>
             ${collapse({
               id: 'dash-catalogue',
-              flag: 'catalog catalogue',
+              flag: dashFlag('dash-catalogue'),
               title: t('Catalogue'),
               desc: t('What ships in this build, synced to clients as data.'),
               body: catalogSummaryBody(tools),
             })}
-            <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="activity">
+            <section class="plat-section dash-section dash-card" id="dash-activity" data-flag="${escape(dashFlag('dash-activity'))}">
               ${sectionHead(t('Your activity'), 'dash-activity-h', t('Local-only counters — nothing here is recorded remotely.'))}
               <div class="dash-activity">${renderActivity(metrics, tools as Array<{ id: string } & Record<string, unknown>>)}</div>
             </section>
-            <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="recent creations" hidden>
+            <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="${escape(dashFlag('dash-recent'))}" hidden>
               ${sectionHead(t('Recent creations'), 'dash-recent-h', t('Your latest saved sessions — swipe the stack to browse, or use Open below.'))}
               <div class="dash-recent-mount" data-recent-stack></div>
             </section>
-            <section class="plat-section dash-section dash-card dash-recent" id="dash-exports" data-flag="exports downloads latest" hidden>
+            <section class="plat-section dash-section dash-card dash-recent" id="dash-exports" data-flag="${escape(dashFlag('dash-exports'))}" hidden>
               ${sectionHead(t('Latest exports'), 'dash-exports-h', t('Files you downloaded — swipe through, or use Open below to reopen one exactly as it was.'))}
               <div class="dash-recent-mount" data-exports-stack></div>
             </section>

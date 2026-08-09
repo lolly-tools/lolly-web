@@ -13,8 +13,9 @@
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  /* top clears the fixed back pill; bottom clears the fixed .profile-footer toolbar */
-  padding: 3rem .5rem calc(5rem + env(safe-area-inset-bottom));
+  /* top clears the fixed back pill; footer clearance comes from #view's shared
+     .has-search-footer padding (gallery.css) */
+  padding: 3rem .5rem 1rem;
   /* Settings-view shape: a sticky nav rail beside a scrolling stack of cards.
      `align-items: start` lets the rail's sticky positioning work against the
      scroll container rather than being stretched to the full column height. */
@@ -172,32 +173,8 @@
   .profile-view .profile-nav-empty { display: none; }
 }
 
-/* Bottom toolbar — a fixed bar (shares the .gallery-footer chrome; see gallery.css)
-   with the Dashboard + Verify shortcuts. Only two buttons, so they sit centred and
-   keep their labels at every width (unlike the gallery footer, which sheds labels on
-   phones to make room for its search box). */
-.profile-view .profile-footer { justify-content: center; gap: .75rem; }
-.profile-view .profile-nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-  font-weight: 600;
-}
-.profile-view .profile-nav-link svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); flex-shrink: 0; }
-/* Verify reads as the trust action: a solid SUSE Pine Green pill with a shield-check,
-   matching the gallery's Verify button. Explicit green (not --primary) so it's green
-   in every theme. */
-.profile-view .profile-nav-link--verify {
-  background: hsl(151 57% 42%);
-  color: #fff;
-  border-color: transparent;
-}
-.profile-view .profile-nav-link--verify:hover {
-  background: hsl(151 57% 36%);
-  color: #fff;
-  border-color: transparent;
-}
+/* (The old two-button .profile-footer toolbar is retired — the shell's persistent
+   search bar shows on this route instead; see components/search-bar.ts.) */
 
 .profile-view .profile-card {
   border: 1px solid hsl(var(--border));

@@ -38,7 +38,11 @@ import { setExportPolicy } from '../lib/export-policy.ts';
 import { registerApprovalOpener } from '../lib/approval-request.ts';
 import { registerSessionSource } from '../lib/session-source.ts';
 import { setInjectedTools } from '../lib/injected-tools.ts';
-import { parseToolUrl } from '@lolly/engine';
+// Import from the LEAF module, not the '@lolly/engine' barrel: org/index.ts is on the boot
+// static-import chain (jelly → feature-flags → org), so a barrel import drags the whole
+// engine (render/c2pa/handlebars/ajv, ~555KB) onto first paint. tool-url.ts only pulls the
+// tiny embed.ts leaf. (Same direct-import pattern the bridge/* modules use.)
+import { parseToolUrl } from '../../../../engine/src/tool-url.ts';
 import { createInstanceSessionSource } from './session-source.ts';
 import { t, tRaw } from '../i18n.ts';
 import { escape, safeHref } from '../utils.ts';

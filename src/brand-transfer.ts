@@ -21,6 +21,19 @@
  * checked; a full disk skips a face, never aborts the pack), and the primary
  * face follows the pack's `font.brand` token automatically because that IS the
  * doc. Nothing else on the device is touched.
+ *
+ * Published VERSIONS travel too (plans/97 §6a): `versions/<slug>.json` per
+ * published version, `frozen/<sha12>.<ext>` for bytes a version pinned and the
+ * head has since replaced, and `versions.json` for the ledger as published. Two
+ * merge rules make that safe, and both are stated in the import result:
+ *   - **a slug already in the LOCAL ledger is never overwritten.** Two teams' "v2"
+ *     are different design systems, and a published version is permanent — so the
+ *     incoming one is skipped and counted, not silently merged over the top.
+ *   - **the pack's active version is adopted only when nothing is active locally.**
+ *     Loading someone's pack must not change what every tool on this device
+ *     renders against.
+ * A pack from a system that never published carries none of these parts, and
+ * loading it does exactly what it did before they existed.
  */
 
 import { strToU8 } from 'fflate';
@@ -30,23 +43,37 @@ import {
   BUNDLE_HEADER, README_NAME, buildIntegrity, readJson, unzipBundle, verifyIntegrity,
   type BundleEntry,
 } from './lib/bundle.ts';
-import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
+import { installUserTokens, USER_TOKENS_ID, VersionExistsError } from './bridge/tokens.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts, USER_FONT_PREFIX } from './user-fonts.ts';
 import { USER_LOGO_PREFIX, LOGO_DEFAULT_IDENTITY, parseLogoAssetId } from './lib/brand-logos.ts';
+import { FROZEN_PREFIX } from './bridge/version-assets.ts';
+import {
+  readVersionIndex, stripVersionIndex, versionAssetId, withVersionIndex,
+} from './lib/design-system/versions.ts';
+import type { PinnedAsset, VersionEntry, VersionIndex } from './lib/design-system/versions.ts';
+import { TOKEN_EXT } from '@lolly/engine';
 import type { UserFontsHost } from './user-fonts.ts';
 
 export const BRAND_FORMAT = 'lolly-brand';
-export const BRAND_FORMAT_VERSION = 1;
+/** 2 adds the `versions/` + `frozen/` parts (plans/97 §6a). `minReader` stays 1
+ *  on purpose: the parts are additive, so a reader that predates them loads the
+ *  pack and counts them as skipped rather than refusing a file it can mostly use. */
+export const BRAND_FORMAT_VERSION = 2;
 export const BRAND_READER_VERSION = 1;
 
 // The brand-adjacent localStorage keys that travel. Deliberately tiny: the
 // theme is part of how a brand feels; everything else in prefs is personal.
 const BRAND_PREF_KEYS = ['theme'];
 
-const KNOWN_PARTS = new Set(['manifest.json', 'tokens.json', 'fonts.json', 'logos.json', 'prefs.json']);
+const KNOWN_PARTS = new Set([
+  'manifest.json', 'tokens.json', 'fonts.json', 'logos.json', 'prefs.json',
+  'versions.json', 'frozen.json',
+]);
 const isKnownPart = (path: string): boolean =>
-  KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('fonts/') || path.startsWith('logos/');
+  KNOWN_PARTS.has(path) || path === README_NAME
+  || path.startsWith('fonts/') || path.startsWith('logos/')
+  || path.startsWith('versions/') || path.startsWith('frozen/');
 
 /** The host slice a brand pack travels through — the same seams user-fonts
  *  drives, plus profile.get for the export filename. */
@@ -66,11 +93,19 @@ export interface BrandPackSummary {
   fontFiles: number;
   logos: number;
   prefs: number;
+  /** Published design-system versions carried by the pack. */
+  versions: number;
+  /** Preserved files a version pins because the head's bytes moved on. */
+  frozen: number;
 }
 
 export interface BrandImportSummary extends BrandPackSummary {
   skipped: number;
   failedFonts: number;
+  /** Versions the pack carried whose slug was already published on this device.
+   *  Kept as they were: a published version is permanent, and two systems' "v2"
+   *  are not the same thing. */
+  versionsSkipped: number;
 }
 
 /** One stored face's manifest row: its full asset record sans blob, plus the
@@ -84,12 +119,27 @@ interface FontRow {
   mime: string;
 }
 type LogoRow = FontRow;
+/** A preserved (frozen) asset row. Same shape plus the asset `type`, which a
+ *  frozen copy carries verbatim from whatever it froze — it can be a vector, a
+ *  raster or a font face, so the restore cannot infer it from the extension. */
+interface FrozenRow extends FontRow { type: string }
 
 // The zip envelope — entry shape, SHA-256 integrity, the README banner, the
 // minReader gate — is the shared bundle format (lib/bundle.ts), identical to the
 // data backup's. Only the payload below differs.
 
 function brandReadme(summary: BrandPackSummary, label: string, filename: string): string {
+  // The version parts only exist when something was published, so they are only
+  // listed when they are actually in the box — a file list naming files that are
+  // not there is the one thing a README like this must not do.
+  const versionFiles = summary.versions ? [
+    'versions.json   the published versions of this design system (the list)',
+    'versions/       each published version’s tokens',
+  ] : [];
+  const frozenFiles = summary.frozen ? [
+    'frozen.json     files a published version pins (metadata)',
+    'frozen/         those files themselves, kept so a published version cannot change',
+  ] : [];
   return [
     BUNDLE_HEADER,
     '-'.repeat(56),
@@ -107,6 +157,7 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     `🔤 Font families   ${summary.fontFamilies} (${summary.fontFiles} file${summary.fontFiles === 1 ? '' : 's'})`,
     `🖼  Logo marks      ${summary.logos}`,
     `⚙  Preferences     ${summary.prefs}`,
+    `🏷  Versions        ${summary.versions}${summary.frozen ? ` (${summary.frozen} preserved file${summary.frozen === 1 ? '' : 's'})` : ''}`,
     '',
     '[ The files in this zip ]',
     '',
@@ -116,6 +167,8 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     'fonts/          the font files themselves (woff2, from Google Fonts — OFL/Apache)',
     'logos.json      the brand’s logo marks (metadata)',
     'logos/          the logo images themselves (SVG/PNG/JPEG/WebP per slot)',
+    ...versionFiles,
+    ...frozenFiles,
     'prefs.json      theme',
     'lolly.txt       this summary (ignored on load)',
   ].join('\n') + '\n';
@@ -124,24 +177,35 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
 const nameToken = (value: unknown): string =>
   String(value ?? '').normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, '').slice(0, 32);
 
-/** The active tokens doc: the user's installed doc first, else the discovered
- *  catalog brand — the exact precedence the tokens bridge resolves with. */
-async function activeTokensDoc(host: BrandTransferHost): Promise<Record<string, unknown> | null> {
-  const read = async (id: string): Promise<Record<string, unknown> | null> => {
-    try {
-      const blob = await host.assets._getBlob(id);
-      if (!blob) return null;
-      const doc: unknown = JSON.parse(await blob.text());
-      return typeof doc === 'object' && doc !== null ? doc as Record<string, unknown> : null;
-    } catch { return null; }
-  };
-  const user = await read(USER_TOKENS_ID);
-  if (user) return user;
+const readTokensBlob = async (host: BrandTransferHost, id: string): Promise<Record<string, unknown> | null> => {
+  try {
+    const blob = await host.assets._getBlob(id);
+    if (!blob) return null;
+    const doc: unknown = JSON.parse(await blob.text());
+    return typeof doc === 'object' && doc !== null ? doc as Record<string, unknown> : null;
+  } catch { return null; }
+};
+
+/**
+ * The active tokens doc: the user's installed doc first, else the discovered
+ * catalog brand — the exact precedence the tokens bridge resolves with.
+ *
+ * The head's ID travels with it because a published version is addressed as
+ * `<head>/<slug>`: exporting versions off a catalog-discovered head would
+ * otherwise look for them under the user id and find nothing.
+ */
+async function activeTokensDoc(
+  host: BrandTransferHost,
+): Promise<{ doc: Record<string, unknown>; headId: string } | null> {
+  const user = await readTokensBlob(host, USER_TOKENS_ID);
+  if (user) return { doc: user, headId: USER_TOKENS_ID };
   try {
     const meta = await (host.assets as unknown as {
       _findMetaByType(t: string): Promise<{ id: string } | null>;
     })._findMetaByType('tokens');
-    return meta ? read(meta.id) : null;
+    if (!meta) return null;
+    const doc = await readTokensBlob(host, meta.id);
+    return doc ? { doc, headId: meta.id } : null;
   } catch { return null; }
 }
 
@@ -156,7 +220,8 @@ export async function exportBrandPack(
 ): Promise<{ blob: Blob; filename: string; summary: BrandPackSummary }> {
   const entries: Record<string, BundleEntry> = {};
 
-  const doc = await activeTokensDoc(host);
+  const head = await activeTokensDoc(host);
+  const doc = head?.doc ?? null;
   if (doc) entries['tokens.json'] = strToU8(JSON.stringify(doc, null, 2));
 
   // Every stored font face, bytes + full record (sans blob) for a faithful rebuild.
@@ -195,6 +260,57 @@ export async function exportBrandPack(
   }
   entries['logos.json'] = strToU8(JSON.stringify(logoRows, null, 2));
 
+  // Published versions (plans/97 §6a). The ledger lives in the head document, the
+  // payloads in sibling assets, and the preserved bytes under `user/frozen/*` —
+  // all three have to travel or a version arrives unloadable.
+  //
+  // A system that never published takes this branch to zero on the first line and
+  // adds NOTHING to the zip: an unversioned pack is the same file it was before
+  // versions existed, part for part.
+  const ledger = readVersionIndex(doc);
+  // A version is addressed relative to the head it belongs to, which is not always
+  // the user id: a catalog-discovered design system publishes under its own
+  // namespace, and looking for its versions under `user/…` would find nothing.
+  const headId = head?.headId ?? USER_TOKENS_ID;
+  const shipped: VersionEntry[] = [];
+  const frozenIds = new Set<string>();
+  for (const entry of ledger.versions) {
+    const id = versionAssetId(headId, entry.slug);
+    const blob = await host.assets._getBlob(id).catch(() => null);
+    if (!blob) {
+      // The ledger names it and the bytes are gone — carrying the entry anyway
+      // would put a version in the pack that the receiver could never load.
+      host.log?.('warn', 'Skipped a published version with no readable tokens asset', { id });
+      continue;
+    }
+    entries[`versions/${entry.slug}.json`] = new Uint8Array(await blob.arrayBuffer());
+    shipped.push(entry);
+    for (const pin of entry.assets ?? []) if (pin.frozenId) frozenIds.add(pin.frozenId);
+  }
+  const frozenRows: FrozenRow[] = [];
+  if (shipped.length) {
+    for (const r of records) {
+      if (!frozenIds.has(r.id) || !r.blob) continue;
+      // Cast for the same reason the font branch above does: the stored record
+      // carries format/version, the narrow host slice this module declares does not.
+      const rec = r as FrozenRow & { blob: Blob };
+      const fmt = String(rec.format ?? rec.meta?.format ?? 'bin');
+      // The id IS the content key (`user/frozen/<sha12>`), so the filename can be
+      // it: unique by construction, and readable next to the pin that names it.
+      const file = `frozen/${r.id.slice(FROZEN_PREFIX.length)}.${fmt}`;
+      entries[file] = new Uint8Array(await r.blob.arrayBuffer());
+      const { blob: _b, ...rest } = rec;
+      frozenRows.push({ ...rest, file, format: fmt, mime: r.blob.type || 'application/octet-stream' });
+    }
+    entries['versions.json'] = strToU8(JSON.stringify({
+      list: shipped,
+      // Only an active version we actually shipped: pointing at one that was
+      // skipped above would activate nothing on arrival.
+      active: ledger.active && shipped.some(v => v.slug === ledger.active) ? ledger.active : null,
+    }, null, 2));
+    entries['frozen.json'] = strToU8(JSON.stringify(frozenRows, null, 2));
+  }
+
   const prefs: Record<string, string> = {};
   for (const key of BRAND_PREF_KEYS) {
     const v = storage.getItem(key);
@@ -208,6 +324,8 @@ export async function exportBrandPack(
     fontFiles: fontRows.length,
     logos: logoRows.length,
     prefs: Object.keys(prefs).length,
+    versions: shipped.length,
+    frozen: frozenRows.length,
   };
 
   const profile = await host.profile?.get().catch(() => null) ?? null;
@@ -248,6 +366,44 @@ export async function unzipBrandBytes(bytes: ArrayBuffer | Uint8Array): Promise<
 }
 
 /**
+ * The pack's version ledger, read through the ONE reader the rest of the feature
+ * uses: `versions.json` stores the `{ list, active }` shape a head document
+ * carries under its vendor extension, so it is wrapped back into that shape
+ * rather than parsed a second way here. A pack with no `versions.json` (every
+ * pack from a system that never published, and every pack written before format
+ * version 2) reads as empty.
+ */
+function readPackLedger(files: Unzipped): VersionIndex {
+  const raw = readJson(files, 'versions.json');
+  // No `versions.json`: fall back to the ledger the head document carries. The
+  // two are written from one source, so they agree — but a pack assembled by
+  // hand, or one whose ledger part was lost, must not silently import zero
+  // versions while its `versions/` payloads sit right there.
+  if (!raw) return readVersionIndex(readJson(files, 'tokens.json'));
+  return readVersionIndex({ $extensions: { [TOKEN_EXT]: { versions: raw } } });
+}
+
+/**
+ * The ledger the head document gets after an import: what was already published
+ * here, plus the versions that actually landed, in publish order.
+ *
+ * `null` when there is nothing on either side — the document is then written
+ * exactly as the pack shipped it, which is what keeps an unversioned pack
+ * byte-identical to the one this importer accepted before versions existed.
+ *
+ * The pack's active version is adopted ONLY when nothing is active locally.
+ * Loading someone else's design system must not silently change which version
+ * every tool on this device renders against.
+ */
+function mergeLedgers(local: VersionIndex, added: VersionEntry[], packActive: string | null): VersionIndex | null {
+  if (!local.versions.length && !added.length) return null;
+  const versions = [...local.versions, ...added]
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const adopted = packActive && added.some(v => v.slug === packActive) ? packActive : null;
+  return { versions, active: local.active ?? adopted };
+}
+
+/**
  * Load a brand pack: verify, install the tokens doc, restore the font assets,
  * register the faces, apply the theme pref, repaint the chrome. Merge-only —
  * nothing outside the pack's own ids is touched.
@@ -270,7 +426,10 @@ export async function importBrandPack(
   }
   await verifyIntegrity(files, manifest.integrity, 'This brand file');
 
-  const summary: BrandImportSummary = { tokens: false, fontFamilies: 0, fontFiles: 0, logos: 0, prefs: 0, skipped: 0, failedFonts: 0 };
+  const summary: BrandImportSummary = {
+    tokens: false, fontFamilies: 0, fontFiles: 0, logos: 0, prefs: 0,
+    versions: 0, frozen: 0, versionsSkipped: 0, skipped: 0, failedFonts: 0,
+  };
 
   // Fonts BEFORE tokens: when the tokens land, applyChromeBrandVars reads
   // font.brand — the faces should already be present so the swap is one paint.
@@ -323,12 +482,105 @@ export async function importBrandPack(
     }
   }
 
+  // Preserved (frozen) bytes, then the published versions, then the head — the
+  // same "assets before the document that names them" ordering the fonts and
+  // logos branches above rely on. A pack from a system that never published has
+  // none of these parts and skips the whole block.
+  const frozenRows: FrozenRow[] = readJson(files, 'frozen.json') ?? [];
+  const restored = new Set<string>();
+  for (const row of frozenRows) {
+    if (!row?.id || !String(row.id).startsWith(FROZEN_PREFIX) || !row.file) continue;
+    const raw = files[row.file];
+    if (!raw) continue;
+    try {
+      await host.assets._uploadUserAsset({
+        id: row.id,
+        type: row.type || 'raster',
+        format: row.format || 'bin',
+        blob: new Blob([raw as BlobPart], { type: row.mime || 'application/octet-stream' }),
+        ...(row.version ? { version: row.version } : {}),
+        ...(row.meta ? { meta: row.meta } : {}),
+      });
+      restored.add(row.id);
+      summary.frozen++;
+    } catch (e) {
+      host.log?.('warn', 'Skipped restoring one preserved file (storage full?)', { id: String(row.id), error: String(e) });
+    }
+  }
+
+  /**
+   * A pin whose preserved bytes did not travel, and that this device does not
+   * already hold, would leave the version naming a dead id. Drop the `frozenId`
+   * so it falls back to the live asset instead: wrong-but-present is a render,
+   * a broken reference is a hole, and the log says which version lost what.
+   * (`scripts/ingest-brand.ts` makes the same repair on the pack-catalog side.)
+   */
+  const usablePin = async (slug: string, pin: PinnedAsset): Promise<PinnedAsset> => {
+    if (!pin.frozenId || restored.has(pin.frozenId)) return pin;
+    if (await host.assets._getBlob(pin.frozenId).catch(() => null)) return pin;
+    host.log?.('warn', 'A published version pins preserved bytes this pack did not carry', { slug, id: pin.frozenId });
+    const { frozenId: _drop, ...rest } = pin;
+    return rest;
+  };
+
+  const localHead = await readTokensBlob(host, USER_TOKENS_ID);
+  const localIndex = readVersionIndex(localHead);
+  const packIndex = readPackLedger(files);
+  const added: VersionEntry[] = [];
+  for (const entry of packIndex.versions) {
+    const payload = readJson(files, `versions/${entry.slug}.json`);
+    if (!payload || typeof payload !== 'object') { summary.versionsSkipped++; continue; }
+    try {
+      // The chokepoint enforces immutability, so the "never overwrite a local
+      // slug" rule is the SAME check the studio's own publish makes — one place
+      // decides what a published name means, and this path cannot soften it.
+      // The payload is stripped defensively: a version carries no ledger, and the
+      // local list is the only one that could be authoritative here anyway.
+      await installUserTokens(host as Parameters<typeof installUserTokens>[0], stripVersionIndex(payload), {
+        label: entry.label,
+        versionSlug: entry.slug,
+        allowVersionWrite: true,
+      });
+      const pins = await Promise.all((entry.assets ?? []).map(p => usablePin(entry.slug, p)));
+      added.push({ ...entry, assets: pins });
+      summary.versions++;
+    } catch (e) {
+      if (e instanceof VersionExistsError) summary.versionsSkipped++;
+      else host.log?.('warn', 'Skipped restoring one design-system version', { slug: entry.slug, error: String(e) });
+    }
+  }
+
   const doc = readJson(files, 'tokens.json');
   if (doc && typeof doc === 'object') {
-    await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, {
+    // The pack's document carries the PACK's ledger. Replace it with the merged
+    // one — local entries plus the versions that actually landed, oldest first —
+    // or the receiver's own published history would be overwritten by a file
+    // someone else exported. Untouched when neither side has a ledger, so an
+    // unversioned pack installs the document exactly as it always did.
+    const merged = mergeLedgers(localIndex, added, packIndex.active);
+    const payload = merged ? withVersionIndex(doc, merged) : doc;
+    await installUserTokens(host as Parameters<typeof installUserTokens>[0], payload, {
       label: typeof manifest.label === 'string' ? manifest.label : 'Imported brand',
     });
     summary.tokens = true;
+  } else if (added.length) {
+    // Payloads but no head document — a pack assembled by hand, or one whose
+    // tokens.json was lost. The version ASSETS have landed; without this the
+    // merged ledger is never written and the summary reports N imported versions
+    // that nothing on this device lists. Write the ledger onto the LOCAL head
+    // instead, which is the only document there is to carry it.
+    const merged = mergeLedgers(localIndex, added, packIndex.active);
+    if (merged && localHead && typeof localHead === 'object') {
+      await installUserTokens(
+        host as Parameters<typeof installUserTokens>[0], withVersionIndex(localHead, merged),
+      );
+    } else {
+      // No head on either side: the versions are real assets belonging to a
+      // design system that does not exist here, so say so rather than claim them.
+      host.log?.('warn', 'Imported design-system versions have no design system to belong to', { versions: added.length });
+      summary.versionsSkipped += added.length;
+      summary.versions -= added.length;
+    }
   }
 
   const prefs = readJson(files, 'prefs.json') ?? {};
