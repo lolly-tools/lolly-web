@@ -919,9 +919,26 @@ const plateNode = (el: Element): HTMLElement | null => el.querySelector('[data-c
  * both directions: a plate that arrives is returned, and a plate that never arrives is a
  * proven absence rather than a race the test happened to win.
  */
+/** Wait for the plate to APPEAR. The derivation is a `crypto.subtle` digest on the
+ *  thread pool, so a fixed micro-turn spin loses under CI load (the beam-ui lesson,
+ *  2026-08-10): real timer turns, generous bound, return the text the moment it
+ *  paints. */
 async function settlePlate(el: Element): Promise<string> {
-  for (let i = 0; i < 20 && !plateNode(el); i++) await settle();
+  for (let i = 0; i < 2000 && !plateNode(el); i++) await new Promise(r => setTimeout(r, 0));
   return plateNode(el)?.textContent ?? '';
+}
+
+/** Assert sustained ABSENCE — the spent-pairing case. Absence cannot be proven by
+ *  waiting, so this holds the door open long enough (50 real timer turns, far past
+ *  any derivation latency) for a wrong plate to show up if the discard logic ever
+ *  breaks, failing loudly the instant one paints. */
+async function settleNoPlate(el: Element): Promise<string> {
+  for (let i = 0; i < 50; i++) {
+    await new Promise(r => setTimeout(r, 0));
+    const node = plateNode(el);
+    if (node) return node.textContent ?? '';
+  }
+  return '';
 }
 
 /** An inviter walked all the way to `connected`, with whatever plate material is given. */
@@ -1076,7 +1093,7 @@ test('a second pairing gets its own plate, never the spent one', async () => {
   pair = null;
   stub.set({ phase: 'reconnect-armed', invite: { signal: inviteToken(), toolId: 'qr-code' } });
   stub.set({ phase: 'connected', everConnected: true });
-  assert.equal(await settlePlate(handle.el), '', 'the spent pairing’s plate must not survive it');
+  assert.equal(await settleNoPlate(handle.el), '', 'the spent pairing’s plate must not survive it');
 
   pair = { local: FP_HERE, remote: FP_OTHER };
   stub.set({ phase: 'connected', everConnected: true, reconnecting: false });
