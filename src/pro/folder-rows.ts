@@ -242,3 +242,35 @@ export async function rowsForFolder(host: FolderHost, folder: Folder, allFolders
   }
   return rows;
 }
+
+/**
+ * Assemble grid rows from an EXPLICIT list of session refs — the Projects
+ * multi-selection "Edit as sheet" path (`#/pro?s=slot,slot…`).
+ *
+ * Deliberately NOT {@link rowsForFolder}: a folder export skips non-tool items
+ * because it can't render an image, but a sheet is an editing surface, and the
+ * user asked for a selection to open verbatim — every item they picked becomes a
+ * row. So a single-tool session is a row, a batch snapshot flattens to its rows,
+ * and anything else (an uploaded image/asset with no inputs, or a record that
+ * won't load) becomes a TOOL-LESS row: present in the grid with an empty tool
+ * picker and no input cells, rather than silently dropped. Nothing here recurses
+ * or nests paths — the selection is already the flat set the user chose.
+ */
+export async function rowsFromRefs(host: FolderHost, refs: string[]): Promise<ExportRow[]> {
+  const rows: ExportRow[] = [];
+  for (const ref of refs) {
+    const data = await host.state.load(ref).catch(() => null);
+    if (data && (data.__batch || isBatchSlot(ref))) {
+      const srcRows = data.rows ?? [];
+      const runPrint: PrintDefaults = { profile: data.profile, bleed: data.bleed, marks: data.marks };
+      for (let k = 0; k < srcRows.length; k++) {
+        rows.push({ ...rowFromBatchRow(srcRows[k]!, [], runPrint), uid: `${ref}#${k}` });
+      }
+    } else if (data && data.__toolId) {
+      rows.push({ ...rowFromToolSession(data, []), uid: ref });
+    } else {
+      rows.push({ toolId: undefined, values: {}, filename: data?.__label, uid: ref });
+    }
+  }
+  return rows;
+}

@@ -297,6 +297,11 @@ export function icon(name: IconName, opts: IconOpts = {}): string {
   const { size, className, strokeWidth = 2, filled = false } = opts;
   const attrs = [
     'viewBox="0 0 24 24"',
+    // Declared explicitly so XML consumers work too: innerHTML auto-namespaces
+    // <svg>, but DOMParser('image/svg+xml') does NOT — collab-pill's iconNode
+    // got null-namespace elements that never rendered (live UI and walker
+    // shots both; the walker serialised them as xmlns="", found 2026-08-10).
+    'xmlns="http://www.w3.org/2000/svg"',
     size != null ? `width="${size}" height="${size}"` : '',
     filled ? 'fill="currentColor"' : 'fill="none"',
     filled ? '' : 'stroke="currentColor"',

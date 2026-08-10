@@ -192,7 +192,7 @@ export function mountFeaturedRow(
   mount: HTMLElement,
   entriesIn: FeaturedEntry[],
   host: FeaturedHost,
-  opts: { viewMode?: FeaturedViewMode; label?: string; ariaLabel?: string; tileDragOut?: boolean; tileMenu?: boolean; labelHref?: string; labelHelp?: string; onActivate?: (id: string) => void } = {},
+  opts: { viewMode?: FeaturedViewMode; staticStrip?: boolean; label?: string; ariaLabel?: string; tileDragOut?: boolean; tileMenu?: boolean; labelHref?: string; labelHelp?: string; onActivate?: (id: string) => void } = {},
 ): FeaturedRowHandle {
   const entries = [...entriesIn].sort(byFeaturedOrder);
   // An automated screenshot run is treated as reduced motion, because every motion this
@@ -203,8 +203,11 @@ export function mountFeaturedRow(
   // VECTOR baseline is churn on every run — the raster baselines only ever hid it behind
   // their `tolerance=` pixel budget, which vector shots compare exactly and ignore.
   // Reusing `reduced` rather than adding a second switch means the still path taken here
-  // is the one users already exercise, not a capture-only branch nothing else tests.
-  const reduced = prefersReducedMotion() || captureNeutralPinned();
+  // is the one users already exercise, not a capture-only branch nothing else tests. The
+  // gallery favourites strip opts in unconditionally (`staticStrip`, Andy 2026-08-10): no
+  // auto-drift marquee and no example/preset cross-fade — a favourite shows the tool's single
+  // committed template, swipe/drag only. Cover Flow + the Projects ribbon keep their motion.
+  const reduced = prefersReducedMotion() || captureNeutralPinned() || opts.staticStrip === true;
   let coverflow = opts.viewMode === 'coverflow';
   // Drag-out mode (Projects "Uncategorised" ribbon): each tile is a native HTML5 drag
   // source so a loose session can be dragged onto a "Move to" folder. The consumer wires

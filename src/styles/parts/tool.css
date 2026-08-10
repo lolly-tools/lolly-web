@@ -1565,6 +1565,10 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    wide table never widens the sidebar. */
 .table-input { display: flex; flex-direction: column; gap: 6px; }
 .table-scroll { overflow-x: auto; max-width: 100%; border: 1px solid hsl(var(--border)); border-radius: var(--radius); }
+/* A big table renders the virtualized data-grid (plan 89) here; give its viewport a
+   sidebar-appropriate height. In a popped-out float panel it can breathe taller. */
+.table-vgrid .dg-viewport { height: min(400px, 46vh); }
+.floatp .table-vgrid .dg-viewport { height: min(70vh, 640px); }
 .table-grid { border-collapse: collapse; width: 100%; }
 .table-grid th, .table-grid td { padding: 0; border: 0; }
 .table-grid th { position: relative; }
@@ -2228,6 +2232,28 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .slot-act:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .slot-act:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+
+/* Live frame-source controls riding the source asset slot's actions row
+   (live-controls.ts): ▶ Play (animated asset / sample) + ● Go live (camera).
+   Same .slot-act chip language as Fit/Match/Preview; the red dot + pulse reuse
+   the stage toggle's .canvas-live-dot pieces below. */
+.slot-live-cluster { display: contents; }
+.slot-act.slot-live { display: inline-flex; align-items: center; gap: 6px; }
+.slot-act.slot-live[hidden] { display: none; }
+.slot-act.slot-live:disabled { opacity: 0.6; cursor: progress; }
+.slot-act.slot-live .canvas-live-dot { width: 7px; height: 7px; }
+.slot-act.slot-live.is-live {
+  border-color: hsl(var(--destructive));
+  color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 0.08);
+}
+.slot-act.slot-live.is-live .canvas-live-dot {
+  background: hsl(var(--destructive));
+  animation: canvas-live-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slot-act.slot-live.is-live .canvas-live-dot { animation: none; }
+}
 .slot-play.is-playing {
   /* brand-var indirection (matches .dash-hero-cta) so this reuses the primary fill
      rather than restating the pair verbatim — the single-source-of-truth guard
@@ -2493,6 +2519,10 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .canvas-live-toggle:hover { border-color: hsl(var(--primary)); }
 .canvas-live-toggle:disabled { opacity: 0.6; cursor: progress; }
+.canvas-live-toggle[hidden] { display: none; }
+/* When the stage hosts BOTH toggles (fallback placement — no sidebar row to
+   ride), stack Play under Go live so they can't overlap at top-left. */
+.canvas-live-toggle + .canvas-anim-toggle { top: 54px; }
 .canvas-live-dot {
   width: 8px;
   height: 8px;
@@ -3202,24 +3232,36 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   transform: translate(-50%, -50%) scale(0.5);
   will-change: transform, opacity;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+  isolation: isolate;         /* multiply layers blend within the mark, never the seal behind */
 }
-/* The inline Lolly swirl fills the mark; its three nested layers counter-spin at
-   1s / 5s / 9s with a slow hue drift — a quick flourish over the fraction of a second
-   the mark is up. Cheap here (small, brief, over the seal), unlike animating a filter on
-   the full-screen iris. The coloured spiral is var(--exsh-swirl), set per export to the
-   brand tone in lib/shutter.ts. Reduced motion drops the spin (styles/parts/base.css) —
-   the mark still pops, it just doesn't turn. */
-.export-shutter__mark svg { display: block; width: 100%; height: 100%; }
-.export-shutter__swirl-1,
-.export-shutter__swirl-2,
-.export-shutter__swirl-3 { transform-origin: 50% 50%; transform-box: fill-box; }
-.export-shutter__swirl-1 { animation: export-shutter-swirl 3s linear infinite; }
-.export-shutter__swirl-2 { animation: export-shutter-swirl 6s linear infinite; }
-.export-shutter__swirl-3 { animation: export-shutter-swirl 9s linear infinite; }
-@keyframes export-shutter-swirl {
-  100%     { transform: rotate(360deg); }
-  50%      { filter: hue-rotate(-25deg); }
-  0%, 100% { filter: hue-rotate(25deg); }
+/* The mark is STACKED LAYER DIVS (shutter-mark.ts, generated from the repo-root
+   icon.svg), each holding one slice of the swirl. The spin animates the DIVS,
+   not SVG children: an HTML transform composites off the main thread, so the
+   mark keeps turning while the export render blocks it — the old single-SVG
+   mark (SVG-child transforms are main-thread in Chromium) froze the moment an
+   export started. Cadence is the icon's own 3/6/9s; the hue drift rides the
+   mark container (drop-shadow restated in each keyframe — an animated filter
+   replaces, never merges). The coloured spiral is var(--exsh-swirl), set per
+   export to the brand tone in lib/shutter.ts, which also self-gates the whole
+   flourish under reduced motion. */
+.export-shutter__layer { position: absolute; inset: 0; will-change: transform; }
+.export-shutter__layer svg { display: block; width: 100%; height: 100%; }
+/* The icon's swirl paths paint with mix-blend-mode:multiply, and the layers are
+   concentric — inner darkens mid darkens outer — so the blend must cross the
+   stacked divs exactly as it crossed paint order inside one SVG canvas. The
+   generator hoists each multiply run into its own div; isolation on the mark
+   keeps the blend from sampling the seal plate behind it. */
+.export-shutter__layer--multiply { mix-blend-mode: multiply; }
+.export-shutter__layer--spin1 { animation: export-shutter-spin 3s linear infinite; }
+.export-shutter__layer--spin2 { animation: export-shutter-spin 6s linear infinite; }
+.export-shutter__layer--spin3 { animation: export-shutter-spin 9s linear infinite; }
+@keyframes export-shutter-spin {
+  100% { transform: rotate(360deg); }
+}
+.export-shutter__mark { animation: export-shutter-hue 6s ease-in-out infinite; }
+@keyframes export-shutter-hue {
+  0%, 100% { filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4)) hue-rotate(15deg); }
+  50%      { filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4)) hue-rotate(-15deg); }
 }
 /* Shutter-closed flash. Sits ABOVE the swirl and mark so the sealed cover flashes
    too, not just the artwork behind it. Fast in, long out — over this duration

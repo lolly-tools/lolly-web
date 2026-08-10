@@ -89,6 +89,22 @@ async function decodeViaImg(blob: Blob): Promise<ImageBitmap> {
   if (typeof Image === 'undefined' || typeof URL === 'undefined' || !URL.createObjectURL) {
     throw new Error('host.raster: no image decoder available in this realm.');
   }
+  // A SIZELESS SVG (uploads strip the root width/height so the art scales by its viewBox)
+  // rasterises at the browser's 150×150 default, throwing away the artwork's resolution
+  // AND aspect ratio — which then propagates as a tiny/mis-sized decode (e.g. a filter
+  // source that renders in a corner, and a 150×150 export box). Give it an intrinsic size
+  // from its viewBox so the <img> decodes it crisply at full size. Best-effort: an
+  // unreadable or already-sized SVG falls through to the browser default.
+  if (/svg/i.test(blob.type)) {
+    try {
+      const text = await blob.text();
+      if (!/<svg[^>]*\b(?:width|height)\s*=/i.test(text)) {
+        const m = /viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(text);
+        const w = parseFloat(m?.[1] ?? '0'), h = parseFloat(m?.[2] ?? '0');
+        if (w > 0 && h > 0) blob = new Blob([text.replace(/<svg\b/i, `<svg width="${w}" height="${h}"`)], { type: 'image/svg+xml' });
+      }
+    } catch { /* unreadable — keep the original blob and its default rasterisation */ }
+  }
   const url = URL.createObjectURL(blob);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {

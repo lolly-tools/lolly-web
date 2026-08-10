@@ -873,7 +873,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!featuredMount) return;
     featuredHandle?.destroy();
     featuredHandle = entries.length
-      ? mountFeaturedRow(featuredMount, entries, host, { viewMode: featuredView })
+      // The 'gallery' favourites strip is STATIC now (Andy 2026-08-10): no marquee drift,
+      // no example/preset cross-fade — a favourite is the tool's single template, swipe/drag
+      // only. Cover Flow keeps its own motion, so only opt the gallery mode into staticStrip.
+      ? mountFeaturedRow(featuredMount, entries, host, { viewMode: featuredView, staticStrip: featuredView === 'gallery' })
       : null;
     viewEl.querySelector('.gallery')?.classList.toggle('has-featured', entries.length > 0);
   }
@@ -906,9 +909,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     featuredView = next;
     try { localStorage.setItem(FEATURED_VIEW_STORAGE, featuredView); } catch { /* storage off */ }
     paintViewSeg();
-    featuredHandle?.setViewMode(featuredView);
-    // Each mode has its own character: Cover Flow = cool & futuristic, Gallery = refined.
-    if (changed) playSfx(featuredView === 'coverflow' ? 'coverflow' : 'gallery');
+    // Re-mount (not setViewMode) so the strip re-reads `staticStrip` for the new mode:
+    // Gallery is static, Cover Flow animates. setViewMode only flips `coverflow` and leaves
+    // `reduced`/the variant queue armed from mount, so a Cover Flow → Gallery switch would
+    // keep drifting — exactly the marquee we're killing (Andy 2026-08-10).
+    if (changed) {
+      refreshFeatured();
+      // Each mode has its own character: Cover Flow = cool & futuristic, Gallery = refined.
+      playSfx(featuredView === 'coverflow' ? 'coverflow' : 'gallery');
+    }
   });
   // Landing state only: the strip is noise above a searched/filtered grid. It is KEPT
   // (collapsed to icon + text via .hide-previews) when previews are off — it doesn't

@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  stemOf, slug, rowFromToolSession, rowFromBatchRow, rowsForFolder,
+  stemOf, slug, rowFromToolSession, rowFromBatchRow, rowsForFolder, rowsFromRefs,
 } from './folder-rows.ts';
 
 test('stemOf strips a known extension, falls back to toolId', () => {
@@ -215,4 +215,56 @@ test('a [no-tool, no-tool, qr] snapshot reports 3 rows: one rendered (row 3), tw
   assert.deepEqual(report.rows.filter(r => r.state === 'skipped').map(r => r.reason), [
     'No template selected', 'No template selected',
   ]);
+});
+
+// ── rowsFromRefs: the Projects "Edit as sheet" seed ──────────────────────────
+// Unlike rowsForFolder, it opens a selection VERBATIM: a non-tool item is NOT
+// dropped, it becomes a tool-less row (the user asked to see everything they
+// picked). Tool sessions and batch snapshots behave as in a folder.
+test('rowsFromRefs opens a selection verbatim, non-tool items as tool-less rows', async () => {
+  const host = {
+    state: {
+      async load(slot: string) {
+        if (slot === '__batch__:pack') {
+          return {
+            __batch: true, __label: 'pack',
+            rows: [
+              { toolId: 'name-badge', values: { name: 'Ada' } },
+              { toolId: 'name-badge', values: { name: 'Lin' } },
+            ],
+          };
+        }
+        if (slot === 'poster:9') return { __toolId: 'poster', headline: 'Hi' };
+        if (slot === 'notool:1') return { __label: 'A leftover', someField: 'x' }; // no __toolId
+        return null; // e.g. an image/asset ref not in the session store
+      },
+    },
+  };
+  const rows = await rowsFromRefs(host, ['poster:9', '__batch__:pack', 'user/upload/1', 'notool:1']);
+  // 1 (poster) + 2 (batch) + 1 (image, tool-less) + 1 (no-toolId, tool-less) = 5
+  assert.equal(rows.length, 5);
+
+  const poster = rows.find(r => r.uid === 'poster:9');
+  assert.equal(poster?.toolId, 'poster');
+  assert.deepEqual(poster?.values, { headline: 'Hi' });
+
+  // Batch rows keep the ref#ordinal uid convention.
+  assert.deepEqual(rows.filter(r => r.uid?.startsWith('__batch__:pack#')).map(r => r.uid),
+    ['__batch__:pack#0', '__batch__:pack#1']);
+
+  // The image ref loaded null → a tool-less row, present not dropped.
+  const img = rows.find(r => r.uid === 'user/upload/1');
+  assert.ok(img, 'image ref must survive as a row');
+  assert.equal(img?.toolId, undefined);
+  assert.deepEqual(img?.values, {});
+
+  // A session with no __toolId is also tool-less, and carries its label.
+  const leftover = rows.find(r => r.uid === 'notool:1');
+  assert.equal(leftover?.toolId, undefined);
+  assert.equal(leftover?.filename, 'A leftover');
+});
+
+test('rowsFromRefs on an empty selection yields no rows', async () => {
+  const host = { state: { async load() { return null; } } };
+  assert.deepEqual(await rowsFromRefs(host, []), []);
 });

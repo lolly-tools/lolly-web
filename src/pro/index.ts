@@ -44,7 +44,7 @@ import { saveBlob } from './zip.ts';
 import { batchToCsv, csvToBatch, parseClipboardGrid, coerceCell } from './io.ts';
 import { createSessionStore, rowsFromSnapshot, snapshotFromState } from './sessions.ts';
 import { runBatchWithProgress, isBatchRunActive } from './run-overlay.ts';
-import { rowsForFolder } from './folder-rows.ts';
+import { rowsForFolder, rowsFromRefs } from './folder-rows.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { Unit } from '../../../../engine/src/units.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
@@ -75,6 +75,10 @@ interface ProHost extends HostV1 {
 // Options the shell injects when mounting /pro (lazy route in main.js).
 interface ProMountOpts {
   sessionSlot?: string;
+  /** Session refs to open verbatim as grid rows — the Projects "Edit as sheet"
+   *  selection (`#/pro?s=slot,slot…`). Each becomes a row (tool-less if it has no
+   *  inputs); see {@link rowsFromRefs}. Takes precedence over `sessionSlot`. */
+  seedRefs?: string[];
   onBatchRendered?: (files: any[]) => void;
   openFolderOverlay?: (host: ProHost, cfg: any) => void;
 }
@@ -1684,11 +1688,23 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // ── Cleanup (called by the router on navigation away) ───────────────────────
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { detachLangMenu(); closeBulkPopover(); closeSessions(); closePrintPopover(); closeTemplatePicker(); closeBlocksPanel(); nav.destroy(); detachResize(); detachReorder(); detachScrub(); zipRO.disconnect(); zoomHud.destroy(); narrowMq.removeEventListener('change', placeFormat); narrowMq.removeEventListener('change', sizeZip); document.removeEventListener('pointerdown', onDocPointer); document.removeEventListener('keydown', onAddRowKey, true); };
 
-  // Deep link: open a saved session if the route asked for one (#/pro?session=…),
-  // e.g. resuming a batch from the gallery's Saved-sessions list. Otherwise drop
-  // straight into the first (blank) row's template search, ready to type — now
-  // that the grid's click + focusin handlers are wired.
-  if (opts.sessionSlot) {
+  // Deep link, in precedence order:
+  //  · a Projects "Edit as sheet" selection (#/pro?s=slot,slot…) → one row per
+  //    selected item, opened verbatim (rowsFromRefs keeps non-tool items as
+  //    tool-less rows);
+  //  · a saved batch session (#/pro?session=…), e.g. resuming from the gallery's
+  //    Saved-sessions list;
+  //  · otherwise drop straight into the first (blank) row's template search, ready
+  //    to type — now that the grid's click + focusin handlers are wired.
+  if (opts.seedRefs?.length) {
+    const rows = await rowsFromRefs(host, opts.seedRefs);
+    if (rows.length) {
+      await applySnapshot({ rows });
+      showProgress(`<p class="pro-progress-msg">Opened ${rows.length} row${rows.length === 1 ? '' : 's'} from your selection.</p>`);
+    } else {
+      showProgress(`<p class="pro-progress-msg pro-log-err">Nothing to open as a sheet from that selection.</p>`);
+    }
+  } else if (opts.sessionSlot) {
     const data = await sessions.load(opts.sessionSlot);
     if (data) await applySnapshot(data);
     else showProgress(`<p class="pro-progress-msg pro-log-err">That batch session could not be found.</p>`);

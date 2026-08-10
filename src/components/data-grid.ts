@@ -77,6 +77,10 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
   const overscan = opts.overscan ?? 4;
   const editable = opts.editable !== false;
   const readOnly = new Set(opts.readOnlyCols ?? []);
+  // Trailing row-delete gutter — only when editable. Kept as a real column of the
+  // flex row (not an overlay) so it stays aligned under virtualization and is
+  // always reachable, matching the plain <table>'s per-row × the grid replaces.
+  const actionW = editable ? 30 : 0;
   let value: TableValue = clone(opts.value);
   let widths = value.columns.map((_, c) => colWidth(value, c));
 
@@ -95,14 +99,17 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
   const canvas = container.querySelector<HTMLElement>('.dg-canvas')!;
   const rowsEl = container.querySelector<HTMLElement>('.dg-rows')!;
 
-  const totalWidth = () => widths.reduce((a, b) => a + b, 0);
+  const totalWidth = () => widths.reduce((a, b) => a + b, 0) + actionW;
 
   function renderHeader(): void {
     inner.style.width = `${totalWidth()}px`;
     header.style.height = `${rowHeight}px`;
+    // Each header carries a hover-revealed × to delete its column (skipped for a
+    // read-only column); a trailing empty corner closes the row-delete gutter.
     header.innerHTML = value.columns
-      .map((c, i) => `<div class="dg-cell dg-head-cell${readOnly.has(i) ? ' dg-ro' : ''}" role="columnheader" style="width:${widths[i]}px" data-col="${i}">${esc(c)}</div>`)
-      .join('');
+      .map((c, i) => `<div class="dg-cell dg-head-cell${readOnly.has(i) ? ' dg-ro' : ''}" role="columnheader" style="width:${widths[i]}px" data-col="${i}"><span class="dg-head-label">${esc(c)}</span>${editable && !readOnly.has(i) ? `<button type="button" class="dg-del-col" data-del-col="${i}" title="Delete column" aria-label="Delete column">×</button>` : ''}</div>`)
+      .join('')
+      + (editable ? `<div class="dg-rowctl dg-rowctl-head" style="width:${actionW}px" aria-hidden="true"></div>` : '');
   }
 
   let rangeFirst = -1;
@@ -123,6 +130,9 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
         const ro = !editable || readOnly.has(c);
         html += `<div class="dg-cell${ro ? ' dg-ro' : ''}" role="gridcell" style="width:${widths[c]}px" data-row="${r}" data-col="${c}"${ro ? '' : ' tabindex="-1"'}>${esc(row[c] ?? '')}</div>`;
       }
+      // Trailing row-delete × (gutter column). Not a .dg-cell, so it never starts
+      // a cell edit; the delegated click handler below removes the row.
+      if (editable) html += `<div class="dg-rowctl" data-del-row="${r}" role="button" tabindex="-1" title="Delete row" aria-label="Delete row" style="width:${actionW}px">×</div>`;
       html += '</div>';
     }
     rowsEl.innerHTML = html;
@@ -144,6 +154,12 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
     const cell = rowsEl.querySelector<HTMLElement>(`.dg-cell[data-row="${r}"][data-col="${c}"]`);
     if (cell) cell.textContent = editor.value;
     editor.remove(); editor = null;
+    // Keep focus in the grid when the editor simply vanished (Enter, scroll, or
+    // programmatic removal) so the sidebar defers its rebuild (inputs-sync
+    // isEditingGrid) — but never STEAL it back if the user clicked a real element
+    // elsewhere (blur-to-outside), where a rebuild is the right thing.
+    const ae = document.activeElement;
+    if (!ae || ae === document.body) viewport.focus();
     opts.onChange?.(clone(value));
   }
   function beginEdit(cell: HTMLElement): void {
@@ -171,13 +187,46 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
     });
   }
 
+  // ── structural edits: delete a row / column, commit through onChange ─────────
+  function deleteRow(r: number): void {
+    if (!editable || r < 0 || r >= value.rows.length) return;
+    commit();
+    value = clone(value);
+    value.rows.splice(r, 1);
+    refreshAria();
+    renderRows(true);           // row indices shifted; columns (widths) unchanged
+    opts.onChange?.(clone(value));
+  }
+  function deleteCol(c: number): void {
+    if (!editable || c < 0 || c >= value.columns.length) return;
+    commit();
+    value = clone(value);
+    value.columns.splice(c, 1);
+    for (const row of value.rows) row.splice(c, 1);
+    widths = value.columns.map((_, i) => colWidth(value, i));
+    // Read-only column indices shift left past the deleted one.
+    const kept = [...readOnly].filter(i => i !== c).map(i => (i > c ? i - 1 : i));
+    readOnly.clear(); for (const i of kept) readOnly.add(i);
+    full();
+    opts.onChange?.(clone(value));
+  }
+
   const onScroll = (): void => { if (editor) commit(); renderRows(); };
   const onDblClick = (e: MouseEvent): void => {
     const cell = (e.target as HTMLElement).closest<HTMLElement>('.dg-row .dg-cell');
     if (cell) beginEdit(cell);
   };
+  // Delegated (rows recycle on scroll): a click on a row's × or a header's ×.
+  const onClick = (e: MouseEvent): void => {
+    const t = e.target as HTMLElement;
+    const delRow = t.closest<HTMLElement>('[data-del-row]');
+    if (delRow) { e.preventDefault(); deleteRow(Number(delRow.dataset.delRow)); return; }
+    const delCol = t.closest<HTMLElement>('[data-del-col]');
+    if (delCol) { e.preventDefault(); deleteCol(Number(delCol.dataset.delCol)); }
+  };
   viewport.addEventListener('scroll', onScroll, { passive: true });
   rowsEl.addEventListener('dblclick', onDblClick);
+  container.addEventListener('click', onClick);
 
   // A resize observer keeps the window correct when the viewport grows/shrinks.
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => renderRows(true)) : null;
@@ -192,6 +241,7 @@ export function mountDataGrid(container: HTMLElement, opts: DataGridOptions): Da
     destroy() {
       viewport.removeEventListener('scroll', onScroll);
       rowsEl.removeEventListener('dblclick', onDblClick);
+      container.removeEventListener('click', onClick);
       ro?.disconnect();
       editor?.remove();
       container.replaceChildren();

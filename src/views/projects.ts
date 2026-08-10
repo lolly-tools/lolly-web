@@ -162,6 +162,7 @@ const FILTER_ICON = icon('filterLines');
 // Context-menu glyphs (lucide house style). None of these existed in the codebase.
 const OPEN_ICON = icon('externalLink', { strokeWidth: 1.9 });
 const EDIT_ICON = icon('pen', { strokeWidth: 1.9 });
+const SHEET_ICON = icon('grid', { strokeWidth: 1.9 });
 const MOVE_ICON = icon('move', { strokeWidth: 1.9 });
 const TRASH_ICON = icon('trash', { strokeWidth: 1.9 });
 const CHEVRON_ICON = icon('chevronRight');
@@ -787,6 +788,7 @@ export async function mountProjects(
     actions: [
       { id: 'render', icon: RENDER_ICON, label: () => t('Render selection'), extraClass: 'projects-render projects-bulk-render' },
       { id: 'edit', icon: EDIT_ICON, label: () => t('Edit together'), title: () => t('Open the selected sessions side by side with one combined sidebar'), hidden: () => !editableSelection() },
+      { id: 'sheet', icon: SHEET_ICON, label: () => t('Edit as sheet'), title: () => t('Open the whole selection as rows in the batch grid — no size limit'), hidden: () => !sheetableSelection() },
       { id: 'move', icon: MOVE_ICON, label: () => t('Move to…') },
       { id: 'newfolder', icon: FOLDER_PLUS_ICON, label: () => t('New folder') },
       { id: 'delete', icon: TRASH_ICON, label: () => t('Delete'), extraClass: 'projects-bulk-danger' },
@@ -811,6 +813,22 @@ export async function mountProjects(
     const slots = editableSelection();
     if (!slots) return;
     window.location.hash = `#/multi?s=${slots.map(encodeURIComponent).join(',')}`;
+  }
+
+  /** The selected SESSION + IMAGE refs (any count), or null if the selection has
+   *  none. The batch grid's complement to multi-edit: no 2–8 cap, heterogeneous
+   *  tools welcome, non-tool items land as tool-less rows (see rowsFromRefs).
+   *  Folders are excluded — they stay containers with their own open-in-grid path. */
+  function sheetableSelection(): string[] | null {
+    const refs = [...selected].filter(([, k]) => k !== 'folder').map(([ref]) => ref);
+    return refs.length ? refs : null;
+  }
+
+  /** Open the selection as rows in the /pro batch grid (#/pro?s=slot,slot…). */
+  function editAsSheet(): void {
+    const refs = sheetableSelection();
+    if (!refs) return;
+    window.location.hash = `#/pro?s=${refs.map(encodeURIComponent).join(',')}`;
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────
@@ -1089,6 +1107,7 @@ export async function mountProjects(
     if (action === 'clear') { dropSelection(); render(); return; }
     if (action === 'render') { renderSelection(); return; }
     if (action === 'edit') { editSelection(); return; }
+    if (action === 'sheet') { editAsSheet(); return; }
     if (action === 'move') { moveSelection(); return; }
     if (action === 'newfolder') { newFolderFromSelection(); return; }
     if (action === 'delete') { deleteSelection(); return; }
@@ -1200,6 +1219,7 @@ export async function mountProjects(
     return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
       + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
         menuItem('render', RENDER_ICON, t('Render selection'), { render: true }),
+        ...(sheetableSelection() ? [menuItem('sheet', SHEET_ICON, t('Edit as sheet'))] : []),
         menuItem('move', MOVE_ICON, t('Move to…')),
         menuItem('newfolder', FOLDER_PLUS_ICON, t('New folder from selection')),
         menuItem('delete', TRASH_ICON, t('Delete'), { danger: true }),

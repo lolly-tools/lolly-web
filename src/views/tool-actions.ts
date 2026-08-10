@@ -77,6 +77,10 @@ import { jellyActive } from '../lib/jelly.ts';
 export const exportTargetNode = (c: HTMLElement | null): HTMLElement | null =>
   c?.querySelector<HTMLElement>('[data-export-root]') ?? c;
 
+/** Structural mirror of the engine MediaFrame (not re-exported from the engine index) — the
+ *  RGBA frame host.media.renderFrameAt hands the tool's onFrame during a deterministic export. */
+type MediaFrameLike = { width: number; height: number; data: Uint8ClampedArray; t: number };
+
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
 const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
   emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
@@ -2715,9 +2719,39 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // steps frame-by-frame during a sequence render. The iris is built to hold
         // (see the CSS): it stays closed for the variable export time, and the export
         // popup keeps showing progress underneath it.
-        const blob = liveTake
-          ? await runtime.export(exportTargetNode(canvasEl), fmt, opts)
-          : await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, opts), { shutter: true });
+        const drvNode = exportTargetNode(canvasEl);
+        // Deterministic animated-source render (Andy's "right side of the render line"): the
+        // preview plays the effect live, but the final render walks the SOURCE frame-by-frame
+        // through the same effect. Register the per-frame drive the export frame loop awaits
+        // (createFrameSource → node.__lollyFrameDrive), and PAUSE the live repaint loop (not
+        // stop — the source stays armed so renderFrameAt keeps working) so a real-time frame
+        // can't clobber the exact frame being captured. renderFrameAt returns null for a
+        // camera (not deterministically re-samplable), so this cleanly no-ops there. Only the
+        // deterministic path (not the screen-share liveTake) needs it.
+        const liveDrive = !liveTake && runtime.isLive() && !!drvNode;
+        if (liveDrive) {
+          const media = host.media as unknown as { renderFrameAt?: (tMs: number) => Promise<MediaFrameLike | null> };
+          (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive = async (t: number, durMs: number) => {
+            const mf = media.renderFrameAt ? await media.renderFrameAt(t * durMs) : null;
+            if (!mf) return;                                    // camera / unseekable → leave the base
+            const html = await runtime.applyFrameForExport(mf);
+            if (html != null) drvNode!.innerHTML = html;        // paint the exact frame before capture
+          };
+          runtime.pauseLive();
+        }
+        const blob = await (async (): Promise<Blob> => {
+          try {
+            return liveTake
+              ? await runtime.export(drvNode, fmt, opts)
+              : await exportUnscaled(() => runtime.export(drvNode, fmt, opts), { shutter: true });
+          } finally {
+            if (liveDrive) {
+              delete (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive;
+              runtime.resumeLive();
+              runtime.refresh();                                // restore the live preview
+            }
+          }
+        })();
         downloadedBlob = blob;
         await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
       }

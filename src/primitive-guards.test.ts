@@ -1070,7 +1070,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // `<span class="canvas-live-label">`). Reviewed — both spans are static markup and the
   // only interpolation is a `t()` literal, which escapes its own params; there is no
   // user, peer or tool-supplied value anywhere in either sink.
-  'views/tool.ts': 17,
+  // 17 → 15 on 2026-08-10: both live-toggle sinks LEFT this file — the Go live/Play
+  // buttons moved into views/live-controls.ts, which builds them with
+  // createElement/textContent and has no raw-HTML sink at all.
+  'views/tool.ts': 15,
   // 21 as of 2026-07-31: +2 deep-scan watermark notes (trustmarkNoteHtml,
   // contentSealNoteHtml). Reviewed — every attacker-controlled value on this
   // page (decoded payload/message hex, schema, filenames, hex dumps of file

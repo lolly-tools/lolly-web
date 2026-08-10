@@ -232,9 +232,9 @@ function activate(row: HTMLElement, newTab: boolean): void {
  *  The href is scheme-gated by renderResults() (see navigableHits) — escape()
  *  neutralises quotes, not a `javascript:` scheme, and SearchProvider is an
  *  extension point, so the gate is at the paint boundary, not in the providers. */
-function rowHtml(hit: SearchHit, n: number): string {
+function rowHtml(hit: SearchHit, n: number, gid: SearchGroupId): string {
   // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in renderResults() before this runs; a hit that fails it is dropped, never painted
-  return `<div class="spotlight-opt" role="option" id="spotlight-opt-${n}" aria-selected="false" data-href="${escape(hit.href)}" data-sfx="navigate">
+  return `<div class="spotlight-opt" role="option" id="spotlight-opt-${n}" aria-selected="false" data-group="${gid}" data-href="${escape(hit.href)}" data-sfx="navigate">
     <span class="spotlight-opt-icon" aria-hidden="true">${hit.icon}</span>
     <span class="spotlight-opt-text">
       <span class="spotlight-opt-title">${escape(hit.title)}</span>${hit.subtitle ? `
@@ -273,7 +273,7 @@ function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap
     if (!hits.length) continue;
     total += hits.length;
     html += `<div class="spotlight-group-label" role="presentation">${t(GROUP_LABELS[gid])}</div>`;
-    for (const hit of hits) html += rowHtml(hit, n++);
+    for (const hit of hits) html += rowHtml(hit, n++, gid);
     const seeAll = GROUP_SEE_ALL[gid];
     const seeAllHref = seeAll ? seeAll(trimmed) : '';
     if (seeAllHref && safeHref(seeAllHref)) html += seeAllHtml(gid, seeAllHref, n++);

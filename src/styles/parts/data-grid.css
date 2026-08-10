@@ -31,10 +31,58 @@
   border-bottom: 1px solid hsl(var(--border));
 }
 .dg-head-cell {
+  position: relative;                /* anchors the hover-revealed delete × */
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
+.dg-head-label { display: block; overflow: hidden; text-overflow: ellipsis; }
+
+/* Per-column delete: a small × pinned top-right of the header, revealed on hover
+   or keyboard focus so it doesn't clutter the grid. */
+.dg-del-col {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s;
+}
+.dg-head-cell:hover .dg-del-col,
+.dg-del-col:focus-visible { opacity: 1; }
+.dg-del-col:hover { background: hsl(var(--destructive) / .15); color: hsl(var(--destructive)); }
+
+/* Per-row delete gutter — a real trailing flex cell so it stays aligned while the
+   grid virtualizes. The × fades in on row hover; the header's corner is empty. */
+.dg-rowctl {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s;
+}
+.dg-rowctl-head { background: hsl(var(--muted)); cursor: default; opacity: 1; }
+.dg-row:hover .dg-rowctl,
+.dg-rowctl:focus-visible { opacity: 1; }
+.dg-rowctl:hover { color: hsl(var(--destructive)); }
 
 .dg-canvas { position: relative; }
 .dg-rows { position: absolute; inset: 0 auto auto 0; width: 100%; will-change: transform; }

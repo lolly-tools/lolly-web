@@ -85,7 +85,14 @@ export function createCatalogProvider(host: CatalogSearchHost): SearchProvider {
     return promise;
   }
 
-  const glyph = icon('image'); // generic asset glyph
+  // The row glyph follows the asset's kind, so music reads as music (not a broken
+  // image) and video as film — the catalogue tiles visual assets AND the user's
+  // own/focus audio, so both must be legible. Built once; unknown types fall back
+  // to the generic image glyph.
+  const GLYPHS: Record<string, string> = {
+    audio: icon('music'), video: icon('filmStrip'), font: icon('font'), image: icon('image'),
+  };
+  const glyphFor = (type: string): string => GLYPHS[type] ?? GLYPHS.image!;
 
   return {
     id: 'catalog',
@@ -98,7 +105,7 @@ export function createCatalogProvider(host: CatalogSearchHost): SearchProvider {
       }
       scored.sort((a, b) => b.score - a.score);
       return scored.slice(0, Math.max(0, limit)).map(({ row, score }) => ({
-        icon: glyph,
+        icon: glyphFor(String(row.asset.type)),
         title: String(row.asset.meta?.name ?? row.asset.id),
         // Category where it says something; the catch-all 'other' bucket reads
         // better as the concrete format.

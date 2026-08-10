@@ -40,6 +40,7 @@ import {
 import { getTool } from '../bridge/tool-loader.js';
 import { brandFontFamilies } from '../user-fonts.ts';
 import { storeUserUpload, askLollyIntent } from './picker.js';
+import { mountSidebarLiveControls } from './live-controls.ts';
 import flatpickr from 'flatpickr';
 
 import type { AssetRef, ComposeAPI, InputFile } from '@lolly-tools/core/host-v1';
@@ -679,6 +680,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         const ref = await host.assets.pick({
           title:       `Choose ${input.label ?? input.id}`,
           type:        input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
+          // Capability-driven widening, not a per-tool special case: an `image`
+          // slot on a tool that can CONSUME moving pictures (an onFrame hook —
+          // the live frame loop plays a video pick through the effect) also
+          // offers video uploads. A still-image tool's slot is unchanged.
+          motion:      runtime.hasFrameHook === true,
           tags:        (input.filter?.tags as string[] | undefined),
           namespace:   (input.filter?.namespace as string | undefined),
           allowUpload: input.allowUpload === true,
@@ -1057,16 +1063,47 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // lag behind edits made since the last repaint.
   el.querySelectorAll<HTMLElement>('.table-input').forEach(wrap => {
     const tid = wrap.dataset.tableId!;
-    const read = (): TableValue => ({
-      columns: [...wrap.querySelectorAll<HTMLInputElement>('thead .table-cell')].map(h => h.value),
-      rows: [...wrap.querySelectorAll('tbody tr')].map(tr =>
-        [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].map(c => c.value)),
-    });
+    // The virtualized data-grid mount (present only past TABLE_VIRTUALIZE_ROWS). When
+    // it's used, `read()` sources from the grid's live value instead of the DOM cells;
+    // the whole toolbar (add-row/col/paste/copy/pop) then works for BOTH paths through
+    // the same read()/commit() below.
+    const vgrid = wrap.querySelector<HTMLElement>('[data-table-vgrid]');
+    let gridHandle: import('../components/data-grid.ts').DataGridHandle | null = null;
+    const modelValue = (): TableValue =>
+      normalizeTableValue(runtime.getModel().find(i => i.id === tid)?.value) ?? { columns: [], rows: [] };
+    const read = (): TableValue => gridHandle
+      ? gridHandle.getValue()
+      : vgrid
+        ? modelValue()                          // grid not mounted yet — never read the empty DOM
+        : ({
+            columns: [...wrap.querySelectorAll<HTMLInputElement>('thead .table-cell')].map(h => h.value),
+            rows: [...wrap.querySelectorAll('tbody tr')].map(tr =>
+              [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].map(c => c.value)),
+          });
     const commit = (t: TableValue): void => { void runtime.setInput(tid, t); onDirty?.(tid); };
 
-    wrap.querySelectorAll<HTMLInputElement>('.table-cell').forEach(cell => {
-      cell.addEventListener('input', () => commit(read()));
-    });
+    if (vgrid) {
+      // Lazy-mount the virtualized grid; its own edits commit through the same path,
+      // saving/restoring scroll across the commit→rebuild→remount so an edit doesn't
+      // fling the grid back to the top.
+      void import('../components/data-grid.ts').then(({ mountDataGrid }) => {
+        gridHandle = mountDataGrid(vgrid, {
+          value: modelValue(),
+          editable: true,
+          onChange: (next) => {
+            const vp = vgrid.querySelector<HTMLElement>('.dg-viewport');
+            if (vp) tableGridScroll.set(tid, vp.scrollTop);
+            commit(next);
+          },
+        });
+        const saved = tableGridScroll.get(tid);
+        if (saved) { const vp = vgrid.querySelector<HTMLElement>('.dg-viewport'); if (vp) vp.scrollTop = saved; }
+      });
+    } else {
+      wrap.querySelectorAll<HTMLInputElement>('.table-cell').forEach(cell => {
+        cell.addEventListener('input', () => commit(read()));
+      });
+    }
 
     // Structural edits commit a mutated read(); the pressed button isn't a
     // field, so the full rebuild runs and repaints the new shape.
@@ -1863,6 +1900,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const fps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')].map(c => c._flatpickr).filter(Boolean);
     if (fps.length) queueMicrotask(() => fps.forEach(fp => fp!.destroy()));
   };
+
+  // Live frame-source controls (Play + Go live) for an onFrame tool: re-inject
+  // them into the source asset input's slot-actions row after this rebuild wiped
+  // the panel. A no-op unless the mounted tool registered a controller
+  // (live-controls.ts) — /multi's fanRuntime never does.
+  mountSidebarLiveControls(el, runtime);
 }
 
 // Starting value for a freshly-added block field. An explicit `default` wins;
@@ -1928,6 +1971,16 @@ function attachedControlHtml(input: InputModelItem): string {
 // Open table-input float panels, keyed by input id — module scope so a panel
 // survives the sidebar rebuilds that replace its wrapper (see the table wiring).
 const tablePops = new Map<string, import('../lib/float-panel.ts').FloatPanel>();
+
+// Past this row count a `table` input renders the VIRTUALIZED data-grid instead of a
+// full <table> of live cells — the plain-text-cell case the shared grid is built for
+// (plan 89). Below it, the existing <table> is byte-identical (battlecards is 5×4, so
+// every hand-authored table stays on the old path). The threshold is generous: real
+// pasted data crosses it, hand-entered tables don't.
+const TABLE_VIRTUALIZE_ROWS = 50;
+// Scroll offset per virtualized table input, kept across the commit→rebuild→remount
+// cycle so a cell edit doesn't fling the grid back to the top.
+const tableGridScroll = new Map<string, number>();
 
 function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}, policy?: InputPolicy): string {
   const id  = escape(input.id);
@@ -2147,10 +2200,16 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const body = t.rows.map((row, ri) => `<tr>${row.map((cell, ci) =>
           `<td><textarea class="table-cell" rows="1" ${cellAttrs(ri, ci)} aria-label="${escape(t.columns[ci] || `Column ${ci + 1}`)}, row ${ri + 1}">${escape(cell)}</textarea></td>`).join('')
         }<td class="table-rowctl"><button type="button" class="table-del-row" data-table-del-row="${ri}" aria-label="Remove row ${ri + 1}">&#x2715;</button></td></tr>`).join('');
-      const grid = t.columns.length
-        ? `<div class="table-scroll"><table class="table-grid">
-            <thead><tr>${head}<th class="table-rowctl"></th></tr></thead><tbody>${body}</tbody></table></div>`
-        : `<p class="table-empty-hint">Paste a table copied from your spreadsheet, doc, or chat — or start one below.</p>`;
+      // Past the threshold, a big table renders the virtualized data-grid (mounted in
+      // the wiring pass below) instead of a full <table> of live cells — same
+      // TableValue contract, so the toolbar/paste/copy/pop all keep working. Small
+      // tables keep the exact existing <table> (per-cell textareas, del-row/col ×).
+      const grid = !t.columns.length
+        ? `<p class="table-empty-hint">Paste a table copied from your spreadsheet, doc, or chat — or start one below.</p>`
+        : t.rows.length > TABLE_VIRTUALIZE_ROWS
+          ? `<div class="table-vgrid" data-table-vgrid></div>`
+          : `<div class="table-scroll"><table class="table-grid">
+            <thead><tr>${head}<th class="table-rowctl"></th></tr></thead><tbody>${body}</tbody></table></div>`;
       // The pop-out sits at the grid's top-right corner, not in the toolbar
       // below: it acts on the TABLE, and in a sidebar that toolbar can be a long
       // scroll away from the header you were reading when you decided the grid

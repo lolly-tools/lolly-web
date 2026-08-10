@@ -244,12 +244,13 @@ export async function createBridge(): Promise<WebHost> {
     start: async (opts) => (await loadMedia()).start(opts),
     stop: () => { mediaImpl?.stop(); },
     subscribe: (cb, opts) => lazySubscribe(loadMedia, (m) => m.subscribe(cb, opts)),
-    // Web-only extra (not on the portable MediaAPI): arm the animated-SVG frame
-    // source for the next start(). Disarming with no impl is a no-op — nothing can
-    // be armed yet — so only a real arm pays for the load.
-    armAnimSource: (markup: string | null) => {
-      if (markup === null) { mediaImpl?.armAnimSource(null); return; }
-      void loadMedia().then((m) => m.armAnimSource(markup));
+    // Web-only extra (not on the portable MediaAPI): arm the animated frame source
+    // (SVG markup / animated raster / video — see media.ts AnimSourceSpec) for the
+    // next start(). Disarming with no impl is a no-op — nothing can be armed yet —
+    // so only a real arm pays for the load.
+    armAnimSource: (src: import('./media.ts').AnimSourceSpec | string | null) => {
+      if (src === null) { mediaImpl?.armAnimSource(null); return; }
+      void loadMedia().then((m) => m.armAnimSource(src));
     },
   } as WebHost['media'];
   // Device capture (v1.17) — mic (and optionally camera) recording + a live audio

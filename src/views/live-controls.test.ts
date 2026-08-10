@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * live-controls contract tests — the Play (animated asset) + Go live (camera)
+ * state machine and its SIDEBAR placement beside the asset picker.
+ *
+ * Driven through the REAL createLiveControls/mountSidebarLiveControls against a
+ * jsdom panel that mirrors renderInputs' documented asset-picker markup
+ * (.asset-picker-row + slot-actions — tool-inputs.ts controlHtml). The runtime
+ * and host are stubs recording what the controller drives: which frame source is
+ * armed (media.armAnimSource) and how the runtime loop is started — including
+ * the provenance-critical `{ source: 'asset' }` for replayed assets.
+ *
+ * NOT covered here (needs a browser): the media bridge's actual frame sampling
+ * (SVG bake / ImageDecoder stepping / <video> drawImage) and camera permissions.
+ *
+ * Run directly:  node --test shells/web/src/views/live-controls.test.ts
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
+
+const dom = new JSDOM('<!DOCTYPE html><body></body>', { pretendToBeVisual: true, url: 'https://example.test/' });
+for (const k of ['window', 'document', 'HTMLElement', 'HTMLButtonElement', 'Element', 'Node', 'Event', 'CustomEvent', 'getComputedStyle']) {
+  try { (globalThis as Record<string, unknown>)[k] = (dom.window as unknown as Record<string, unknown>)[k]; } catch { /* getter-only */ }
+}
+// mountSidebarLiveControls uses CSS.escape; give jsdom a fallback if absent.
+const cssGlobal = (dom.window as unknown as { CSS?: { escape?: (s: string) => string } }).CSS;
+if (!cssGlobal?.escape) {
+  (globalThis as Record<string, unknown>).CSS = { escape: (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`) };
+} else {
+  (globalThis as Record<string, unknown>).CSS = cssGlobal;
+}
+
+const { createLiveControls, registerLiveControls, mountSidebarLiveControls } =
+  await import('./live-controls.ts');
+
+const tick = async (n = 4): Promise<void> => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); };
+const t = (s: string) => s;
+
+const ANIM_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><style>@keyframes spin { to { transform: rotate(1turn) } } .s { animation: spin 9s linear infinite }</style><g class="s"/></svg>';
+const STILL_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>';
+
+interface Ref { type?: string; format?: string; url?: string; meta?: Record<string, unknown> }
+
+function makeRuntime(image: Ref | null = null, render: Record<string, unknown> = { liveDefault: 'lolly/demo/lolly-spin' }) {
+  const starts: Array<string> = [];
+  let stops = 0;
+  let live = false;
+  const model: Array<{ id: string; type?: string; value: unknown }> = [
+    { id: 'effect', type: 'select', value: 'halftone' },
+    { id: 'image', type: 'asset', value: image },
+  ];
+  const rt = {
+    hasFrameHook: true,
+    isLive: () => live,
+    startLive: async (o?: { source?: string }) => { starts.push(o?.source ?? 'camera'); live = true; return true; },
+    stopLive: () => { stops++; live = false; },
+    getModel: () => model,
+    manifest: { id: 'filter', render },
+  };
+  return {
+    rt, starts, stops: () => stops,
+    setImage: (v: Ref | null) => { model[1] = { id: 'image', type: 'asset', value: v }; },
+  };
+}
+
+function makeHost(svgByUrl: Record<string, string> = {}) {
+  const armed: unknown[] = [];
+  const host = {
+    media: { isAvailable: () => true, armAnimSource: (s: unknown) => { armed.push(s); } },
+    assets: { get: async (id: string) => ({ id, url: `blob:asset-${id}` }) },
+    log: () => {},
+  };
+  const fetchSvgMarkup = async (url: string): Promise<string> => {
+    const hit = svgByUrl[url];
+    return hit !== undefined ? hit : ANIM_SVG; // the sample asset's markup by default
+  };
+  return { host, armed, fetchSvgMarkup };
+}
+
+/** A panel mirroring renderInputs' asset-picker markup (the documented structure
+ *  mountSidebarLiveControls targets: trigger inside .asset-picker-row, with the
+ *  slot-actions row as its following sibling). */
+function panelWithAssetRow(withSlotActions = false): HTMLElement {
+  const panel = document.createElement('div');
+  panel.innerHTML = `<div class="input input--asset" role="group">
+      <span class="input-label">Image</span>
+      <div class="asset-picker-row">
+        <button type="button" class="asset-picker-trigger" data-input-id="image">Choose asset…</button>
+      </div>
+      ${withSlotActions ? '<div class="slot-actions"><button type="button" class="slot-act" data-fit-id="image">⤡ Fit canvas</button></div>' : ''}
+    </div>`;
+  document.body.appendChild(panel);
+  return panel;
+}
+
+function makeControls(o: {
+  image?: Ref | null; render?: Record<string, unknown>; svgByUrl?: Record<string, string>;
+  announce?: (msg: string) => void; canDecodeRaster?: boolean;
+} = {}) {
+  const r = makeRuntime(o.image ?? null, o.render ?? { liveDefault: 'lolly/demo/lolly-spin' });
+  const h = makeHost(o.svgByUrl ?? {});
+  const lc = createLiveControls({
+    runtime: r.rt, host: h.host, t,
+    announce: o.announce ?? (() => {}),
+    fetchSvgMarkup: h.fetchSvgMarkup,
+    canDecodeRaster: o.canDecodeRaster ?? true,
+  });
+  return { ...r, ...h, lc };
+}
+
+// ── Sidebar placement ────────────────────────────────────────────────────────
+
+test('sidebar: Play + Go live mount at the head of the asset slot-actions row', async () => {
+  const { rt, lc } = makeControls();
+  registerLiveControls(rt as object, lc);
+  const panel = panelWithAssetRow(true);
+  mountSidebarLiveControls(panel, rt);
+
+  const actions = panel.querySelector('.slot-actions')!;
+  const cluster = actions.querySelector('[data-live-cluster="image"]');
+  assert.ok(cluster, 'the live cluster rides the existing slot-actions row');
+  assert.equal(actions.firstElementChild, cluster, 'live controls LEAD the row (before Fit canvas)');
+  assert.ok(cluster!.querySelector('[data-live-play]'), 'Play button present');
+  assert.ok(cluster!.querySelector('[data-live-camera]'), 'Go live button present');
+  // Same row as the picker: the cluster's container is the picker row's sibling.
+  assert.equal(actions.previousElementSibling?.className, 'asset-picker-row');
+
+  // Re-mount after a panel rebuild is idempotent per rebuild.
+  mountSidebarLiveControls(panel, rt);
+  assert.equal(panel.querySelectorAll('[data-live-cluster]').length, 1);
+  panel.remove();
+  lc.dispose();
+});
+
+test('sidebar: a slot with no actions row gets one created for the buttons', () => {
+  const { rt, lc } = makeControls();
+  registerLiveControls(rt as object, lc);
+  const panel = panelWithAssetRow(false);
+  mountSidebarLiveControls(panel, rt);
+  const actions = panel.querySelector('.slot-actions');
+  assert.ok(actions, 'slot-actions row created');
+  assert.equal(actions!.previousElementSibling?.className, 'asset-picker-row', 'created directly after the picker row');
+  assert.ok(actions!.querySelector('[data-live-play]'));
+  panel.remove();
+  lc.dispose();
+});
+
+test('sidebar: an unregistered runtime (e.g. /multi fanRuntime) is a no-op', () => {
+  const panel = panelWithAssetRow(false);
+  mountSidebarLiveControls(panel, { not: 'registered' });
+  assert.equal(panel.querySelector('[data-live-cluster]'), null);
+  panel.remove();
+});
+
+// ── Play / pause drives the frame loop ───────────────────────────────────────
+
+test('Play arms the sample and starts the loop as source:asset; pause stops and disarms', async () => {
+  const { rt, lc, armed, starts, stops } = makeControls();
+  registerLiveControls(rt as object, lc);
+  const panel = panelWithAssetRow(false);
+  mountSidebarLiveControls(panel, rt);
+  lc.syncFromModel(rt.getModel());
+  await tick();
+
+  const play = panel.querySelector<HTMLButtonElement>('[data-live-play]')!;
+  assert.equal(play.hidden, false, 'Play offered (sample animation available)');
+  play.click();
+  await tick();
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0], 'asset', 'asset playback must NOT claim a camera frame source');
+  const spec = armed.at(-1) as { kind: string; markup: string };
+  assert.equal(spec.kind, 'svg');
+  assert.match(spec.markup, /@keyframes/, 'the sample SVG markup is what plays');
+  assert.equal(lc.playing(), true);
+  assert.equal(play.getAttribute('aria-pressed'), 'true');
+  assert.ok(play.classList.contains('is-live'));
+
+  play.click();
+  await tick();
+  assert.equal(stops(), 1, 'pause stops the runtime loop (freezing the current frame)');
+  assert.equal(armed.at(-1), null, 'pause disarms the anim source');
+  assert.equal(lc.playing(), false);
+  assert.equal(play.getAttribute('aria-pressed'), 'false');
+  panel.remove();
+  lc.dispose();
+});
+
+test('Go live starts the camera loop (default source) and stops on toggle; switching to Play hands over', async () => {
+  const { rt, lc, armed, starts, stops } = makeControls();
+  registerLiveControls(rt as object, lc);
+  const panel = panelWithAssetRow(false);
+  mountSidebarLiveControls(panel, rt);
+  lc.syncFromModel(rt.getModel());
+  await tick();
+
+  const cam = panel.querySelector<HTMLButtonElement>('[data-live-camera]')!;
+  cam.click();
+  await tick();
+  assert.deepEqual(starts, ['camera'], 'the camera path keeps its default (provenance-marking) source');
+  assert.equal(armed.at(-1), null, 'camera start disarms any animated source first');
+  assert.equal(lc.cameraLive(), true);
+
+  // Play while the camera runs: the camera stops, the asset loop takes over.
+  const play = panel.querySelector<HTMLButtonElement>('[data-live-play]')!;
+  play.click();
+  await tick();
+  assert.equal(stops(), 1, 'camera stopped before playback');
+  assert.deepEqual(starts, ['camera', 'asset']);
+  assert.equal(lc.playing(), true);
+  assert.equal(lc.cameraLive(), false);
+  panel.remove();
+  lc.dispose();
+});
+
+// ── Animated-asset detection drives auto-play ────────────────────────────────
+
+test('picking an animated asset (video) auto-plays it through the frame loop', async () => {
+  const announced: string[] = [];
+  const { rt, lc, armed, starts, setImage } = makeControls({ announce: (m) => announced.push(m) });
+  lc.syncFromModel(rt.getModel()); // initial hydrate (image empty)
+  await tick();
+  assert.equal(starts.length, 0, 'nothing auto-plays on open');
+
+  setImage({ type: 'video', format: 'mp4', url: 'blob:clip' });
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  assert.deepEqual(starts, ['asset'], 'an animated pick starts playback as source:asset');
+  assert.deepEqual(armed.at(-1), { kind: 'video', url: 'blob:clip' });
+  assert.ok(announced.some(m => m.includes('Playing the animation')), 'the start is announced');
+  lc.dispose();
+});
+
+test('picking an animated SVG auto-plays; a STILL SVG does not', async () => {
+  const { rt, lc, starts, armed, setImage } = makeControls({
+    render: {}, // no sample — Play exists only for the pick
+    svgByUrl: { 'blob:spin': ANIM_SVG, 'blob:still': STILL_SVG },
+  });
+  registerLiveControls(rt as object, lc);
+  const panel = panelWithAssetRow(false);
+  mountSidebarLiveControls(panel, rt);
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  const play = panel.querySelector<HTMLButtonElement>('[data-live-play]')!;
+  assert.equal(play.hidden, true, 'no sample, no pick → no Play');
+
+  setImage({ type: 'vector', format: 'svg', url: 'blob:still' });
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  assert.equal(starts.length, 0, 'a still SVG never starts the loop');
+  assert.equal(play.hidden, true, 'still pick → Play stays hidden');
+
+  setImage({ type: 'vector', format: 'svg', url: 'blob:spin' });
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  assert.deepEqual(starts, ['asset'], 'the animated SVG pick auto-plays');
+  const spec = armed.at(-1) as { kind: string; markup: string };
+  assert.equal(spec.kind, 'svg');
+  assert.match(spec.markup, /@keyframes/);
+  assert.equal(play.hidden, false);
+  panel.remove();
+  lc.dispose();
+});
+
+test('an animated raster pick plays only where the shell can decode it', async () => {
+  const gif: Ref = { type: 'raster', format: 'gif', url: 'blob:g', meta: { animated: true } };
+  // Decoder available → plays.
+  const a = makeControls({ render: {}, canDecodeRaster: true });
+  a.lc.syncFromModel(a.rt.getModel());
+  await tick();
+  a.setImage(gif);
+  a.lc.syncFromModel(a.rt.getModel());
+  await tick();
+  assert.deepEqual(a.starts, ['asset']);
+  assert.deepEqual(a.armed.at(-1), { kind: 'raster', url: 'blob:g' });
+  a.lc.dispose();
+  // No ImageDecoder → the pick stays a still, exactly as before the feature.
+  const b = makeControls({ render: {}, canDecodeRaster: false });
+  b.lc.syncFromModel(b.rt.getModel());
+  await tick();
+  b.setImage(gif);
+  b.lc.syncFromModel(b.rt.getModel());
+  await tick();
+  assert.equal(b.starts.length, 0);
+  b.lc.dispose();
+});
+
+test('no auto-play on the initial hydrate of a session/URL that lands with an animated pick', async () => {
+  const { rt, lc, starts } = makeControls({ image: { type: 'video', format: 'mp4', url: 'blob:v' } });
+  registerLiveControls(rt as object, lc);
+  const panel = panelWithAssetRow(false);
+  mountSidebarLiveControls(panel, rt);
+  lc.syncFromModel(rt.getModel()); // first sync = hydrate, not a pick
+  await tick();
+  assert.equal(starts.length, 0, 'hydrate never auto-plays');
+  assert.equal(panel.querySelector<HTMLButtonElement>('[data-live-play]')!.hidden, false, 'but Play is offered');
+  panel.remove();
+  lc.dispose();
+});
+
+test('swapping the source away mid-playback stops the loop cleanly', async () => {
+  const { rt, lc, stops, starts, armed, setImage } = makeControls({ render: {} });
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  setImage({ type: 'video', format: 'mp4', url: 'blob:v1' });
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  assert.equal(lc.playing(), true);
+
+  setImage({ type: 'raster', format: 'png', url: 'blob:still' });
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  assert.equal(stops(), 1, 'playback of the departed source stopped');
+  assert.equal(armed.at(-1), null);
+  assert.equal(lc.playing(), false);
+  assert.equal(starts.length, 1, 'a still pick starts nothing new');
+  lc.dispose();
+});
+
+// ── Stage fallback ───────────────────────────────────────────────────────────
+
+test('stage fallback renders the classic floating toggles', async () => {
+  const { rt, lc } = makeControls();
+  const stage = document.createElement('div');
+  document.body.appendChild(stage);
+  lc.mountStage(stage);
+  assert.ok(stage.querySelector('.canvas-live-toggle:not(.canvas-anim-toggle)'), 'Go live toggle');
+  assert.ok(stage.querySelector('.canvas-live-toggle.canvas-anim-toggle'), 'Play toggle');
+  lc.syncFromModel(rt.getModel());
+  await tick();
+  const play = stage.querySelector<HTMLButtonElement>('.canvas-anim-toggle')!;
+  assert.equal(play.hidden, false, 'sample available → Play offered on the stage too');
+  stage.remove();
+  lc.dispose();
+});

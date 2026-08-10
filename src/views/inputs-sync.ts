@@ -123,6 +123,26 @@ function isEditingBlockField(el: HTMLElement): boolean {
 }
 
 /**
+ * True while focus is inside a virtualized table GRID (the >50-row data-grid,
+ * components/data-grid). Like a block field, the grid's own DOM holds the
+ * authoritative value — it repaints the edited cell before committing — so a
+ * rebuild on the commit is pure waste, and DESTRUCTIVE when the table is popped
+ * out: the rebuild re-pops the float panel (tool-inputs' stale-repop), exiting
+ * fullscreen and dropping the caret to <body> on every single cell edit. The
+ * grid's cells and editor carry NO data-field-id, so isEditingBlockField can't
+ * see them; this matches on the grid container (.table-vgrid) instead, in the
+ * sidebar OR a popped panel. Structural (feature-tested closest), like
+ * inPoppedTable — a plain stub simply reports "not in a grid".
+ */
+function isEditingGrid(el: HTMLElement): boolean {
+  const active = (el && el.ownerDocument && el.ownerDocument.activeElement) as
+    (Element & { closest?: (s: string) => unknown }) | null;
+  if (!active || typeof active.closest !== 'function') return false;
+  if (!active.closest('.table-vgrid')) return false;
+  return el.contains(active as unknown as Node) || inPoppedTable(active);
+}
+
+/**
  * Whether a model change needs no sidebar work at all. Safe to skip ONLY when the
  * set of visible rows is unchanged AND every value that changed is already shown
  * by its control (unchanged values keep their object identity, so === detects
@@ -132,6 +152,9 @@ export function canSkipInputsRebuild(el: HTMLElement, model: SyncableInput[], pr
   if (!prevModel) return false;
   // Defer the rebuild while a block field is being typed into (see above).
   if (isEditingBlockField(el)) return true;
+  // …and while a virtualized table grid holds focus — the grid already shows the
+  // edit, and rebuilding would remount it (and re-pop a fullscreen panel).
+  if (isEditingGrid(el)) return true;
   if (model.length !== prevModel.length) return false;
   if (visibleInputKey(model) !== visibleInputKey(prevModel)) return false;
   const prevById = new Map(prevModel.map(i => [i.id, i]));

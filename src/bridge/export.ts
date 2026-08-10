@@ -36,6 +36,7 @@ import {
   featureSettingsToHb, letterSpacingPx,
 } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
+import { namespaceInlinedSvgIds } from './svg-inline-ids.ts';
 import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
 import { placeBackground } from './bg-layout.ts';
@@ -7408,7 +7409,12 @@ export async function inlineSvgFromImg(src: string): Promise<Element | null> {
   }
   if (!text || !/<svg[\s>]/i.test(text)) return null;
   const svg = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
-  return (svg && svg.tagName && svg.tagName.toLowerCase() === 'svg') ? svg : null;
+  if (!(svg && svg.tagName && svg.tagName.toLowerCase() === 'svg')) return null;
+  // Inlined files carry their own generated ids — namespace them or same-named
+  // ids across several inlined files bind every reference to the FIRST one
+  // (four covers all clipped by cover 1's `fcovclip-1`; see svg-inline-ids.ts).
+  namespaceInlinedSvgIds(svg, src);
+  return svg;
 }
 
 // ── SUSE font embedding ───────────────────────────────────────────────────────
@@ -8422,8 +8428,13 @@ function hideLiveCanvases(live: HTMLCanvasElement[]): () => void {
 async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number, clipSec?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
-  const targetW = ((opts.width  as number) > 0) ? (opts.width  as number) : nodeW;
-  const targetH = ((opts.height as number) > 0) ? (opts.height as number) : nodeH;
+  // Round to EVEN: H.264 (yuv420p) rejects odd dimensions, so an odd export size (e.g. a
+  // 555px stage) makes the MP4 encoder fail and the shell silently falls back to WebM.
+  // Even dims are safe for every frame-source consumer (mp4/webm/gif/apng/ico); the ≤1px
+  // trim is imperceptible. Min 2 so a tiny node can't round to zero.
+  const evenFloor = (n: number): number => Math.max(2, Math.floor(n / 2) * 2);
+  const targetW = evenFloor(((opts.width  as number) > 0) ? (opts.width  as number) : nodeW);
+  const targetH = evenFloor(((opts.height as number) > 0) ? (opts.height as number) : nodeH);
   const dtoOpts = {
     width:  targetW,
     height: targetH,
@@ -8547,6 +8558,15 @@ async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<
     async frame(t = 0, clipSec?: number): Promise<HTMLCanvasElement> {
       if (frameClock) renderFrameAt(frameClock, t, clipSec);   // deterministic phase — no settle wait needed
       else if (!settled) { await new Promise<void>(r => setTimeout(r, waitMs)); settled = true; }
+      // Frame-accurate anim-source drive: a live/onFrame tool (e.g. filter) registers
+      // __lollyFrameDrive to re-run its effect over the SOURCE frame at time t — the
+      // deterministic render the live preview showed. Awaited so the base is updated before
+      // capture. Fail-safe: an error just leaves the previous (frozen) base in place.
+      const drive = (node as unknown as { __lollyFrameDrive?: (t: number, durationMs: number) => Promise<void> | void }).__lollyFrameDrive;
+      if (typeof drive === 'function') {
+        try { await drive(t, durationMs); }
+        catch (e) { _host?.log?.('warn', `__lollyFrameDrive threw: ${(e as Error)?.message ?? e}`); }
+      }
       // Scrub any CSS animation/transition to the exact frame time regardless of
       // frameClock — a clocked canvas can still share the DOM with CSS-animated
       // chrome around it. No-op when the node has none.

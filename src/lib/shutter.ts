@@ -23,9 +23,11 @@
    without a GPU.
 
    THE MARK. At ~70% of the close the Lolly mark pops out on top of the swirl,
-   sized to 18% of the stage's smaller dimension. It's an inline SVG (lib/shutter-mark.ts)
-   whose three nested layers counter-spin with a slow hue drift (animation in
-   styles/parts/tool.css); its coloured spiral is painted the SAME brand tone the iris
+   sized to 28% of the stage's smaller dimension. It is STACKED LAYER DIVS
+   (lib/shutter-mark.ts, GENERATED from the repo-root icon.svg by
+   scripts/gen-shutter-mark.ts) whose three spinning slices turn with a slow hue
+   drift (animation in styles/parts/tool.css, on the DIVS so the spin composites
+   off-thread and survives the export's main-thread stall); its coloured spiral is painted the SAME brand tone the iris
    stripe uses (--exsh-swirl ← tone.green), so mark and iris agree. Small + brief + over
    the seal, so the spin/hue costs nothing measurable even mid-export — unlike a filter on
    the full-screen iris, which is why THAT stays a shader with no CSS filter.
@@ -38,7 +40,7 @@ import { playSfx } from './sfx.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
 import { liveAccentHint } from './viz-palette.ts';
 import { currentTheme } from '../theme.ts';
-import { SHUTTER_MARK_SVG } from './shutter-mark.ts';
+import { SHUTTER_MARK_LAYERS } from './shutter-mark.ts';
 
 export interface Shutter {
   /** Close the iris. Resolves once it is fully sealed. */
@@ -53,7 +55,8 @@ export interface Shutter {
 /* ── the tuned look ──────────────────────────────────────────────────────── */
 const DURATION  = 375;     // ms for one direction (parity with the old iris)
 const GAMMA     = 0.7;     // shapes raw progress → swirl closure (front-loaded)
-const MARK_FRAC = 0.18;    // mark size as a fraction of the stage's SMALLER side
+const MARK_FRAC = 0.28;    // mark size as a fraction of the stage's SMALLER side (raised from
+                           // 0.18 once the mark became the quality vector icon)
 const POP_LO    = 0.6;     // close-progress where the mark starts to appear …
 const POP_HI    = 0.8;     // … and where it has fully popped
 const SEAL_LO   = 0.82;    // WebGL path: plate insurance only over the last sliver
@@ -261,7 +264,13 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   const mark = document.createElement('div');
   mark.className = 'export-shutter__mark';
   mark.setAttribute('aria-hidden', 'true');
-  mark.innerHTML = SHUTTER_MARK_SVG;   // inline Lolly swirl — its layers spin via tool.css
+  // Inline Lolly swirl, one stacked <div> per generated layer (shutter-mark.ts,
+  // derived from the repo-root icon.svg). The DIVS carry the spin: an HTML
+  // transform composites off the main thread, so the mark keeps turning while
+  // the export render blocks it — SVG-child transforms (the old single-SVG
+  // mark) froze the instant the export started.
+  mark.innerHTML = SHUTTER_MARK_LAYERS.map((l) =>
+    `<div class="export-shutter__layer${l.spin ? ` export-shutter__layer--spin${l.spin}` : ''}${l.blend === 'multiply' ? ' export-shutter__layer--multiply' : ''}">${l.svg}</div>`).join('');
   const flash = document.createElement('div');
   flash.className = 'export-shutter__flash';
   root.append(seal, cv, mark, flash);

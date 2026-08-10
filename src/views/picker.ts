@@ -213,6 +213,13 @@ interface PickerOpts {
   includeDeprecated?: boolean;
   title?: string;
   allowUpload?: boolean;
+  /**
+   * The calling slot's TOOL can consume moving pictures (it declares an onFrame
+   * hook, so the live frame loop plays a video pick through the render). Widens an
+   * `image` pick to also offer the user's video uploads — capability-driven, never
+   * a per-tool special case. Ignored for every other `type`.
+   */
+  motion?: boolean;
   current?: string;
   editTool?: (toolUrl: string, mode?: string) => Promise<AssetRef | null>;
   currentToolUrl?: string;
@@ -367,12 +374,13 @@ async function render(
 
   // "Upscale" beside it: enlarge a raster image on-device via the optional
   // host.upscale bridge (v1.101), saving the result as a user raster asset.
-  // Offered for a raster slot or an untyped upload slot (never vector/audio/video).
+  // Offered for a slot that accepts rasters — 'raster', the raster-or-vector
+  // 'image' superset, or an untyped upload slot (never vector/audio/video).
   // Feature-detected on the bridge, not capability-gated.
-  const canUpscale = showUserAssets && (opts.type === 'raster' || opts.type === undefined)
+  const canUpscale = showUserAssets && (opts.type === 'raster' || opts.type === 'image' || opts.type === undefined)
     && host.upscale?.isAvailable() === true;
   // Background removal — same slot gate as upscale; hidden until a model is staged.
-  const canMatte = showUserAssets && (opts.type === 'raster' || opts.type === undefined)
+  const canMatte = showUserAssets && (opts.type === 'raster' || opts.type === 'image' || opts.type === undefined)
     && host.matte?.isAvailable() === true && (host.matte.models().length > 0);
 
   // The per-card "Upscale" affordance (a hover-revealed button on RASTER cards —
@@ -1973,6 +1981,11 @@ async function render(
     ])
       .then(([list]) => {
         // An `image` slot accepts raster OR vector (SVG); every other type is exact.
+        // An `image` slot whose caller declared `motion` (the tool has an onFrame
+        // hook, so the live frame loop can PLAY a video through the effect — see
+        // tool-inputs.ts) also accepts the user's video uploads. Lottie stays out
+        // even then: the frame loop has no lottie lane, and a pick that can only
+        // ever render "Could not read this image" is worse than absence.
         //
         // An UNTYPED pick used to accept everything, which tiled the engine-data
         // assets that share this rail as broken images: an installed font, and
@@ -1981,7 +1994,9 @@ async function render(
         // for a file that was gone. A caller that names a data type still gets it;
         // it is only "everything" that means "everything with a picture".
         const typeOk = (t: string): boolean => (opts.type
-          ? t === opts.type || (opts.type === 'image' && (t === 'raster' || t === 'vector'))
+          ? t === opts.type
+            || (opts.type === 'image' && (t === 'raster' || t === 'vector'))
+            || (opts.type === 'image' && opts.motion === true && t === 'video')
           : isPlaceableAsset({ type: t }));
         userAssets = list.filter(a => typeOk(a.type)).filter(a => !hiddenSet.has(assetBaseId(a.id)));
         renderUserAssets();

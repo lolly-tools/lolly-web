@@ -107,6 +107,7 @@ import { icon } from '../lib/icons.ts';
 import { asRow } from './tool-types.ts';
 import { resolveCanvasFastCfg, geometryFastPathPlan, boundEndpointIds, type FastPathCfg } from './canvas-scene.ts';
 import type { Box } from './free-canvas-math.ts';
+import { migrateCarouselToFrames } from './free-canvas-math.ts';
 import { encodeBlocksCompact } from '../lib/blocks-url.ts';
 import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
 import { isTextEditingTarget } from '../lib/typing-target.ts';
@@ -114,6 +115,7 @@ import {
   syncInputs, openEmbedEditor, scrollToControl, focusSidebarBlock,
   fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging, asStr, stopSlotPreview,
 } from './tool-inputs.ts';
+import { createLiveControls, registerLiveControls, mountSidebarLiveControls } from './live-controls.ts';
 import {
   renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt,
   printEnabled, marksToCsv, c2paDefaultOn, readBleed, readMarks, exportTargetNode,
@@ -592,7 +594,16 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
 
   let initialValues: Record<string, InputValue> = values;
   if (slot) {
-    const saved = await host.state.load(slot);
+    let saved = await host.state.load(slot);
+    // A retired carousel-maker session redirects into Design (`?template=carousel&slot=`):
+    // reshape its flat page-strip model into `kind:"frame"` artboards so per-artboard
+    // image-sequence export survives the fold. A pure no-op for a native Design session
+    // (no pages/pageW/pageH) or an already-framed doc, and SCOPED to Design so it never
+    // rewrites carousel-maker's own resume while that tool still exists.
+    // (migrateCarouselToFrames — free-canvas-math.ts)
+    if (saved && toolId === 'layout-studio') {
+      saved = migrateCarouselToFrames(saved as Record<string, unknown>) as typeof saved;
+    }
     if (saved) initialValues = { ...saved, ...values };
   }
   // The carried model wins outright, and only here. It is not a competing source of
@@ -2762,6 +2773,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const ref = await host.assets.pick({
       title: tRaw('Choose {name}', { name: input.label ?? input.id }),
       type: input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
+      // Same capability-driven widening as the sidebar picker (tool-inputs.ts):
+      // an onFrame tool's image slot also offers the user's video uploads.
+      motion: runtime.hasFrameHook === true,
       tags: (input.filter?.tags as string[] | undefined),
       namespace: (input.filter?.namespace as string | undefined),
       allowUpload: input.allowUpload === true,
@@ -3301,6 +3315,26 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; paint(); }
   }
 
+  // Live frame sources (engine v1.4 camera / v1.113 animated asset): ONE
+  // controller (live-controls.ts) owns "Go live" + "Play" and every button
+  // placement. SIDEBAR placement is primary — the buttons ride the source asset
+  // input's slot-actions row, re-injected by renderInputs on every panel rebuild
+  // (mountSidebarLiveControls) — and the floating canvas toggles remain only when
+  // there is no sidebar row to ride (canvas layout / no asset input). Picking an
+  // animated asset (CSS/SMIL SVG, GIF/APNG via ImageDecoder, video) auto-plays it
+  // through the tool's onFrame — the same frame path and drop-overlap throttle as
+  // the camera — with `source:'asset'` so provenance never claims a camera
+  // capture; pausing freezes the current frame so stills/exports keep working.
+  // The sample animation (render.liveDefault) stays manual-start only.
+  // Created BEFORE runtime.subscribe so the callback below can never hit the
+  // binding in its temporal dead zone.
+  const liveControls = createLiveControls({
+    runtime, host, t, announce,
+    onStart: () => startFrameFps(runtime.manifest.id), // dev-only fps meter (gated)
+    onStop: stopFrameFps,
+  });
+  if (liveControls.enabled) registerLiveControls(runtime, liveControls);
+
   runtime.subscribe(({ model, hydrated }) => {
     fpsTick(); // dev-only onFrame fps meter (no-op unless lolly.frameFps='1' + live)
     // Sidebar sync is cheap and must stay responsive, so it runs synchronously on
@@ -3308,6 +3342,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (inputsEl && !_sliderDragging) {
       prevInputsModel = syncInputs(inputsEl, model, prevInputsModel, runtime, host, markUserDirty);
     }
+    // Reflect a source swap in the live controls (auto-play a fresh animated pick,
+    // stop playback whose source was swapped away). Cheap: no-op unless the source
+    // asset input's value identity changed.
+    if (liveControls.enabled) liveControls.syncFromModel(model);
     pendingFrame = { model, hydrated };
     if (!rafId) rafId = requestAnimationFrame(paint);
     // Carousel: a change to the page count / page size reshapes the editing strip.
@@ -3316,120 +3354,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (pagesMode) syncStrip();
   });
 
-  // Live camera (engine v1.4): a tool that declares an `onFrame` hook can react to a
-  // live camera stream. Pure progressive enhancement — the toggle appears only when
-  // the tool has the hook AND this shell exposes a camera (host.media); otherwise the
-  // tool just runs as a still-image tool. The runtime owns the frame→onFrame→repaint
-  // loop; here we only drive the toggle and surface permission errors.
-  if (stageEl && runtime.hasFrameHook && host.media?.isAvailable?.()) {
-    const liveBtn = document.createElement('button');
-    liveBtn.type = 'button';
-    liveBtn.className = 'canvas-live-toggle';
-    liveBtn.setAttribute('aria-pressed', 'false');
-    liveBtn.title = t('React to your camera in real time');
-    liveBtn.innerHTML = `<span class="canvas-live-dot" aria-hidden="true"></span><span class="canvas-live-label">${t('Go live')}</span>`;
-    stageEl.appendChild(liveBtn);
-    const setLiveUi = (on: boolean): void => {
-      liveBtn.classList.toggle('is-live', on);
-      liveBtn.setAttribute('aria-pressed', String(on));
-      liveBtn.querySelector('.canvas-live-label')!.textContent = on ? t('Live') : t('Go live');
-    };
-    liveBtn.addEventListener('click', async () => {
-      if (runtime.isLive()) { runtime.stopLive(); stopFrameFps(); setLiveUi(false); announce(t('Live camera stopped')); return; }
-      liveBtn.disabled = true;
-      try {
-        // Camera and the animated-SVG source share the media singleton; disarm the
-        // anim source so start() opens the camera rather than replaying the animation.
-        (host.media as unknown as { armAnimSource?: (m: string | null) => void }).armAnimSource?.(null);
-        await runtime.startLive();
-        startFrameFps(runtime.manifest.id); // dev-only fps meter (gated); measures the live onFrame rate
-        setLiveUi(true);
-        announce(t('Live camera started — the canvas now reacts to your camera'));
-      } catch (e) {
-        announce((e as { name?: string })?.name === 'NotAllowedError' ? t('Camera permission was declined.') : t('Couldn’t start the camera.'), { assertive: true });
-        host.log('warn', 'startLive failed', { error: String(e) });
-      } finally {
-        liveBtn.disabled = false;
-      }
-    });
-  }
-
-  // Live animated-SVG source (no camera): a tool that declares render.liveDefault gets
-  // its sample animation played THROUGH its onFrame hook — so e.g. filter shows its
-  // effect on a moving subject with no webcam. Auto-plays once brand vars have landed;
-  // a toggle pauses/resumes. Regular tools "play as they would" (this is the auto-play
-  // decision) — Sequence Studio, by contrast, seeks the animation to the timeline. A
-  // still export is unaffected: onFrame tools export the current frame.
-  // Non-camera animated source: a "Play" toggle drives render.liveDefault through the
-  // tool's onFrame (see media.ts armAnimSource). The sampler itself is cheap; what stalled
-  // the vector effects was their per-frame node count (26k+ dots re-parsed each frame),
-  // fixed by the live cell caps in the effect hooks. Manual toggle for now — flip the
-  // auto-start below on once the vector effects are confirmed smooth in the wild.
-  const liveDefault = (runtime.manifest.render as { liveDefault?: string } | undefined)?.liveDefault;
-  if (stageEl && runtime.hasFrameHook && liveDefault) {
-    const animMedia = host.media as unknown as { armAnimSource?: (m: string | null) => void };
-    let markupPromise: Promise<string | null> | null = null;
-    // Fetch + sanitise the asset SVG once, then bake the LIVE brand primary into it: the
-    // sampler renders it in an isolated <img>, which can't inherit :root's --brand-primary,
-    // so we resolve the var to the brand's value here. Cached for the tool's lifetime.
-    const prepareMarkup = (): Promise<string | null> => {
-      if (!markupPromise) {
-        markupPromise = (async () => {
-          try {
-            const ref = await host.assets.get(liveDefault);
-            const url = (ref as { url?: string } | null)?.url;
-            if (!url) return null;
-            const { fetchAnimSvg } = await import('./anim-svg-mount.ts');
-            const clean = await fetchAnimSvg(url);
-            const bp = getComputedStyle(document.documentElement).getPropertyValue('--brand-primary').trim();
-            return bp ? clean.replace(/var\(--brand-primary\s*,\s*[^)]*\)/g, bp) : clean;
-          } catch (e) {
-            host.log('warn', 'live anim source prepare failed', { error: String(e) });
-            return null;
-          }
-        })();
-      }
-      return markupPromise;
-    };
-
-    const playBtn = document.createElement('button');
-    playBtn.type = 'button';
-    playBtn.className = 'canvas-live-toggle canvas-anim-toggle';
-    playBtn.setAttribute('aria-pressed', 'false');
-    playBtn.title = t('Play the sample animation through this effect');
-    playBtn.innerHTML = `<span class="canvas-live-dot" aria-hidden="true"></span><span class="canvas-live-label">${t('Play')}</span>`;
-    stageEl.appendChild(playBtn);
-    const setPlayUi = (on: boolean): void => {
-      playBtn.classList.toggle('is-live', on);
-      playBtn.setAttribute('aria-pressed', String(on));
-      playBtn.querySelector('.canvas-live-label')!.textContent = on ? t('Playing') : t('Play');
-    };
-    const startAnim = async (): Promise<void> => {
-      if (runtime.isLive()) return;
-      const markup = await prepareMarkup();
-      if (!markup || !animMedia.armAnimSource) return;
-      animMedia.armAnimSource(markup);
-      await runtime.startLive();
-      startFrameFps(runtime.manifest.id);
-      setPlayUi(true);
-    };
-    const stopAnim = (): void => {
-      runtime.stopLive();
-      stopFrameFps();
-      animMedia.armAnimSource?.(null);
-      setPlayUi(false);
-    };
-    playBtn.addEventListener('click', async () => {
-      if (runtime.isLive()) { stopAnim(); announce(t('Animation paused')); return; }
-      playBtn.disabled = true;
-      try { await startAnim(); announce(t('Playing the sample animation through the effect')); }
-      catch (e) { host.log('warn', 'startLive (anim) failed', { error: String(e) }); }
-      finally { playBtn.disabled = false; }
-    });
-    // TODO(auto-play): flip this on once the per-frame bake is confirmed smooth in the
-    // wild — the product decision is auto-play for regular tools. Manual for now so opening
-    // the tool can never stall on the live loop.
-    // void brandVarsReady.then(() => { setTimeout(() => { if (!runtime.isLive()) void startAnim().catch(() => {}); }, 120); });
+  if (liveControls.enabled) {
+    // Classify the initial source (shows Play for a restored animated pick or the
+    // sample; never auto-plays on open).
+    liveControls.syncFromModel(runtime.getModel());
+    // Canvas-stage fallback only where the sidebar can't host the buttons (canvas
+    // layout hides the panel; no asset input → no row to ride). If the panel was
+    // already rendered before registration, inject the sidebar pair now — every
+    // later rebuild re-injects from renderInputs itself.
+    if (inputsEl && !canvasLayout && liveControls.sourceInputId) mountSidebarLiveControls(inputsEl, runtime);
+    else if (stageEl) liveControls.mountStage(stageEl);
   }
 
   // Device recording (engine v1.17): a tool declaring render.capture gets a Record

@@ -142,7 +142,10 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // (#/d → #/d?print, or an old #/platform?x redirect) re-mounts and re-applies
   // the open+scroll, instead of being deduped as the same 'dashboard' route.
   dashboard: { label: 'Dashboard', viewClasses: ['dashboard-view'], sigKey: 'params', footer: 'search' },
-  pro: { label: 'Batch mode', viewClasses: ['pro-view'], footer: 'none' },
+  // params-keyed so #/pro?s=slot,slot… ("Edit as sheet") and #/pro?session=… deep
+  // links re-seed the grid and survive Back. Safe: /pro never rewrites its own
+  // params mid-session (its only location writes navigate AWAY — see index.ts).
+  pro: { label: 'Batch mode', viewClasses: ['pro-view'], sigKey: 'params', footer: 'none' },
   projects: { label: 'Projects', tab: 'projects', viewClasses: ['projects-view'], sigKey: 'folderId', footer: 'search' },
   catalog: { label: 'Catalogue', tab: 'catalog', viewClasses: ['catalog-view'], footer: 'search' },
   // Verify/Convert/PDF/Lab keep their own chrome in v1 — the bar reaches them in
@@ -415,6 +418,18 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // keeps its "imports only engine/host/siblings" isolation intact.
       const { openFolderOverlay } = await import('./folder-overlay.ts');
       const sessionSlot = new URLSearchParams(route.params || '').get('session');
+      // Projects "Edit as sheet": #/pro?s=slot,slot… seeds one grid row per
+      // selected session (mirrors #/multi?s=…). Read the refs from the RAW query,
+      // NOT via URLSearchParams: a ref is `__batch__:<label>` and a label may hold
+      // ',' or '%', which encodeURIComponent wrote as %2C/%25. URLSearchParams.get
+      // would decode ONCE — turning an encoded %2C back into a delimiter comma, and
+      // leaving a bare '%' that a second decode chokes on. So split the encoded
+      // value on the literal commas that only ever separate refs, then decode each
+      // piece exactly once (guarded, so a hand-typed malformed ?s= can't throw the
+      // whole mount).
+      const rawS = (route.params || '').split('&').find(p => p.startsWith('s='))?.slice(2) ?? '';
+      const safeDecode = (s: string): string => { try { return decodeURIComponent(s); } catch { return s; } };
+      const seedRefs = rawS ? rawS.split(',').map(safeDecode).filter(Boolean) : [];
       // Inject a metrics hook rather than letting /pro import metrics.js — keeps
       // the folder's "imports only engine/host/siblings" isolation intact.
       const onBatchRendered = (files: Array<{ name: unknown }>) => {
@@ -422,7 +437,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
         bumpMetric('filesRendered', files.length);
         for (const f of files) recordFormat(String(f.name).split('.').pop());
       };
-      await mountPro(view, host as unknown as Parameters<typeof mountPro>[1], { sessionSlot, onBatchRendered, openFolderOverlay } as unknown as Parameters<typeof mountPro>[2]);
+      await mountPro(view, host as unknown as Parameters<typeof mountPro>[1], { sessionSlot, seedRefs, onBatchRendered, openFolderOverlay } as unknown as Parameters<typeof mountPro>[2]);
       break;
     }
     // --- Projects: a gallery-style view of folders of saved sessions. Shares the

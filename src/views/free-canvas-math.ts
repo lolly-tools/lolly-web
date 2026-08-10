@@ -854,6 +854,132 @@ export function renumberFrameOrder(
   });
 }
 
+// ── Carousel → Design frame migration (plan 92 — folding carousel-maker into Design) ─
+//
+// A saved carousel-maker session stores a FLAT global-strip boxes array (global x across the
+// whole N-page strip; NO kind:'frame' boxes) plus the input values pages/pageW/pageH. Design
+// renders per-artboard [data-pdf-page] pages ONLY when boxes carry kind:'frame' + a `frame`
+// membership field, and its render reads the STORED `frame` field — it never re-resolves
+// geometry. So a bare resume of a carousel session into Design shows one flat wide strip and
+// loses image-sequence / multi-page PDF / PPTX export. This shim converts the record into
+// Design frame shape so those paths work again.
+//
+// The page math is carousel-maker/hooks.js verbatim (GAP=56, stride=pw+GAP, and pageOf =
+// clamp(round((boxCentreX - pw/2)/stride), 0, count-1) with boxCentreX = box.x + max(1,box.w)/2).
+// It deliberately uses pageOf (round + clamp), NOT resolveFrame (strict containment): the two
+// DISAGREE in the GAP=56 seams between artboards and for out-of-strip boxes, and stamping the
+// stored `frame` via pageOf is exactly what bridges that difference. PURE + DOM-free: reads the
+// record, returns a NEW record, never mutates the input.
+
+/** Which entries the carousel record carries + a boxes array, all optional (defensive). */
+export type CarouselRecord = { [key: string]: unknown };
+
+/** GAP between carousel artboards — render.pages.gap in carousel-maker/tool.json. */
+const CAROUSEL_GAP = 56;
+
+/** carousel-maker/hooks.js safeColor (the shared copy) — lets through only shapes CSS can't
+ *  be smuggled past, so a hand-edited record can't inject a style property. */
+function carouselSafeColor(v: unknown, fallback: string): string {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return fallback;
+  if (/^#[0-9a-fA-F]{3,8}$/.test(s)) return s;
+  if (/^(rgb|rgba|hsl|hsla)\([0-9.,%\s/]+\)$/i.test(s)) return s;
+  if (/^[a-zA-Z]+$/.test(s)) return s; // named colour (e.g. "transparent", "tomato")
+  return fallback;
+}
+
+/** clamp v into [a,b] (carousel-maker/hooks.js shared clamp). */
+function clampNum(v: number, a: number, b: number): number {
+  return v < a ? a : v > b ? b : v;
+}
+
+/**
+ * Pick a deterministic frame-id prefix so that `prefix + (1..count)` collides with NO existing
+ * box id. Escalates by prepending 'p' until clear — deterministic and collision-free.
+ */
+function carouselFramePrefix(existingIds: Set<string>, count: number): string {
+  let prefix = 'page-';
+  while (true) {
+    let clash = false;
+    for (let i = 1; i <= count; i++) {
+      if (existingIds.has(prefix + i)) { clash = true; break; }
+    }
+    if (!clash) return prefix;
+    prefix = 'p' + prefix;
+  }
+}
+
+/**
+ * Convert a resumed carousel-maker session record into Design frame shape:
+ *   • synthesize one kind:'frame' artboard box per page (x=i*stride, y=0, w=pw, h=ph, bg=pageBg,
+ *     a stable unique id, order=i, clipChildren:true) — mirroring Design's frame addKind seed;
+ *   • stamp every original box with `frame` = the artboard id for its pageOf() bucket, keeping
+ *     GLOBAL x/y (Design's frame render does child.x − frame.x itself — do NOT pre-subtract);
+ *   • return a NEW record whose boxes array is [ ...frames, ...originals ] — frames FIRST so they
+ *     paint BEHIND their children (Design paints in array order, later = on top).
+ *
+ * ADDITIVE + defensive. Returns the record UNCHANGED when:
+ *   • it is not an object, or has no `boxes` array;
+ *   • its boxes already contain ANY kind:'frame' box (already a Design doc / already migrated);
+ *   • it is not carousel-shaped (none of pages / pageW / pageH present).
+ * The input record and its boxes/box objects are never mutated.
+ */
+export function migrateCarouselToFrames(record: CarouselRecord): CarouselRecord {
+  if (!record || typeof record !== 'object') return record;
+  const boxes = (record as { boxes?: unknown }).boxes;
+  if (!Array.isArray(boxes)) return record;
+  // Idempotent-ish: a real Design doc / already-migrated record already carries frame boxes.
+  if (boxes.some((b) => b != null && typeof b === 'object' && String((b as Box).kind) === 'frame')) return record;
+  // Defensive: a non-carousel record (no page geometry at all) is left alone.
+  const rec = record as { pages?: unknown; pageW?: unknown; pageH?: unknown; background?: unknown; transparentBg?: unknown };
+  if (rec.pages == null && rec.pageW == null && rec.pageH == null) return record;
+
+  const count = clampNum(Math.round(num(rec.pages as InputValue, 3)), 1, 6);
+  const pw = Math.max(1, Math.round(num(rec.pageW as InputValue, 1080)));
+  const ph = Math.max(1, Math.round(num(rec.pageH as InputValue, 1350)));
+  const stride = pw + CAROUSEL_GAP;
+  const pageBg = rec.transparentBg === true ? 'transparent' : carouselSafeColor(rec.background, '#ffffff');
+
+  const existingIds = new Set<string>();
+  for (const b of boxes) {
+    const id = b != null && typeof b === 'object' ? (b as Box).id : undefined;
+    if (id != null && id !== '') existingIds.add(String(id));
+  }
+  const prefix = carouselFramePrefix(existingIds, count);
+  const frameIdFor = (page: number): string => prefix + (page + 1);
+
+  // pageOf — carousel-maker/hooks.js verbatim (round to nearest artboard column, clamp to strip).
+  const pageOf = (b: Box): number => {
+    const cx = num(b?.x, 0) + Math.max(1, num(b?.w, 1)) / 2;
+    return clampNum(Math.round((cx - pw / 2) / stride), 0, count - 1);
+  };
+
+  const frames: Box[] = [];
+  for (let i = 0; i < count; i++) {
+    frames.push({
+      kind: 'frame',
+      id: frameIdFor(i),
+      x: i * stride,
+      y: 0,
+      w: pw,
+      h: ph,
+      bg: pageBg,
+      order: i,
+      clipChildren: true,
+      shape: 'rect',
+    });
+  }
+
+  // Stamp membership onto a COPY of each original box; global x/y preserved.
+  const stamped: unknown[] = boxes.map((b) =>
+    b != null && typeof b === 'object'
+      ? { ...(b as Box), frame: frameIdFor(pageOf(b as Box)) }
+      : b,
+  );
+
+  return { ...record, boxes: [...frames, ...stamped] };
+}
+
 // ── Frames AS scenes — turn frame order into a timeline sequence (plan 92 §Frames) ─
 //
 // "Frames are scenes": the frame ORDER is a slideshow. Sequencing a frame doc lays every
