@@ -144,7 +144,8 @@ const PREVIEW_PATTERN = /^\/catalog\/previews\//;
 // before CACHE_PATTERNS so fonts under /tools/ take this path, not network-first.
 const IMMUTABLE_PATTERNS = [
   /^\/assets\//,
-  // The bundled app UI fonts (Outfit + SUSE Mono variable woff2, /fonts/) —
+  // The bundled app UI fonts (SUSE + SUSE Mono variable woff2, and the legacy
+  // Outfit face, all under /fonts/) —
   // stable filenames, preloaded on every page. Before v13 these had NO rule at
   // all, so an HTTP-cache eviction meant system-ui offline.
   /^\/fonts\//,

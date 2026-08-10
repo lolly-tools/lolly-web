@@ -97,7 +97,7 @@
   justify-content: center;
   gap: 0.15rem;
   padding: 1.2rem 1rem 1.3rem;
-  font-family: var(--font-brand); /* the live brand face (tokens.css default: Outfit) */
+  font-family: var(--font-brand); /* the live brand face (tokens.css default: SUSE) */
   font-variation-settings: 'wght' var(--td-w-brand, 440);
   line-height: 1.02;
 }

@@ -1,16 +1,28 @@
 /* Platform typefaces.
    DEFAULTS (shell-served from public/fonts/ — profile-independent, work on every
-   brand pack): Outfit for UI/body, SUSE Mono for code/readouts. Both OFL; license
-   files sit beside the binaries. The UI consumes them via the :root --font-brand /
-   --font-mono stacks in tokens.css, which applyChromeBrandVars overrides when the
-   active brand's tokens declare font.brand / font.mono — so the UI always follows
-   the brand font once one is loaded.
-   BRAND (catalog-served): the SUSE family below resolves only under a profile whose
-   catalog ships it (brands/suse); under other profiles the @font-face simply never
-   loads and the Outfit default stands. */
+   brand pack): SUSE for UI/body, SUSE Mono for code/readouts. Both OFL 1.1
+   (Copyright 2025 The SUSE Project Authors, github.com/SUSE/suse-font, no Reserved
+   Font Name); licence files sit beside the binaries. The UI consumes them via the
+   :root --font-brand / --font-mono stacks in tokens.css, which applyChromeBrandVars
+   overrides when the active brand's tokens declare font.brand / font.mono — so the
+   UI always follows the brand font once one is loaded.
 
-/* Outfit — variable, upright only (the family has no italics). Latin split from
-   latin-ext exactly as Google Fonts serves it, so most loads fetch ~32 KB. */
+   SUSE replaced Outfit as the default face on 2026-08-10. Outfit stays on disk
+   (and in @font-face below) because saved sessions and brand docs may still name
+   it in a text style; it is simply no longer the default. Beyond looking better,
+   the swap fixes a real export hole: Outfit is upright-only, so every italic run
+   under the neutral profile failed to outline and fell back to an SVG <text>
+   element (see font-registry.ts's pickFaces — italic is deliberately strict).
+   SUSE ships a true italic, so italic outlines like everything else.
+
+   The SUSE faces list public/fonts/ FIRST and the brand catalog second: the
+   shell copy is present on every profile, while /catalog/fonts/ only resolves
+   under a pack that ships it (brands/suse). Same bytes either way. */
+
+/* Outfit — variable, upright only (the family has no italics). No longer the
+   default face (SUSE is), kept registered so a session/brand that names Outfit
+   still renders it. Latin split from latin-ext exactly as Google Fonts serves
+   it, so a load that needs it fetches ~32 KB. */
 @font-face {
   font-family: 'Outfit';
   src: url('/fonts/Outfit-latin[wght].woff2') format('woff2-variations');
@@ -48,11 +60,14 @@
   font-display: swap;
 }
 
-/* SUSE variable fonts — served from catalog/fonts/ (brand-pack assets); available
-   to tools and, via the brand font.brand token, the app UI under the SUSE profile. */
+/* SUSE — the platform's default UI/body face (--font-brand). Shell-served from
+   public/fonts/ so it resolves on EVERY profile; the catalog copies follow as
+   src fallbacks for a pack that ships its own (identical) bytes. Unlike Outfit
+   these are unsubsetted single files, so there is no unicode-range split. */
 @font-face {
   font-family: 'SUSE';
-  src: url('/catalog/fonts/webfonts/SUSE[wght].woff2') format('woff2-variations'),
+  src: url('/fonts/SUSE[wght].woff2') format('woff2-variations'),
+       url('/catalog/fonts/webfonts/SUSE[wght].woff2') format('woff2-variations'),
        url('/catalog/fonts/variable/SUSE[wght].ttf') format('truetype');
   font-weight: 100 900;
   font-style: normal;
@@ -61,7 +76,8 @@
 
 @font-face {
   font-family: 'SUSE';
-  src: url('/catalog/fonts/webfonts/SUSE-Italic[wght].woff2') format('woff2-variations'),
+  src: url('/fonts/SUSE-Italic[wght].woff2') format('woff2-variations'),
+       url('/catalog/fonts/webfonts/SUSE-Italic[wght].woff2') format('woff2-variations'),
        url('/catalog/fonts/variable/SUSE-Italic[wght].ttf') format('truetype');
   font-weight: 100 900;
   font-style: italic;

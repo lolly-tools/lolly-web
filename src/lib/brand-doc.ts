@@ -130,15 +130,28 @@ export function walkSwatches(
   // section the moment the app theme flips (toSwatch tolerates legacy
   // suffixed tags by mapping them here too).
   const rolesGroup = `Roles · ${multiSet ? prettify(wantSet) : 'Theme'}`;
-  const walk = (node: unknown, path: string[]): void => {
+  // The DTCG `$type` in force, inherited from the nearest ancestor that states one.
+  // It is the discriminator because `isColorString` alone is NOT one: colorToHex
+  // passes an unrecognised bare ident straight through, so `colorToHex('SUSE')`
+  // is 'SUSE' and `colorToHex('Outfit')` is 'Outfit'. Without this, a
+  // `$type: "fontFamily"` leaf whose value is a single-word family surfaced as a
+  // phantom colour tile in the Colour room — brands/suse has done exactly that
+  // (`color.font.brand`, hex "SUSE") since it gained font tokens, and the starter
+  // pack would have joined it on 2026-08-10 when its own font tokens landed.
+  // A doc that states NO type still walks as before (imported docs often don't),
+  // so this only ever removes leaves a brand explicitly declared non-colour.
+  const walk = (node: unknown, path: string[], inherited?: string): void => {
     if (!isRec(node)) return;
+    const type = typeof node.$type === 'string' ? node.$type : inherited;
     if (isColorString(node.$value)) {
-      out.push(toSwatch(path, node.$value, node.$description, node.$extensions, resolve, rolesGroup));
+      if (type === undefined || type === 'color') {
+        out.push(toSwatch(path, node.$value, node.$description, node.$extensions, resolve, rolesGroup));
+      }
       return;
     }
     for (const k of Object.keys(node)) {
       if (k.startsWith('$')) continue;
-      walk(node[k], [...path, k]);
+      walk(node[k], [...path, k], type);
     }
   };
   walk(doc, []);

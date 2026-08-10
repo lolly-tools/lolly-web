@@ -450,15 +450,19 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       return;
     }
     // Audio: sign the take so the downloaded voice recording self-asserts as a live
-    // mic capture. Only mp4/webm containers are C2PA-stampable (mp3/ogg are not), so a
-    // non-stampable container just downloads unsigned.
-    const audioExt = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('webm') ? 'webm' : null;
+    // mic capture — the SAME credential a video take gets. Every container a
+    // MediaRecorder hands back here is one the engine embeds into: audio/webm (Opus in
+    // Matroska), audio/mp4 (AAC → the m4a BMFF placer, which names the manifest
+    // audio/mp4 rather than video/mp4), and audio/ogg (Ogg Opus, what Firefox writes —
+    // native support landed with the Ogg placer). captureContainer maps MIME → the
+    // container key; null (an encoder we don't recognise) saves unsigned + logs, rather
+    // than mislabelling the bytes.
+    const { stampCaptureClip, captureContainer } = await import('../bridge/export.ts');
+    const container = captureContainer(mimeType);
     let clip = blob;
-    if (audioExt) {
-      const { stampCaptureClip } = await import('../bridge/export.ts');
-      clip = (await stampCaptureClip(host, blob, audioExt, { microphone: true })).blob;
-    }
-    showAudioDownload(clip, mimeType);
+    if (container) clip = (await stampCaptureClip(host, blob, container, { microphone: true })).blob;
+    else host.log('warn', 'record: take saved without Content Credentials — no embedder for this container', { mimeType });
+    showAudioDownload(clip, mimeType, container);
   }
 
   // Wrap the fresh clip with the intro/outro on the spot: show a "processing" curtain,
@@ -544,10 +548,13 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   // Post-record download bar for audio: MP3 (primary) + the native container.
   let dlBar: HTMLElement | null = null;
   let dlUrl: string | null = null;  // the <audio> preview's object URL — revoked when the bar is replaced/dismissed/torn down
-  function showAudioDownload(blob: Blob, mimeType: string): void {
+  function showAudioDownload(blob: Blob, mimeType: string, container?: string | null): void {
     dlBar?.remove();
     if (dlUrl) { URL.revokeObjectURL(dlUrl); dlUrl = null; }
-    const nativeExt = mimeType.includes('mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+    // The extension names the CONTAINER the credential was placed in, so the saved file
+    // and its manifest agree (an audio/mp4 take is a .m4a). Falls back to the MIME sniff
+    // for the unrecognised-encoder path, where nothing was stamped.
+    const nativeExt = container ?? (mimeType.includes('mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm');
     dlBar = document.createElement('div');
     dlBar.className = 'canvas-audio-dl';
     const player = document.createElement('audio');
@@ -560,6 +567,19 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     const natBtn = Object.assign(document.createElement('button'), { type: 'button', className: 'canvas-audio-dl-native', textContent: `Save .${nativeExt}` });
     const xBtn = Object.assign(document.createElement('button'), { type: 'button', className: 'canvas-audio-dl-x', title: 'Dismiss', textContent: '✕' });
     xBtn.setAttribute('aria-label', 'Dismiss');
+    // Say where the credential can be READ rather than implying parity: MP3's ID3v2
+    // GEOB and M4A's BMFF box are the C2PA spec's own homes, while the Ogg and
+    // Matroska bindings are Lolly's (c2pa-rs has a reader for neither). Since the
+    // recorder prefers audio/webm, the DEFAULT container is the least portable one —
+    // so the MP3 save is the one that travels, and the affordance should not be coy
+    // about it (plan 102 §5.4).
+    const portableCred = container === 'm4a' || container === 'mp3' || container === 'wav';
+    natBtn.title = !container
+      ? 'Saved without Content Credentials — no embedder for this container.'
+      : portableCred
+        ? 'Includes Content Credentials any C2PA viewer can read.'
+        : 'Includes Content Credentials — readable in Lolly. This container has no cross-tool C2PA standard yet; save MP3 for one that travels.';
+    mp3Btn.title = 'Re-encodes your take and includes Content Credentials any C2PA viewer can read.';
     actions.append(mp3Btn, natBtn, xBtn);
     dlBar.append(player, actions);
     stageEl.appendChild(dlBar);
@@ -569,8 +589,14 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     mp3Btn.addEventListener('click', async () => {
       mp3Btn.disabled = true; mp3Btn.textContent = 'Encoding…';
       try {
+        // Transcoding rebuilds the bytes, so the take's own credential does not survive
+        // it — re-sign the MP3 as what it is: the same live mic capture, re-encoded on
+        // device (created/digitalCapture + a c2pa.converted step). Without this the
+        // PRIMARY save button was the one shipping unsigned.
         const mp3 = await blobToMp3(blob);
-        await host.export.file(mp3, { filename: `${base}.mp3` });
+        const { stampCaptureClip } = await import('../bridge/export.ts');
+        const { blob: signed } = await stampCaptureClip(host, mp3, 'mp3', { microphone: true, transcoded: true });
+        await host.export.file(signed, { filename: `${base}.mp3` });
       } catch (err) {
         host.log('warn', 'mp3 transcode failed', { error: String(err) });
         announce('MP3 encoding failed — saving the original instead.', { assertive: true });

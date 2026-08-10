@@ -10,9 +10,10 @@
  * recipient's machine probably doesn't have. This module closes that hole: it
  * resolves a computed `font-family` stack to a fetchable sfnt URL, in order:
  *
- *   1. SUSE / SUSE Mono   → the shipped static TTFs (text-svg.ts, unchanged)
+ *   1. SUSE / SUSE Mono   → the brand catalog's static TTFs (text-svg.ts, unchanged)
  *   2. a USER font        → the woff2 faces stored by user-fonts.ts, decompressed
- *   3. the platform face  → Outfit, shell-served as a variable TTF
+ *   3. the platform face  → SUSE (upright + italic), shell-served as variable TTFs;
+ *                           Outfit too, for anything that still names it
  *
  * Two problems make (2) more than a lookup:
  *
@@ -67,11 +68,34 @@ interface RegistryFace {
   unicodeRange: string;
 }
 
-// The shell's own default face (styles/fonts.css + tokens.css `--font-brand`).
-// Shipped as a variable TTF beside the woff2s precisely so it needs no decoding.
-// No unicode-range: it's the whole latin build, and the .notdef guard in the
-// callers catches anything it can't draw.
-const PLATFORM_FACES: Record<string, RegistryFace[]> = {
+// The shell's own default faces (styles/fonts.css + tokens.css `--font-brand`).
+// Each is shipped as a variable TTF beside the woff2s precisely so it needs no
+// decoding. No unicode-range: these are whole builds, and the .notdef guard in
+// the callers catches anything they can't draw.
+//
+// SUSE is the platform default face as of 2026-08-10 and BOTH slants are listed.
+// That completeness is load-bearing twice over. First, `pickFaces` is strict
+// about slant, so an italic run needs a real italic entry — Outfit has none
+// (upright-only family), which is exactly why italic runs used to fall back to
+// an SVG <text> element. Second, `buildRegistry` skips @font-face discovery for
+// any family already backed by bytes here: registering only the upright face
+// would SHADOW the italic woff2 discovered from fonts.css and reintroduce the
+// very hole this fixes. Add slants in pairs or not at all.
+//
+// Outfit stays registered (still on disk, still in fonts.css) so a saved session
+// or brand doc that names it keeps resolving to real outlines. It is no longer
+// the default, and it still cannot outline italic — the family has no such file.
+//
+// Exported for tests/platform-font-default.test.ts, which pins the two invariants
+// the paragraph above only ASSERTS in prose: the default family declares both
+// slants, and every staticUrl here names a file that is actually on disk. Both
+// fail silently at runtime (a run just keeps its <text> element and the export
+// still "succeeds"), so a guard is the only thing that can notice.
+export const PLATFORM_FACES: Record<string, RegistryFace[]> = {
+  suse: [
+    { assetId: '', staticUrl: '/fonts/SUSE[wght].ttf', weight: '100 900', style: 'normal', unicodeRange: '' },
+    { assetId: '', staticUrl: '/fonts/SUSE-Italic[wght].ttf', weight: '100 900', style: 'italic', unicodeRange: '' },
+  ],
   outfit: [{ assetId: '', staticUrl: '/fonts/Outfit[wght].ttf', weight: '100 900', style: 'normal', unicodeRange: '' }],
 };
 
@@ -242,11 +266,13 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
   // Skip any family already backed by real bytes (SUSE's hardcoded branch, Outfit's
   // platform face, an installed user font): those take precedence and are complete.
   for (const f of discoverFontFaces()) {
-    // The SUSE families are NOT excluded here: their hardcoded /catalog static
-    // branch in resolveVectorFont only holds under a brand that ships the TTFs,
-    // and under lolly-start the shell-served SUSEMono woff2 discovered from
-    // fonts.css is the only outlineable source. The bytes-backed precedence
-    // check below still lets a real static win.
+    // SUSE Mono is NOT excluded here: its hardcoded /catalog static branch in
+    // resolveVectorFont only holds under a brand that ships the TTFs, and under
+    // lolly-start the shell-served SUSEMono woff2 discovered from fonts.css is
+    // the only outlineable source. (SUSE *sans* no longer relies on discovery —
+    // it is a complete two-slant PLATFORM_FACES entry, so the check below skips
+    // it deliberately.) The bytes-backed precedence check still lets a real
+    // static win.
     const existing = byFamily.get(f.family);
     if (existing?.some((e) => e.assetId || e.staticUrl)) continue;
     const list = existing ?? [];

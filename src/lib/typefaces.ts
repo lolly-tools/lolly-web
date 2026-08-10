@@ -26,29 +26,31 @@ export interface FontSpec {
   downloads: FontDownload[];
 }
 
-const FONT_DIR = '/catalog/fonts';
-
 // Mirrors the @font-face registrations in styles/fonts.css. These are the platform's
 // local (bundled) typefaces — no webfont / CDN dependency at runtime. Downloads cover the
 // variable axis (upright + italic) as both TTF (desktop) and WOFF2 (web); the per-weight
-// statics under otf/ + ttf/ exist on disk too but aren't surfaced (the variable file is
-// the canonical one).
-// Shell-served platform defaults (public/fonts/ — present on every profile).
+// statics under a brand catalog's otf/ + ttf/ exist on disk too but aren't surfaced
+// (the variable file is the canonical one).
+// Every entry is shell-served (public/fonts/ — present on every profile), so nothing
+// here 404s on a brand pack that ships no fonts. Since 2026-08-10 that includes SUSE
+// itself, which used to be listed from the catalog and was therefore missing under
+// lolly-start; the catalog copies remain as src fallbacks in fonts.css.
 const SHELL_FONT_DIR = '/fonts';
 
 export const FONTS: FontSpec[] = [
   {
-    family: 'Outfit',
+    family: 'SUSE',
     role: 'UI & body (platform default)',
-    stack: "'Outfit', ui-sans-serif, system-ui, sans-serif",
+    stack: "'SUSE', ui-sans-serif, system-ui, sans-serif",
     variable: true,
     weights: '100–900',
-    styles: ['normal'],
-    source: `${SHELL_FONT_DIR}/Outfit[wght].ttf`,
+    styles: ['normal', 'italic'],
+    source: `${SHELL_FONT_DIR}/SUSE[wght].ttf`,
     downloads: [
-      { label: 'Variable TTF', href: `${SHELL_FONT_DIR}/Outfit[wght].ttf` },
-      { label: 'Variable WOFF2 (latin)', href: `${SHELL_FONT_DIR}/Outfit-latin[wght].woff2` },
-      { label: 'Variable WOFF2 (latin-ext)', href: `${SHELL_FONT_DIR}/Outfit-latin-ext[wght].woff2` },
+      { label: 'Variable TTF', href: `${SHELL_FONT_DIR}/SUSE[wght].ttf` },
+      { label: 'Variable TTF (italic)', href: `${SHELL_FONT_DIR}/SUSE-Italic[wght].ttf` },
+      { label: 'Variable WOFF2', href: `${SHELL_FONT_DIR}/SUSE[wght].woff2` },
+      { label: 'Variable WOFF2 (italic)', href: `${SHELL_FONT_DIR}/SUSE-Italic[wght].woff2` },
     ],
   },
   {
@@ -65,18 +67,17 @@ export const FONTS: FontSpec[] = [
     ],
   },
   {
-    family: 'SUSE',
-    role: 'Brand — display, UI & body',
-    stack: "'SUSE', system-ui, sans-serif",
+    family: 'Outfit',
+    role: 'Legacy — the default face before 2026-08-10',
+    stack: "'Outfit', ui-sans-serif, system-ui, sans-serif",
     variable: true,
     weights: '100–900',
-    styles: ['normal', 'italic'],
-    source: `${FONT_DIR}/variable/SUSE[wght].ttf`,
+    styles: ['normal'],
+    source: `${SHELL_FONT_DIR}/Outfit[wght].ttf`,
     downloads: [
-      { label: 'Variable TTF', href: `${FONT_DIR}/variable/SUSE[wght].ttf` },
-      { label: 'Variable TTF (italic)', href: `${FONT_DIR}/variable/SUSE-Italic[wght].ttf` },
-      { label: 'Variable WOFF2', href: `${FONT_DIR}/webfonts/SUSE[wght].woff2` },
-      { label: 'Variable WOFF2 (italic)', href: `${FONT_DIR}/webfonts/SUSE-Italic[wght].woff2` },
+      { label: 'Variable TTF', href: `${SHELL_FONT_DIR}/Outfit[wght].ttf` },
+      { label: 'Variable WOFF2 (latin)', href: `${SHELL_FONT_DIR}/Outfit-latin[wght].woff2` },
+      { label: 'Variable WOFF2 (latin-ext)', href: `${SHELL_FONT_DIR}/Outfit-latin-ext[wght].woff2` },
     ],
   },
 ];
@@ -84,5 +85,7 @@ export const FONTS: FontSpec[] = [
 /** The weight steps a specimen shows. */
 export const WEIGHT_RAMP: number[] = [100, 300, 400, 500, 700, 900];
 
-/** The OFL licence the bundled fonts ship under. */
-export const FONT_LICENSE = { label: 'SIL Open Font License 1.1', href: `${FONT_DIR}/OFL.txt` };
+/** The OFL licence the bundled fonts ship under. Shell-served (public/fonts/),
+ *  not the catalog: every listed face above is shell-served now, so the licence
+ *  link must resolve on a profile whose catalog ships no fonts at all. */
+export const FONT_LICENSE = { label: 'SIL Open Font License 1.1', href: `${SHELL_FONT_DIR}/OFL-SUSE.txt` };

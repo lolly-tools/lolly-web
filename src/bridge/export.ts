@@ -1776,7 +1776,7 @@ async function wrapArtworkSvgWithMarks(artworkEl: Element, geo: PrintGeometry, o
 //
 // Styles are read from the LIVE element (`liveSvg`, still connected during render): its
 // computed `font-family` resolves the brand var — `var(--font-brand, 'SUSE', …)` becomes
-// the actual brand stack (Outfit, or a user's Google font) — which resolveVectorFont then
+// the actual brand stack (the platform SUSE face, or a user's Google font) — which resolveVectorFont then
 // maps to a fetchable sfnt. The clone is a deep copy, so its <text> list is 1:1 with the
 // live one in document order; we shape each run and swap the clone's node for a <path>.
 //
@@ -5338,6 +5338,39 @@ export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: str
 }
 
 /**
+ * The containers a live capture can be signed into. Every one of these is in the
+ * engine's `C2PA_FORMATS` (asserted by tests/capture-clip-provenance.test.ts), so a
+ * capture path never has to guess whether the credential will land: png for a
+ * screenshot, mp4/webm for footage, and the four audio containers a voice/screen take
+ * can arrive in — m4a (ISO BMFF, the `audio/mp4` AAC MediaRecorder writes), webm
+ * (Matroska-wrapped Opus), ogg (Ogg Opus, what Firefox writes), plus mp3 and wav for
+ * an on-device transcode of the take.
+ */
+export const CAPTURE_FORMATS = ['png', 'mp4', 'webm', 'm4a', 'mp3', 'wav', 'ogg'] as const;
+export type CaptureFormat = (typeof CAPTURE_FORMATS)[number];
+
+/**
+ * The C2PA container key for whatever a MediaRecorder actually handed back. The
+ * recorder names its output by MIME and the credential is placed by CONTAINER, and
+ * the two do not line up one-to-one: `audio/mp4` is an M4A (the engine's `m4a` placer
+ * writes `audio/mp4` into the manifest, `mp4` would claim `video/mp4`), `audio/ogg` is
+ * Ogg Opus (the OpusTags comment header), and `audio/webm;codecs=opus` is Matroska —
+ * NOT the Ogg one, despite the codec name. Null means the engine has no embedder for
+ * it, which is the caller's cue to save unsigned rather than to lie about the bytes.
+ */
+export function captureContainer(mimeType: string): CaptureFormat | null {
+  const t = String(mimeType || '').toLowerCase();
+  const audio = t.startsWith('audio/');
+  if (t.includes('webm') || t.includes('matroska')) return 'webm';       // before opus: audio/webm;codecs=opus is Matroska
+  if (t.includes('mp4') || t.includes('m4a') || t.includes('aac')) return audio ? 'm4a' : 'mp4';
+  if (audio && (t.includes('ogg') || t.includes('opus'))) return 'ogg';  // video/ogg has no placer — falls through to null
+  if (audio && (t.includes('mpeg') || t.includes('mp3'))) return 'mp3';
+  if (audio && t.includes('wav')) return 'wav';
+  if (t.includes('png')) return 'png';
+  return null;
+}
+
+/**
  * Content Credentials for a freshly CAPTURED clip — a recorder tool's live camera
  * or microphone take (added engine v1.35), or a screenshot / screen recording
  * (v1.54). Signs the raw bytes so the file self-asserts (the created step is IPTC
@@ -5346,16 +5379,22 @@ export async function signFreshC2pa(host: HostV1, bytes: Uint8Array, format: str
  * credentialed ingredient. Returns the stamped blob PLUS the extracted manifest
  * store, because a `user/` asset's credential lookup reads the STORED store, not the
  * file's bytes — the caller persists it on the asset record (mirroring the
- * upload-ingest path). Only png / mp4 / webm are C2PA-stampable here (so webm/m4a
- * audio works, mp3/wav/ogg don't). Never throws — a stamping failure returns the
- * original blob + a null credential, so a take is never lost to a provenance hiccup.
+ * upload-ingest path). `format` is a `CaptureFormat` — every container the engine can
+ * embed into, AUDIO INCLUDED: an audio take is credentialed exactly like a video one
+ * (this used to be typed mp4/webm/png only, which is why voice takes were the one
+ * capture shipping unsigned — a signature artifact, never a capability gap).
+ * Never throws — a stamping failure returns the original blob + a null credential,
+ * so a take is never lost to a provenance hiccup.
  */
-export async function stampCaptureClip(host: HostV1, blob: Blob, format: 'mp4' | 'webm' | 'png', o: {
+export async function stampCaptureClip(host: HostV1, blob: Blob, format: CaptureFormat, o: {
   camera?: boolean;
   microphone?: boolean;
   /** A display was captured, not a sensor — swaps the created step to IPTC screenCapture. */
   screen?: boolean;
   dimensions?: string;
+  /** The take was re-encoded on device on the way out (the voice recorder's "Save MP3"),
+   *  so the created step is followed by an honest c2pa.converted naming the container. */
+  transcoded?: boolean;
 }): Promise<{ blob: Blob; credential: { store: Uint8Array; format: string } | null }> {
   // Screen first: a narrated screen recording is a screen capture WITH a mic track, not
   // a microphone recording — claiming the latter would say the file is a record of the
@@ -5368,11 +5407,17 @@ export async function stampCaptureClip(host: HostV1, blob: Blob, format: 'mp4' |
     // A fresh recording has no ingredients → it honestly claims c2pa.created.
     const stamped = await stampDerivedC2pa(host, blob, format, {
       tool: o.screen ? 'Screen capture' : 'Recording',
-      actions: [{
-        action: 'c2pa.created',
-        digitalSourceType: o.screen ? SCREEN_SOURCE_TYPE : CAPTURE_SOURCE_TYPE,
-        description,
-      }],
+      actions: [
+        {
+          action: 'c2pa.created',
+          digitalSourceType: o.screen ? SCREEN_SOURCE_TYPE : CAPTURE_SOURCE_TYPE,
+          description,
+        },
+        // Same wording exportActionSteps uses to close a render ("Encoded to WEBM"),
+        // because it is the same claim: these bytes are a re-encode of the essence,
+        // not the recorder's own output.
+        ...(o.transcoded ? [{ action: 'c2pa.converted', description: `Encoded to ${format.toUpperCase()}` }] : []),
+      ],
       dimensions: o.dimensions,
     });
     const ex = extractC2paStore(new Uint8Array(await stamped.arrayBuffer()));

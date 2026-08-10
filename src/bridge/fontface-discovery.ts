@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Discover the `@font-face` families declared in the LIVE document's stylesheets, so
- * vector text export can outline ANY brand/system font — not only SUSE / installed user
- * fonts / the platform Outfit — by resolving the family to its actual font file.
+ * vector text export can outline ANY brand/system font — not only the brand catalog's
+ * statics / installed user fonts / the shell's platform faces — by resolving the family
+ * to its actual font file.
  *
  * This is the discovery half; font-registry.ts fetches + decompresses (woff2→sfnt) the
  * bytes a discovered face points at. The stylesheet walk is DOM-side and guarded so it

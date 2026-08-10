@@ -75,7 +75,7 @@ interface BrandVarsHost {
 const CHROME_STYLE_ID = 'brand-chrome-vars';
 
 // ── Brand fonts ──────────────────────────────────────────────────────────────
-// The platform's default faces are Outfit (UI/body) and SUSE Mono (code) —
+// The platform's default faces are SUSE (UI/body) and SUSE Mono (code) —
 // shell-served @font-face registrations (styles/fonts.css) behind the :root
 // --font-brand / --font-mono stacks in tokens.css. When the active brand's
 // tokens declare `font.brand` / `font.mono` (DTCG fontFamily), the resolved
@@ -84,7 +84,8 @@ const CHROME_STYLE_ID = 'brand-chrome-vars';
 // the tail so an unloadable family degrades to the platform face. The applied
 // stacks are cached in localStorage so index.html's pre-boot script can restore
 // them before first paint (same trick as the theme flash guard) — without it,
-// a branded profile would flash Outfit on every load until boot JS runs.
+// a branded profile would flash the platform SUSE face on every load until
+// boot JS runs.
 
 /** slot in the tokens doc (`font.<slot>`) → CSS var → default stack tail.
  *  display (h1/h2) and italic degrade to the brand face, so a brand that sets
@@ -92,7 +93,7 @@ const CHROME_STYLE_ID = 'brand-chrome-vars';
  *  fails to load. Their consumers (base.css) also `var(--font-display,
  *  var(--font-brand))`, so an UNSET slot falls through to the primary too. */
 const FONT_SLOTS = [
-  ['brand', '--font-brand', "'Outfit', ui-sans-serif, system-ui, sans-serif"],
+  ['brand', '--font-brand', "'SUSE', ui-sans-serif, system-ui, sans-serif"],
   ['mono', '--font-mono', "'SUSE Mono', ui-monospace, monospace"],
   ['display', '--font-display', 'var(--font-brand)'],
   ['italic', '--font-italic', 'var(--font-brand)'],

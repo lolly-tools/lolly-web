@@ -10,8 +10,8 @@
  *
  * Scope decisions (deliberate):
  *   - latin + latin-ext, plus the non-Latin scripts of shipped UI languages
- *     (cyrillic for bg, devanagari for hi) — close to the shell's own Outfit
- *     build (shells/web/public/fonts/) while keeping a family to a few hundred KB.
+ *     (cyrillic for bg, devanagari for hi) — close to the shell's own bundled
+ *     builds (shells/web/public/fonts/) while keeping a family to a few hundred KB.
  *   - Upright AND italic (`ital@0;1`). A family with no italic simply returns
  *     upright faces — css2 ignores the slant rather than erroring — so asking
  *     always is free. Without the real italic face an italic run cannot be

@@ -8,7 +8,7 @@
  *     animating the same weight axis.
  *
  * The faces are RESOLVED, not hardcoded: the specimens render in the live
- * `--font-brand` / `--font-mono` custom properties (platform defaults Outfit +
+ * `--font-brand` / `--font-mono` custom properties (platform defaults SUSE +
  * SUSE Mono; overridden inline on <html> by applyBrandFonts when the brand's
  * `font.brand` / `font.mono` tokens or a user-installed primary font are in
  * force), the labels show the first family of each computed stack, and each
@@ -52,7 +52,7 @@ const AXIS_OVERRIDES: Record<string, { min: number; max: number }> = {
   'suse mono': { min: 100, max: 800 },
 };
 
-/** The first family name of a computed font stack ("'Outfit', ui-sans-serif, …"). */
+/** The first family name of a computed font stack ("'SUSE', ui-sans-serif, …"). */
 export function firstFamily(stack: string, fallback: string): string {
   const first = stack.split(',')[0]?.trim().replace(/^['"]+|['"]+$/g, '').trim();
   return first || fallback;
@@ -93,7 +93,7 @@ export function activeFaces(): { brand: LiveFace; mono: LiveFace } {
     return { key, label, axis: axisFor(label) };
   };
   return {
-    brand: face('brand', '--font-brand', 'Outfit'),
+    brand: face('brand', '--font-brand', 'SUSE'),
     mono: face('mono', '--font-mono', 'SUSE Mono'),
   };
 }
@@ -117,7 +117,7 @@ function loadedFamilies(): Set<string> {
  *  var that resolved to an unloaded system fallback is dropped, and when brand and
  *  mono are the same loaded family only the brand keeps its specimen (no duplicate).
  *  So an install with one loaded font shows one specimen; the platform default
- *  (Outfit + SUSE Mono, both bundled) shows two. When `document.fonts` is empty
+ *  (SUSE + SUSE Mono, both bundled) shows two. When `document.fonts` is empty
  *  (unknown) both are kept, so we never blank the demo on a shell that can't probe. */
 export function loadedFaces(): { brand: LiveFace | null; mono: LiveFace | null } {
   const { brand, mono } = activeFaces();

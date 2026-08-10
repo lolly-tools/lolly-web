@@ -42,7 +42,7 @@ const LABELS = ['JUNGLE', 'FOCUS', 'FLOW', 'CALM', 'BEAT', 'RHYTHM', 'DRUM', 'BA
 // The live brand face — same `--font-brand` custom property applyBrandFonts (brand-vars.ts)
 // sets inline on <html> (or the tokens.css platform default when no brand font is loaded).
 // Read once per burst rather than per-chip since it can't change mid-blast.
-const DEFAULT_FONT_STACK = "'Outfit', ui-sans-serif, system-ui, sans-serif";
+const DEFAULT_FONT_STACK = "'SUSE', ui-sans-serif, system-ui, sans-serif";
 function liveBrandFontStack(): string {
   if (typeof document === 'undefined') return DEFAULT_FONT_STACK;
   const stack = getComputedStyle(document.documentElement).getPropertyValue('--font-brand').trim();

@@ -3647,8 +3647,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const rows: string[] = [];
     if (!fontFamilies.some(f => f.primary)) {
       const builtin = await primaryFontFamily(fontsHost).catch(() => '');
-      rows.push(`<li class="be-font-row is-primary is-builtin"><span class="be-font-aa" style="font-family:'${escape(builtin || 'Outfit')}'" aria-hidden="true">Aa</span>
-        <span class="be-font-meta"><span class="be-font-name">${escape(builtin || 'Outfit')}</span><span class="be-font-sub">${builtin ? t('built-in brand font') : t('platform default')}</span></span>
+      // 'SUSE' is the platform default face (tokens.css --font-brand) — the label
+      // must name whatever that default actually is, or the Fonts tab reports a
+      // face the app is not using. It was 'Outfit' until 2026-08-10.
+      rows.push(`<li class="be-font-row is-primary is-builtin"><span class="be-font-aa" style="font-family:'${escape(builtin || 'SUSE')}'" aria-hidden="true">Aa</span>
+        <span class="be-font-meta"><span class="be-font-name">${escape(builtin || 'SUSE')}</span><span class="be-font-sub">${builtin ? t('built-in brand font') : t('platform default')}</span></span>
         <span class="be-font-badge">${t('Primary')}</span></li>`);
     }
     rows.push(...fontFamilies.map(fontRow));

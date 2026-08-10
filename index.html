@@ -48,13 +48,13 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" href="/icons/icon-192.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-  <!-- Preload the upright UI faces so they aren't discovered only after
+  <!-- Preload the upright UI face so it isn't discovered only after
        app.css → @import fonts.css resolves (which causes a visible swap).
-       Outfit (latin) is the shell-served platform default on every profile;
-       the catalog-served SUSE face is the brand UI font under the SUSE profile
-       (a harmless 404 elsewhere). crossorigin is required for fonts. -->
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/Outfit-latin[wght].woff2" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="/catalog/fonts/webfonts/SUSE[wght].woff2" />
+       SUSE is the shell-served platform default on every profile, so ONE
+       preload covers every brand pack — before 2026-08-10 this was Outfit
+       plus a catalog-served SUSE that 404'd on any pack but brands/suse.
+       crossorigin is required for fonts. -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/SUSE[wght].woff2" />
   <link rel="stylesheet" href="/src/styles/app.css" />
   <!-- Apply saved theme before CSS paints to prevent flash of wrong theme.
        With no saved preference, seed from the OS colour scheme (mirrors
@@ -66,7 +66,7 @@
       if (!t && matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
       if (t === 'dark' || t === 'brand') document.documentElement.dataset.theme = t;
       // Restore the brand font stacks the same way (written by applyChromeBrandVars
-      // in brand-vars.ts) so a branded profile doesn't flash the Outfit default
+      // in brand-vars.ts) so a branded profile doesn't flash the platform default
       // every load. setProperty is CSSOM — the cached value can't inject markup.
       try {
         var f = JSON.parse(localStorage.getItem('brand-fonts') || 'null');

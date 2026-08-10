@@ -253,7 +253,7 @@ export function createTextAPI(): TextAPI {
 
     /**
      * Resolve a font FAMILY to a fetchable sfnt via the shell's registry —
-     * SUSE statics, user-uploaded/Google faces, then the Outfit platform face
+     * brand-catalog statics, user-uploaded/Google faces, then the platform SUSE face
      * (v1.60). There is no run text at resolve time, so faces are ranked
      * against a basic-latin sample; the chain's primary face is returned and
      * sibling unicode subsets are dropped (the contract is one file — a caller

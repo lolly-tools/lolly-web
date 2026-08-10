@@ -451,7 +451,13 @@
     repeating-conic-gradient(hsl(0 0% 60% / 0.9) 0% 25%, hsl(0 0% 96%) 0% 50%) 50% / 10px 10px;
 }
 .color-alpha-pct {
-  font-family: ui-monospace, monospace;
+  /* The brand mono stack, not a bare generic. `ui-monospace, monospace` names no
+     face the font registry can resolve, so every one of these readouts fell out of
+     the text outliner as an SVG <text> element (found in the docs corpus: the four
+     LCH numbers in brand-colours were the only un-outlined runs left on the page).
+     `var(--font-mono)` resolves to SUSE Mono, which HAS a file, so the same numbers
+     now come out as paths. Same visual family, one that can be vectorised. */
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   /* 40px, matching .color-lch-val — the readouts must form a column. */
@@ -641,7 +647,8 @@
   text-align: center;
 }
 .color-lch-val {
-  font-family: ui-monospace, monospace;
+  /* var(--font-mono), not a bare generic — see .color-alpha-pct above. */
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   min-width: 40px;
