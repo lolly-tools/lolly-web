@@ -39,6 +39,7 @@ globalThis.fetch = ((url: string) => {
 
 const { createDocsProvider } = await import('./docs.ts');
 const { tokenize } = await import('../match.ts');
+const { icon } = await import('../../icons.ts');
 const { setActiveLang } = await import('../../../i18n.ts');
 
 /** Fixture — the exact record shape docs/build.ts's indexSections writes. */
@@ -90,6 +91,22 @@ test('parses the record shape and builds sidebar-identical hrefs', async () => {
   // One fetch served both searches — the index promise is cached.
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0], '/info/search-index.json');
+});
+
+test('per-page icon: the record sidebar-icon key selects the row glyph', async () => {
+  fetchImpl = async () => ({ ok: true, json: async () => [
+    { p: 'a', t: 'A', h: 'One', a: 'one', x: 'zzz', i: 'convert' },
+    { p: 'b', t: 'B', h: 'Two', a: 'two', x: 'zzz', i: 'usercheck' },
+    { p: 'c', t: 'C', h: 'Three', a: 'three', x: 'zzz' }, // no i → neutral fallback
+  ] });
+  const prov = createDocsProvider();
+  const convertHit = (await prov.search(tokenize('one'), 5))[0]!;
+  const userHit = (await prov.search(tokenize('two'), 5))[0]!;
+  const fallbackHit = (await prov.search(tokenize('three'), 5))[0]!;
+  assert.equal(convertHit.icon, icon('convert'));
+  assert.equal(userHit.icon, icon('userCheck')); // 'usercheck' → shell's userCheck
+  assert.equal(fallbackHit.icon, icon('document'));
+  assert.notEqual(convertHit.icon, userHit.icon); // distinguishable — the whole point
 });
 
 test('weight ladder: heading beats page title beats body, and the limit caps best-first', async () => {

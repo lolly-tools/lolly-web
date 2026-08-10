@@ -17,7 +17,7 @@
  */
 import type { Lang } from '../../i18n.ts';
 
-export type SearchGroupId = 'tools' | 'utilities' | 'projects' | 'catalog' | 'settings' | 'places' | 'docs';
+export type SearchGroupId = 'tools' | 'utilities' | 'projects' | 'catalog' | 'settings' | 'places' | 'docs' | 'ask';
 
 export interface SearchHit {
   /** Inline SVG markup for the row glyph (lib/icons.ts `icon(...)`), or ''. */
@@ -40,8 +40,10 @@ export interface SearchProvider {
   search(tokens: readonly string[], limit: number): Promise<SearchHit[]>;
 }
 
-/** Fixed presentation order (plans/99 §2a — no interleaved global ranking). */
-export const GROUP_ORDER: readonly SearchGroupId[] = ['tools', 'utilities', 'projects', 'catalog', 'settings', 'places', 'docs'];
+/** Fixed presentation order (plans/99 §2a — no interleaved global ranking). The
+ *  `ask` group is LAST: it is the fallback affordance ("ask Lolly about this")
+ *  under whatever concrete hits the other providers found (plans/103 M0). */
+export const GROUP_ORDER: readonly SearchGroupId[] = ['tools', 'utilities', 'projects', 'catalog', 'settings', 'places', 'docs', 'ask'];
 
 /** Group headers — English t() keys, translated at render time. */
 export const GROUP_LABELS: Record<SearchGroupId, string> = {
@@ -52,6 +54,7 @@ export const GROUP_LABELS: Record<SearchGroupId, string> = {
   settings: 'Settings',
   places: 'Places',
   docs: 'Docs',
+  ask: 'Ask Lolly',
 };
 
 /** §2a — which group is a route's own domain, and its tier. Routes absent here

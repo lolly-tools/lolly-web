@@ -12,6 +12,7 @@ import { createProjectsProvider } from './projects.ts';
 import { createCatalogProvider } from './catalog.ts';
 import { createSettingsProvider } from './settings.ts';
 import { createDocsProvider } from './docs.ts';
+import { createAskProvider } from './ask.ts';
 
 export function registerDefaultProviders(host: unknown): void {
   registerProvider(createToolsProvider());
@@ -20,4 +21,5 @@ export function registerDefaultProviders(host: unknown): void {
   registerProvider(createCatalogProvider(host as Parameters<typeof createCatalogProvider>[0]));
   registerProvider(createSettingsProvider());
   registerProvider(createDocsProvider());
+  registerProvider(createAskProvider());
 }

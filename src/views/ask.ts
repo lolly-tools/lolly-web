@@ -1,0 +1,214 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * Ask Lolly (#/ask) — the in-app help surface (plans/103 M0).
+ *
+ * A routed utility view like the Colour Lab or Script Audio: no tab, the shared
+ * back pill, and its OWN composer rather than the shell search bar. You type a
+ * question; the answer is a VERBATIM documentation section (extracted full text,
+ * not the search snippet) with a citation and an open-in-docs link, followed by
+ * any in-app places the same query matches (tools, settings, projects…) as
+ * navigate-only buttons. Nothing is generated — the words are the docs' own.
+ *
+ * The transcript is session memory (lib/ask/session.ts): it survives a spotlight
+ * → #/ask re-ask and a Back into the view, and dies on reload. A #/ask?q= seed
+ * (from the spotlight "Ask Lolly:" row) is asked once on mount; the composer then
+ * answers in place without touching the URL — the hash is the entry seed only.
+ */
+import '../styles/parts/ask.css';
+import { escape } from '../utils.ts';
+import { icon } from '../lib/icons.ts';
+import { t, tRaw } from '../i18n.ts';
+import { armViewEnter } from '../view-enter.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { createThemeToggle } from '../components/theme-toggle.ts';
+import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
+import { GROUP_LABELS, type SearchGroupId } from '../lib/search/registry.ts';
+import { docsIconName } from '../lib/search/providers/docs.ts';
+import { askSession, pushTurn, type AskTurn } from '../lib/ask/session.ts';
+import { answerQuestion, type AskAnswer } from '../lib/ask/answer.ts';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
+
+/** The Ask view drives the theme toggle + forwards the host to the provider
+ *  registrar; HostV1 covers both. */
+type AskHost = HostV1;
+
+/** A question long enough to be worth answering (mirrors MIN_QUERY_LENGTH). */
+const MIN_LEN = 2;
+
+/** The answer HTML for one turn — reused for the live "thinking" placeholder. */
+function answerCardHtml(answer: AskAnswer): string {
+  const parts: string[] = [];
+
+  if (answer.primary) {
+    const { html, citation, href, fromSnippet } = answer.primary;
+    const cite = citation.heading
+      ? `${escape(citation.pageTitle)} › ${escape(citation.heading)}`
+      : escape(citation.pageTitle);
+    parts.push(`<div class="ask-answer-body${fromSnippet ? ' is-snippet' : ''}">
+        <div class="ask-section" data-section>${html}</div>
+        <button type="button" class="ask-more" data-more hidden>${t('Show more')}</button>
+        <p class="ask-cite">${cite} · <a href="${escape(href)}" class="ask-cite-link">${t('Open in docs')}</a></p>
+      </div>`);
+  }
+
+  // The page the answer already came from — related sections ON that page don't
+  // need the page-title subtitle (it just repeats), and its bare page-intro row
+  // is redundant with the "Open in docs" link above. The page name is kept only
+  // where a related section lives on a DIFFERENT page, where it is real context.
+  const primaryPage = answer.primary?.citation.page ?? null;
+  const relatedRecs = answer.related.filter((rec) => !(rec.p === primaryPage && rec.h === ''));
+  if (relatedRecs.length) {
+    const rows = relatedRecs.map((rec) => {
+      const label = rec.h || rec.t;
+      const samePage = rec.p === primaryPage;
+      const sub = rec.h && !samePage ? ` <span class="ask-related-sub">${escape(rec.t)}</span>` : '';
+      const href = `/info/${escape(rec.p)}.html${rec.a ? `#${escape(rec.a)}` : ''}`;
+      return `<li><a href="${href}" class="ask-related-link"><span class="ask-related-icon" aria-hidden="true">${icon(docsIconName(rec.i))}</span><span>${escape(label)}${sub}</span></a></li>`;
+    }).join('');
+    parts.push(`<div class="ask-related"><p class="ask-group-label">${t('More in the docs')}</p><ul>${rows}</ul></div>`);
+  }
+
+  for (const group of answer.toolHits) {
+    const label = t(GROUP_LABELS[group.group as SearchGroupId]);
+    const rows = group.hits.map((hit) => {
+      const sub = hit.subtitle ? `<span class="ask-hit-sub">${escape(hit.subtitle)}</span>` : '';
+      return `<a href="${escape(hit.href)}" class="ask-hit" data-sfx="navigate">
+          <span class="ask-hit-icon" aria-hidden="true">${hit.icon}</span>
+          <span class="ask-hit-text"><span class="ask-hit-title">${escape(hit.title)}</span>${sub}</span>
+        </a>`;
+    }).join('');
+    parts.push(`<div class="ask-hits"><p class="ask-group-label">${escape(label)}</p><div class="ask-hit-list">${rows}</div></div>`);
+  }
+
+  if (!parts.length) {
+    parts.push(`<p class="ask-empty">${t('I could not find anything for that. Try rephrasing, or browse the documentation.')}
+      <a href="/info/index.html" class="ask-cite-link">${t('Open the docs')}</a></p>`);
+  }
+
+  return `<div class="ask-answer" role="group">${parts.join('')}</div>`;
+}
+
+/** One transcript turn → HTML (a question bubble or an answer card). */
+function turnHtml(turn: AskTurn): string {
+  if (turn.role === 'user') {
+    return `<div class="ask-turn ask-turn-user"><p class="ask-q">${escape(turn.q)}</p></div>`;
+  }
+  return `<div class="ask-turn ask-turn-answer">${answerCardHtml(turn.answer)}</div>`;
+}
+
+export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: string): Promise<void> {
+  document.title = tRaw('{name} — Lolly', { name: t('Ask Lolly') });
+
+  // Ensure the spotlight providers are registered — the overlay registers them
+  // lazily on its first query, which may not have happened if the user came
+  // straight to #/ask. registerProvider is id-idempotent, so this is safe even
+  // when the overlay already did it.
+  try {
+    const { registerDefaultProviders } = await import('../lib/search/providers/index.ts');
+    registerDefaultProviders(host);
+  } catch { /* provider chunk failed → no tool hits, docs answers still work */ }
+  if (!viewEl.isConnected) return;
+
+  viewEl.innerHTML = `
+    ${backPillHtml()}
+    <div class="ask-topright" data-topright>
+      <a href="#/profile" class="ask-top-btn ask-profile-link" aria-label="${escape(t('Open your profile'))}" title="${escape(t('Profile'))}">${icon('user')}</a>
+    </div>
+    <div class="platform-layout ask-layout">
+      <header class="plat-header">
+        <h1 class="plat-title">${t('Ask Lolly')}</h1>
+        <div class="plat-header-text">
+          <p class="plat-sub">${t('Answers come from the docs, nothing you write leaves this device')}</p>
+        </div>
+      </header>
+      <div class="ask-transcript" data-transcript aria-live="polite"></div>
+      <form class="ask-composer" data-composer>
+        <input type="text" class="field-input ask-input" data-input autocomplete="off"
+          aria-label="${escape(t('Your question'))}"
+          placeholder="${escape(t('How do I export a transparent PNG?'))}">
+        <button type="submit" class="ask-send" data-send>
+          <span class="ask-send-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span>
+          <span class="ask-send-label">${t('Ask')}</span>
+        </button>
+      </form>
+    </div>`;
+  armViewEnter(viewEl, '.plat-header, .ask-composer');
+  mountBackPill(viewEl);
+  // The theme switcher (icon-only cycle: light → dark → brand), styled locally as
+  // .ask-top-btn — the profile link sits beside it (both top-right).
+  viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'ask-top-btn ask-theme-btn' }));
+
+  const transcriptEl = viewEl.querySelector<HTMLElement>('[data-transcript]')!;
+  const inputEl = viewEl.querySelector<HTMLInputElement>('[data-input]')!;
+  const formEl = viewEl.querySelector<HTMLFormElement>('[data-composer]')!;
+
+  // Cap long sections and reveal the "Show more" control only where it overflows.
+  const wireExpanders = (): void => {
+    for (const body of transcriptEl.querySelectorAll<HTMLElement>('.ask-answer-body')) {
+      const section = body.querySelector<HTMLElement>('[data-section]');
+      const more = body.querySelector<HTMLButtonElement>('[data-more]');
+      if (!section || !more) continue;
+      if (section.scrollHeight > section.clientHeight + 4) more.hidden = false;
+    }
+  };
+
+  const render = (pending?: string): void => {
+    const turns = askSession().map(turnHtml).join('');
+    const thinking = pending !== undefined
+      ? `<div class="ask-turn ask-turn-user"><p class="ask-q">${escape(pending)}</p></div>
+         <div class="ask-turn ask-turn-answer"><div class="ask-answer ask-thinking">${t('Looking through the docs…')}</div></div>`
+      : '';
+    transcriptEl.innerHTML = turns + thinking;
+    wireExpanders();
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  };
+  render();
+
+  let busy = false;
+  const ask = async (raw: string): Promise<void> => {
+    const q = raw.trim();
+    if (busy || q.length < MIN_LEN) return;
+    busy = true;
+    render(q); // question + a "thinking" placeholder
+    try {
+      const answer = await answerQuestion(q);
+      if (!viewEl.isConnected) return;
+      pushTurn({ role: 'user', q });
+      pushTurn({ role: 'answer', answer });
+    } finally {
+      busy = false;
+      if (viewEl.isConnected) render();
+    }
+  };
+
+  formEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = inputEl.value;
+    inputEl.value = '';
+    void ask(q);
+  });
+
+  // "Show more" toggles a section open (event delegation — the transcript is
+  // re-rendered wholesale, so per-button listeners would leak).
+  transcriptEl.addEventListener('click', (e) => {
+    const more = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-more]');
+    if (!more) return;
+    const body = more.closest('.ask-answer-body');
+    body?.querySelector('[data-section]')?.classList.add('is-open');
+    more.hidden = true;
+  });
+
+  // Seed from #/ask?q= — asked once. A seed already present in the transcript
+  // (a Back into the view, a same-question re-mount) never re-fires.
+  const seed = new URLSearchParams(params).get('q')?.trim() ?? '';
+  const alreadyAsked = askSession().some((turn) => turn.role === 'user' && turn.q === seed);
+  if (seed.length >= MIN_LEN && !alreadyAsked) {
+    void ask(seed);
+  } else {
+    inputEl.focus();
+  }
+
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
+    busy = false;
+  };
+}

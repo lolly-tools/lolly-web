@@ -63,7 +63,7 @@ installLiveCollabMount();
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'data' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script' | 'join' | 'join-reply';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'data' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script' | 'ask' | 'join' | 'join-reply';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -83,6 +83,7 @@ type Route =
   | { name: 'lab'; params?: string }
   | { name: 'pdf' }
   | { name: 'script' }
+  | { name: 'ask'; params?: string }
   | { name: 'join'; params?: string }
   | { name: 'join-reply'; params?: string }
   | { name: 'gallery'; params?: string };
@@ -167,6 +168,13 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // Script audio is a utility view like the Lab: no tab, the back pill instead
   // (see the lab row's rationale above).
   script: { label: 'Script audio', viewClasses: ['scriptst-view'], footer: 'none' },
+  // Ask Lolly (#/ask) — the in-app help surface (plans/103). A utility view like
+  // the Lab: no tab, the back pill, and its OWN composer (footer: 'none') rather
+  // than the shell search bar, since chat-Enter is a submit the bar has no slot
+  // for. Keys on `params` so a fresh #/ask?q= from spotlight (or a Back into it)
+  // re-mounts and appends the new question to the session transcript instead of
+  // deduping onto the first.
+  ask: { label: 'Ask Lolly', viewClasses: ['ask-view'], sigKey: 'params', footer: 'none' },
   // The two private-collab ceremony links (plan 100 §6.1 skin 1, §11.25). Both are
   // arrival points from someone ELSE's device, so they get no tab and no footer bar —
   // and both key on `params`, because the whole meaning of the route is the invite (or
@@ -465,6 +473,13 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // nothing on the landing path needs the speech plumbing.
       const { mountScriptStudio } = await import('./views/script-studio.ts');
       await mountScriptStudio(view, host as unknown as Parameters<typeof mountScriptStudio>[1]);
+      break;
+    }
+    case 'ask': {
+      // Ask Lolly (#/ask) — in-app help over the docs + spotlight providers. Lazy:
+      // it pulls the ask pipeline (retrieval, md extraction) that no other route needs.
+      const { mountAsk } = await import('./views/ask.ts');
+      await mountAsk(view, host as unknown as Parameters<typeof mountAsk>[1], route.params ?? '');
       break;
     }
     // --- The private-collab ceremony links (plan 100 §6.1, §11.25). One lazy chunk
@@ -1042,6 +1057,7 @@ function parseRoute(): Route {
     if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
     if (parts[0] === 'pdf') return { name: 'pdf' }; // take a PDF apart — text/asset extraction
     if (parts[0] === 'script') return { name: 'script' }; // Script audio — the TTS writing surface
+    if (parts[0] === 'ask') return { name: 'ask', params: query || '' }; // Ask Lolly — in-app help (?q=<question>)
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     // The two halves of a private collab's ceremony (plan 100 §6.1, §11.25). These
     // paths are minted by components/collab-ceremony.ts's JOIN_ROUTE / REPLY_ROUTE —

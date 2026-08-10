@@ -115,3 +115,39 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
   font-size: calc(13px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
+
+/* ─── The Ask Lolly row (plans/103) ──────────────────────────────────────────
+   The assistant affordance: last group, the fallback when concrete hits don't
+   cover the query. It reads as "smart" — the aiSpark glyph in the brand accent
+   over a faint wash — and its glyph twinkles on hover / keyboard-active (the
+   same motion the Verify view's AI flag uses). Kept off under reduced motion. */
+.spotlight-opt[data-group="ask"] {
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.08), hsl(var(--primary) / 0));
+}
+.spotlight-opt[data-group="ask"] .spotlight-opt-icon { color: hsl(var(--primary)); }
+.spotlight-opt[data-group="ask"] .spotlight-opt-icon svg.ask-spark {
+  width: calc(19px * var(--a11y-fs));
+  height: calc(19px * var(--a11y-fs));
+  filter: drop-shadow(0 1px 3px hsl(var(--primary) / 0.4));
+  transform-origin: center;
+}
+.spotlight-opt[data-group="ask"] .spotlight-opt-title { font-weight: 600; }
+.spotlight-opt[data-group="ask"]:hover,
+.spotlight-opt[data-group="ask"].is-active {
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.16), hsl(var(--primary) / 0.03));
+}
+
+.spotlight-opt[data-group="ask"]:hover .ask-spark,
+.spotlight-opt[data-group="ask"].is-active .ask-spark {
+  animation: ask-spark-twinkle 1.1s ease-in-out infinite;
+}
+@keyframes ask-spark-twinkle {
+  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  50%      { opacity: 0.85; transform: scale(1.18) rotate(10deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-opt[data-group="ask"]:hover .ask-spark,
+  .spotlight-opt[data-group="ask"].is-active .ask-spark { animation: none; }
+}
+html[data-a11y-motion="reduce"] .spotlight-opt[data-group="ask"]:hover .ask-spark,
+html[data-a11y-motion="reduce"] .spotlight-opt[data-group="ask"].is-active .ask-spark { animation: none; }

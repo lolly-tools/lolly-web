@@ -2,93 +2,79 @@
 /**
  * The Docs spotlight provider (plans/99 M3) — searches the /info site.
  *
- * The haystack is the static site's own per-locale search index
- * (`/info/search-index.json` for English, `/info/<lang>/search-index.json`
- * otherwise — the same file docs/build.ts writes for the docs sidebar search,
- * one record per page section). Nothing in the shell read it before this;
- * federating over it at runtime keeps plans/99 principle 2 (no build-time
- * unified index) since it is already per-locale static data the client can
- * reach.
+ * The haystack is the static site's own per-locale search index, loaded through
+ * the shared lib/search/docs-index.ts module (the record shape, the /info base
+ * path and the heading>title>body weights all live there now, so this provider
+ * and the Ask help pipeline cannot drift — plans/103 M0). Federating over it at
+ * runtime keeps plans/99 principle 2 (no build-time unified index) since it is
+ * already per-locale static data the client can reach.
  *
  * LAZY: nothing is fetched until the first search() call, so a user who never
  * searches pays nothing (the same first-interaction rule the docs sidebar
- * follows). The fetch promise is cached; ANY failure resolves to an empty
- * record set forever, with no logging — offline is a normal state for this
+ * follows). The fetch promise is cached PER PROVIDER; ANY failure resolves to an
+ * empty record set forever, with no logging — offline is a normal state for this
  * app, not an error.
  *
  * Scoring mirrors the docs sidebar's ladder (heading beats page title beats
- * body prose) through lib/search weights: heading 8, title 3, body 1 —
- * scoreHaystack's word-boundary doubling preserves the sidebar's extra
- * heading-prefix bonus.
+ * body prose) through lib/search weights; scoreHaystack's word-boundary doubling
+ * preserves the sidebar's extra heading-prefix bonus.
  */
 import { currentLang } from '../../../i18n.ts';
-import { icon } from '../../icons.ts';
-import { fold, scoreHaystack, type SearchField } from '../match.ts';
+import { icon, type IconName } from '../../icons.ts';
+import { scoreHaystack } from '../match.ts';
+import { docsBase, docsHrefFor, fetchDocsIndex, type PreparedRecord } from '../docs-index.ts';
 import type { SearchHit, SearchProvider } from '../registry.ts';
 
-/** One /info page section, as docs/build.ts's indexSections writes it. Keys
- *  are short because the file ships once per locale and is fetched by readers:
- *  p=page slug, t=page title, h=heading ('' for the page intro), a=anchor
- *  ('' for the page intro), x=body snippet. */
-interface DocsRecord { p: string; t: string; h: string; a: string; x: string }
+/**
+ * The docs pages' own sidebar-icon keys (docs/build.ts SIDEBAR_ICON → DOC_ICONS)
+ * mapped to this shell's icon() names, so a Docs hit wears its PAGE's glyph
+ * rather than one generic help mark (plans/103) — sections from different pages
+ * are then distinguishable at a glance. A handful of docs glyphs have no exact
+ * shell twin and map to the nearest (code→cpu, server→building, home→dashboard,
+ * eyeoff→eye); an unknown or missing key falls back to a neutral page glyph.
+ */
+const DOCS_ICON: Record<string, IconName> = {
+  home: 'dashboard', star: 'star', palette: 'palette', wrench: 'wrench',
+  checklist: 'checklist', shieldcheck: 'shieldCheck', convert: 'convert',
+  usercheck: 'userCheck', pentool: 'penTool', upload: 'upload', clock: 'clock',
+  download: 'download', sliders: 'sliders', people: 'users', search: 'search',
+  layers: 'layers', hash: 'hash', photos: 'photos', code: 'cpu', link: 'link',
+  seal: 'seal', monitor: 'monitor', server: 'building', sparkle: 'sparkle',
+  globe: 'globe', box: 'box', document: 'document', cpu: 'cpu', font: 'font',
+  check: 'check', lock: 'lock', eyeoff: 'eye',
+};
 
-/** A record with its haystack folded once at load, not per keystroke. */
-interface PreparedRecord { rec: DocsRecord; fields: SearchField[] }
-
-/** The docs scorer's field weights (heading > page title > body). */
-const HEADING_WEIGHT = 8;
-const TITLE_WEIGHT = 3;
-const BODY_WEIGHT = 1;
+/** The shell icon() name for a docs record's sidebar-icon key (rec.i), so the
+ *  spotlight Docs group AND the /ask related-docs links wear the page's glyph.
+ *  Exported for the Ask view to share the one mapping. */
+export function docsIconName(key: string | undefined): IconName {
+  return (key && DOCS_ICON[key]) || 'document';
+}
 
 export function createDocsProvider(): SearchProvider {
   // Cached across searches — settled once, kept forever (locale is fixed for
-  // the session: switchLang reloads the whole app).
+  // the session: switchLang reloads the whole app). Per-provider, not the
+  // shared module cache, so each instance fetches once (its own contract test).
   let loaded: Promise<PreparedRecord[]> | null = null;
-
-  const load = (): Promise<PreparedRecord[]> => {
-    if (!loaded) {
-      // English is unprefixed, every other locale lives under /info/<lang>/ —
-      // mirrors the docs sidebar's data-search-base (and i18n.ts's docsHref).
-      const lang = currentLang();
-      const base = lang === 'en' ? '/info' : `/info/${lang}`;
-      loaded = fetch(`${base}/search-index.json`)
-        .then((r) => (r.ok ? (r.json() as Promise<DocsRecord[]>) : []))
-        .then((records) =>
-          (Array.isArray(records) ? records : []).map((rec): PreparedRecord => ({
-            rec,
-            fields: [
-              { text: fold(String(rec.h ?? '')), weight: HEADING_WEIGHT },
-              { text: fold(String(rec.t ?? '')), weight: TITLE_WEIGHT },
-              { text: fold(String(rec.x ?? '')), weight: BODY_WEIGHT },
-            ],
-          })),
-        )
-        .catch(() => []); // offline/missing index → no docs group, forever, silently
-    }
-    return loaded;
-  };
+  const load = (): Promise<PreparedRecord[]> => (loaded ??= fetchDocsIndex());
 
   return {
     id: 'docs',
     async search(tokens, limit): Promise<SearchHit[]> {
       if (!tokens.length) return [];
-      const lang = currentLang();
-      const base = lang === 'en' ? '/info' : `/info/${lang}`;
+      const base = docsBase(currentLang());
       const hits: SearchHit[] = [];
       for (const { rec, fields } of await load()) {
         const score = scoreHaystack(fields, tokens);
         if (score <= 0) continue;
         hits.push({
-          icon: icon('help'),
+          icon: icon(docsIconName(rec.i)),
           // A heading is the row (the sidebar shows the page title as context
           // only when there IS a heading); the page-intro record has none, so
           // the page title leads and needs no subtitle repeating it.
           title: rec.h || rec.t,
           ...(rec.h ? { subtitle: rec.t } : {}),
-          // EXACTLY the sidebar's construction: base + '/' + p + '.html' +
-          // ('#' + a when anchored) — the .html suffix is load-bearing (see
-          // docsHref's note on /info/<lang>/ directory URLs 404ing in dev).
-          href: `${base}/${rec.p}.html${rec.a ? `#${rec.a}` : ''}`,
+          href: docsHrefFor(base, rec),
           score,
         });
       }

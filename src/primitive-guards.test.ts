@@ -147,6 +147,7 @@ const PRIMARY_FG = /(?:^|[;\s])color:\s*hsl\(var\(--primary-foreground\)\)/;
 // "markup-rename churn with real regression risk"; the policy is attrition, so each
 // stays until its view is rewritten. Keyed "file → selector", each permitted once.
 const PRIMARY_FILL_ALLOWED: Record<string, number> = {
+  'styles/parts/ask.css → .ask-q': 1,                                  // Ask user-question chat bubble (not a button)
   'pro/pro.css → .pro-fill-btn:hover': 1,                              // pro fill-tool hover state
   'styles/parts/editor.css → .fc-btn.is-armed': 1,                     // flow-chart editor armed state
   'styles/parts/editor.css → .fc-btn.fc-action-primary': 1,            // flow-chart editor primary action
@@ -626,6 +627,17 @@ const RAW_HTML_SINK = /\.(?:inner|outer)HTML\s*\+?=(?!=)(?!\s*['"]\s*['"]\s*[;,)
 
 const RAW_HTML_ALLOWED: Record<string, number> = {
   'bridge/clipboard.ts': 2,
+  // Ask Lolly (#/ask), plans/103 M0. The 2 sinks are the view scaffold (t()
+  // labels + escape()d placeholder/aria/hrefs, the static trusted LOLLY_MARK_SVG
+  // brand mark, and the top-right profile link + lib/icons markup — no free text)
+  // and the transcript re-render. The
+  // transcript interpolates: the user's own question (escape()d), each answer's
+  // section HTML (render-md.ts, which escapes everything then re-admits a fixed
+  // subset), citation text + hrefs (escape()d), related-record labels/anchors
+  // (escape()d), and provider hit titles/subtitles (escape()d) + their
+  // lib/icons icon() markup per the SearchHit contract. No raw docs/user text
+  // reaches a sink unescaped.
+  'views/ask.ts': 2,
   // The #/convert view's 3 innerHTML writes interpolate only t() strings, escape()d
   // file names (utils.ts escape), and static in-code format labels/ids — no user
   // markup reaches a sink unescaped.
