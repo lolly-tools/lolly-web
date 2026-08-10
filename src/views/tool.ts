@@ -3360,15 +3360,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // a toggle pauses/resumes. Regular tools "play as they would" (this is the auto-play
   // decision) — Sequence Studio, by contrast, seeks the animation to the timeline. A
   // still export is unaffected: onFrame tools export the current frame.
-  // Gated OFF: the per-frame sampler (media.ts armAnimSource) rasterises a seeked CSS
-  // animation each frame, which is pathologically slow on a filter-heavy SVG (repeated
-  // commitStyles/style-recalc froze the renderer in testing). Re-enable once the sampler
-  // uses a performant frame source — pre-bake N frames of one loop into ImageBitmaps at
-  // arm time (spread across rAFs), then cycle them cheaply; or move the bake to an
-  // OffscreenCanvas/Worker. The manifest hint + sampler wiring stay ready for that.
-  const LIVE_ANIM_ENABLED = false;
+  // Non-camera animated source: a "Play" toggle drives render.liveDefault through the
+  // tool's onFrame (see media.ts armAnimSource). The sampler itself is cheap; what stalled
+  // the vector effects was their per-frame node count (26k+ dots re-parsed each frame),
+  // fixed by the live cell caps in the effect hooks. Manual toggle for now — flip the
+  // auto-start below on once the vector effects are confirmed smooth in the wild.
   const liveDefault = (runtime.manifest.render as { liveDefault?: string } | undefined)?.liveDefault;
-  if (LIVE_ANIM_ENABLED && stageEl && runtime.hasFrameHook && liveDefault) {
+  if (stageEl && runtime.hasFrameHook && liveDefault) {
     const animMedia = host.media as unknown as { armAnimSource?: (m: string | null) => void };
     let markupPromise: Promise<string | null> | null = null;
     // Fetch + sanitise the asset SVG once, then bake the LIVE brand primary into it: the

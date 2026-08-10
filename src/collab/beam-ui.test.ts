@@ -242,8 +242,44 @@ function toastSpy() {
   return { mount, mounts, events, disposals: () => disposals };
 }
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 40; i++) await new Promise((r) => { setImmediate(r); });
+/**
+ * Wait for the beam to REACH something, never for a number of turns.
+ *
+ * This used to spin forty `setImmediate`s, and that is a wall-clock race wearing a
+ * deterministic costume. A landing is gated on work that finishes OFF the event loop:
+ * every `sriSha256` is a Web Crypto digest on libuv's thread pool (staging's finalize,
+ * the ingest re-hash, and the read-back that proves the stored bytes) and `Blob
+ * .arrayBuffer()` is read the same way. A check-phase turn costs microseconds, so forty
+ * of them elapse in well under a millisecond — on an idle laptop the pool answers inside
+ * nine of them and the suite is green, on a two-core runner sharing its cores with the
+ * rest of the suite it does not, and the assertions then describe a beam that simply has
+ * not landed yet. Measured: under 10× CPU contention, 500 immediate turns were not
+ * enough and 9 `setTimeout(0)` turns were — the timer's ~1 ms floor is what makes each
+ * turn a real wait instead of a spin.
+ *
+ * `beam-session.test.ts` already waits this way (`waitFor`), which is why the same
+ * landing flow is green there. Same shape here, and the bound is generous rather than
+ * tuned: a beam that has not settled in 2,000 turns is a hang, and says so.
+ */
+async function until(done: () => boolean, what: string): Promise<void> {
+  for (let i = 0; i < 2000; i++) {
+    if (done()) return;
+    await new Promise((r) => { setTimeout(r, 0); });
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+
+/**
+ * True once the beam that started after `mark` has ended, either way.
+ *
+ * Terminal-event rather than "did a row appear", so an ingest that FAILED stops the wait
+ * immediately and the assertion below reports what did not land — the diagnosis this
+ * file is for — instead of timing out with nothing to say. Sliced from a mark because
+ * one session multiplexes both directions: an acceptor that has already sent carries its
+ * own `complete` at the head of the same stream.
+ */
+function settledAfter(events: readonly BeamToastEvent[], mark: number): () => boolean {
+  return () => events.slice(mark).some((e) => e.t === 'complete' || e.t === 'cancelled');
 }
 
 // ── 1. The send path ──────────────────────────────────────────────────────────
@@ -296,8 +332,11 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   assert.equal(offered.offer.peerName, 'Priya', 'the consent sheet says who it is from');
   assert.equal(offered.offer.itemCount, 2, 'one upload + one session; the manifest is bookkeeping');
 
+  const receiverMark = receiverToast.events.length;
+  const senderMark = senderToast.events.length;
   receiverToast.mounts[0]!.source.accept(offered.offer.beamId);
-  await settle();
+  await until(settledAfter(receiverToast.events, receiverMark), 'the receiver to finish the beam');
+  await until(settledAfter(senderToast.events, senderMark), 'the sender to see its own beam finish');
 
   // The upload arrived, byte for byte.
   const landedIds = [...receiverHost.records.keys()];
@@ -389,8 +428,9 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
 
   const toInviter = inviterToast.events.find((e) => e.t === 'offer-received');
   assert.ok(toInviter && toInviter.t === 'offer-received', 'the inviter was never offered it');
+  const inviterMark = inviterToast.events.length;
   inviterToast.mounts[0]!.source.accept(toInviter.offer.beamId);
-  await settle();
+  await until(settledAfter(inviterToast.events, inviterMark), 'the inviter to finish the incoming beam');
   assert.equal([...inviterHost.sessions.values()][0]?.data.headline, 'Edited together',
     'the ephemeral working copy did not arrive on the other device');
 
@@ -405,8 +445,9 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
   const offered = acceptorToast.events.filter((e) => e.t === 'offer-received').at(-1);
   assert.ok(offered && offered.t === 'offer-received', 'the acceptor was never shown an offer');
   assert.equal(offered.offer.peerName, 'Priya', 'and it is the INCOMING one');
+  const acceptorMark = acceptorToast.events.length;
   acceptorToast.mounts[0]!.source.accept(offered.offer.beamId);
-  await settle();
+  await until(settledAfter(acceptorToast.events, acceptorMark), 'the acceptor to finish the incoming beam');
 
   const landed = [...library.sessions.values()];
   assert.equal(landed.length, 1,

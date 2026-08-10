@@ -21,7 +21,12 @@ import { verifyAssetChecksum } from '../bridge/assets.ts';
 import { assertToolIndexIntegrity } from './integrity.ts';
 import { currentLang, t } from '../i18n.ts';
 import { pinnedAssetIds, refreshPinnedToolFiles } from '../lib/offline-pins.ts';
-import { offlineCatalogScope, resyncOfflineParts } from '../lib/offline-manager.ts';
+// The "Available offline" download manager is DYNAMICALLY imported: this module is
+// on the boot path (main.ts syncs the catalog), but both reads below happen inside
+// `syncCorePrefetch`, which already runs on the idle pass AFTER first paint — and
+// they are the only two edges to a ~7.9 KB module that also drags the upscale/matte
+// model tables along. Both call sites are async, so the import is invisible.
+const offlineManager = () => import('../lib/offline-manager.ts');
 import { initInstanceBase, instanceFetch, instancePath } from '../lib/instance.ts';
 
 /** One resolvable file for a catalog asset (an entry in an asset's `formats`).
@@ -384,7 +389,7 @@ async function prefetchAsset(host: SyncHost, meta: AssetMetaRecord, signal?: Abo
  *  catalog download is recorded, else a filter over index entries. 'all' keeps
  *  everything; a tag list keeps any asset carrying at least one selected tag. */
 async function offlineScopeFilter(): Promise<((a: AssetMetaRecord) => boolean) | null> {
-  const scope = await offlineCatalogScope().catch(() => null);
+  const scope = await offlineManager().then(m => m.offlineCatalogScope()).catch(() => null);
   if (!scope) return null;
   if (scope === 'all') return () => true;
   const tags = new Set(scope);
@@ -422,7 +427,7 @@ export async function syncCorePrefetch(host: SyncHost): Promise<void> {
     await Promise.allSettled(wanted.map(a => prefetchAsset(host, a)));
     // Downloaded app/docs/verify parts re-sync on this same idle path when
     // their manifest watermark moved (a deploy re-downloads only the delta).
-    await resyncOfflineParts().catch(() => {});
+    await offlineManager().then(m => m.resyncOfflineParts()).catch(() => {});
   } catch (e) {
     host.log('warn', 'Core prefetch failed', { error: String(e) });
   }

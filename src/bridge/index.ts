@@ -7,7 +7,7 @@
  * the rest.
  */
 
-import type { HostV1, AssetRef, AssetPickerOpts } from '@lolly-tools/core/host-v1';
+import type { HostV1, AssetRef, AssetPickerOpts, RecorderAPI } from '@lolly-tools/core/host-v1';
 // Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
 // boot path, and engine/src/index.ts is one shared facade whose retained export
 // set is the UNION over every importer — touching it here drags createRuntime
@@ -31,9 +31,12 @@ import { createClipboardAPI } from './clipboard.ts';
 // PROVIDED_CAPABILITIES, a plain const, not on these objects), and between them
 // they drag the HarfBuzz glue, pdf-lib's entry, the OOXML zip caps and the WebGL
 // probe into the chunk that renders first paint. See scripts/check-bundle-budget.ts.
-import { createMediaAPI } from './media.ts';
-import { createRecorderAPI } from './recorder.ts';
-import { hasCaptureExtension } from './capture-extension.ts';
+// host.media / host.recorder are lazy facades (see below); only their SYNCHRONOUS
+// availability probes are needed at boot, and those live in their own leaf.
+import { cameraAvailable, recorderAvailable } from './capture-support.ts';
+// The PROBE leaf, not capture-extension.ts itself: the impl choice below is made
+// at boot, the postMessage transport behind it is not (see the probe's header).
+import { hasCaptureExtension } from './capture-extension-probe.ts';
 import { vizSupported } from '../lib/viz-support.ts';
 // The dependency-free leaf, NOT '../lib/speech-kokoro.ts' (which re-exports the whole
 // engine speech-text module) — this module is on the boot path and needs only the number.
@@ -208,12 +211,66 @@ export async function createBridge(): Promise<WebHost> {
   // Live camera frames (v1.4) for motion-reactive tools. Progressive enhancement,
   // NOT a gated capability: a tool with an onFrame hook offers a "live" toggle only
   // where the camera is available, and runs as a still tool otherwise.
-  host.media = createMediaAPI();
+  //
+  // A LAZY FACADE, like capture/net/text/pdf above (these two were the last eager
+  // impls left on the bridge, and between them ~11.7 KB of minified boot: media.ts,
+  // recorder.ts and recorder's video-mime.ts bitrate tables). Nothing before a tool
+  // mount reads a frame or a level — the only pre-mount caller of either API is the
+  // asset picker's "Capture screen" tile, which feature-detects `recorder.still` and
+  // then awaits it — so the impl is built on the first call that actually needs a
+  // device, and `isAvailable` is answered synchronously from bridge/capture-support.ts,
+  // the same probe module the impls themselves call.
+  //
+  // `subscribe`/`stop` are the only non-async members of either contract. `stop`
+  // releases one start() reference, so with no impl there is nothing to release and
+  // the no-op is exactly right. `subscribe` attaches one microtask late (frames and
+  // levels flow only while started, and start() is what loads the impl, so a
+  // subscriber can miss nothing) and its returned unsubscribe is honoured whether it
+  // runs before or after the attach.
+  const lazySubscribe = <T>(load: () => Promise<T>, attach: (impl: T) => () => void): (() => void) => {
+    let off: (() => void) | null = null;
+    let cancelled = false;
+    void load().then((impl) => { if (!cancelled) off = attach(impl); }).catch(() => { /* impl unavailable — no frames, as before */ });
+    return () => { cancelled = true; off?.(); off = null; };
+  };
+  type WebMediaImpl = ReturnType<typeof import('./media.ts')['createMediaAPI']>;
+  let mediaImpl: WebMediaImpl | null = null;
+  const loadMedia = async (): Promise<WebMediaImpl> => {
+    if (!mediaImpl) { const { createMediaAPI } = await import('./media.ts'); mediaImpl = createMediaAPI(); }
+    return mediaImpl;
+  };
+  host.media = {
+    isAvailable: () => cameraAvailable(),
+    start: async (opts) => (await loadMedia()).start(opts),
+    stop: () => { mediaImpl?.stop(); },
+    subscribe: (cb, opts) => lazySubscribe(loadMedia, (m) => m.subscribe(cb, opts)),
+    // Web-only extra (not on the portable MediaAPI): arm the animated-SVG frame
+    // source for the next start(). Disarming with no impl is a no-op — nothing can
+    // be armed yet — so only a real arm pays for the load.
+    armAnimSource: (markup: string | null) => {
+      if (markup === null) { mediaImpl?.armAnimSource(null); return; }
+      void loadMedia().then((m) => m.armAnimSource(markup));
+    },
+  } as WebHost['media'];
   // Device capture (v1.17) — mic (and optionally camera) recording + a live audio
   // level meter. Unlike media this IS capability-gated ('microphone'/'camera'),
   // because record() prompts for a grant; the meter/record affordances still
   // feature-detect host.recorder.isAvailable() at the point of use.
-  host.recorder = createRecorderAPI();
+  let recorderImpl: RecorderAPI | null = null;
+  const loadRecorder = async (): Promise<RecorderAPI> => {
+    if (!recorderImpl) { const { createRecorderAPI } = await import('./recorder.ts'); recorderImpl = createRecorderAPI(); }
+    return recorderImpl;
+  };
+  host.recorder = {
+    isAvailable: (kind) => recorderAvailable(kind),
+    meter: {
+      start: async () => (await loadRecorder()).meter.start(),
+      stop: () => { recorderImpl?.meter.stop(); },
+      subscribe: (cb) => lazySubscribe(loadRecorder, (r) => r.meter.subscribe(cb)),
+    },
+    record: async (opts) => (await loadRecorder()).record(opts),
+    still: async (opts) => (await loadRecorder()).still(opts),
+  } as WebHost['recorder'];
   // host.color (perceptual colour tools, v1.40) and host.geom (path booleans,
   // offset, stroke-to-fill, spline lowering, hit testing, v1.64) are pure engine
   // math attached verbatim so web/CLI/Tauri can never drift — but they are also

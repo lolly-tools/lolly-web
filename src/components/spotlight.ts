@@ -33,7 +33,7 @@
  *    chunk main.ts pays for — same reason the views themselves lazy-load.
  */
 import { t } from '../i18n.ts';
-import { escape } from '../utils.ts';
+import { escape, safeHref } from '../utils.ts';
 import { fold, tokenize } from '../lib/search/match.ts';
 import {
   GROUP_ORDER, GROUP_LABELS, GROUP_SEE_ALL, GROUP_CAP, OWN_GROUP_CAP,
@@ -228,8 +228,12 @@ function activate(row: HTMLElement, newTab: boolean): void {
 }
 
 /** One row of the listbox. `hit.icon` is provider-authored icon() markup (the
- *  SearchHit contract); title/subtitle are plain text, escape()d here. */
+ *  SearchHit contract); title/subtitle are plain text, escape()d here.
+ *  The href is scheme-gated by renderResults() (see navigableHits) — escape()
+ *  neutralises quotes, not a `javascript:` scheme, and SearchProvider is an
+ *  extension point, so the gate is at the paint boundary, not in the providers. */
 function rowHtml(hit: SearchHit, n: number): string {
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in renderResults() before this runs; a hit that fails it is dropped, never painted
   return `<div class="spotlight-opt" role="option" id="spotlight-opt-${n}" aria-selected="false" data-href="${escape(hit.href)}" data-sfx="navigate">
     <span class="spotlight-opt-icon" aria-hidden="true">${hit.icon}</span>
     <span class="spotlight-opt-text">
@@ -240,10 +244,22 @@ function rowHtml(hit: SearchHit, n: number): string {
 }
 
 function seeAllHtml(gid: SearchGroupId, href: string, n: number): string {
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in renderResults() before this runs; an unsafe see-all target drops the row
   return `<div class="spotlight-opt spotlight-see-all" role="option" id="spotlight-opt-${n}" aria-selected="false" data-href="${escape(href)}" data-sfx="navigate">
     <span class="spotlight-opt-title">${t('See all in {view}', { view: t(GROUP_LABELS[gid]) })}</span>
     <span class="spotlight-see-all-arrow" aria-hidden="true">→</span>
   </div>`;
+}
+
+/** The scheme gate for everything this module paints. A hit's href becomes a
+ *  real navigation in activate() (location.assign / window.open), so a
+ *  `javascript:` or `data:` target from a provider would be an XSS sink that
+ *  escape() cannot see — escaping is not scheme validation (the invariant
+ *  .github/opengrep/lolly-rules.yml encodes). Every shipped provider builds its
+ *  href from a first-party literal prefix plus encodeURIComponent, so this drops
+ *  nothing today; it holds the line for the next provider. */
+function navigableHits(hits: readonly SearchHit[]): SearchHit[] {
+  return hits.filter((h) => safeHref(h.href));
 }
 
 /** Paint one settled query's results and open the panel. */
@@ -253,19 +269,21 @@ function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap
   let n = 0;
   let total = 0;
   for (const gid of order) {
-    const hits = hitsByGroup.get(gid);
-    if (!hits?.length) continue;
+    const hits = navigableHits(hitsByGroup.get(gid) ?? []);
+    if (!hits.length) continue;
     total += hits.length;
     html += `<div class="spotlight-group-label" role="presentation">${t(GROUP_LABELS[gid])}</div>`;
     for (const hit of hits) html += rowHtml(hit, n++);
     const seeAll = GROUP_SEE_ALL[gid];
-    if (seeAll) html += seeAllHtml(gid, seeAll(trimmed), n++);
+    const seeAllHref = seeAll ? seeAll(trimmed) : '';
+    if (seeAllHref && safeHref(seeAllHref)) html += seeAllHtml(gid, seeAllHref, n++);
   }
   if (!total) html = `<div class="spotlight-empty">${t('No matches for “{q}”', { q: trimmed })}</div>`;
   const list = listEl();
   // The module's one raw-HTML sink: every interpolation above is escape()d
   // (hrefs, titles, subtitles), a t() literal, a NUMBER (the row ids), or
-  // provider-authored icon() markup per the SearchHit contract.
+  // provider-authored icon() markup per the SearchHit contract. Hrefs clear
+  // safeHref() as well — escape()ing one is not scheme validation.
   if (list) list.innerHTML = html;
   const status = statusEl();
   if (status) status.textContent = total === 1 ? t('1 result') : t('{n} results', { n: total });

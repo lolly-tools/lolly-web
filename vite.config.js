@@ -362,16 +362,29 @@ export default defineConfig({
             // edge drags engine-render + Handlebars + Ajv + engine-c2pa (~156 KB gz)
             // onto the preload set. MUST precede engine-render.
             { name: 'engine-version', test: /engine\/src\/version\.ts$/, minSize: 0, minShareCount: 1 },
-            // x509 cert parser. bridge/identity.ts needs pemToDer at boot, so isolate
-            // it in a tiny (~2 KB gz) chunk. MUST precede engine-c2pa so x509.ts lands
-            // here — otherwise it co-locates into the c2pa chunk and pemToDer's boot
-            // edge drags the whole 17 KB c2pa blob back onto the preload set.
+            // bytes.ts — the shared byte/crypto primitive leaf (concatBytes, sha256,
+            // sha256Hex, bytesToHex, base64ToBytes) every binary format module in the
+            // engine imports. ~0.6 KB, and genuinely on the boot path: design-version.ts
+            // (reached from bridge/assets.ts at first paint) re-exports sha256Hex from
+            // it. x509.ts imports it too, so WITHOUT this group rolldown co-locates
+            // bytes.ts INTO engine-x509 and that one boot edge drags the cert parser +
+            // der-read (~2.4 KB gz) back onto the preload set — the exact mechanism the
+            // engine-util note above describes, measured again on 2026-08-10. MUST
+            // precede engine-x509 / engine-c2pa / engine-render.
+            { name: 'engine-bytes', test: /engine\/src\/bytes\.ts$/, minSize: 0, minShareCount: 1 },
+            // x509 cert parser (pemToDer + the DER walk). NOT a boot dependency any
+            // more — bridge/identity.ts is a lazy facade and catalog-integrity.ts is
+            // dynamically imported by catalog/integrity.ts — but it keeps its own chunk
+            // so it never co-locates into engine-c2pa, where its next boot edge would
+            // drag the whole 17 KB c2pa blob onto the preload set. MUST precede
+            // engine-c2pa.
             { name: 'engine-x509', test: /engine\/src\/x509\.ts$/, minSize: 0, minShareCount: 1 },
-            // Catalog signature verification (catalog-integrity.ts). catalog/sync.ts
-            // needs verifyCatalogEnvelope at boot; without its own chunk it co-locates
-            // into engine-render and that boot edge drags the whole render/validate
-            // blob (+ Handlebars + Ajv) back onto the preload set. MUST precede
-            // engine-render. Its only engine dep is pemToDer (engine-x509, above).
+            // Catalog signature verification (catalog-integrity.ts) — inert unless a
+            // build pins VITE_CATALOG_PUBLIC_KEY_JWK, and imported dynamically by
+            // catalog/integrity.ts for exactly that reason. Its own chunk regardless,
+            // so it can never co-locate into engine-render and put the render/validate
+            // blob (+ Handlebars + Ajv) behind a catalog sync. MUST precede
+            // engine-render. Its only engine deps are engine-x509 + engine-bytes above.
             { name: 'engine-integrity', test: /engine\/src\/catalog-integrity\.ts$/, minSize: 0, minShareCount: 1 },
             // Vector geometry kernel (host.geom, v1.64): bezier flattening, the
             // polynomial root solver, path booleans/offset/stroke-to-fill/spline

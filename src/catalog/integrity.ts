@@ -14,7 +14,13 @@
  * as `integrity` opts so per-tool-file digests are enforced before hooks run.
  */
 
-import { importSpkiOrJwkPublicKey, verifyCatalogEnvelope } from '../../../../engine/src/catalog-integrity.ts';
+// The verifier itself is DYNAMICALLY imported (see `crypto()` below), not because
+// it is slow but because it is inert: with no key pinned neither function is ever
+// called, yet a static edge from here put engine/src/catalog-integrity.ts — and,
+// through its pemToDer import, x509.ts + der-read.ts — on the web shell's boot
+// chunk set. This module is reached at boot (bridge/tool-loader.ts, catalog/sync.ts),
+// so the import has to be the lazy one. Both public functions below are already
+// async, so the await is invisible to callers.
 import type { CatalogSignatureEnvelope } from '../../../../engine/src/catalog-integrity.ts';
 import type { ToolIntegrityOpts } from '../../../../engine/src/loader.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
@@ -36,9 +42,13 @@ const PINNED_KEY: string = import.meta.env?.VITE_CATALOG_PUBLIC_KEY_JWK ?? '';
 
 let cached: Promise<ToolIntegrityOpts | null> | null = null;
 
+/** The engine verifier, loaded on first use. Only ever reached past a `PINNED_KEY`
+ *  guard, so an unsigned build never fetches the chunk at all. */
+const crypto = () => import('../../../../engine/src/catalog-integrity.ts');
+
 async function load(): Promise<ToolIntegrityOpts | null> {
   if (!PINNED_KEY) return null;
-  const publicKey = await importSpkiOrJwkPublicKey(PINNED_KEY);
+  const publicKey = await (await crypto()).importSpkiOrJwkPublicKey(PINNED_KEY);
   // Bypasses the service worker's /tools cache by construction (it's under
   // /catalog, which sw.js deliberately never caches; a remote-instance fetch is
   // cross-origin, which the SW ignores entirely) — the envelope is always as
@@ -76,7 +86,7 @@ export function getToolIntegrity(): Promise<ToolIntegrityOpts | null> {
 export async function assertToolIndexIntegrity(indexText: string): Promise<void> {
   const integrity = await getToolIntegrity();
   if (!integrity) return;
-  const result = await verifyCatalogEnvelope(
+  const result = await (await crypto()).verifyCatalogEnvelope(
     integrity.envelope,
     new TextEncoder().encode(indexText),
     integrity.publicKey,

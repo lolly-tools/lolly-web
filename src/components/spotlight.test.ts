@@ -123,6 +123,39 @@ test('titles and subtitles render as plain text (escaped at the sink)', async ()
   clearSearchBar();
 });
 
+test('a hit with a script-bearing href is dropped, not painted — escaping is not scheme validation', async () => {
+  resetProviders();
+  navigations.length = 0;
+  tabs.length = 0;
+  registerProvider({
+    id: 'projects',
+    // SearchProvider is an extension point and activate() turns a row's href
+    // into a real navigation (location.assign / window.open), so a provider
+    // that yields a javascript:/data: target must never reach the DOM. escape()
+    // cannot see it: none of the five escaped characters appear in either URL.
+    search: async () => [
+      { icon: '', title: 'safe', href: '#/ok', score: 3 },
+      { icon: '', title: 'script', href: 'javascript:alert(1)', score: 2 },
+      { icon: '', title: 'data', href: 'data:text/html,<script>alert(1)</script>', score: 1 },
+    ],
+  });
+  type('ab');
+  await settle();
+  const painted = rows()
+    .filter((r) => !r.classList.contains('spotlight-see-all'))
+    .map((r) => r.dataset.href);
+  assert.deepEqual(painted, ['#/ok'], 'only the navigable href survives to the DOM');
+  assert.equal(panel()!.innerHTML.includes('javascript:'), false);
+  assert.equal(panel()!.innerHTML.includes('data:text/html'), false);
+  // The status line counts what is actually actionable, not what arrived.
+  assert.equal(document.querySelector('.spotlight-status')?.textContent, '1 result');
+  // And Enter on the first row activates the safe target, never a dropped one.
+  key('Enter');
+  assert.deepEqual(navigations, ['#/ok']);
+  assert.deepEqual(tabs, []);
+  clearSearchBar();
+});
+
 test('live-adapt route (gallery): the own group is omitted, the rest keep order', async () => {
   resetProviders();
   registerProvider(fakeProvider('tools', 2));

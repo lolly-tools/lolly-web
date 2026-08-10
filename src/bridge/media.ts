@@ -18,6 +18,7 @@
  */
 
 import type { MediaAPI, MediaFrame } from '@lolly-tools/core/host-v1';
+import { cameraAvailable } from './capture-support.ts';
 
 type FrameCallback = (frame: MediaFrame) => void;
 
@@ -71,8 +72,9 @@ export function createMediaAPI(): WebMediaAPI {
   let animStart = 0;                       // wall-clock of the first anim frame (drives playback time)
   let animBusy = false;                    // a bake+decode is in flight (skip-if-busy → adaptive fps)
 
-  const isAvailable = (): boolean =>
-    typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+  // The same probe bridge/index.ts's lazy facade answers from (capture-support.ts),
+  // called rather than re-typed so the two can never disagree.
+  const isAvailable = cameraAvailable;
 
   function teardown(): void {
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }

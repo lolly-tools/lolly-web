@@ -26,6 +26,7 @@ import type {
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL } from './video-mime.ts';
 // Tiny dependency-free shell side channel — safe to import on the boot path.
 import { publishRecordPreview } from '../lib/record-preview.ts';
+import { recorderAvailable } from './capture-support.ts';
 
 /** Best supported recorder mime for a video capture (audio+video), or null. Local
  *  copy of export.ts's videoMimeType so the boot path never imports the rasteriser. */
@@ -97,13 +98,6 @@ function spectralCues(freqDb: Float32Array, humBins: Set<number>, loBin: number,
   const hiss = arith > 1e-9 ? Math.min(1, geo / arith) : 0;
   return { hum, hiss };
 }
-
-const hasGetUserMedia = (): boolean =>
-  typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
-const hasGetDisplayMedia = (): boolean =>
-  typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia);
-const hasRecorder = (): boolean =>
-  typeof MediaRecorder !== 'undefined';
 
 type AudioContextCtor = typeof AudioContext;
 function audioContextCtor(): AudioContextCtor | null {
@@ -578,11 +572,10 @@ async function grabFrame(stream: MediaStream, opts: StillOpts): Promise<Blob> {
 export function createRecorderAPI(): RecorderAPI {
   const meter = createMeter();
   return {
-    isAvailable(kind?: 'audio' | 'video' | 'screen'): boolean {
-      // A screenshot needs no MediaRecorder — only a display stream to grab a frame from.
-      if (kind === 'screen') return hasGetDisplayMedia();
-      return hasGetUserMedia() && hasRecorder();
-    },
+    // The same probe bridge/index.ts's lazy facade answers from (capture-support.ts),
+    // called rather than re-typed so the two can never disagree about what this
+    // browser can do.
+    isAvailable: recorderAvailable,
     meter,
     record(opts: RecordOpts = {}): Promise<RecordSession> {
       return openSession(opts);

@@ -24,27 +24,14 @@
  */
 
 import type { CaptureAPI, AssetRef } from '@lolly-tools/core/host-v1';
+// The synchronous announcement half lives in its own leaf so boot-path callers
+// (bridge/index.ts's impl choice) can ask "is it here?" without pulling this
+// module's transport into the boot chunk. Re-exported below, so importers of
+// THIS module — which want the transport anyway — see no change.
+import { SITE_PROTOCOL, hasCaptureExtension, hasSiteCapture } from './capture-extension-probe.ts';
 
-/** What the extension announces about itself, synchronously, at document_start. */
-interface LollyCaptureFlag {
-  version?: string;
-  /**
-   * Version of the site-read request/reply shape this extension speaks. Absent on
-   * copies older than 0.2.0, which answer screenshots but not site reads — hence a
-   * separate announcement rather than one version number for both.
-   */
-  siteProtocol?: number;
-}
-
-declare global {
-  interface Window {
-    /** Set at document_start by the extension's MAIN-world content script. */
-    __lollyCapture?: LollyCaptureFlag | boolean;
-  }
-}
-
-/** The site-read shape this build speaks. Bump in lockstep with inpage.js. */
-const SITE_PROTOCOL = 1;
+export { SITE_PROTOCOL, hasCaptureExtension, hasSiteCapture };
+export type { LollyCaptureFlag } from './capture-extension-probe.ts';
 
 /** The result message the extension's content script posts back. */
 interface CaptureResultMessage {
@@ -60,26 +47,6 @@ function isCaptureResult(m: unknown): m is CaptureResultMessage {
   if (!m || typeof m !== 'object') return false;
   const r = m as Record<string, unknown>;
   return r.source === 'lolly-capture/ext' && r.type === 'result' && typeof r.id === 'string';
-}
-
-/** Synchronous, zero-cost detection — the extension sets this at document_start. */
-export function hasCaptureExtension(): boolean {
-  return typeof window !== 'undefined' && !!window.__lollyCapture;
-}
-
-/**
- * Synchronous, zero-cost detection of the SITE read specifically.
- *
- * Separate from `hasCaptureExtension()` because an installed-but-older extension
- * has the flag and cannot do this, and because the studio decides whether the
- * Website source exists at all before it renders — showing a source that cannot
- * run is the thing plan 97 §9 forbids.
- */
-export function hasSiteCapture(): boolean {
-  if (typeof window === 'undefined') return false;
-  const flag = window.__lollyCapture;
-  if (!flag || typeof flag !== 'object') return false;
-  return typeof flag.siteProtocol === 'number' && flag.siteProtocol >= SITE_PROTOCOL;
 }
 
 let _seq = 0;

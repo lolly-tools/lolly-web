@@ -18,13 +18,18 @@
  *   and diff-review the fixture change before committing it — a golden diff
  *   IS the review artefact for any change to this seam.)
  *
- * Portability: every case needs real SUSE static/variable font files under
- * catalog/fonts/ (a gitignored profile VIEW — see CLAUDE.md "Content
- * profiles"). A bare checkout on the `lolly-start` profile, or a public CI
- * run that never mounted brands/suse, won't have them. Cases check file
+ * Portability: the STATIC cases need real SUSE static faces under
+ * catalog/fonts/ttf/ (a gitignored profile VIEW — see CLAUDE.md "Content
+ * profiles"), which a bare checkout on the `lolly-start` profile, or a public
+ * CI run that never mounted brands/suse, won't have. Those cases check file
  * existence up front and `test.skip` with a logged reason rather than
  * failing when the font view isn't mounted — this file must never fail
  * merely because a brand pack isn't checked out.
+ *
+ * The VARIABLE cases are deliberately not in that set: they read the shell's
+ * own `public/fonts/SUSE[wght].ttf`, which ships on every profile, so the fvar
+ * seam is covered on a bare checkout and in CI. Reach for `catalog/fonts/` here
+ * only when a case is genuinely ABOUT the mounted brand's files.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -73,9 +78,21 @@ const api = createTextAPI();
 const REGULAR      = 'catalog/fonts/ttf/SUSE-Regular.ttf';
 const BOLD         = 'catalog/fonts/ttf/SUSE-Bold.ttf';
 const BOLD_ITALIC  = 'catalog/fonts/ttf/SUSE-BoldItalic.ttf';
-// The actual VARIABLE master (statics above are pre-instanced weights baked
+// The actual VARIABLE master (the statics above are pre-instanced weights baked
 // from this at build time — SUSE-Regular.ttf itself carries no fvar axis).
-const VARIABLE     = 'catalog/fonts/variable/SUSE[wght].ttf';
+//
+// Read from the SHELL's own font directory, not from `catalog/fonts/variable/`.
+// The catalog path was always the wrong coupling: this case tests the fvar axis
+// in `bridge/text.ts`, which has nothing to do with which brand pack is mounted,
+// and pinning it to a gitignored profile VIEW meant the whole variable-font seam
+// silently stopped being tested on every checkout that wasn't on the `suse`
+// profile — including CI, which never mounts brands/suse. The shell serves this
+// face on EVERY profile (it is the app's own standard face, alongside Outfit
+// below), so the case now runs everywhere. The bytes are the same file: this and
+// `brands/suse/catalog/fonts/variable/SUSE[wght].ttf` are identical
+// (sha256 e58dc240debae8a177d236e977e3834c6fff3883a7ad6010f098778f60904527), so
+// the committed goldens are unchanged by the repoint — verified, not assumed.
+const VARIABLE     = 'shells/web/public/fonts/SUSE[wght].ttf';
 // Platform fallback face (Outfit), shipped regardless of active brand profile
 // — used below purely as a face with disjoint unicode coverage from SUSE, to
 // exercise the real fallbackFonts/segmentByFace branch.
@@ -88,8 +105,12 @@ const outfitAvailable = fontExists(OUTFIT_VARIABLE);
 const SKIP_NO_SUSE = suseStaticsAvailable ? false
   : `SUSE static fonts not present at ${REGULAR} etc. — this checkout's active profile ` +
     `(see profiles.json) has no SUSE fonts mounted under catalog/fonts/. Skipping.`;
+// Not profile-gated any more — the face ships with the shell this file lives in,
+// so this reads as a corrupt checkout rather than as an unmounted brand pack, and
+// it must never quietly become the normal state again.
 const SKIP_NO_VARIABLE = suseVariableAvailable ? false
-  : `SUSE variable font not present at ${VARIABLE} — skipping variable-axis golden case.`;
+  : `SUSE variable font missing from the web shell's own fonts at ${VARIABLE} — this ` +
+    `ships on every profile, so a checkout without it is broken, not unmounted.`;
 const SKIP_NO_FALLBACK = (suseStaticsAvailable && outfitAvailable) ? false
   : `Missing ${!suseStaticsAvailable ? REGULAR : OUTFIT_VARIABLE} — skipping fallbackFonts golden case.`;
 
@@ -332,7 +353,11 @@ test('an interior space (no-ink glyph) advances the pen and keeps bbox well-form
   assert.ok(twoWord.d.length > oneWord.d.length, 'the second word contributes real outline');
 });
 
-test('axisDefaults reports a variable font’s default instance and {} for a static (the jsPDF-embed weight cue)', { skip: SKIP_NO_VARIABLE }, async () => {
+// Split from the static half below on purpose. This is the assertion with the
+// consequence — the weight a jsPDF embed silently gets — and pairing it with a
+// SUSE-static check used to take it down with the brand pack on every profile
+// that isn't `suse`. It now reads the shell's own master and runs everywhere.
+test('axisDefaults reports a variable font’s default instance (the jsPDF-embed weight cue)', { skip: SKIP_NO_VARIABLE }, async () => {
   // axisDefaults is an optional (v1.30) TextAPI method; this shell's impl always
   // provides it — narrow + assert that, so a shell that dropped it fails loudly.
   const axisDefaults = api.axisDefaults;
@@ -341,6 +366,14 @@ test('axisDefaults reports a variable font’s default instance and {} for a sta
   // jsPDF embed (no axis control) will actually get. A change here means that
   // embed default moved and must be reviewed deliberately, not silently.
   assert.deepEqual(await axisDefaults(VARIABLE), { wght: 100 });
+});
+
+// The other half. Genuinely needs a PRE-INSTANCED face, and the shell ships no
+// static one (every face in public/fonts is a [wght] master), so this is the
+// piece that legitimately waits on the SUSE pack.
+test('axisDefaults reports {} for a pre-instanced static', { skip: SKIP_NO_SUSE }, async () => {
+  const axisDefaults = api.axisDefaults;
+  assert.ok(axisDefaults, 'this shell must implement host.text.axisDefaults');
   assert.deepEqual(await axisDefaults(REGULAR), {}, 'a pre-instanced static carries no fvar axis');
 });
 
@@ -350,8 +383,11 @@ test('an unparseable variation/feature string is dropped, not thrown (a caller t
   const bogusVariation = await api.toPath({ text, fontUrl: VARIABLE, fontSize: 48, variations: ['nonsense=1'] });
   assert.equal(bogusVariation.d, defaultInstance.d, 'a malformed axis string is filtered, leaving the default instance — not thrown');
 
-  const noFeature = await api.toPath({ text: 'office', fontUrl: REGULAR, fontSize: 48 });
-  const bogusFeature = await api.toPath({ text: 'office', fontUrl: REGULAR, fontSize: 48, features: ['not a feat'] });
+  // Shaped through the same master rather than the static: the claim is about
+  // the FEATURE STRING being filtered, which no face is special to, and reading
+  // a brand-pack file here would put the variation half back behind a mount.
+  const noFeature = await api.toPath({ text: 'office', fontUrl: VARIABLE, fontSize: 48 });
+  const bogusFeature = await api.toPath({ text: 'office', fontUrl: VARIABLE, fontSize: 48, features: ['not a feat'] });
   assert.equal(bogusFeature.d, noFeature.d, 'a malformed feature string is filtered, not applied or thrown');
 });
 

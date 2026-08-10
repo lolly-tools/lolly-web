@@ -32,7 +32,9 @@ import type { Profile } from '@lolly-tools/core/host-v1';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
-import { partRecords } from '../lib/offline-manager.ts';
+// Dynamic for the same reason catalog/sync.ts is: this view is reached from the
+// gallery's static graph, but its one read of the download manager happens in the
+// async self-suppress check below, well after first paint.
 import { pinnedToolBytes } from '../lib/offline-pins.ts';
 
 /** The slice of the host this module writes through — the web shell's profile
@@ -110,7 +112,10 @@ export function mountOfflineNudge(viewEl: HTMLElement, host: NudgeHost): void {
   // Self-suppress: downloads already on device = nothing left to point at.
   void (async () => {
     try {
-      const [parts, pins] = await Promise.all([partRecords(), pinnedToolBytes()]);
+      const [parts, pins] = await Promise.all([
+        import('../lib/offline-manager.ts').then(m => m.partRecords()),
+        pinnedToolBytes(),
+      ]);
       if (Object.keys(parts).length || pins.count) dismiss();
     } catch { /* unreadable state — leave the toast up */ }
   })();
