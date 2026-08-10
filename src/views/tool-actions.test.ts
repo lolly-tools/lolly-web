@@ -724,3 +724,166 @@ test('a framed still fanout drops the inert cuts opt from the per-page render', 
   await settle();
   for (const e of h.pageExports()) assert.equal('cuts' in e.opts, false, 'cuts is deleted from the per-artboard opts');
 });
+
+// ── 10. print marks & bleed are OFF by default for RGB vector output ──────────
+// PRINT_MARK_FORMATS says which formats CAN carry marks (pdf/svg/eps included);
+// print INTENT is only the separating press formats (pdf-cmyk / cmyk-tiff /
+// eps-cmyk), an explicit ?bleed=/?marks= (or saved) setting, a manual toggle, or
+// a manifest that declares render.printMarks: true. An everyday PDF or SVG must
+// export trim-sized with no marks — and physical units (mm + dpi) are a size
+// statement, never print intent.
+
+interface PrintDefaults { format?: string; bleed?: string; marks?: Record<string, boolean> | null; unit?: string; dpi?: number }
+
+/** Mount the export bar for a plain (non-sequence) tool and expose the print card. */
+function mountPrintCard({ formats = ['png', 'pdf', 'svg', 'pdf-cmyk'], exportDefaults = {}, printMarks }:
+  { formats?: string[]; exportDefaults?: PrintDefaults; printMarks?: boolean } = {}) {
+  const doc = dom.window.document;
+  doc.body.innerHTML = '';
+  const panel = doc.createElement('div');
+  const canvas = doc.createElement('div');
+  doc.body.append(panel, canvas);
+
+  const seen: Array<{ format: string; opts: Record<string, unknown> }> = [];
+  const manifest = {
+    id: 'qr-code', name: 'QR Code', version: '1.0.0', inputs: [],
+    render: { width: 800, height: 600, formats, ...(printMarks === undefined ? {} : { printMarks }) },
+  };
+  const runtime = {
+    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    export: async (_node: unknown, format: string, opts: Record<string, unknown>) => {
+      seen.push({ format, opts: { ...opts } });
+      return new dom.window.Blob(['x'], { type: 'application/pdf' });
+    },
+  };
+  const host = {
+    assets: { query: async () => [] },
+    state: { save: async () => {} },
+    export: { download: async () => {} },
+  };
+  renderActions(
+    panel as never, manifest as never, runtime as never, canvas, host as never,
+    () => {}, (async (fn: () => unknown) => fn()) as never, exportDefaults as never,
+  );
+  return {
+    panel,
+    enable: () => panel.querySelector('[data-action="print-enable"]') as HTMLInputElement | null,
+    card: () => panel.querySelector('.export-print') as HTMLElement | null,
+    mark: (a: string) => panel.querySelector(`[data-action="${a}"]`) as HTMLInputElement,
+    downloads: () => seen.filter(e => typeof e.opts.onProgress === 'function'),
+    setFormat: (f: string) => {
+      const sel = panel.querySelector('[data-action="format"]') as HTMLSelectElement;
+      sel.value = f;
+      sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    },
+    toggleEnable: (on: boolean) => {
+      const en = panel.querySelector('[data-action="print-enable"]') as HTMLInputElement;
+      en.checked = on;
+      en.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    },
+    download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
+      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+  };
+}
+
+test('an everyday PDF starts with the print card OFF and exports no bleed and no marks', async () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'pdf' } });
+  assert.ok(h.card(), 'the card is still OFFERED for pdf — capability is not the question');
+  assert.equal(h.enable()!.checked, false, 'but its master toggle starts off');
+  h.download();
+  await settle();
+  assert.equal(h.downloads().length, 1);
+  assert.equal(h.downloads()[0]!.format, 'pdf');
+  const opts = h.downloads()[0]!.opts;
+  for (const k of ['bleed', 'cropMarks', 'registrationMarks', 'bleedMarks', 'colorBars', 'provenance']) {
+    assert.equal(k in opts, false, `a default pdf export must not carry ${k}`);
+  }
+});
+
+test('SVG starts with the print card OFF and exports no bleed and no marks', async () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'svg' } });
+  assert.equal(h.enable()!.checked, false);
+  h.download();
+  await settle();
+  const opts = h.downloads()[0]!.opts;
+  assert.equal(h.downloads()[0]!.format, 'svg');
+  for (const k of ['bleed', 'cropMarks', 'registrationMarks', 'bleedMarks']) {
+    assert.equal(k in opts, false, `a default svg export must not carry ${k}`);
+  }
+});
+
+test('a separating press format still defaults the card ON — PDF/X behaviour unchanged', async () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'pdf-cmyk' } });
+  assert.equal(h.enable()!.checked, true, 'Print PDF is print intent by definition');
+  h.download();
+  await settle();
+  const opts = h.downloads()[0]!.opts;
+  assert.equal(opts.cropMarks, true);
+  assert.equal(opts.registrationMarks, true);
+  assert.equal(opts.bleedMarks, true);
+  assert.equal(opts.colorBars, true, 'colour bars default on for a CMYK press format');
+  assert.equal(opts.bleed, '3mm', 'the print-standard default bleed');
+  assert.equal(opts.barStyle, 'cmyk-verify');
+});
+
+test('format switches re-apply the intent default in both directions', () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'png' } });
+  h.setFormat('pdf');
+  assert.equal(h.enable()!.checked, false, 'pdf: card shown, toggle off');
+  h.setFormat('pdf-cmyk');
+  assert.equal(h.enable()!.checked, true, 'press format: toggle on');
+  h.setFormat('svg');
+  assert.equal(h.enable()!.checked, false, 'svg: back off');
+});
+
+test('a manual toggle is an explicit request — it exports marks and survives format switches', async () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'pdf' } });
+  h.toggleEnable(true);
+  h.setFormat('svg');
+  assert.equal(h.enable()!.checked, true, 'the user asked; the per-format auto-close must stand down');
+  h.download();
+  await settle();
+  const opts = h.downloads()[0]!.opts;
+  assert.equal(opts.cropMarks, true);
+  assert.equal(opts.bleed, '3mm');
+  assert.equal(opts.barStyle, 'rgb-swatches', 'RGB output paints brand swatches, not a CMYK verify bar');
+});
+
+test('an explicit marks (link/save) default turns the card on for a plain pdf', () => {
+  const h = mountPrintCard({ exportDefaults: {
+    format: 'pdf',
+    marks: { crop: true, registration: false, bleed: false, colorBars: false, provenance: false },
+  } });
+  assert.equal(h.enable()!.checked, true, '?marks= is an explicit request');
+  assert.equal(h.mark('mark-crop').checked, true);
+  assert.equal(h.mark('mark-reg').checked, false, 'the linked mark set restores exactly');
+});
+
+test('an explicit bleed (link/save) default turns the card on for a plain pdf', () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'pdf', bleed: '5mm' } });
+  assert.equal(h.enable()!.checked, true, '?bleed= is an explicit request');
+  assert.equal((h.panel.querySelector('[data-action="print-bleed"]') as HTMLInputElement).value, '5');
+});
+
+test('physical units + dpi are NOT print intent', () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'pdf', unit: 'mm', dpi: 300 } });
+  assert.equal(h.enable()!.checked, false, 'an A4 pdf is a size statement, not a print order');
+  const s = mountPrintCard({ exportDefaults: { format: 'svg', unit: 'in', dpi: 150 } });
+  assert.equal(s.enable()!.checked, false);
+});
+
+test('a manifest declaring render.printMarks: true IS print intent — the card defaults on', () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'pdf' }, printMarks: true });
+  assert.equal(h.enable()!.checked, true, 'declared intent covers the RGB print-capable formats too');
+  h.setFormat('svg');
+  assert.equal(h.enable()!.checked, true);
+  h.setFormat('png');
+  assert.equal(h.enable()!.checked, false, 'png cannot carry marks — never on');
+});
+
+test('render.printMarks: false still hides the card entirely', () => {
+  const h = mountPrintCard({ exportDefaults: { format: 'pdf' }, printMarks: false });
+  assert.equal(h.card(), null);
+  assert.equal(h.enable(), null);
+});

@@ -73,11 +73,13 @@ class StubEncoder {
 class StubMuxer {
   video: unknown[] = [];
   audio: unknown[] = [];
+  /** Interleave record across BOTH streams, in the order chunks were fed. */
+  fed: string[] = [];
   finalized = 0;
   order: string[];
   constructor(order: string[]) { this.order = order; }
-  addVideoChunk(c: unknown): void { this.video.push(c); }
-  addAudioChunk(c: unknown): void { this.audio.push(c); }
+  addVideoChunk(c: unknown): void { this.video.push(c); this.fed.push(`v:${(c as { timestamp?: number } | null)?.timestamp ?? '?'}`); }
+  addAudioChunk(c: unknown): void { this.audio.push(c); this.fed.push(`a:${(c as { timestamp?: number } | null)?.timestamp ?? '?'}`); }
   finalize(): void { this.finalized++; this.order.push('mux:finalize'); }
 }
 
@@ -268,12 +270,35 @@ test('createStreamingMux: an encoder error surfaces on the next addFrame and on 
   assert.equal(h.muxer.finalized, 0, 'a failed session must not produce a container');
 });
 
-test('createStreamingMux: video chunks reach the muxer through the encoder output callback', async () => {
+test('createStreamingMux: chunks are held back and reach the muxer only at finalize', async () => {
+  // Feeding the muxer from the output callbacks made the audio/video interleave
+  // depend on scheduler load (tied timestamps every 0.1s at 30fps), so the same
+  // render could hash differently. The callbacks queue; finalize() drains.
   const { session, h } = harness();
   const mux = await session;
   await mux.addFrame({} as any, 0);
-  h.video.cb.output({ chunk: 1 }, { meta: true });
-  assert.deepEqual(h.muxer.video, [{ chunk: 1 }]);
+  h.video.cb.output({ chunk: 1, timestamp: 0 }, { meta: true });
+  assert.deepEqual(h.muxer.video, [], 'nothing reaches the muxer mid-run');
+  await mux.finalize();
+  assert.deepEqual(h.muxer.video, [{ chunk: 1, timestamp: 0 }]);
+});
+
+test('createStreamingMux: finalize interleaves streams canonically — ascending timestamp, video first on a tie', async () => {
+  const { session, h } = harness({ audio: AUDIO });
+  const mux = await session;
+  await mux.addFrame({} as any, 0);
+  // Adversarial ARRIVAL order: audio lands first, out of timestamp order, with
+  // one exact tie at 100000µs. The muxer must still see one canonical order.
+  h.audio!.cb.output({ chunk: 'a@100000', timestamp: 100_000 }, undefined);
+  h.audio!.cb.output({ chunk: 'a@200000', timestamp: 200_000 }, undefined);
+  h.video.cb.output({ chunk: 'v@66667', timestamp: 66_667 }, undefined);
+  h.video.cb.output({ chunk: 'v@100000', timestamp: 100_000 }, undefined);
+  h.video.cb.output({ chunk: 'v@133333', timestamp: 133_333 }, undefined);
+  await mux.finalize();
+  assert.deepEqual(h.muxer.fed, ['v:66667', 'v:100000', 'a:100000', 'v:133333', 'a:200000'],
+    'one canonical interleave regardless of arrival order — video wins the tie');
+  assert.deepEqual(h.muxer.video.map((c: any) => c.chunk), ['v@66667', 'v@100000', 'v@133333'], 'per-stream emit order is preserved');
+  assert.deepEqual(h.muxer.audio.map((c: any) => c.chunk), ['a@100000', 'a@200000']);
 });
 
 test('createStreamingMux: addAudio chunks PCM and continues timestamps across buffers', async () => {

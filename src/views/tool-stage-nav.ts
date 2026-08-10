@@ -243,6 +243,21 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
+    // CHORDS BELONG TO THE BROWSER. Cmd/Ctrl+= and Cmd/Ctrl+- are the browser's
+    // whole-UI zoom (Cmd/Ctrl+0 its reset), and this handler used to catch their
+    // bare `key` values ('=', '-', '0') and preventDefault them — so native page
+    // zoom could never fire on any canvas tool. Canvas zoom answers only the bare
+    // keys and their Shift siblings ('+' is Shift+'=' and '_' is Shift+'-' on
+    // most layouts); the moment Meta/Ctrl/Alt is down the key is the browser's,
+    // the same rule timeline-panel.ts's onKey applies to its bindings.
+    // TODO(tauri): the Tauri webviews ship no native page-zoom UI, so on desktop
+    // Cmd+= currently falls through to nothing there. Whole-UI zoom needs the
+    // shell to wire WebviewWindow.setZoom (plus the
+    // core:webview:allow-set-webview-zoom capability) behind these chords —
+    // neither shell has any zoom hook today (checked bridge-overrides/ and
+    // src-tauri/, 2026-08-10). Web is the priority; do NOT re-capture the chords
+    // here as a workaround.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.code === 'Space' && !isTyping()) { spaceDown = true; stageEl.classList.add('is-grabbable'); return; }
     if (isTyping()) return;
     if (e.key === '0')                       fit();                                              // Fit

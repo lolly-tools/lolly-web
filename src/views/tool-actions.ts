@@ -126,6 +126,15 @@ const DEFAULT_PRINT_MARKS: PrintMarks = { crop: true, registration: true, bleed:
 // the separating set minus eps-cmyk, which this panel does not offer settings for.
 const isCmykFmt  = (f: string | undefined): boolean => SEPARATING_FORMATS.has(f ?? '') && f !== 'eps-cmyk';
 const isPrintFmt = (f: string | undefined): boolean => PRINT_MARK_FORMATS.has(f ?? '');
+// Print INTENT is narrower than print CAPABILITY. Every PRINT_MARK_FORMATS member
+// can CARRY bleed and marks (that is what keeps the card on offer for pdf/svg/eps),
+// but only the separating press formats (pdf-cmyk / cmyk-tiff / eps-cmyk) MEAN
+// print by being picked — an everyday RGB PDF or SVG is a share/screen format
+// first, so marks and bleed stay OFF for it until the user (or an explicit
+// bleed/marks link/save, or a manifest declaring render.printMarks: true) asks.
+// Physical units (mm/cm/in + dpi) are a size statement, not print intent, and
+// never enable marks on their own.
+const isPressFmt = (f: string | undefined): boolean => SEPARATING_FORMATS.has(f ?? '');
 // The `marks` CSV codec lives in lib/print-marks-csv.ts — one encoder, one
 // decoder, shared with the batch/folder render path (which previously had no way
 // to read a stored CSV back and so dropped print marks entirely).
@@ -671,13 +680,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // per-page boxes (multi-page PDF) opt out via render.printMarks:false so the
   // card isn't shown promising marks the multi-page export path doesn't apply.
   const hasPrint     = (hasPdf || hasCmyk) && manifest.render.printMarks !== false;
-  // Picking ANY print format (PDF, Print PDF, Print TIFF) opens the marks card with
-  // its full set — bleed, crop, registration, colour bars, and the provenance stamp
-  // in the margin — so the print controls are always right there, never hidden behind
-  // a collapsed toggle. Colour bars still default on only for the CMYK formats (below);
-  // an explicit link/save marks preference counts too. The master toggle can turn the
-  // whole lot off for a plain everyday PDF.
-  const printInitOn  = Boolean(exportDefaults.bleed || exportDefaults.marks) || isPrintFmt(initialFmt);
+  // Marks & bleed default ON only where there is PRINT INTENT: picking a separating
+  // press format (Print PDF / Print TIFF / CMYK EPS), a manifest that declares
+  // render.printMarks: true, or an explicit bleed/marks preference from a link/save.
+  // The RGB vector formats (pdf / svg / eps) still SHOW the card — they can carry
+  // marks — but its master toggle starts OFF, so an everyday PDF or SVG export is
+  // trim-sized and unmarked until the user asks. Physical units alone never count
+  // as print intent (see isPressFmt above).
+  const declaresPrintIntent = manifest.render.printMarks === true;
+  const printIntentFmt = (f: string | undefined): boolean => isPressFmt(f) || (declaresPrintIntent && isPrintFmt(f));
+  const printInitOn  = Boolean(exportDefaults.bleed || exportDefaults.marks) || printIntentFmt(initialFmt);
   const printInitMm  = exportDefaults.bleed ? (parseFloat(exportDefaults.bleed) || 3) : 3;
   // Colour bars default ON for the CMYK print formats (the press uses them as a
   // control strip), OFF for the RGB pdf. An explicit marks default (link/save) wins.
@@ -1272,16 +1284,17 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (bars) bars.checked = isCmykFmt(fmt);
   };
 
-  // The Print marks card opens for EVERY print format and closes for the rest,
-  // re-applied on every switch — until the user toggles the master or a link/save
-  // set marks explicitly, after which their choice is left alone. Without this the
-  // card is shown but collapsed behind an unchecked master, so picking a print format
-  // looks like the crop/bleed/colour-bar/provenance controls vanished.
+  // The Print marks card auto-opens only for a PRINT-INTENT format (a separating
+  // press format, or any print-capable format when the manifest declares
+  // render.printMarks: true) and closes for the rest — including the RGB vector
+  // formats pdf/svg/eps, which keep the card VISIBLE but off — re-applied on every
+  // switch, until the user toggles the master or a link/save set marks explicitly,
+  // after which their choice is left alone.
   let marksUserSet = Boolean(exportDefaults.bleed || exportDefaults.marks);
   const syncPrintDefault = (fmt: string): void => {
     if (marksUserSet) return;
     const en = el.querySelector<HTMLInputElement>('[data-action="print-enable"]');
-    if (en) en.checked = isPrintFmt(fmt);   // refreshPrintUi (called next) reveals/hides the body
+    if (en) en.checked = printIntentFmt(fmt);   // refreshPrintUi (called next) reveals/hides the body
   };
 
   // Show/hide timing params and format-specific controls when the format selector changes.

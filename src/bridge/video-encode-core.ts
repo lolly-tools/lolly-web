@@ -238,8 +238,22 @@ export async function createStreamingMux(
   const fail = (e: unknown): void => { encErr ??= e; };
   const asError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e ?? 'encoder error')));
 
+  // Deterministic interleave. The two encoders' output callbacks fire on their
+  // own schedule, and an audio chunk lands every 100000µs — a timestamp every
+  // third 30fps video frame TIES exactly — so feeding the muxer in arrival
+  // order made the interleave (and therefore the file's bytes) depend on
+  // scheduler load: same render, same pixels, same size, different sha. The
+  // callbacks queue per stream instead, and finalize() drains both queues in
+  // one canonical order (ascending timestamp, video first on a tie — the same
+  // rule webm-muxer's own video-queue drain applies). Memory is unchanged:
+  // both muxers already accumulate the whole encoded stream (see the MEMORY
+  // note in sequence-render.ts).
+  const vQ: Array<{ chunk: unknown; metadata: unknown }> = [];
+  const aQ: Array<{ chunk: unknown; metadata: unknown }> = [];
+  const tsOf = (c: unknown): number => Number((c as { timestamp?: number } | null)?.timestamp ?? 0);
+
   const encoder = new VEnc({
-    output: (chunk: unknown, metadata: unknown) => { try { muxer.addVideoChunk(chunk, metadata); } catch (e) { fail(e); } },
+    output: (chunk: unknown, metadata: unknown) => { vQ.push({ chunk, metadata }); },
     error: (e: unknown) => { fail(e); },
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
@@ -249,7 +263,7 @@ export async function createStreamingMux(
   let aEnc: any = null;
   if (a) {
     aEnc = new AEnc({
-      output: (chunk: unknown, metadata: unknown) => { try { muxer.addAudioChunk(chunk, metadata); } catch (e) { fail(e); } },
+      output: (chunk: unknown, metadata: unknown) => { aQ.push({ chunk, metadata }); },
       error: (e: unknown) => { fail(e); },
     });
     aEnc.configure({ codec: a.codec, sampleRate: a.sampleRate, numberOfChannels: a.numberOfChannels, bitrate: a.bitrate });
@@ -329,6 +343,22 @@ export async function createStreamingMux(
         throw asError(e);
       }
       if (encErr) throw asError(encErr);
+      // Canonical drain — the only place chunks meet the muxer. Per-stream
+      // order is each encoder's emit order (monotonic; neither codec path
+      // produces B-frames); only the interleave between streams is decided
+      // here, so it is decided the same way every run.
+      try {
+        let vi = 0;
+        let ai = 0;
+        while (vi < vQ.length || ai < aQ.length) {
+          const takeVideo = ai >= aQ.length
+            || (vi < vQ.length && tsOf(vQ[vi]!.chunk) <= tsOf(aQ[ai]!.chunk));
+          if (takeVideo) { muxer.addVideoChunk(vQ[vi]!.chunk, vQ[vi]!.metadata); vi++; }
+          else { muxer.addAudioChunk(aQ[ai]!.chunk, aQ[ai]!.metadata); ai++; }
+        }
+      } catch (e) {
+        throw asError(e);
+      }
       muxer.finalize();
       return new Blob([target.buffer as ArrayBuffer], { type });
     },

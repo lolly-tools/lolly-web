@@ -5199,7 +5199,7 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
   title?: string;
   software?: string;
   environment: Record<string, unknown>;
-  author?: { name: string; email?: string };
+  author?: { name: string; email?: string; url?: string };
   rights?: string;
   actions: C2paActionInput[];
   ingredients?: IngredientCredential[];

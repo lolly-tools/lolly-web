@@ -5,11 +5,11 @@ This file exists so you can find the code for a feature without reading all of i
 The counts below are GENERATED — `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
 
 <!-- web-src-dirs:start -->
-Roughly 316,000 lines of TypeScript, tests included, and 32,000 lines of CSS.
+Roughly 317,000 lines of TypeScript, tests included, and 32,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 68 files, 74,496 lines | 50 files, 21,385 lines | none |
+| `views/` | 68 files, 74,532 lines | 51 files, 21,674 lines | none |
 | `lib/` | 234 files, 63,563 lines | 132 files, 32,865 lines | 7 files, 1,060 lines |
 | `bridge/` | 75 files, 31,413 lines | 50 files, 12,796 lines | none |
 | `components/` | 39 files, 17,634 lines | 18 files, 7,313 lines | 1 file, 137 lines |
@@ -66,13 +66,13 @@ Do not be ambushed by these. The largest source files, by line count:
 | 4,117 | `views/catalog.ts` | partial — the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 3,505 | `views/picker.ts` | partial — the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
 | 3,378 | `views/color-lab.ts` | yes |
-| 3,041 | `views/tool-actions.ts` | yes |
+| 3,054 | `views/tool-actions.ts` | yes |
 | 2,860 | `views/profile.ts` | none |
 | 2,845 | `views/tool-inputs.ts` | none |
 | 2,782 | `views/start.ts` | yes |
 | 2,780 | `views/gallery.ts` | none |
 | 2,670 | `views/deck-editor.ts` | yes |
-| 2,442 | `views/valid.ts` | `valid-verdict.test.ts` only |
+| 2,449 | `views/valid.ts` | `valid-verdict.test.ts` only |
 | 2,131 | `views/design-import.ts` | **none** |
 | 2,042 | `views/projects.ts` | none |
 | 1,919 | `components/color-field.ts` | yes |

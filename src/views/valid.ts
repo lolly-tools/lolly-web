@@ -1034,6 +1034,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           ${fact(t('Title'), claim.title, 'tag')}
           ${fact(t('Tool'), env.tool, 'tool')}
           ${fact(t('Produced by'), report.author ? `${report.author.name}${report.author.email ? ` <${report.author.email}>` : ''}` : null, 'user')}
+          ${fact(t('Contact'), report.author?.url ?? null, 'link')}
+          ${fact(t('Rights / licence'), report.rights ?? null, 'badgeCheck')}
           ${fact(report.delivered ? t('Delivered by') : t('Made with'), generator, report.delivered ? 'package' : 'lollipop')}
           ${fact(t('Signed'), signedAt ? fmtDate(signedAt) : null, 'clock')}
           ${fact(t('Where'), [env.surface, env.engine, env.os].filter(Boolean).join(' · ') || null, 'globe')}
@@ -2297,10 +2299,15 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
           if (marked && marked.length && marked !== bytes) { stamped = marked; imprinted = true; }
         } catch { /* imprint is best-effort — sign the un-imprinted bytes */ }
       }
-      const email = contact.includes('@') ? (contact.split(/[\s·,;]+/).find((s) => s.includes('@')) ?? '') : '';
+      // "Email or site for licensing" — an @-token becomes the author email, a
+      // dotted non-@ token the contact site; both land in the manifest's creator
+      // entry and come back as /verify's Produced-by/Contact facts.
+      const contactTokens = contact.split(/[\s·,;]+/).filter(Boolean);
+      const email = contactTokens.find((s) => s.includes('@')) ?? '';
+      const site = contactTokens.find((s) => !s.includes('@') && s.includes('.')) ?? '';
       const rights = [copyright, licence].map((s) => String(s || '').trim()).filter(Boolean).join(' · ');
       const opts: Parameters<NonNullable<HostV1['c2pa']>['sign']>[2] = { action: 'imported', imprinted } as Record<string, unknown>;
-      if (author) (opts as Record<string, unknown>).author = email ? { name: author, email } : { name: author };
+      if (author) (opts as Record<string, unknown>).author = { name: author, ...(email ? { email } : {}), ...(site ? { url: site } : {}) };
       if (rights) (opts as Record<string, unknown>).rights = rights;
       if (ingredients.length) (opts as Record<string, unknown>).ingredients = ingredients;
       const signed = await host.c2pa.sign(stamped, key, opts);

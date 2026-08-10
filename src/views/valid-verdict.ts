@@ -48,7 +48,8 @@ export interface VerifyReport {
   reason?: string;
   claim?: Claim;
   environment?: (Record<string, string | number | boolean> & { inputs?: Record<string, string> }) | null;
-  author?: { name: string; email?: string };
+  author?: { name: string; email?: string; url?: string };
+  rights?: string;
   signer?: Signer;
   aiGenerated?: { kind: 'generated' | 'composite'; sourceType: string };
   history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; parameters?: unknown; generator?: unknown }>;
