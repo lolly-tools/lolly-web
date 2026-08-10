@@ -39,3 +39,18 @@ public/ort-hf/
 # Artist MilkDrop presets staged from node_modules by scripts/copy-viz-presets.ts.
 # Third-party community works — depended on, never committed. See that script.
 public/viz-presets/
+
+# The rest of /info that build:info regenerates or copies (docs/build.ts):
+# shots/ + audio/ are copied at build from the docs repo (committed there),
+# the player bundle and the indexes are written per build, icon/founded-by
+# are copied from the repo root. Source-only assets that only live here
+# (mascots/, media/, fonts/, page images) STAY tracked.
+public/info/shots/
+public/info/audio/
+public/info/search-index.json
+public/info/*/search-index.json
+public/info/audio-index.json
+public/info/docs-player*
+public/info/manifest.json
+public/info/icon.svg
+public/info/founded-by.svg
