@@ -342,9 +342,10 @@ const SHIELD_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 // any asset in one of these formats CAN be checked, so its details page offers the
 // checker — whether or not it currently carries a credential (a plain file honestly
 // reports "No Content Credentials"). Audio joined the reader with the wav RIFF
-// binding + mp3 (see /verify's accept list); lottie/JSON, fonts and tokens are
-// still not readable, so they get no checker.
-const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'avif', 'mp4', 'm4a', 'webm', 'mkv', 'mp3', 'wav', 'opus']);
+// binding + mp3 (see /verify's accept list), then Ogg Opus (opus/ogg — the
+// OpusTags comment binding, engine c2pa-containers placeOgg); lottie/JSON, fonts
+// and tokens are still not readable, so they get no checker.
+const VERIFIABLE_FORMATS = new Set(['pdf', 'png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'tiff', 'webp', 'avif', 'mp4', 'm4a', 'webm', 'mkv', 'mp3', 'wav', 'opus', 'ogg']);
 const isVerifiableAsset = (ref: AssetRef): boolean =>
   VERIFIABLE_FORMATS.has(String(ref.format ?? '').toLowerCase());
 

@@ -62,6 +62,10 @@ import { serializeUrlState } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import { getSessionSource } from '../lib/session-source.ts';
+// A leaf with no imports of its own (module state, no network/DOM), so this costs the
+// Projects chunk nothing and drags no control-plane code onto any path — see its header.
+import { rememberTeamSessionOrigin } from '../org/team-session-origin.ts';
+import { getCollabTileProvider, renderCollabBadge } from '../lib/collab-tile-state.ts';
 import type { HostV1, Profile, AssetRef } from '@lolly-tools/core/host-v1';
 import type { WebStateAPI } from '../bridge/state.ts';
 import type { BatchFile } from '../pro/batch.ts';
@@ -992,6 +996,24 @@ export async function mountProjects(
     wireDrag(root);
     mountUncatRibbon(root);
     syncBulkBar();   // reflect a selection that survived this re-render
+    applyCollabBadges(root);
+  }
+
+  // Live-collab badge (plan 100 §4.6; lib/collab-tile-state.ts) — every session
+  // tile, in both the grid and the search-results list (sessionResultTile reuses
+  // the same sessionTile() shape), gets consulted against the dormant-by-default
+  // provider registry. No provider registered anywhere in this repo yet, so
+  // renderCollabBadge is always called with an empty peer list and paints
+  // nothing — the grid stays byte-identical to before this call existed
+  // (pinned by collab-tile-state.test.ts). Called once per render() (wire()'s
+  // last step), matching how the rest of this view re-derives its DOM from
+  // scratch on every data change rather than patching incrementally.
+  function applyCollabBadges(root: HTMLElement): void {
+    const provider = getCollabTileProvider();
+    for (const tile of root.querySelectorAll<HTMLElement>('.folder-tile[data-kind="session"]')) {
+      const slot = tile.dataset.ref;
+      renderCollabBadge(tile, slot && provider ? provider.peersFor(slot) : []);
+    }
   }
 
   // (Right-click + long-press → context menu is wired once per mount by the shared
@@ -1816,12 +1838,17 @@ export async function mountProjects(
       { className: 'team-projects-dialog' },
     );
     const body = modal.el.querySelector<HTMLElement>('[data-team-body]')!;
+    // Which project's session list is on screen — the modal is two screens deep and the
+    // session rows only carry their own id. Recorded so an opened session can name the
+    // project it came from in its origin stash (org/team-session-origin.ts).
+    let openProjectId: string | null = null;
     const row = (attr: string, id: string, name: string, meta: string): string =>
       `<li><button type="button" style="${teamRowStyle}" ${attr}="${escape(id)}"
         onmouseover="this.style.background='color-mix(in oklab,currentColor 8%,transparent)'" onmouseout="this.style.background='none'">
         <span>${escape(name)}</span><span style="opacity:.6">${escape(meta)}</span></button></li>`;
     const list = (items: string): string => `<ul style="list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:2px">${items}</ul>`;
     const showProjects = async (): Promise<void> => {
+      openProjectId = null;
       const projects = await src.listProjects().catch(() => []);
       if (!modal.el.isConnected) return;
       body.innerHTML = projects.length
@@ -1829,6 +1856,7 @@ export async function mountProjects(
         : `<p class="projects-empty">${escape(t('No team projects are shared with you yet.'))}</p>`;
     };
     const showSessions = async (projectId: string, name: string): Promise<void> => {
+      openProjectId = projectId;
       body.innerHTML = `<p class="projects-empty">${escape(t('Loading…'))}</p>`;
       const sessions = await src.listSessions(projectId).catch(() => []);
       if (!modal.el.isConnected) return;
@@ -1843,12 +1871,12 @@ export async function mountProjects(
       if (proj) { void showSessions(proj.dataset.teamProject!, proj.querySelector('span')?.textContent || ''); return; }
       if (el.closest('[data-team-back]')) { void showProjects(); return; }
       const sess = el.closest<HTMLElement>('[data-team-session]');
-      if (sess) { modal.close(); void openTeamSession(sess.dataset.teamSession!); }
+      if (sess) { modal.close(); void openTeamSession(sess.dataset.teamSession!, openProjectId); }
     });
     void showProjects();
   }
 
-  async function openTeamSession(sessionId: string): Promise<void> {
+  async function openTeamSession(sessionId: string, projectId?: string | null): Promise<void> {
     const src = getSessionSource();
     if (!src) return;
     try {
@@ -1858,6 +1886,14 @@ export async function mountProjects(
       const runtime = await createRuntime(tool, host, data.inputs as Parameters<typeof createRuntime>[2]);
       const query = serializeUrlState(runtime.getModel());
       armReturn();
+      // The hash below is a faithful working copy that has otherwise forgotten where it
+      // came from: the instance's id for this session is not an input and is deliberately
+      // not serialised into a link. Hand it to the mount alongside the navigation instead
+      // — a one-shot stash the tool view spends on mount, and the only thing that lets the
+      // Share dialog's "Work collab" row key a room on the session actually being edited
+      // (org/team-session-origin.ts; plans/100 §7). Armed LAST, immediately before the
+      // navigation it belongs to, so a failure above leaves nothing armed.
+      rememberTeamSessionOrigin({ sessionId, toolId: data.toolId, ...(projectId ? { projectId } : {}) });
       window.location.hash = `#/tool/${data.toolId}${query ? `?${query}` : ''}`;
     } catch (err) {
       host.log?.('warn', 'projects: open team session failed', { sessionId, error: String(err) });

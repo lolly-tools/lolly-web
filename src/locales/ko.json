@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n}바이트 더 표시되지 않음",
   "← All team projects": "← 모든 팀 프로젝트",
   "✓ Added": "✓ 추가됨",
-  "✓ Found {n} tools at {base}.": "✓ {base}에서 도구 {n}개를 찾았어요."
+  "✓ Found {n} tools at {base}.": "✓ {base}에서 도구 {n}개를 찾았어요.",
+  "Private collab": "비공개 협업",
+  "beta": "베타",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Work collab": "업무 협업",
+  "Start a collab": "협업 시작",
+  "Starting a collab": "협업을 시작하고 있어요",
+  "Invite one other device to co-edit this session directly - no account, no server.": "다른 기기 한 대를 초대해서 이 세션을 직접 함께 편집하세요. 계정도, 서버도 필요 없어요.",
+  "Invite others on this instance to co-edit this session, live.": "이 인스턴스의 다른 사람들을 초대해서 이 세션을 실시간으로 함께 편집하세요.",
+  "Live now - 1 person editing": "지금 실시간 - 1명이 편집 중",
+  "Live now - {n} people editing": "지금 실시간 - {n}명이 편집 중",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

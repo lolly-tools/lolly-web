@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n} bayt daha gösterilmiyor",
   "← All team projects": "← Tüm ekip projeleri",
   "✓ Added": "✓ Eklendi",
-  "✓ Found {n} tools at {base}.": "✓ {base} adresinde {n} araç bulundu."
+  "✓ Found {n} tools at {base}.": "✓ {base} adresinde {n} araç bulundu.",
+  "Private collab": "Özel iş birliği",
+  "beta": "beta",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "Başka bir cihazı doğrudan seninle birlikte bu oturumu düzenlemeye davet et - hesap yok, sunucu yok.",
+  "Start a collab": "İş birliği başlat",
+  "Starting a collab": "İş birliği başlatılıyor",
+  "Work collab": "Ekip iş birliği",
+  "Invite others on this instance to co-edit this session, live.": "Bu örnekteki diğer kişileri bu oturumu canlı olarak birlikte düzenlemeye davet et.",
+  "Live now - 1 person editing": "Şu anda canlı - 1 kişi düzenliyor",
+  "Live now - {n} people editing": "Şu anda canlı - {n} kişi düzenliyor",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

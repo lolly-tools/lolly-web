@@ -636,6 +636,15 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // names + numeric/boolean attrs), and the read-error banner (escape()d message) — all
   // user-data interpolations go through escape() (utils.ts).
   'views/data.ts': 4,
+  // 1 as of 2026-08-09: the non-camera animated-SVG live source. `start()` inlines the
+  // armed markup into an off-screen host so its CSS/SMIL actually ticks and `grabAnim`
+  // can sample it — the same reason views/anim-svg-mount.ts inlines rather than uses an
+  // `<img>`, and the same sanitiser covers it: the only producer (views/tool.ts's
+  // `prepareMarkup`) gets its markup from `fetchAnimSvg`, which pipes every fetched byte
+  // through `sanitizeSvgToString` before it is cached. The one thing done to it
+  // afterwards is substituting the computed `--brand-primary` into its own
+  // `var(--brand-primary, …)` fallbacks — a design-token colour, not free text.
+  'bridge/media.ts': 1,
   'bridge/embed.ts': 1,
   'components/color-field.ts': 5,
   'components/custom-slider.ts': 1,
@@ -944,7 +953,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //     engine; every other value is a number or one of the six whitelisted head keywords.
   //     No box text, id or user markup can reach it.
   'views/free-canvas.ts': 44,
-  'views/gallery.ts': 6,
+  // 6 → 8, 2026-08-09 (the lazy-chunk pass): two lazy-mount injections joined the
+  // six standing sinks — the bulk bar now lands via insertAdjacentHTML of
+  // lib/bulk-bar.ts's bulkBarHtml() (labels/titles/ids all escape()d inside the
+  // shared builder), and the sound segment mounts into its [data-sound-slot] via
+  // components/sound-toggle.ts's soundSegmentHtml() (t() literals + static
+  // markup). Both write module-built, reviewed markup only — no view-side
+  // interpolation reaches either sink.
+  'views/gallery.ts': 8,
   'views/multi-edit.ts': 3,
   // 6, unchanged 2026-08-09 (plan 97 M5 — the design-system hand-offs). The three
   // new controls are markup inside the existing report template, not new sinks:
@@ -1037,7 +1053,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // (schemas' badge/formats option fields); confirmed safe by the author.
   'views/tool-actions.ts': 8,
   'views/tool-inputs.ts': 9,
-  'views/tool.ts': 16,
+  // 16 → 17 on 2026-08-09: the canvas "Play" button gained the same two-span label the
+  // "Go live" button beside it already had (`<span class="canvas-live-dot">` +
+  // `<span class="canvas-live-label">`). Reviewed — both spans are static markup and the
+  // only interpolation is a `t()` literal, which escapes its own params; there is no
+  // user, peer or tool-supplied value anywhere in either sink.
+  'views/tool.ts': 17,
   // 21 as of 2026-07-31: +2 deep-scan watermark notes (trustmarkNoteHtml,
   // contentSealNoteHtml). Reviewed — every attacker-controlled value on this
   // page (decoded payload/message hex, schema, filenames, hex dumps of file
@@ -1058,6 +1079,38 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // literal or escapeHtml()'d (the aria-labels, the model <option> id/name pairs);
   // all later writes are textContent / setAttribute, never HTML.
   'views/matte-dialog.ts': 1,
+  // 1 as of 2026-08-09 (plan 100 §11.27, the private-collab QR skin). The one sink
+  // is `qrElementRenderer`'s `box.innerHTML = svg.value`, and the markup is this
+  // module's OWN output: `renderQrSvg` builds it from the matrix it just computed,
+  // and every caller-supplied option that reaches it (the colours, the label) is
+  // XML-escaped by `toSvg` before it is written. The invite text itself never
+  // reaches the sink — it is encoded into modules, not interpolated — and the box's
+  // own attributes are a class constant plus a clamped INTEGER width.
+  'collab/qr-skin.ts': 1,
+  // 1 as of 2026-08-09 (the beam consent/progress toast). Its `render()` has three
+  // innerHTML writes and two are the empty clear the rule deliberately exempts; the
+  // one sink is `container.innerHTML = renderCard(...)`. Reviewed: the hostile input
+  // here is entirely PEER-supplied — the offer name, the peer's display name and the
+  // per-item label — and each reaches the markup only through `escape()` (utils.ts),
+  // as does every t()/tRaw() sentence composed around them. The rest are numbers
+  // (byte counts, aria-valuenow/max, the percentage width) and static class names.
+  'components/beam-toast.ts': 1,
+  // 1 as of 2026-08-09: the export shutter's brand mark stopped being an `<img>`
+  // whose src was read out of `--lolly-logo` and became an inline SVG so its layers
+  // can counter-spin. `mark.innerHTML = SHUTTER_MARK_SVG` interpolates NOTHING — it
+  // is a module-level string constant in lib/shutter-mark.ts, the same shape as the
+  // icon() bodies R9 guards. The mark's brand tone is applied through a CSS custom
+  // property afterwards, not by rebuilding the markup.
+  'lib/shutter.ts': 1,
+  // 1 as of 2026-08-09 (new file: the `[data-anim-src]` enhancer that inlines an
+  // animated SVG so it is seekable and frame-addressable). Its one sink is
+  // `el.innerHTML = clean`, and `clean` is the ONLY thing it can be: the awaited
+  // result of `fetchAnimSvg`, which pipes every fetched byte through
+  // `sanitizeSvgToString` (bridge/svg-sanitize.ts — scripts, `on*` handlers,
+  // `javascript:` refs and `<foreignObject>` stripped) before it is cached. Inlining
+  // untrusted SVG is exactly why the sanitiser is on the fetch rather than the mount:
+  // there is no path to this sink that skips it.
+  'views/anim-svg-mount.ts': 1,
 };
 
 test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {

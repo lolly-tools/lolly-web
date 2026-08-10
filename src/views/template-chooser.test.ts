@@ -98,6 +98,9 @@ test('templateValuesById: resolves the reserved ?template=<id> seed, null on mis
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
+// finish() restores focus to the opener via an `instanceof HTMLElement` check — only the
+// tests that actually settle the chooser (close/select) reach it.
+globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
 globalThis.CSS = (dom.window.CSS ?? {}) as unknown as typeof globalThis.CSS;
 if (typeof (globalThis.CSS as { escape?: unknown })?.escape !== 'function') {
@@ -172,6 +175,125 @@ test('openTemplateChooser: eagerly renders a preview for every non-blank templat
   );
   assert.ok(img && img.src === THUMB, 'the live preview <img> replaced the glyph');
   document.querySelector('.tmpl-chooser-modal')?.remove();
+});
+
+// ── The drain shares the main thread with a live mount ───────────────────────
+// views/tool.ts no longer awaits this chooser: the tool mounts UNDERNEATH the modal.
+// So each preview — a real off-screen mount + walker export, ~1 s apiece — must yield
+// before it runs, or it starves exactly the first paint the change exists to let through
+// and holds a tile click behind however many renders are still queued.
+
+test('openTemplateChooser: yields to idle before the render chunk and between renders', async () => {
+  const idleTimeouts: (number | undefined)[] = [];
+  const realRic = (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback;
+  (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback =
+    (cb: () => void, opts?: { timeout: number }) => { idleTimeouts.push(opts?.timeout); setTimeout(cb, 0); return 0; };
+  try {
+    const inline: Record<string, Record<string, unknown>> = { a: { boxes: [] }, b: { boxes: [] } };
+    const templates = parseTemplates([
+      { id: 'a', name: 'A', values: inline.a },
+      { id: 'b', name: 'B', values: inline.b },
+    ]);
+    const getKeys: string[] = [];
+    let idleBeforeFirstRender = -1;
+    const host = {
+      previews: {
+        get: async (key: string) => {
+          if (!getKeys.length) idleBeforeFirstRender = idleTimeouts.length;
+          getKeys.push(key);
+          const id = key.match(/^template:t:(.+):svg$/)?.[1];
+          const values = id ? inline[id] : undefined;
+          return values ? { sig: JSON.stringify(values), thumb: THUMB } : null;
+        },
+        put: async () => {},
+      },
+    } as never;
+
+    void openTemplateChooser({ toolName: 'T', toolId: 't', templates, host, formats: ['svg'] });
+    for (let i = 0; i < 200 && getKeys.length < 2; i++) await new Promise(r => setTimeout(r, 0));
+
+    assert.equal(getKeys.length, 2, 'both templates still render — the yield defers, it never drops');
+    assert.ok(idleBeforeFirstRender >= 1,
+      'the first render waits for an idle gap (so the render-engine chunk is not even fetched during the mount burst)');
+    assert.ok(idleTimeouts.length >= 2, 'and a second yield separates the two renders');
+    assert.ok(idleTimeouts.every(t => typeof t === 'number' && t > 0),
+      'every yield carries a timeout, so a permanently busy tab still shows its previews');
+    document.querySelector('.tmpl-chooser-modal')?.remove();
+  } finally {
+    if (realRic === undefined) delete (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback;
+    else (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback = realRic;
+  }
+});
+
+test('openTemplateChooser: settling cancels the rest of the preview queue', async () => {
+  // Picking a tile (or closing) hands the mount its seed — every preview still queued is
+  // now work nobody will see, competing with the render that seed is about to trigger.
+  const inline: Record<string, Record<string, unknown>> = { a: { boxes: [] }, b: { boxes: [] }, c: { boxes: [] } };
+  const templates = parseTemplates(
+    ['a', 'b', 'c'].map(id => ({ id, name: id.toUpperCase(), values: inline[id] })),
+  );
+  const getKeys: string[] = [];
+  const host = {
+    previews: {
+      get: async (key: string) => {
+        getKeys.push(key);
+        // Close the chooser DURING the first render — deterministic, no timing race.
+        if (getKeys.length === 1) document.querySelector<HTMLElement>('.tmpl-chooser-close')!.click();
+        const id = key.match(/^template:t2:(.+):svg$/)?.[1];
+        const values = id ? inline[id] : undefined;
+        return values ? { sig: JSON.stringify(values), thumb: THUMB } : null;
+      },
+      put: async () => {},
+    },
+  } as never;
+
+  const seed = await openTemplateChooser({ toolName: 'T', toolId: 't2', templates, host, formats: ['svg'] });
+  assert.deepEqual(seed, {}, 'closing resolves a blank seed');
+  for (let i = 0; i < 50; i++) await new Promise(r => setTimeout(r, 0));
+  assert.equal(getKeys.length, 1, 'the queued b/c previews were abandoned the moment the chooser settled');
+  document.querySelector('.tmpl-chooser-modal')?.remove();
+});
+
+// ── onOpen: the navigate-away close handle ───────────────────────────────────
+// views/tool.ts never awaits this chooser, so it is the only thing that can reach
+// back into an already-open modal when the view underneath is torn down first — see
+// tool-template-mount.test.ts for the wiring on the caller's side.
+
+test('openTemplateChooser: onOpen hands back a close that removes the modal and resolves blank', async () => {
+  const templates = parseTemplates([{ id: 'poster', name: 'Poster', values: { boxes: [] } }]);
+  let close: (() => void) | undefined;
+  const opener = document.createElement('button');
+  document.body.appendChild(opener);
+  opener.focus();
+
+  const pick = openTemplateChooser({
+    toolName: 'T', toolId: 't3', templates,
+    onOpen: c => { close = c; },
+  });
+
+  assert.equal(typeof close, 'function', 'onOpen fired synchronously with a close handle');
+  assert.ok(document.querySelector('.tmpl-chooser-modal'), 'the modal is in the document while open');
+
+  close!();
+  assert.deepEqual(await pick, {}, 'a forced close resolves exactly like Escape/backdrop/×');
+  assert.equal(document.querySelector('.tmpl-chooser-modal'), null, 'and takes the modal out of the document');
+
+  // Idempotent both ways: calling close again, or a tile click racing in afterward,
+  // must not double-resolve or throw — the same guarantee a stray Escape already had.
+  assert.doesNotThrow(() => close!());
+  opener.remove();
+});
+
+test('openTemplateChooser: a pick that lands first makes a later close a no-op', async () => {
+  // The inverse race: the user actually chose a tile (or Escaped) before any navigation.
+  // The close handle onOpen armed must not resolve the promise a second time, or a
+  // caller storing it (views/tool.ts's templatePickClose) could stomp a real selection.
+  const templates = parseTemplates([{ id: 'poster', name: 'Poster', values: { boxes: [1] } }]);
+  let close: (() => void) | undefined;
+  const pick = openTemplateChooser({ toolName: 'T', toolId: 't4', templates, onOpen: c => { close = c; } });
+  document.querySelector<HTMLElement>('.tmpl-chooser-close')!.click();   // settles it blank, for real
+  assert.deepEqual(await pick, {});
+  assert.doesNotThrow(() => close!());   // arriving after settle — must not throw or re-resolve
 });
 
 test('openTemplateChooser: with no host it renders glyph tiles and requests NO previews', async () => {

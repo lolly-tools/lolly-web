@@ -22,9 +22,13 @@
    unavailable — so the "hide the stage during the resize" contract holds even
    without a GPU.
 
-   THE MARK. At ~70% of the close the brand-hued Lolly mark (the same
-   --lolly-logo bitmap the /verify medallion uses) pops out on top of the swirl,
-   sized to 18% of the stage's smaller dimension.
+   THE MARK. At ~70% of the close the Lolly mark pops out on top of the swirl,
+   sized to 18% of the stage's smaller dimension. It's an inline SVG (lib/shutter-mark.ts)
+   whose three nested layers counter-spin with a slow hue drift (animation in
+   styles/parts/tool.css); its coloured spiral is painted the SAME brand tone the iris
+   stripe uses (--exsh-swirl ← tone.green), so mark and iris agree. Small + brief + over
+   the seal, so the spin/hue costs nothing measurable even mid-export — unlike a filter on
+   the full-screen iris, which is why THAT stays a shader with no CSS filter.
 
    PERFORMANCE. This runs during export on phones. The shader is one full-screen
    triangle pair per frame; DPR is capped (1.5 phone / 2 desktop). No CSS filter
@@ -34,6 +38,7 @@ import { playSfx } from './sfx.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
 import { liveAccentHint } from './viz-palette.ts';
 import { currentTheme } from '../theme.ts';
+import { SHUTTER_MARK_SVG } from './shutter-mark.ts';
 
 export interface Shutter {
   /** Close the iris. Resolves once it is fully sealed. */
@@ -209,12 +214,10 @@ function toneForTheme(): Tone {
   };
 }
 
-/** The brand-hued Lolly bitmap the /verify medallion uses; falls back to the raw icon. */
-function markSrc(): string {
-  if (typeof getComputedStyle !== 'function') return '/icons/icon-192.png';
-  const v = getComputedStyle(document.documentElement).getPropertyValue('--lolly-logo').trim();
-  const m = v.match(/url\(\s*["']?(.*?)["']?\s*\)/);
-  return m?.[1] || '/icons/icon-192.png';
+/** A 0–1 Rgb triple as a CSS colour — paints the swirl MARK the same brand tone
+ *  (tone.green) the WebGL iris uses for its coloured stripe, so the two match. */
+function rgbToCss([r, g, b]: Rgb): string {
+  return `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)})`;
 }
 
 const smoothstep = (a: number, b: number, x: number): number => {
@@ -255,11 +258,10 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   seal.className = 'export-shutter__seal';
   const cv = document.createElement('canvas');
   cv.className = 'export-shutter__iris';
-  const mark = document.createElement('img');
+  const mark = document.createElement('div');
   mark.className = 'export-shutter__mark';
-  mark.alt = '';
-  mark.decoding = 'async';
   mark.setAttribute('aria-hidden', 'true');
+  mark.innerHTML = SHUTTER_MARK_SVG;   // inline Lolly swirl — its layers spin via tool.css
   const flash = document.createElement('div');
   flash.className = 'export-shutter__flash';
   root.append(seal, cv, mark, flash);
@@ -419,8 +421,9 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   async function close(): Promise<void> {
     if (destroyed) return;
     tone = toneForTheme();
-    const src = markSrc();
-    if (mark.getAttribute('src') !== src) mark.setAttribute('src', src);
+    // Paint the swirl mark the same brand tone the iris stripe uses (host-profile accent
+    // mixed into Lolly green) — the layers' spin + hue drift ride on top of it (tool.css).
+    mark.style.setProperty('--exsh-swirl', rgbToCss(tone.green));
     /* Mobile: lift the shutter out of the stage so it covers the WHOLE screen —
        over the sidebar sheet and export controls — while the system download or
        share sheet appears. (An ancestor's backdrop-filter is a fixed-positioning

@@ -2834,7 +2834,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Expose actions the mount scope can trigger programmatically (e.g. `?copy`,
   // and the unsaved-changes dialog's "Save & leave"). stopAudioPreview lets the
   // popup-close + tool-teardown paths silence an in-progress audio audition.
-  return { copy: performCopy, preview, save: performSave, setDims, setFormats, stopAudioPreview, dispose: disposeCostSlot };
+  // `sessionState` is the SAME snapshot a save writes, read (never written) by the beam
+  // for its `__export_*` markers — the one place they exist outside this panel's DOM.
+  return { copy: performCopy, preview, save: performSave, setDims, setFormats, stopAudioPreview, sessionState: sessionSnapshot, dispose: disposeCostSlot };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.

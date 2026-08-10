@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n} dalších bajtů se nezobrazuje",
   "← All team projects": "← Všechny týmové projekty",
   "✓ Added": "✓ Přidáno",
-  "✓ Found {n} tools at {base}.": "✓ Nalezeno {n} nástrojů na {base}."
+  "✓ Found {n} tools at {base}.": "✓ Nalezeno {n} nástrojů na {base}.",
+  "Private collab": "Soukromá spolupráce",
+  "beta": "beta",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "Pozvěte jedno další zařízení, aby s vámi přímo upravovalo tuto relaci - žádný účet, žádný server.",
+  "Start a collab": "Zahájit spolupráci",
+  "Starting a collab": "Zahajování spolupráce",
+  "Work collab": "Pracovní spolupráce",
+  "Invite others on this instance to co-edit this session, live.": "Pozvěte ostatní na této instanci, aby s vámi živě upravovali tuto relaci.",
+  "Live now - 1 person editing": "Právě živě - upravuje 1 člověk",
+  "Live now - {n} people editing": "Právě živě - upravuje {n} lidí",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

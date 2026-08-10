@@ -43,9 +43,7 @@ import type { FeaturedEntry, FeaturedManifest, FeaturedVariant, FeaturedRowHandl
 import { loadFavourites, saveFavourites } from '../lib/favourites.ts';
 import { loadHiddenTools, saveHiddenTools } from '../lib/hidden-tools.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
-import { wireTileContextMenu, menuItemHtml } from '../lib/context-menu.ts';
 import type { BulkBarConfig } from '../lib/bulk-bar.ts';
-import { confirmDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import type { PickerHost } from './picker.ts';
 import { announce } from '../a11y.ts';
@@ -612,17 +610,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     };
   };
 
-  // Featured hero row — tools flagged `featured` in their manifest, PLUS the user's
-  // favourites (starring a tool promotes it into the hero strip), minus any in a hidden
-  // category (a category the user turned off shouldn't be promoted). Manifest-featured
-  // lead (in their authored `order`); favourited-but-not-featured tools follow in catalog
-  // order. Carries the "New" flag through. Recomputed on every star toggle (refreshFeatured).
+  // Featured hero row — the user's favourites, and ONLY their favourites (starring a tool
+  // promotes it into the hero strip), minus any in a hidden category (a category the user
+  // turned off shouldn't be promoted). A fresh session has no favourites, so the strip is
+  // empty and collapses (see mountFeatured's has-featured toggle): a new visitor builds the
+  // carousel up by adding, not by clearing out a pre-curated default set. Manifest `featured`
+  // no longer auto-seeds the strip — its blurb/variants still style a tile once the tool is
+  // favourited (see toFeaturedEntry). Tools appear in catalog order. Carries the "New" flag
+  // through. Recomputed on every star toggle (refreshFeatured).
   const featuredEntriesNow = (): FeaturedEntry[] => {
     const seen = new Set<string>();
     const out: FeaturedEntry[] = [];
-    for (const t of index.tools) {
-      if (t.featured && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
-    }
     for (const t of index.tools) {
       if (!seen.has(t.id) && favourites.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
     }
@@ -792,25 +790,33 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     }
     syncBulkBar();
   }
-  const tileSelect = wireTileSelect({
-    host: viewEl,
-    tiles: selectableTiles,
-    refOf: (el) => el.dataset.selectRef!,
-    current: () => new Set(selected),
-    setRefs: (refs) => { selected.clear(); for (const r of refs) selected.add(r); paintSelection(); },
-    clear: () => dropSelection(),
-    // Never start a box on a tile, the strips, the chrome bars, a popover, or any
-    // control — only in a genuine gap between cards.
-    noStart: '.gtile, .featured, .featured-mount, .gallery-topbar, .gallery-footer, '
-      + '.filter-popover, .filter-backdrop, .gallery-bulkbar, .gallery-no-results, '
-      + 'button, a, input, select, label, dialog',
+  // Marquee + Shift-range wiring (lib/tile-select.ts) is lazy-loaded OFF the boot path:
+  // the select dots are already-painted HTML, and the drag-marquee / shift-anchor is a
+  // gesture surface, never first paint. Imported fire-and-forget at mount (~ms same-origin);
+  // a dot-click or marquee-start in that sliver just no-ops once. resetAnchor/onDotClick
+  // below guard on the handle for exactly that window.
+  let tileSelect: ReturnType<typeof import('../lib/tile-select.ts')['wireTileSelect']> | null = null;
+  void import('../lib/tile-select.ts').then((m) => {
+    tileSelect = m.wireTileSelect({
+      host: viewEl,
+      tiles: selectableTiles,
+      refOf: (el) => el.dataset.selectRef!,
+      current: () => new Set(selected),
+      setRefs: (refs) => { selected.clear(); for (const r of refs) selected.add(r); paintSelection(); },
+      clear: () => dropSelection(),
+      // Never start a box on a tile, the strips, the chrome bars, a popover, or any
+      // control — only in a genuine gap between cards.
+      noStart: '.gtile, .featured, .featured-mount, .gallery-topbar, .gallery-footer, '
+        + '.filter-popover, .filter-backdrop, .gallery-bulkbar, .gallery-no-results, '
+        + 'button, a, input, select, label, dialog',
+    });
+    cleanups.push(() => tileSelect?.destroy());
   });
-  cleanups.push(() => tileSelect.destroy());
   // Empty the selection AND forget the Shift-anchor together (a stale anchor would
   // become the far end of the next Shift-click's range).
   function dropSelection(): void {
     selected.clear();
-    tileSelect.resetAnchor();
+    tileSelect?.resetAnchor();
     paintSelection();
   }
   // Escape-clears-selection is installed WITH the lazy bulk bar (ensureBulkBar above):
@@ -824,7 +830,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!dot) return;
     e.preventDefault(); e.stopPropagation();
     const ref = dot.dataset.select!;
-    tileSelect.onDotClick(ref, e.shiftKey, () => {
+    tileSelect?.onDotClick(ref, e.shiftKey, () => {
       if (selected.has(ref)) selected.delete(ref); else selected.add(ref);
       paintSelection();
     });
@@ -833,24 +839,30 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Bulk-bar dispatch is delegated inside ensureBulkBar() at injection time (the bar is
   // lazily built on the first selection), so it can't be bound here to a not-yet-present node.
 
-  // ── Context menu: right-click / long-press on any tile (and the bulk variant when
-  // the tile is inside the current multi-selection) — lib/context-menu.ts.
-  const ctxMenu = wireTileContextMenu({
-    host: viewEl,
-    tileSelector: '.gtile[data-select-ref]',
-    refOf: (el) => el.dataset.selectRef ?? null,
-    isBulkTarget: (ref) => selected.size > 1 && selected.has(ref),
-    singleHtml: (tgt) => tileMenuHtml(tgt.ref),
-    bulkHtml: () => bulkMenuHtml(),
-    onAction: (act, tgt) => { void onMenuAction(act, tgt?.ref ?? null); },
+  // ── Context menu: right-click / long-press on any tile (bulk variant inside a
+  // multi-selection) — lib/context-menu.ts, lazy-loaded OFF the boot path (a right-click
+  // surface, never first paint). Imported fire-and-forget at mount so it resolves in ~ms
+  // same-origin; a right-click landing in that sliver just no-ops that once. ctxMod backs
+  // tileMenuHtml/bulkMenuHtml's menuItemHtml, which only run via the callbacks below.
+  let ctxMod: typeof import('../lib/context-menu.ts') | null = null;
+  void import('../lib/context-menu.ts').then((m) => {
+    ctxMod = m;
+    const ctxMenu = m.wireTileContextMenu({
+      host: viewEl,
+      tileSelector: '.gtile[data-select-ref]',
+      refOf: (el) => el.dataset.selectRef ?? null,
+      isBulkTarget: (ref) => selected.size > 1 && selected.has(ref),
+      singleHtml: (tgt) => tileMenuHtml(tgt.ref),
+      bulkHtml: () => bulkMenuHtml(),
+      onAction: (act, tgt) => { void onMenuAction(act, tgt?.ref ?? null); },
+    });
+    cleanups.push(() => ctxMenu.destroy());
   });
-  cleanups.push(() => ctxMenu.destroy());
 
-  // Mount the cinematic featured hero row (tools flagged `featured` in their manifest)
-  // at the top, and a second strip at the very bottom showcasing the on-device
-  // Utilities. Both render + cache their own looks lazily; the gallery toggles their
-  // visibility as the search / filter / hide-previews state changes, and drives the
-  // view mode (Gallery | Cover Flow) of both from one control.
+  // Mount the cinematic featured hero row (the user's favourited tools) at the top. It
+  // renders + caches its own looks lazily; the gallery toggles its visibility as the
+  // search / filter / hide-previews state changes, and drives the view mode
+  // (Gallery | Cover Flow) from one control. Empty (no favourites yet) → not mounted.
   const featuredMount = viewEl.querySelector<HTMLElement>('.featured-mount');
   let featuredHandle: FeaturedRowHandle | null = null;
   cleanups.push(() => featuredHandle?.destroy());
@@ -865,8 +877,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       : null;
     viewEl.querySelector('.gallery')?.classList.toggle('has-featured', entries.length > 0);
   }
-  // Rebuild the strip from the current favourites + manifest-featured set, then re-apply
-  // visibility (a filtered / searched view keeps it hidden).
+  // Rebuild the strip from the current favourites, then re-apply visibility (a filtered /
+  // searched view keeps it hidden).
   function refreshFeatured(): void {
     mountFeatured(featuredEntriesNow());
     updateFeaturedVisibility();
@@ -881,7 +893,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const paintViewSeg = (): void => viewSeg?.querySelectorAll<HTMLElement>('[data-view]').forEach(b =>
     b.setAttribute('aria-pressed', String(b.dataset.view === featuredView)));
   wireThemeSegment(viewEl, host);   // Theme picker in the same popover
-  wireSoundSegment(viewEl, host);   // Sound on/off segment in the same popover
+  // The Sound on/off segment (components/sound-toggle.ts, which statically pulls the
+  // ambient-audio modules) is injected into its [data-sound-slot] and wired lazily when
+  // the filter popover is first opened — see ensureSoundSegment near the filter wiring
+  // below. Keeps sound-toggle + atmosphere + neurospicy off the gallery's boot chunk.
   paintViewSeg();
   viewSeg?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-view]');
@@ -1490,9 +1505,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         const nm = toolById.get(id)?.name ?? t('tool');
         el.setAttribute('aria-label', on ? tRaw('Remove {name} from favourites', { name: nm }) : tRaw('Add {name} to favourites', { name: nm }));
         el.title = on ? t('In favourites') : t('Add to favourites');
-        // A favourited plain tool joins (or leaves) the featured hero strip; a manifest-
-        // featured tool is already there, so skip the remount for it.
-        if (!toolById.get(id)?.featured) refreshFeatured();
+        // Every star toggle changes the hero strip's membership now that it is
+        // favourites-only (no manifest-featured auto-seed), so always remount.
+        refreshFeatured();
         if (activeCat === FAV_CAT) applyView(); // in the Favourites view the card must now hide/show in place
         else renderPills();                    // otherwise just refresh the pill count
       });
@@ -1612,6 +1627,23 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // listener would outlive the detached tree — close() is idempotent and its default
   // returnFocus=false makes this a no-op when already closed.
   cleanups.push(() => filterDisclosure.close());
+
+  // Lazily inject + wire the Sound on/off segment the first time the filter popover is
+  // opened (a user gesture) — this is what keeps components/sound-toggle.ts and the
+  // ambient-audio modules it statically imports (atmosphere/neurospicy) off the boot
+  // chunk. pointerdown gives the ~KB import a head start before the popover paints;
+  // 'click' also covers keyboard activation of the fab. Idempotent via the guard.
+  let soundReady = false;
+  const ensureSoundSegment = (): void => {
+    if (soundReady) return;
+    soundReady = true;
+    void import('../components/sound-toggle.ts').then((m) => {
+      const slot = viewEl.querySelector<HTMLElement>('[data-sound-slot]');
+      if (slot && !slot.firstChild) { slot.innerHTML = m.soundSegmentHtml(); m.wireSoundSegment(viewEl, host); }
+    });
+  };
+  filterFab?.addEventListener('pointerdown', ensureSoundSegment);
+  filterFab?.addEventListener('click', ensureSoundSegment);
 
   // "Hide previews" is no longer a per-gallery toggle: it moved to the profile's
   // Accessibility card as the "Hide colourful previews" pref (lib/a11y-prefs.ts),
@@ -1833,7 +1865,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!ids.length) return;
     let failed = 0, done = 0;
     for (const id of ids) {
-      setBulkBarBusy(viewEl, bulkBarCfg, unpin
+      bulkMod?.setBulkBarBusy(viewEl, bulkBarCfg, unpin
         ? t('Removing {a} of {b} from offline…', { a: done + 1, b: ids.length })
         : t('Saving {a} of {b} for offline…', { a: done + 1, b: ids.length }));
       try {
@@ -1850,7 +1882,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       }
       done++;
     }
-    setBulkBarBusy(viewEl, bulkBarCfg, null);
+    bulkMod?.setBulkBarBusy(viewEl, bulkBarCfg, null);
     syncBulkBar();
     const ok = ids.length - failed;
     if (!unpin && ok > 0) playSfx('victory');
@@ -1903,6 +1935,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
 
   /** The per-tile context menu rows (right-click / long-press). */
   function tileMenuHtml(ref: string): string {
+    const menuItemHtml = ctxMod!.menuItemHtml;   // set: only reached via the lazy ctx-menu callbacks
     const fav = favourites.has(ref);
     const hiddenNow = hiddenTools.has(ref);
     if (isViewRef(ref)) {
@@ -1934,6 +1967,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   /** The bulk context menu (right-click inside a multi-selection) — mirrors the bar.
    *  Head outside the nested role="menu" list, per the shared a11y shape. */
   function bulkMenuHtml(): string {
+    const menuItemHtml = ctxMod!.menuItemHtml;   // set: only reached via the lazy ctx-menu callbacks
     return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
       + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
         pinnableIds().length ? menuItemHtml('pin', DOWNLOAD_ICON, allSelectedPinned() ? t('Remove from offline') : t('Available offline')) : '',
@@ -1959,8 +1993,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       if (on) favourites.add(ref); else favourites.delete(ref);
       void saveFavourites(host, profile, favourites);
       paintFavButton(ref);
-      // A manifest-featured tool is already in the hero strip; everything else joins/leaves it.
-      if (isViewRef(ref) || !toolById.get(ref)?.featured) refreshFeatured();
+      // The hero strip is favourites-only now, so any star toggle changes its membership.
+      refreshFeatured();
       if (activeCat === FAV_CAT) applyView(); else renderPills();
       return;
     }
@@ -2650,6 +2684,9 @@ function showHistoryDialog(tool: GalleryTool | undefined, entries: SavedEntry[],
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
       const slot = el.dataset.delete!;
+      // confirm-dialog is lazy-loaded here (off the boot path) — this is a click handler,
+      // so paying its ~1 KB on the delete gesture is free.
+      const { confirmDialog } = await import('../components/confirm-dialog.ts');
       const ok = await confirmDialog({
         title: t('Delete session?'),
         message: t('Delete this saved session? This can’t be undone.'),

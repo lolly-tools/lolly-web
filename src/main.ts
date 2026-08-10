@@ -20,6 +20,25 @@ import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateFeatureFlags, flagEnabledSync, setJellyDefault } from './feature-flags.ts';
+// Side-effect only: registers the "Private collab" Share-dialog row into the
+// generic lib/share-sections.ts seam (plan 100 §0/§6, Track A — an OSS
+// individual feature, not under org/). The row itself stays gated on the
+// private-collab flag + a registered opener and renders nothing until both
+// exist (see the module header) — importing it is the whole of the wiring.
+import './lib/collab-share-private.ts';
+// Side-effect only: registers the 'private' opener that row consults, so pressing
+// "Start a collab" opens the inviter ceremony (plan 100 §6.1). Gated INSIDE the opener
+// on the same private-collab flag, and platform-free on this path — the ceremony
+// dialog, the QR encoder and the WebRTC transport are one dynamic import behind the
+// press, sharing the chunk the #/join route loads (see the module header).
+import './collab/private-opener.ts';
+// The other end of that ceremony: what turns a connected pair into a MOUNTED, co-editing
+// tool (plan 100 §5, §6.2a). `lib/collab-mount.ts`'s header specifies the two-line stitch
+// — register, then drain whatever the ceremony parked while this module was importing —
+// and `installLiveCollabMount()` (called below the import block) is its only call site.
+// Platform-free on the boot path for the same reason as the opener above: everything
+// under it (the memory state bridge, the tool route itself) is a dynamic import.
+import { installLiveCollabMount } from './lib/collab-live-mount.ts';
 import { initSearchBar, applySearchBarRoute } from './components/search-bar.ts';
 import { initSpotlight } from './components/spotlight.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
@@ -35,11 +54,16 @@ import { announce } from './a11y.ts';
 import { beginViewFade } from './view-fade.ts';
 import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from './lib/back-nav.ts';
 
+// Own co-editing (see the import). Registering here rather than as an import side effect
+// is deliberate: the drain half must run AFTER the registration, and a drain hidden
+// inside `registerCollabMount` would fire re-entrantly during that module's own import.
+installLiveCollabMount();
+
 /** The web capability bridge, as produced by createBridge. */
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'data' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'data' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script' | 'join' | 'join-reply';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -59,6 +83,8 @@ type Route =
   | { name: 'lab'; params?: string }
   | { name: 'pdf' }
   | { name: 'script' }
+  | { name: 'join'; params?: string }
+  | { name: 'join-reply'; params?: string }
   | { name: 'gallery'; params?: string };
 
 /** The #view container, which a mounted view may stamp a teardown fn onto. */
@@ -141,6 +167,13 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // Script audio is a utility view like the Lab: no tab, the back pill instead
   // (see the lab row's rationale above).
   script: { label: 'Script audio', viewClasses: ['scriptst-view'], footer: 'none' },
+  // The two private-collab ceremony links (plan 100 §6.1 skin 1, §11.25). Both are
+  // arrival points from someone ELSE's device, so they get no tab and no footer bar —
+  // and both key on `params`, because the whole meaning of the route is the invite (or
+  // reply) token in the query: a second link pasted into the same tab must re-mount
+  // with the new payload, never dedupe onto the first one.
+  join: { label: 'Join a collab', sigKey: 'params', footer: 'none' },
+  'join-reply': { label: 'Collab reply', sigKey: 'params', footer: 'none' },
 };
 
 /** Every scoping class in ROUTES → the routes that own it, in declaration order. */
@@ -432,6 +465,21 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // nothing on the landing path needs the speech plumbing.
       const { mountScriptStudio } = await import('./views/script-studio.ts');
       await mountScriptStudio(view, host as unknown as Parameters<typeof mountScriptStudio>[1]);
+      break;
+    }
+    // --- The private-collab ceremony links (plan 100 §6.1, §11.25). One lazy chunk
+    // for both, shared with the Share dialog's "Start a collab" opener: WebRTC, the QR
+    // encoder and the ceremony dialog have no business on any other route. ---
+    case 'join': {
+      const { mountJoinRoute } = await import('./collab/join-route.ts');
+      await mountJoinRoute(view, host as unknown as Parameters<typeof mountJoinRoute>[1], route.params ?? '');
+      break;
+    }
+    case 'join-reply': {
+      // No host: this tab hands a payload to the tab that owns the ceremony and gets
+      // out of the way — it opens no connection and reads no profile of its own.
+      const { mountJoinReplyRoute } = await import('./collab/join-route.ts');
+      await mountJoinReplyRoute(view, route.params ?? '');
       break;
     }
     case 'components': {
@@ -995,6 +1043,13 @@ function parseRoute(): Route {
     if (parts[0] === 'pdf') return { name: 'pdf' }; // take a PDF apart — text/asset extraction
     if (parts[0] === 'script') return { name: 'script' }; // Script audio — the TTS writing surface
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
+    // The two halves of a private collab's ceremony (plan 100 §6.1, §11.25). These
+    // paths are minted by components/collab-ceremony.ts's JOIN_ROUTE / REPLY_ROUTE —
+    // an invite link carries ?inv=<token>, a reply link ?ans=<token>. A test pins the
+    // two spellings against each other so a renamed route cannot quietly orphan every
+    // invite already sent.
+    if (parts[0] === 'join') return { name: 'join', params: query || '' };
+    if (parts[0] === 'join-reply') return { name: 'join-reply', params: query || '' };
     // The gallery itself (#/?q=… keeps its query — the search field seeds from it),
     // and the fall-through for any unrecognised hash path.
     return { name: 'gallery', params: query || '' };

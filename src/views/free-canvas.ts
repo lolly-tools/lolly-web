@@ -105,6 +105,7 @@ import { takePendingDesignImport } from '../lib/drop-router.ts';
 // whole Google-font fetcher into this view chunk — see user-fonts.ts:73-80).
 import { brandFontFamilies } from '../lib/register-user-fonts.ts';
 import { LOLLY_ICON } from '../lib/lolly-badge.ts';
+import { ensureRowIds, ulid } from '../lib/row-id.ts';
 import { announce } from '../a11y.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { escape } from '../utils.ts';
@@ -1187,7 +1188,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const bgInputId = 'background';
   const getBg = (): any => runtime.getModel().find((i) => i.id === bgInputId)?.value ?? '#ffffff';
 
-  const idOf = (b: Box | undefined, i: number): string => (b && b[cfg.idField] != null && b[cfg.idField] !== '' ? String(b[cfg.idField]) : String(i));
+  // A row's identity is its OWN id, never its array position (plan 100 §3): an index key
+  // silently re-points at a different box the moment anything inserts above it — a peer's
+  // concurrent add, an undo, a paste — and a late field op would then land on the wrong
+  // box. Every shipped canvas manifest declares its id sub-field, and rows that lack a
+  // value get one on load (see the normalisation at mount) plus on every commit, so the
+  // '' below is only reachable for a row minted after mount by something that bypassed
+  // both — where selecting nothing is the honest outcome, not "select whatever sits at
+  // that index". `hasIdField` keeps the promise honest the other way: a manifest that
+  // declares no id at all (none ship today) keeps the historical index fallback rather
+  // than collapsing every row onto one key.
+  const hasIdField = !!cv.idField || (input.fields || []).some((f) => f.id === cfg.idField);
+  const idOf = (b: Box | undefined, i: number): string => {
+    const v = b ? b[cfg.idField] : undefined;
+    if (v != null && v !== '') return String(v);
+    return hasIdField ? '' : String(i);
+  };
   const selIndices = (boxes: Box[]): number[] => boxes.reduce<number[]>((a, b, i) => (selection.has(idOf(b, i)) ? (a.push(i), a) : a), []);
   const indexOfId = (boxes: Box[], id: string | undefined): number => boxes.findIndex((b, i) => idOf(b, i) === id);
   const groupOf = (b: Box | undefined): string => (cfg.groupField && b && b[cfg.groupField] ? String(b[cfg.groupField]) : '');
@@ -1219,19 +1235,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return pickTopmost(boxes, px, py, cfg, skip);
   }
 
-  let idSeq = 0;
   function freshId(boxes: Box[]): string {
-    // Short, collision-checked id (Math.random is fine in the browser shell).
+    // ULID (plan 100 §3): the old id was a per-mount counter plus 4 random base-36
+    // digits, so two devices opening the SAME saved session and adding a box each
+    // could mint the same id — which is exactly the case a collab makes routine. The
+    // collision check stays because it costs one pass over an array we already walk.
     const used = new Set(boxes.map((b, i) => idOf(b, i)));
-    let id: string;
-    do { id = 'b' + (Date.now().toString(36).slice(-4)) + (idSeq++).toString(36) + Math.floor(Math.random() * 46656).toString(36); }
-    while (used.has(id));
+    let id = ulid();
+    while (used.has(id)) id = ulid();
     return id;
   }
 
+  /** Fill in ids for rows that carry none — an import, a paste, or a hook patch that
+   *  minted rows without one. Returns the SAME array when nothing was missing, so a
+   *  caller commits only on a real change. Inert for a tool with no id field. */
+  const withIds = (boxes: Box[]): Box[] => (hasIdField ? ensureRowIds(boxes, cfg.idField) : boxes);
+
   function commit(nextBoxes: Box[]): void {
     onDirty?.(blockId);
-    runtime.setInput(blockId, nextBoxes);
+    runtime.setInput(blockId, withIds(nextBoxes));
   }
 
   // ── frame containment-on-drop (plan 93 F1b-1) ────────────────────────────────
@@ -4474,10 +4496,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── grouping + clip/mask ──────────────────────────────────────────────────────
+  // A group TAG, not a row identity: it is compared for equality between boxes of this
+  // one document, so it keeps its short per-mount form (freshId moved to ULIDs because a
+  // ROW is what a remote op addresses — see plan 100 §3). Its own counter since that
+  // move; two peers grouping at the same millisecond can still mint the same tag, which
+  // would merge two unrelated groups — a convergence snag for the collab wave, not this one.
+  let groupSeq = 0;
   function freshGroupId(boxes: Box[]): string {
     const used = new Set(boxes.map((b) => groupOf(b)).filter(Boolean));
     let g: string;
-    do { g = 'g' + Date.now().toString(36).slice(-4) + (idSeq++).toString(36); } while (used.has(g));
+    do { g = 'g' + Date.now().toString(36).slice(-4) + (groupSeq++).toString(36); } while (used.has(g));
     return g;
   }
   function groupSelection(): void {
@@ -8823,6 +8851,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (morePanel && !morePanel.contains(e.target as Node) && !companion) closeMorePanel();
   };
   document.addEventListener('pointerdown', onDocDown, true);
+
+  // Legacy documents — saved before this tool declared an id field, or hand-written into
+  // a URL — get their ids HERE, once, on load. mountTool already ran the same migration
+  // over every blocks input before this view was built, so in the app this pass normally
+  // finds nothing; it stays because the canvas keys SELECTION on these ids and a harness
+  // (or any future non-mountTool host) must not get an id-less document. Deliberately NOT
+  // through commit(): giving a row an identity is not an edit the user made, so no onDirty and no
+  // Save-pill flash — and not through the history-recording `setInput` either, or the
+  // user's first ⌘Z would undo the id stamping back to an id-less array, where `idOf`
+  // returns '' for every row and one click selects the whole document. The ids persist on
+  // the next real save; a session closed unsaved simply gets fresh ones next time, which
+  // is what "lazy" buys — no migration pass over stored slots.
+  {
+    const loaded = getBoxes();
+    const withIdsNow = withIds(loaded);
+    // mountTool installs the un-wrapped setter; a mount without it falls back.
+    const quiet = (runtime as RuntimeApi & { setInputNoHistory?: RuntimeApi['setInput'] }).setInputNoHistory
+      ?? ((id: string, value: unknown) => runtime.setInput(id, value));
+    if (withIdsNow !== loaded) quiet(blockId, withIdsNow);
+  }
 
   renderChrome();
 

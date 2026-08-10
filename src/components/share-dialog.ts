@@ -344,7 +344,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const extraHost = dialog.querySelector<HTMLElement>('[data-extra-sections]');
   const builders = shareSectionBuilders();
   if (extraHost && builders.length) {
-    const ctx = { toolId, baseParts, currentFormat: currentFmt, copy: copyToClipboard };
+    const ctx = { toolId, baseParts, currentFormat: currentFmt, copy: copyToClipboard, close: () => modal.close() };
     for (const build of builders) {
       Promise.resolve(build(ctx))
         .then(node => { if (node && dialog.isConnected) extraHost.appendChild(node); })

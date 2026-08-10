@@ -38,7 +38,7 @@ const resolverFor = (doc: unknown, theme: string) => {
   return (key: string) => set.resolve(key);
 };
 
-test('walkSwatches finds the starter brand’s ramps, spectrum and one theme’s roles', () => {
+test('walkSwatches finds the starter brand’s ramps and one theme’s roles', () => {
   const doc = load();
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
 
@@ -46,17 +46,12 @@ test('walkSwatches finds the starter brand’s ramps, spectrum and one theme’s
   const spectrum = s.filter(x => x.kind === 'spectrum');
   const roles = s.filter(x => x.kind === 'semantic');
 
-  // 3 ramps × 9 steps and 7 semantic slots (light only) are contract shape, so they
-  // are pinned. The spectrum SIZE is a palette choice, not a contract — the starter
-  // grew from 6 hues to the full Harmony wheel — so count it from the doc rather than
-  // re-pinning a number every time the palette is retuned. What matters is that every
-  // spectrum leaf is walked and nothing else lands in the bucket.
-  const spectrumLeaves = Object.keys(
-    (doc as { base: { color: { spectrum: Record<string, unknown> } } }).base.color.spectrum,
-  ).filter(k => !k.startsWith('$'));
-  assert.equal(ramps.length, 27, 'primary + neutral + secondary, 9 steps each');
-  assert.equal(spectrum.length, spectrumLeaves.length);
-  assert.ok(spectrum.length >= 6, 'the starter always ships a usable chart palette');
+  // The minimal starter is two ramps (primary + neutral) × 9 steps and the 7 semantic
+  // slots (light only) — contract shape, so pinned. It deliberately ships NO chart
+  // spectrum and NO secondary ramp: a new brand grows by ADDING those, not by clearing
+  // a big preset (chart tools fall back to their own palette until a spectrum exists).
+  assert.equal(ramps.length, 18, 'primary + neutral, 9 steps each');
+  assert.equal(spectrum.length, 0, 'the starter ships no spectrum — the user adds one');
   assert.equal(roles.length, 7);
   assert.equal(s.length, ramps.length + spectrum.length + roles.length, 'no swatch is walked twice or missed');
 
@@ -106,11 +101,9 @@ test('token keys are the canonical dotted paths pickers resolve', () => {
   const doc = load();
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
   assert.ok(s.some(x => x.key === 'color.ramp.primary.5'));
-  assert.ok(s.some(x => x.key === 'color.spectrum.blue'));
   assert.ok(s.some(x => x.key === 'color.semantic.primary'));
   // Group labels drive the palette's sections.
   assert.equal(s.find(x => x.key === 'color.ramp.primary.5')!.group, 'Primary');
-  assert.equal(s.find(x => x.key === 'color.spectrum.blue')!.group, 'Spectrum');
   assert.equal(s.find(x => x.key === 'color.semantic.primary')!.group, 'Roles · Light');
 });
 
@@ -139,15 +132,17 @@ test('recolouring a role DETACHES its alias into a literal', () => {
 
 test('setSwatchName writes $description; clearing it removes the key', () => {
   const doc = load();
-  const path = ['base', 'color', 'spectrum', 'blue'];
+  // A custom swatch keeps this independent of the starter's palette shape; its slug
+  // ('blue') is what the name falls back to once the $description is cleared.
+  const path = addSwatch(doc, 'custom', 'Blue', '#0055ff')!;
   setSwatchName(doc, path, '  Ocean  ');
   assert.equal(leafAt(doc, path)!.$description, 'Ocean');
-  assert.equal(walkSwatches(doc, 'light').find(x => x.key === 'color.spectrum.blue')!.name, 'Ocean');
+  assert.equal(walkSwatches(doc, 'light').find(x => x.key === 'color.custom.blue')!.name, 'Ocean');
 
   setSwatchName(doc, path, '   ');
   assert.equal('$description' in leafAt(doc, path)!, false);
   // Falls back to the prettified leaf key.
-  assert.equal(walkSwatches(doc, 'light').find(x => x.key === 'color.spectrum.blue')!.name, 'Blue');
+  assert.equal(walkSwatches(doc, 'light').find(x => x.key === 'color.custom.blue')!.name, 'Blue');
 });
 
 test('addSwatch creates the custom group, slugs collide-safely, and is findable', () => {

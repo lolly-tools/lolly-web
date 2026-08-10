@@ -173,6 +173,19 @@ let unregisterShareSection: (() => void) | null = null;
  *  leaks the previous registration. */
 let unregisterApprovalOpener: (() => void) | null = null;
 let unregisterSessionSource: (() => void) | null = null;
+/** Unregister for the work-collab factory (plan 100 wave 3.1), so a re-init replaces
+ *  rather than stacks the registration. Null whenever the instance does not grant
+ *  `collab.join` — which is every instance until the server ships the bits. */
+let unregisterCollabFactory: (() => void) | null = null;
+/** Unregister for the Share-dialog "Work collab" section (plan 100 §7 item 9,
+ *  wave 3.1), so a re-init replaces rather than stacks the registration onto the
+ *  generic share-sections registry — same reasoning as unregisterShareSection
+ *  above, kept as its own handle because the two sections are independent rows. */
+let unregisterCollabShareSection: (() => void) | null = null;
+/** Unregister for the `'work'` collab opener (plan 100 §7 item 9, wave 3.3) — the
+ *  thing that makes the Share row above render at all, since the row is gated on an
+ *  opener existing. Same last-wins reasoning as the handles above. */
+let unregisterCollabOpener: (() => void) | null = null;
 
 /** Short probe budget — a hung network must never delay boot by more than this. */
 const PROBE_TIMEOUT_MS = 1500;
@@ -611,6 +624,69 @@ export async function initOrg(): Promise<OrgState | null> {
       unregisterSessionSource = registerSessionSource(
         createInstanceSessionSource(orgConfigState?.instance?.name || t('your organisation')),
       );
+      // Offer live co-editing on this instance's sessions (plan 100 §7, wave 3.1),
+      // through the factory seam in org/collab-provider.ts. Gated on the caller's
+      // `collab.join` capability bit — read inline here rather than through
+      // org/collab-config.ts's `canJoinCollab()` (the same test, and the accessor
+      // every consumer OUTSIDE this module should use) only because that module
+      // imports this one, and the gate belongs beside the state it reads. ABSENT
+      // means NO registration — the
+      // server ships these bits later, so every instance today reads as absent and
+      // the seam stays dormant, byte-identical to a build without this branch.
+      // A FACTORY, not a provider: a collab is per-session and nothing here can yet
+      // know a mount came from a team project — that last wire is the wave-1
+      // integration, documented in collab-provider.ts's header. Lazy-imported, so
+      // the ws client never reaches the boot chunk of an instance without the bit.
+      unregisterCollabFactory?.();
+      unregisterCollabFactory = null;
+      unregisterCollabOpener?.();
+      unregisterCollabOpener = null;
+      // The PRINCIPAL, captured HERE rather than read inside the async callback: it
+      // is the partition key of the provider's durable outbox, and the 'profile' KV
+      // store that outbox lives in is origin-wide, shared by everyone who signs into
+      // this browser. Without it, one user's undelivered ops replay over the NEXT
+      // user's authenticated socket and the gateway audits them as that user's edits.
+      const principal = session?.kind === 'member' ? session.user.sub : undefined;
+      if (orgConfigState?.can?.['collab.join'] === true) {
+        import('./collab-provider.ts')
+          .then(async (m) => {
+            // The per-device client id must be durable before any provider is built
+            // (two clients on the wire from one device is the failure it prevents).
+            await m.initWorkCollab();
+            // Policy (or the session) may have changed while this loaded.
+            if (orgConfig()?.can?.['collab.join'] !== true) return;
+            unregisterCollabFactory = m.registerWorkCollabFactory(
+              (sid, o) => m.createWorkCollabProvider(sid, { ...o, principal: o?.principal ?? principal }),
+            );
+            // …and the `'work'` opener that consumes it, registered AFTER the factory
+            // so the chain is complete the moment the row can be pressed. It is what
+            // turns the "Work collab" Share row on (the row is gated on an opener
+            // existing), and the same module carries the inbox invite affordance that
+            // org/banner.ts lazy-loads. The opener re-checks the caller's capability
+            // bits on every press — this registration is an instance fact, not a
+            // per-member grant.
+            const opener = await import('./collab-work-opener.ts');
+            unregisterCollabOpener?.();
+            unregisterCollabOpener = opener.registerWorkCollabOpener();
+          })
+          .catch(() => { /* additive; never block or break boot */ });
+      }
+      // Offer a "Work collab" row in the Share dialog (plan 100 §7 item 9, wave
+      // 3.1 — the row + gating only; the ceremony/join UI that actually starts a
+      // work collab is a later wave). Registered through the same generic
+      // lib/share-sections.ts seam as "On this instance" above, with the row's
+      // builder module lazy-imported only when a member opens the dialog on an
+      // instance that grants `collab.join` — the same inline-`can` bail (and the
+      // same reasoning) as the collab-factory registration just above. The
+      // builder itself re-checks canJoinCollab() plus a registered 'work' opener
+      // (lib/collab-launch.ts) — nothing registers one yet, so the row stays
+      // absent everywhere until a later wave lands the ceremony UI.
+      unregisterCollabShareSection?.();
+      unregisterCollabShareSection = registerShareSection(async (sctx) => {
+        if (orgConfigState?.can?.['collab.join'] !== true) return null;
+        const { buildWorkCollabShareSection } = await import('./collab-share.ts');
+        return buildWorkCollabShareSection(sctx);
+      });
       emit();
       if ((orgConfigState?.inboxUnread ?? 0) > 0) {
         // Lazy — the banner (and its modal dep) stay out of the boot chunk, and
@@ -704,6 +780,12 @@ export function _resetOrgForTests(): void {
   unregisterApprovalOpener = null;
   unregisterSessionSource?.();
   unregisterSessionSource = null;
+  unregisterCollabFactory?.();
+  unregisterCollabFactory = null;
+  unregisterCollabShareSection?.();
+  unregisterCollabShareSection = null;
+  unregisterCollabOpener?.();
+  unregisterCollabOpener = null;
   clearInputPolicies();
   setInputPolicyFailClosed(null);
   setExportPolicy(undefined);

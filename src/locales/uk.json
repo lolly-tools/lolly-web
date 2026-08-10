@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… ще {n} байт не показано",
   "← All team projects": "← Усі командні проєкти",
   "✓ Added": "✓ Додано",
-  "✓ Found {n} tools at {base}.": "✓ Знайдено {n} інструментів на {base}."
+  "✓ Found {n} tools at {base}.": "✓ Знайдено {n} інструментів на {base}.",
+  "Private collab": "Приватна співпраця",
+  "beta": "бета",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "Запросіть ще один пристрій редагувати цей сеанс разом з вами напряму — без облікового запису, без сервера.",
+  "Start a collab": "Почати співпрацю",
+  "Starting a collab": "Початок співпраці",
+  "Work collab": "Робоча співпраця",
+  "Invite others on this instance to co-edit this session, live.": "Запросіть інших на цьому інстансі редагувати цей сеанс разом з вами наживо.",
+  "Live now - 1 person editing": "Наживо зараз — 1 людина редагує",
+  "Live now - {n} people editing": "Наживо зараз — {n} людей редагують",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

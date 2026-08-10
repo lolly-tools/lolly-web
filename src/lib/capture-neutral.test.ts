@@ -220,16 +220,22 @@ test('main.ts pins neutral state at the one point in boot where it works', () =>
     assert.ok(pin < at, `the pin must run BEFORE ${read}`);
   }
 
-  // The ?neuro demo hook (lib/neuro-demo.ts) must sit AFTER the pin: its in-memory
-  // flag override is what outranks the pin's mirror write, and running it earlier
-  // would let the hydrates/pin ordering silently regress under a demo capture.
-  const demoHook = MAIN_TS.indexOf('peekNeuroDemo()');
-  assert.ok(demoHook > 0, 'main.ts must call peekNeuroDemo()');
-  assert.ok(pin < demoHook, 'the ?neuro demo hook must run AFTER applyCaptureNeutral()');
+  // The ?neuro demo hook (lib/neuro-demo.ts): peekNeuroDemo() is a pure, memoised
+  // URL read and may sit anywhere in boot; the ordering contract binds APPLY — the
+  // call that performs the overrideFlagInMemory write — which must run after the
+  // pin and after both hydrates, or the hydrates/pin ordering silently regresses
+  // under a demo capture. (2026-08-09: neurospicy/atmosphere are deferred off the
+  // boot chunk, so applyNeuroDemo lives inside their import().then — textually
+  // after the hydrates it also follows at runtime; the old anchor on
+  // peekNeuroDemo() predates the deferral.)
+  assert.ok(MAIN_TS.indexOf('peekNeuroDemo()') > 0, 'main.ts must call peekNeuroDemo()');
+  const demoHook = MAIN_TS.indexOf('applyNeuroDemo(', MAIN_TS.indexOf('from \'./lib/neuro-demo.ts\'') + 1);
+  assert.ok(demoHook > 0, 'main.ts must call applyNeuroDemo()');
+  assert.ok(pin < demoHook, 'the ?neuro demo apply must run AFTER applyCaptureNeutral()');
   // ...and after both hydrates, which would otherwise overwrite the demo state.
   for (const hydrate of ['hydrateNeurospicy(', 'hydrateAtmosphere(']) {
     const at = MAIN_TS.indexOf(hydrate);
-    assert.ok(at > 0 && at < demoHook, `the ?neuro demo hook must run AFTER ${hydrate}`);
+    assert.ok(at > 0 && at < demoHook, `the ?neuro demo apply must run AFTER ${hydrate}`);
   }
 });
 

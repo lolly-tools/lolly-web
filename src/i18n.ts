@@ -71,22 +71,40 @@ const LOADERS: Record<NonEnglishLang, () => Promise<{ default: Record<string, st
 
 /**
  * A body of copy big enough to keep OUT of the boot catalog, loaded only by the
- * view that renders it. Today: `caps` — the ~300 prose strings of the capability
- * map (lib/capabilities-data.ts), which only the #/d?tab=caps panel ever shows.
- * At ~22 KB of English source it would be a fifth of every non-English user's
- * boot-time catalog download, for a panel most of them never open.
+ * view that renders it.
+ *
+ *  - `caps` — the ~300 prose strings of the capability map
+ *    (lib/capabilities-data.ts), which only the #/d?tab=caps panel ever shows. At
+ *    ~22 KB of English source it would be a fifth of every non-English user's
+ *    boot-time catalog download, for a panel most of them never open.
+ *  - `collab` — the private-collab surface (the invite/join ceremony, the #/join
+ *    route, the beam consent toast and its pack labels, the collaborator pill and
+ *    the focus rings). ~180 strings that appear only once a collab is actually
+ *    being started or joined, and every surface that renders them has an async
+ *    entry (route handler, dialog open, mount) to await this from — so they load
+ *    with the ceremony instead of with the app. (The `private-collab` flag went ON
+ *    by default on 2026-08-10; the namespace is lazy because of WHEN this copy is
+ *    needed, not because a flag hid it.) The eight strings that render on ORDINARY
+ *    chrome — the profile Feature-flags row and the two Share-dialog rows — are
+ *    deliberately NOT here; they are plain `t()` call sites in the boot catalog.
  *
  * A namespace catalog is a plain flat { english: translated } file exactly like a
  * locale catalog — same t(), same English-key-is-the-fallback contract — written
- * by scripts/translate.ts's `caps` corpus into ./locales/<ns>/<lang>.json.
+ * by scripts/translate.ts's corpus of the same name into ./locales/<ns>/<lang>.json.
  */
-export type Namespace = 'caps';
+export type Namespace = 'caps' | 'collab';
 
 // One loader per namespace, mirroring LOADERS above: a static path prefix with a
 // single `${lang}` segment, so Vite emits one analyzable chunk per (namespace,
 // language) and a locale only ever fetches its own. English never calls these.
+//
+// Every namespace must have a catalog file per language on disk even before it is
+// translated (the pipeline writes English-valued ones): Rollup's dynamic-import-vars
+// transform resolves this template against the files that exist at BUILD time and
+// fails the build outright for a directory with none.
 const NAMESPACE_LOADERS: Record<Namespace, (lang: NonEnglishLang) => Promise<{ default: Record<string, string> }>> = {
   caps: (lang) => import(`./locales/caps/${lang}.json`),
+  collab: (lang) => import(`./locales/collab/${lang}.json`),
 };
 
 let active: Lang = 'en';

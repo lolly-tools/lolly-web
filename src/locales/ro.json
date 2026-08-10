@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… încă {n} octeți neafișați",
   "← All team projects": "← Toate proiectele de echipă",
   "✓ Added": "✓ Adăugat",
-  "✓ Found {n} tools at {base}.": "✓ S-au găsit {n} unelte la {base}."
+  "✓ Found {n} tools at {base}.": "✓ S-au găsit {n} unelte la {base}.",
+  "Private collab": "Colaborare privată",
+  "beta": "beta",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "Invită un alt dispozitiv să editeze împreună această sesiune direct - fără cont, fără server.",
+  "Start a collab": "Pornește o colaborare",
+  "Starting a collab": "Se pornește o colaborare",
+  "Work collab": "Colaborare de lucru",
+  "Invite others on this instance to co-edit this session, live.": "Invită alte persoane de pe această instanță să editeze împreună această sesiune, live.",
+  "Live now - 1 person editing": "Live acum - 1 persoană editează",
+  "Live now - {n} people editing": "Live acum - {n} persoane editează",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

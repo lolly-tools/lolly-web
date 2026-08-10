@@ -44,7 +44,7 @@ import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, PRO_FLAG, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, isFlagOn, flagHidden, setFlagMirror } from '../feature-flags.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
 import { stopAtmosphere } from '../lib/atmosphere.ts';
@@ -417,7 +417,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${flagRow(JELLY_FLAG)}
             ${flagRow(PRO_FLAG)}
             ${flagRow(STRIP_UPLOAD_META_FLAG)}
-            ${flagRow(PREFLIGHT_FLAG)}`;
+            ${flagRow(PREFLIGHT_FLAG)}
+            ${flagRow(PRIVATE_COLLAB_FLAG)}`;
 
   // ── Accessibility prefs (lib/a11y-prefs.ts) ──────────────────────────────────
   // Three opt-in comfort switches. Deliberately NOT feature flags and NOT in the

@@ -1327,7 +1327,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       </header>
 
       <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
-        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav" hidden>
+        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
         <strong>${t('Drop files here')}</strong>
         <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm · mp3 · wav — check one or several at once')}</span>

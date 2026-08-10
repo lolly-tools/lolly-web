@@ -14,6 +14,9 @@
  *                     each (lib/audio-peaks.ts)
  *   - audio-cover-bakes — DERIVED MilkDrop cover images, keyed by
  *                     (asset|preset|brand) (lib/audio-cover-bake.ts)
+ *   - beam-staging  — IN-FLIGHT chunks of a beam transfer, one row per chunk
+ *                     (lib/beam-sink.ts). Never user data: it is either mid-
+ *                     transfer or a crashed session's litter.
  *
  * Why IndexedDB over localStorage: blobs (images), no 5MB ceiling, structured
  * queries. The capability bridge hides this from tools — they call
@@ -31,7 +34,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -176,6 +179,21 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // re-downloadable exactly like 'upscale-models', so likewise NOT in
         // REQUIRED_STORES and out of the portable backup.
         db.createObjectStore('matte-models');
+      }
+      if (oldVersion < 13) {
+        // Receiver-side staging for a beam transfer (plans/100 §11.15a, §11.18) —
+        // one row per 64 KB chunk so a 38 MB pack streams to disk as it arrives
+        // instead of accumulating in renderer RAM. Keyed [beamId, itemIndex, seq],
+        // which makes an item's chunks read back in seq order and a whole beam one
+        // contiguous range to delete; the `at` index carries the written-at stamp
+        // the startup orphan sweep (lib/beam-sink.ts clearStaleBeams) reads key-only.
+        // NOT user data at any moment — a row is either in flight or a crashed
+        // session's litter, and nothing enters the library until the transfer
+        // verifies — so, like 'derived-media'/'audio-peaks', it is intentionally NOT
+        // in REQUIRED_STORES (its absence must never escalate into wiping real data)
+        // and NOT part of the portable backup.
+        const beamStore = db.createObjectStore('beam-staging', { keyPath: ['beamId', 'itemIndex', 'seq'] });
+        beamStore.createIndex('at', 'at');
       }
     },
     blocking() {

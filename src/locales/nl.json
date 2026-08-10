@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… nog {n} bytes niet weergegeven",
   "← All team projects": "← Alle teamprojecten",
   "✓ Added": "✓ Toegevoegd",
-  "✓ Found {n} tools at {base}.": "✓ {n} tools gevonden op {base}."
+  "✓ Found {n} tools at {base}.": "✓ {n} tools gevonden op {base}.",
+  "Private collab": "Privésamenwerking",
+  "beta": "beta",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "Nodig één ander apparaat uit om rechtstreeks samen aan deze sessie te werken - geen account, geen server.",
+  "Start a collab": "Samenwerking starten",
+  "Starting a collab": "Samenwerking wordt gestart",
+  "Work collab": "Teamsamenwerking",
+  "Invite others on this instance to co-edit this session, live.": "Nodig anderen op deze instance uit om live samen aan deze sessie te werken.",
+  "Live now - 1 person editing": "Nu live - 1 persoon aan het bewerken",
+  "Live now - {n} people editing": "Nu live - {n} personen aan het bewerken",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

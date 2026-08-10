@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n} مزید بائٹس ظاہر نہیں کی گئیں",
   "← All team projects": "← تمام ٹیم پراجیکٹس",
   "✓ Added": "✓ شامل ہو گیا",
-  "✓ Found {n} tools at {base}.": "✓ {base} پر {n} ٹولز ملے۔"
+  "✓ Found {n} tools at {base}.": "✓ {base} پر {n} ٹولز ملے۔",
+  "Private collab": "پرائیویٹ کولیب",
+  "beta": "بیٹا",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "کسی دوسری ڈیوائس کو براہ راست اس سیشن کو مل کر ایڈٹ کرنے کی دعوت دیں — نہ کوئی اکاؤنٹ، نہ کوئی سرور۔",
+  "Start a collab": "کولیب شروع کریں",
+  "Starting a collab": "کولیب شروع ہو رہا ہے",
+  "Work collab": "کام کا کولیب",
+  "Invite others on this instance to co-edit this session, live.": "اس انسٹینس کے دوسرے لوگوں کو اس سیشن کو لائیو مل کر ایڈٹ کرنے کی دعوت دیں۔",
+  "Live now - 1 person editing": "ابھی لائیو - 1 شخص ترمیم کر رہا ہے",
+  "Live now - {n} people editing": "ابھی لائیو - {n} افراد ترمیم کر رہے ہیں",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

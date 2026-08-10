@@ -26,6 +26,7 @@ import { installTablePaste, htmlTableToTsv } from '../lib/table-paste.ts';
 import { splitMarkdownIntoBlocks } from '../lib/markdown.ts';
 import { playSliderTick, playScrubTick } from '../lib/sfx.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { rowIdField, ulid } from '../lib/row-id.ts';
 import { icon, hasIcon } from '../lib/icons.ts';
 // Generic per-input display policy (empty/no-op unless a deployment's control plane
 // has populated it via src/org/) — a rendering overlay only; the engine input model
@@ -349,8 +350,8 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
     for (const file of files) {
       try {
         const ref = await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file);
-        const block: Record<string, InputValue> = {};
-        for (const f of input.fields ?? []) block[f.id] = f.id === field ? ref : blockFieldDefault(f);
+        const block = newBlockRow(input);
+        if (field in block) block[field] = ref;   // declared-fields-only, as before
         made.push(block);
       } catch (e) {
         host.log?.('warn', `drop-to-add: couldn't add ${file.name}`, { error: String(e) });
@@ -1201,8 +1202,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const inp = panelModel.find(i => i.id === blockId);
       if (!inp) return;
       const arr = Array.isArray(inp.value) ? [...inp.value] : [];
-      const block: Record<string, InputValue> = {};
-      for (const f of inp.fields ?? []) block[f.id] = blockFieldDefault(f);
+      const block = newBlockRow(inp);
       const type = btn.dataset.blockAddType;
       if (inp.addMenu && type !== undefined) block[inp.addMenu.field] = type;
       const index = arr.length;
@@ -1253,8 +1253,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // The block must have somewhere to put the prose — a `body` (or at least a `heading`).
     if (!has('body') && !has('heading')) return 'empty';
     const made = sections.map(sec => {
-      const block: Record<string, InputValue> = {};
-      for (const f of inp.fields ?? []) block[f.id] = blockFieldDefault(f);
+      const block = newBlockRow(inp);
       if (has('kind')) block.kind = 'text';
       if (has('heading')) block.heading = sec.heading;
       if (has('body')) block.body = sec.body;
@@ -1277,8 +1276,8 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const { rows, truncated } = parseDataRows(text, { fields, format, columns: cfg.columns as Record<string, string> | undefined });
       if (!rows.length) return 'empty';
       const filled = rows.map(r => {
-        const b: Record<string, InputValue> = {};
-        for (const f of fields) { const v = (r as Record<string, InputValue>)[f.id]; b[f.id] = (v === '' || v == null) ? blockFieldDefault(f) : v; }
+        const b = newBlockRow(inp);
+        for (const f of fields) { const v = (r as Record<string, InputValue>)[f.id]; if (v !== '' && v != null) b[f.id] = v; }
         return b;
       });
       const live = runtime.getModel().find(i => i.id === inp.id)?.value;
@@ -1844,6 +1843,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     () => el.isConnected,
   );
 
+  // NOTE: legacy rows are given their stable ids at MOUNT (lib/row-id.ts's
+  // migrateBlockRowIds, called from views/tool.ts) — deliberately not from here.
+  // This function also renders `/multi`'s shared card against a FAN-OUT runtime,
+  // whose model is the lead session's and whose setInput writes to every sibling,
+  // so a migration written here would overwrite each sibling's rows with the
+  // lead's. Rows minted from this panel are born with an id (newBlockRow).
+
   el._inputsDispose = () => {
     el._audioThumbs?.destroy();
     el._audioThumbs = undefined;
@@ -1871,6 +1877,16 @@ function blockFieldDefault(f: BlockFieldSpec): InputValue {
     case 'asset':   return null;
     default:        return '';
   }
+}
+
+/** A freshly created `blocks` row: every declared sub-field at its default, plus the
+ *  stable id a row now carries from birth (`rowIdField` — one definition, in
+ *  lib/row-id.ts, shared with the canvas and the collab projection). */
+function newBlockRow(inp: { fields?: BlockFieldSpec[]; canvas?: Record<string, unknown> }): Record<string, InputValue> {
+  const row: Record<string, InputValue> = {};
+  for (const f of inp.fields ?? []) row[f.id] = blockFieldDefault(f);
+  row[rowIdField(inp)] = ulid();
+  return row;
 }
 
 // Human-readable byte size for the file picker (chosen-file label + size limits).

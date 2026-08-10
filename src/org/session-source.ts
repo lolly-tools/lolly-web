@@ -24,6 +24,55 @@ async function getJson<T>(path: string): Promise<T | null> {
   }
 }
 
+/** The server shape of one full session (plans/08 §6b). */
+interface SessionBody {
+  toolId?: string;
+  toolVersion?: string;
+  inputs?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
+}
+
+/**
+ * One session fetch that KEEPS the HTTP status.
+ *
+ * The `SessionSource` seam deliberately collapses every failure to `null` — the
+ * Projects view only ever says "that session could not be opened", so a status
+ * would be a field nobody reads. A collab invite is the one caller that must tell
+ * three failures apart, because the honest sentence differs each time: the session
+ * was deleted (410), the caller's access was revoked (403), or it never existed /
+ * the instance is unreachable. So the status-carrying fetch is the primitive and
+ * `createInstanceSessionSource`'s `fetchSession` is the lossy view of it — one
+ * request path, not two, so a change to the endpoint cannot fix one and miss the
+ * other.
+ *
+ * `status: 0` is "no answer at all" (network error, abort, non-JSON body): the
+ * request never reached a verdict, which is a different thing from a refusal and
+ * is the one case worth retrying.
+ */
+export type TeamSessionFetch =
+  | { ok: true; data: TeamSessionData }
+  | { ok: false; status: number };
+
+export async function fetchTeamSession(sessionId: string): Promise<TeamSessionFetch> {
+  let res: Response;
+  try {
+    res = await instanceFetch(instancePath(`/api/v1/sessions/${encodeURIComponent(sessionId)}`));
+  } catch {
+    return { ok: false, status: 0 };
+  }
+  if (!res.ok) return { ok: false, status: res.status };
+  let body: SessionBody | null = null;
+  try {
+    body = (await res.json()) as SessionBody;
+  } catch {
+    return { ok: false, status: 0 };
+  }
+  // A 200 whose body is not a usable session is not a session — treat it as no
+  // answer rather than inventing one, exactly as getJson does.
+  if (!body?.toolId || !body.inputs) return { ok: false, status: 0 };
+  return { ok: true, data: { toolId: body.toolId, toolVersion: body.toolVersion, inputs: body.inputs, meta: body.meta } };
+}
+
 /** Build the source. `label` is the already-localised instance name for the heading. */
 export function createInstanceSessionSource(label: string): SessionSource {
   return {
@@ -41,11 +90,8 @@ export function createInstanceSessionSource(label: string): SessionSource {
       }));
     },
     async fetchSession(sessionId: string): Promise<TeamSessionData | null> {
-      const s = await getJson<{ toolId?: string; toolVersion?: string; inputs?: Record<string, unknown>; meta?: Record<string, unknown> }>(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
-      );
-      if (!s?.toolId || !s.inputs) return null;
-      return { toolId: s.toolId, toolVersion: s.toolVersion, inputs: s.inputs, meta: s.meta };
+      const got = await fetchTeamSession(sessionId);
+      return got.ok ? got.data : null;
     },
   };
 }

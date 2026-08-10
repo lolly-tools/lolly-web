@@ -35,7 +35,9 @@ import { createMediaAPI } from './media.ts';
 import { createRecorderAPI } from './recorder.ts';
 import { hasCaptureExtension } from './capture-extension.ts';
 import { vizSupported } from '../lib/viz-support.ts';
-import { KOKORO_MODEL_BYTES } from '../lib/speech-kokoro.ts';
+// The dependency-free leaf, NOT '../lib/speech-kokoro.ts' (which re-exports the whole
+// engine speech-text module) — this module is on the boot path and needs only the number.
+import { KOKORO_MODEL_BYTES } from '../../../../engine/src/speech-model-bytes.ts';
 import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
 import { stagedUpscaleModels, UPSCALE_MODEL_BYTES } from '../lib/upscale-models.ts';
 import { matteModelsFor, MATTE_MODEL_BYTES } from '../lib/matte-models.ts';

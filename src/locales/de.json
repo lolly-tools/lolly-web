@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n} weitere Bytes nicht angezeigt",
   "← All team projects": "← Alle Teamprojekte",
   "✓ Added": "✓ Hinzugefügt",
-  "✓ Found {n} tools at {base}.": "✓ {n} Tools bei {base} gefunden."
+  "✓ Found {n} tools at {base}.": "✓ {n} Tools bei {base} gefunden.",
+  "Private collab": "Private Zusammenarbeit",
+  "beta": "Beta",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "Laden Sie ein anderes Gerät ein, um direkt mit Ihnen gemeinsam an dieser Sitzung zu arbeiten - kein Konto, kein Server.",
+  "Start a collab": "Zusammenarbeit starten",
+  "Starting a collab": "Zusammenarbeit wird gestartet",
+  "Work collab": "Team-Zusammenarbeit",
+  "Invite others on this instance to co-edit this session, live.": "Laden Sie andere auf dieser Instanz ein, live gemeinsam an dieser Sitzung zu arbeiten.",
+  "Live now - 1 person editing": "Jetzt live - 1 Person bearbeitet",
+  "Live now - {n} people editing": "Jetzt live - {n} Personen bearbeiten",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

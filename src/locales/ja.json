@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "…あと{n}バイトは表示されていません",
   "← All team projects": "← すべてのチームプロジェクト",
   "✓ Added": "✓ 追加しました",
-  "✓ Found {n} tools at {base}.": "✓ {base}で{n}個のツールが見つかりました。"
+  "✓ Found {n} tools at {base}.": "✓ {base}で{n}個のツールが見つかりました。",
+  "Private collab": "プライベートコラボ",
+  "beta": "ベータ",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "もう1台の端末を招待して、このセッションを直接共同編集します — アカウントもサーバーも不要です。",
+  "Start a collab": "コラボを開始",
+  "Starting a collab": "コラボを開始しています",
+  "Work collab": "ワークコラボ",
+  "Invite others on this instance to co-edit this session, live.": "このインスタンスの他のメンバーを招待して、このセッションをライブで共同編集します。",
+  "Live now - 1 person editing": "現在ライブ：1人が編集中",
+  "Live now - {n} people editing": "現在ライブ：{n}人が編集中",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n} بايت إضافي غير معروض",
   "← All team projects": "← جميع مشاريع الفريق",
   "✓ Added": "✓ تمت الإضافة",
-  "✓ Found {n} tools at {base}.": "✓ تم العثور على {n} أداة في {base}."
+  "✓ Found {n} tools at {base}.": "✓ تم العثور على {n} أداة في {base}.",
+  "Private collab": "التعاون الخاص",
+  "beta": "تجريبي",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "دعوة جهاز آخر لتعديل هذه الجلسة معك مباشرة — بلا حساب، بلا خادم.",
+  "Start a collab": "بدء تعاون",
+  "Starting a collab": "جاري بدء التعاون",
+  "Work collab": "تعاون العمل",
+  "Invite others on this instance to co-edit this session, live.": "دعوة آخرين على هذا المثيل لتعديل هذه الجلسة معك مباشرة.",
+  "Live now - 1 person editing": "مباشر الآن - شخص واحد يحرر",
+  "Live now - {n} people editing": "مباشر الآن - {n} أشخاص يحررون",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

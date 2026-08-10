@@ -24,6 +24,15 @@ export interface ShareSectionContext {
   currentFormat?: string;
   /** Copy text to the clipboard via the dialog's own affordance (with a fallback). */
   copy: (text: string) => Promise<void>;
+  /**
+   * Dismiss the Share dialog, exactly as its own Done button does.
+   *
+   * Optional, and absent when a section is built outside a dialog (a test drives the
+   * builder directly). A section that NAVIGATES needs it: this is a modal, so a row that
+   * changed the route without it would leave the dialog sitting over the page it just
+   * sent the reader to.
+   */
+  close?: () => void;
 }
 
 /** Builds a section for the given context, or returns null to add nothing. May be

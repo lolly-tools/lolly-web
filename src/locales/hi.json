@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n} और बाइट्स नहीं दिखाए गए",
   "← All team projects": "← सभी टीम प्रोजेक्ट्स",
   "✓ Added": "✓ जोड़ा गया",
-  "✓ Found {n} tools at {base}.": "✓ {base} पर {n} टूल मिले।"
+  "✓ Found {n} tools at {base}.": "✓ {base} पर {n} टूल मिले।",
+  "Private collab": "निजी कोलैब",
+  "beta": "बीटा",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "किसी दूसरे डिवाइस को सीधे इस सेशन को साथ में एडिट करने के लिए आमंत्रित करें — न कोई अकाउंट, न कोई सर्वर।",
+  "Start a collab": "कोलैब शुरू करें",
+  "Starting a collab": "कोलैब शुरू हो रहा है",
+  "Work collab": "कार्य कोलैब",
+  "Invite others on this instance to co-edit this session, live.": "इस इंस्टेंस पर दूसरों को इस सेशन को लाइव साथ में एडिट करने के लिए आमंत्रित करें।",
+  "Live now - 1 person editing": "अभी लाइव - 1 व्यक्ति एडिट कर रहा है",
+  "Live now - {n} people editing": "अभी लाइव - {n} लोग एडिट कर रहे हैं",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

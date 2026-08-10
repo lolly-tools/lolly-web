@@ -30,6 +30,11 @@ export interface InboxMessage {
   title: string;
   body?: string;
   cta?: { label: string; url: string };
+  /** Machine-readable payload for a system-generated message, so the shell can ACT on
+   *  it rather than parse the copy — a collab invite's `sessionId`/`toolId` being the
+   *  first (plan 100 §7 item 9). String values only; it is a routing hint, never a
+   *  document, and nothing here reaches the DOM. */
+  data?: Record<string, string>;
   dismissible: boolean;
 }
 
@@ -61,6 +66,36 @@ function ctaHtml(m: InboxMessage): string {
   if (!m.cta?.url || !m.cta.label || !safeHref(m.cta.url)) return '';
   // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in the guard above
   return `<a class="btn btn--sm org-banner-cta" href="${escape(m.cta.url)}">${escape(m.cta.label)}</a>`;
+}
+
+/**
+ * Give a collab invite an "Open the collab" action (plan 100 §7 item 9).
+ *
+ * Lazy on the message KIND, not just on the banner: a member with an ordinary
+ * announcement never fetches the work-collab client, and a member with an invite
+ * fetches it exactly once, at the moment it becomes useful. Everything about the
+ * action — parsing the payload, the `collab.join` gate, the join itself and its
+ * failure copy — belongs to org/collab-work-opener.ts; this is the insertion point
+ * and nothing else. A build without that module (or a member the instance withholds
+ * the capability from) renders the message as plain text, which is what it is.
+ */
+function mountCollabAction(m: InboxMessage, host: Element, before: Element | null): void {
+  // The gate has to be at least as WIDE as the parser it delegates to, or the tolerance
+  // that parser was written for is unreachable. `readCollabInvite` deliberately accepts
+  // EITHER marker — the message's own `kind: 'collab'` and the payload's
+  // `data.kind: 'collab-invite'` — "because the server sets both and neither is the
+  // documented one on its own". Gating on `kind === 'collab'` alone meant an invite sent
+  // (or later re-shaped) as an announcement carrying the documented payload marker never
+  // reached the parser at all: it rendered as plain text, with no button and nothing in
+  // the console. The parser is still the decision — this only stops short-circuiting it.
+  if (!m.data || (m.kind !== 'collab' && m.data.kind !== 'collab-invite')) return;
+  void import('./collab-work-opener.ts')
+    .then(({ buildCollabInviteAction }) => {
+      const action = buildCollabInviteAction(m);
+      if (!action || !host.isConnected) return;
+      host.insertBefore(action, before);
+    })
+    .catch(() => { /* additive; the message still reads as text */ });
 }
 
 let mounted = false;
@@ -111,6 +146,9 @@ function showBar(m: InboxMessage): void {
     ${m.dismissible ? `<button type="button" class="org-banner-dismiss" aria-label="${escape(t('Dismiss'))}" style="flex:0 0 auto;border:0;background:transparent;color:inherit;cursor:pointer;font-size:1.2rem;line-height:1;padding:.1rem .3rem;opacity:.7">&times;</button>` : ''}`;
 
   app.insertBefore(bar, view ?? null);
+  // Before the dismiss button, so the action reads as part of the message rather than
+  // as something past the way to close it.
+  mountCollabAction(m, bar, bar.querySelector('.org-banner-dismiss'));
 
   bar.querySelector('.org-banner-dismiss')?.addEventListener('click', () => {
     bar.remove();
@@ -135,6 +173,8 @@ function showBlocking(m: InboxMessage): void {
     // Closing however (button, Escape, backdrop) acks and frees the app.
     onClose: () => { mounted = false; ack(m.id); },
   });
+  const actions = modal.el.querySelector('.modal-actions');
+  if (actions) mountCollabAction(m, actions, actions.querySelector('[data-act="ok"]'));
   modal.el.addEventListener('click', (e) => {
     if (e.target instanceof Element && e.target.closest('[data-act="ok"]')) modal.close();
   });

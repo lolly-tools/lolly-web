@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "… {n} bait lagi tidak ditunjukkan",
   "← All team projects": "← Semua projek pasukan",
   "✓ Added": "✓ Ditambah",
-  "✓ Found {n} tools at {base}.": "✓ {n} alatan ditemui di {base}."
+  "✓ Found {n} tools at {base}.": "✓ {n} alatan ditemui di {base}.",
+  "Private collab": "Kolaborasi peribadi",
+  "beta": "beta",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "Jemput satu peranti lain untuk mengedit sesi ini bersama secara langsung - tanpa akaun, tanpa pelayan.",
+  "Start a collab": "Mulakan kolaborasi",
+  "Starting a collab": "Memulakan kolaborasi",
+  "Work collab": "Kolaborasi kerja",
+  "Invite others on this instance to co-edit this session, live.": "Jemput orang lain pada instans ini untuk mengedit sesi ini bersama secara langsung.",
+  "Live now - 1 person editing": "Secara langsung sekarang - 1 orang sedang menyunting",
+  "Live now - {n} people editing": "Secara langsung sekarang - {n} orang sedang menyunting",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

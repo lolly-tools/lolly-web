@@ -27,6 +27,30 @@ import type { ExportAudio } from '../bridge/audio-envelope.ts';
 import { promptDialog } from '../components/confirm-dialog.ts';
 import { mountModal } from '../components/modal.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
+import { attachCollabPlumbing } from '../lib/collab-plumbing.ts';
+// The acquisition seam only (plan 100 §5) — a registry with no runtime imports of
+// its own. The presence stack it gates (session, pill, rings, cursors) is reached
+// through one `import()` inside the guarded block below, so a build that ships no
+// transport never fetches that chunk: a collab is lazy chrome that must cost a
+// single-player build nothing (collab-pill.ts's own rule; the neuro-dock/
+// music-player pattern).
+import { acquireCollabSession } from '../lib/collab-session-source.ts';
+// The three one-shot hand-offs a live collab arms BEFORE this view is entered
+// (lib/collab-live-mount.ts, plan 100 §6.2a/§11.17). Statically imported, and that
+// costs a single-player build NOTHING extra: `main.ts` already imports this module on
+// the boot path for `installLiveCollabMount()`, so it is in the entry chunk either way
+// — unlike the presence composition, which stays behind the guard's `import()`. All
+// three are inert (a comparison and a null) for every mount that is not a collab.
+import {
+  carryMountState, takeCarriedMountState, takeEphemeralState, willRemountForCollab,
+} from '../lib/collab-live-mount.ts';
+// The fourth such hand-off, and the smallest: which TEAM session this mount was opened
+// from, when it was opened from one (org/team-session-origin.ts, plans/100 §7). A leaf
+// with no imports of its own — module state, no network, no DOM — so a build with no
+// control plane pays two function calls and nothing else.
+import { consumeTeamSessionOrigin, releaseTeamSessionOrigin } from '../org/team-session-origin.ts';
+import type { ToolCollab } from './tool-collab.ts';
+import { migrateBlockRowIds, stripHiddenRowIds } from '../lib/row-id.ts';
 import { fpsTick, startFrameFps, stopFrameFps } from '../lib/frame-fps.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
 
@@ -213,6 +237,12 @@ export interface ActionsApi {
    *  (see exportFormatDriver). Keeps the current pick when it survives. */
   setFormats?: (allowed: string[]) => void;
   stopAudioPreview?: () => void;
+  /** The exact record a Save would write — input values plus the `__` markers (tool
+   *  identity and the export bar's format/size/unit/DPI/profile/bleed/marks). Read by
+   *  the beam (`views/tool-collab.ts`), which builds its own values off the live model
+   *  and takes only the `__export_*` half: those markers live in this panel's DOM and
+   *  nowhere else, so a session sent without them reopens at tool defaults. */
+  sessionState?: () => Record<string, unknown>;
   /** Tear down the cost-authoring slot: unsubscribe the registry-change listener
    *  and run the hydrated extension's disposer. Called from mountTool's cleanup. */
   dispose?: () => void;
@@ -225,6 +255,9 @@ interface BarSeq { v: number; }
 type LottieModule = typeof import('./lottie-mount.ts');
 /** The video-mount module, loaded lazily the first paint that emits a keyed <video>. */
 type VideoModule = typeof import('./video-mount.ts');
+/** The animated-SVG enhancer, loaded lazily the first paint that emits a [data-anim-src]
+ *  marker (fetch + DOMPurify are its own chunk). */
+type AnimSvgModule = typeof import('./anim-svg-mount.ts');
 /** The MilkDrop enhancer, loaded lazily the first paint that emits a [data-lolly-viz]
  *  placeholder — butterchurn and the preset builders are a chunk of their own. */
 type VizModule = typeof import('../lib/viz-tool-mount.ts');
@@ -343,10 +376,32 @@ async function decryptEncryptedLink(query: string): Promise<string> {
 }
 
 export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: string, urlParams: string | null | undefined): Promise<void> {
+  // FIRST, and before any early return: the Team-projects open stashed the instance's id
+  // for the session it is navigating into, and that stash is bounded by "the next mount
+  // spends it" — so a mount that 404s or fails to load must spend it too, or an unrelated
+  // later mount of the same tool would inherit it. Returns the origin, but the module
+  // holds it for this mount (released in _cleanup), so nothing is threaded through the
+  // view. Null for every mount that is not a team-session open, which is nearly all.
+  //
+  // SPENDING IS NOT THE WHOLE JOB, and this is the half that is easy to lose: a matching
+  // consume also PROMOTES the origin to the module's live slot, and the only release is
+  // in `_cleanup` — which is not assigned until ~1500 lines below, once the mount is
+  // fully built. Every abandoned mount between here and there (a 404, an offline load, a
+  // validation failure, a capability this shell cannot fulfil) therefore used to leave an
+  // origin live with nothing to release it: `navigate()` calls `view._cleanup?.()` and
+  // this view had given it none, so the id survived until some later mount of a DIFFERENT
+  // tool cleared it — and in the meantime the Share dialog over an unrelated LOCAL session
+  // of the SAME tool read it and keyed a work collab on a stranger's session. That is
+  // exactly the "present and wrong" id `org/team-session-origin.ts` exists to prevent
+  // (its rule 3), so each of those paths releases before it returns, and
+  // `views/tool-team-origin.test.ts` fails if a new one forgets to.
+  consumeTeamSessionOrigin(toolId);
+
   // If the catalog is loaded, do a fast existence check before fetching anything.
   const catalog = (window as Window & { __toolIndex?: { tools?: { id: string }[] } }).__toolIndex;
   if (catalog?.tools && !catalog.tools.some(t => t.id === toolId)) {
     mount404(viewEl, toolId);
+    releaseTeamSessionOrigin();
     return;
   }
 
@@ -381,6 +436,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     const err = e as { message?: string; validationErrors?: { path: string; message: string }[] };
     if (err.message === 'tool-not-found') {
       mount404(viewEl, toolId);
+      releaseTeamSessionOrigin();
       return;
     }
     const errs = err.validationErrors?.length
@@ -397,9 +453,11 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         `<div class="error-actions" style="margin-top:12px;display:flex;gap:8px;justify-content:center">` +
         `<button class="btn" data-retry>${t('Retry')}</button><a class="btn" href="/#/">${t('Browse all tools')}</a></div></div>`;
       viewEl.querySelector('[data-retry]')?.addEventListener('click', () => location.reload());
+      releaseTeamSessionOrigin();
       return;
     }
     viewEl.innerHTML = `<div class="error"><strong>${escape(err.message)}</strong>${errs}</div>`;
+    releaseTeamSessionOrigin();
     return;
   }
 
@@ -415,7 +473,16 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // (below). A genuinely unavailable capability (non-Chromium, or a non-capture
   // need) still can't run here at all.
   const captureHint = sup.status === 'install';
-  if (sup.status === 'unavailable') { mountUnavailable(viewEl, tool.manifest, sup.unmet); return; }
+  // `mountUnavailable` renders a card and installs no `_cleanup`, so the origin is let go
+  // here rather than at a teardown that will never run (see the consume above). This is
+  // the reachable case, not a theoretical one: a team session of a `capture` tool opened
+  // on Safari or Firefox lands exactly here, and `openTeamSession` arms the stash without
+  // consulting capabilities.
+  if (sup.status === 'unavailable') {
+    mountUnavailable(viewEl, tool.manifest, sup.unmet);
+    releaseTeamSessionOrigin();
+    return;
+  }
 
   // A manifest `network.allowlist` gives THIS mount a host clone whose `net`
   // enforces exactly that list — the boot-time shared host keeps its fail-closed
@@ -425,6 +492,25 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   if (tool.manifest.network?.allowlist?.length) {
     host = { ...host, net: createNetAPI({ allowlist: tool.manifest.network.allowlist }) };
   }
+
+  // §6.2a/§11.17: an ACCEPTOR's working copy must never reach a slot on their device.
+  // The ruling was one interception point rather than an audit of every save call site,
+  // and this is it — a memory-backed `host.state`, armed by the mount before the route
+  // was entered. The clone rides the SAME rule as the allowlist clone above (bridge
+  // methods are closures, not `this`-bound), and it must land HERE: before the `slot`
+  // load, before `createRuntime`, and before the actions bar is built, so every save
+  // path in this view and in the tool's own actions is looking at one object. One-shot
+  // and null for every mount that is not an ephemeral collab, which is all of them
+  // until somebody accepts an invite.
+  const ephemeralState = takeEphemeralState(toolId);
+  // The bridge as it was BEFORE the swap, kept because exactly one thing still needs the
+  // real store on an acceptor's mount: a beam they were asked about and accepted. §11.17
+  // is about their borrowed copy of the inviter's document; a gift is not that, and §6.4
+  // promises it lands in their library. The same object for every other mount, so this
+  // costs a reference. NOTHING ELSE may use it — every save path in this view and in the
+  // tool's own actions goes through `host`, which is the whole point of the interception.
+  const libraryHost = host;
+  if (ephemeralState) host = { ...host, state: ephemeralState };
 
   // Source the colour picker's swatches from design tokens (the canonical brand
   // colours), so choosing one keeps the value linked to the token. Falls back to
@@ -464,7 +550,22 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
+  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot: routeSlot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
+  // Starting a collab force-remounts this tool, and the route it remounts through is a
+  // LOSSY encoder twice over: `buildShareParams` skips `user/` asset ids and anything
+  // past 150 chars, `syncUrl` writes only dirty params, skips `file` inputs, and never
+  // re-adds `slot`. So the outgoing mount hands its live model and its slot over in
+  // memory (see this file's _cleanup, and lib/collab-live-mount.ts's header) and the
+  // remount spends them here — an uploaded logo, a picked file and a long paragraph
+  // survive because nothing was serialised. Null for every mount that is not that
+  // remount. The values are applied below, ON TOP of the route: they are the same
+  // model the route was encoded from, only complete.
+  const carriedMount = takeCarriedMountState(toolId);
+  // The bar drops `slot` on the first edit, so the route alone would open the collab as
+  // a FRESH session and the inviter's first Save would mint a duplicate beside the one
+  // they were collaborating on (§6.2a pins a private collab to the session it started
+  // from). The route still wins when it names one.
+  const slot = routeSlot ?? carriedMount?.slot ?? undefined;
   const urlFlags = new URLSearchParams(urlParams || '');
   const isFull = urlFlags.has('full');
   // `?template=<id>` launches straight into a template starting point, SKIPPING the "New
@@ -494,6 +595,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     const saved = await host.state.load(slot);
     if (saved) initialValues = { ...saved, ...values };
   }
+  // The carried model wins outright, and only here. It is not a competing source of
+  // truth — it is the SAME model the route and the slot were both encoded from, one
+  // step later and with nothing dropped, so anything it disagrees with is a value one
+  // of the encoders could not represent. Applied before `createRuntime` so the runtime
+  // is BORN with it: a patch after mount would render twice and run `onInit` against
+  // the wrong model.
+  if (carriedMount) initialValues = { ...initialValues, ...(carriedMount.values as Record<string, InputValue>) };
 
   // A one-shot seed armed by the drop router's layered-import route (psd-import
   // stores the layer assets, then stashes the block rows + canvas size here).
@@ -539,6 +647,16 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     ? indexEntry!.templates
     : (Array.isArray(tool.manifest.templates) ? tool.manifest.templates : undefined);
   const hasTemplates = Array.isArray(templateMeta) && templateMeta.length > 0;
+  /** The chooser's pick, resolved off the mount path (see the else-branch below). */
+  let templatePick: Promise<Record<string, InputValue>> | null = null;
+  // Navigate-away guard for the un-awaited chooser above: latched true by _cleanup, so
+  // the pick handler below can tell a resolution apart from a torn-down mount, and — the
+  // chooser having started but not yet opened when the view is torn down — from a modal
+  // that must never open at all. `templatePickClose` is armed once the modal actually
+  // exists (`onOpen`, below); _cleanup calls it to take the modal down with the view
+  // instead of leaving it floating over whatever loads next.
+  let templatePickTornDown = false;
+  let templatePickClose: (() => void) | null = null;
   // A NAMED `?template=` seeds on its own authority — the values fetch decides
   // (unknown id → null → normal open). It must NOT gate on `hasTemplates`:
   // metadata rides `window.__toolIndex`, which only the gallery populates, so a
@@ -552,28 +670,52 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     if (seed) initialValues = { ...seed, ...initialValues };
   } else if (hasTemplates && !slot && !seededDirect && Object.keys(values).length === 0) {
     if (!reachedViaLink) {
-      const { openTemplateChooser, parseTemplates } = await import('./template-chooser.ts');
-      const templates = parseTemplates(templateMeta);
-      if (templates.length) {
-        // The chooser fetches each template's values file on demand — for the live tile
-        // previews (host + formats) and for the final select — so the seed it resolves is
-        // already the full input map, ready to merge.
-        // A chooser failure (a bad template file, a stale chunk, a throw mid-render)
-        // must never brick the mount - fall through to a blank open, which is what
-        // dismissing the chooser means anyway.
-        try {
-          const chosen = await openTemplateChooser({
-            toolName: tool.manifest.name,
-            toolId,
-            templates,
-            host,
-            formats: tool.manifest.render?.formats,
-          });
-          initialValues = { ...chosen, ...initialValues };
-        } catch (e) {
-          host.log?.('warn', 'template chooser failed - opening blank: ' + String(e));
-        }
-      }
+      // NOT AWAITED — and that is the whole point. This chooser used to sit between the
+      // user and `createRuntime` below: the tool could not begin to mount until a human
+      // clicked a tile, and the chooser's own live tile previews (a real off-screen tool
+      // mount + walker export each, measured at ~1 s apiece, 4 s for Layout Studio's four
+      // templates on a cache-cold device) burned the main thread in that same window. The
+      // felt "Layout Studio takes forever to open" was almost entirely this.
+      //
+      // So the modal still opens at exactly this moment — it is started here, before any
+      // of the mount work below — but the mount no longer waits on it. The tool paints and
+      // becomes interactive underneath while the chooser sits on top, and the pick is
+      // applied as a PATCH once it arrives (search "template chooser pick" below).
+      //
+      // The `?template=` branch ABOVE stays awaited on purpose: that seed is deterministic,
+      // has no human in the loop, and off-screen export/scene remounts depend on the values
+      // being in the model before the first hydrate.
+      //
+      // The chooser fetches each template's values file on demand — for the live tile
+      // previews (host + formats) and for the final select — so the seed it resolves is
+      // already the full input map, ready to merge.
+      // A chooser failure (a bad template file, a stale chunk, a throw mid-render) must
+      // never brick the mount — fall through to a blank open, which is what dismissing the
+      // chooser means anyway. That is why the whole thing, the lazy import included, is
+      // wrapped in one promise that resolves `{}` instead of rejecting.
+      templatePick = (async () => {
+        const { openTemplateChooser, parseTemplates } = await import('./template-chooser.ts');
+        // A navigate-away while the chunk above was loading — the modal never got to
+        // open, so there is nothing for `onOpen` below to arm a close over. Resolve
+        // blank without opening it, exactly like a torn-down mount that arrives later.
+        if (templatePickTornDown) return {};
+        const templates = parseTemplates(templateMeta);
+        if (!templates.length) return {};
+        return openTemplateChooser({
+          toolName: tool.manifest.name,
+          toolId,
+          templates,
+          host,
+          formats: tool.manifest.render?.formats,
+          // Arms the navigate-away close. If teardown landed in the same tick as the
+          // modal's own construction (the race the check exists for), close immediately
+          // instead of leaving a reference nobody will ever call.
+          onOpen: close => { if (templatePickTornDown) close(); else templatePickClose = close; },
+        });
+      })().catch(e => {
+        host.log?.('warn', 'template chooser failed - opening blank: ' + String(e));
+        return {} as Record<string, InputValue>;
+      });
     }
   }
 
@@ -694,6 +836,71 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     showHistoryToast({ kind: 'redo', label: entry.label });
     refreshHistoryUI();
   };
+
+  // ── Stable row ids (plan 100 §3) ───────────────────────────────────────────
+  // A session saved before rows had ids gets them here, once, for this mount — the
+  // ONE place that owns a mounted session's model, and before anything can edit it.
+  // Fire-and-forget: it writes through the engine's applyPatch, so it records no undo
+  // step (see lib/row-id.ts for why both of those matter) and the render it triggers
+  // is the same one the first paint was going to do.
+  void migrateBlockRowIds(runtime);
+
+  // ── template chooser pick ──────────────────────────────────────────────────
+  // The chooser was STARTED above without being awaited, so this mount has already
+  // reached (or is about to reach) first paint. Its pick lands here instead, through
+  // exactly the write path the row-id migration above uses — `applyPatch`, the engine's
+  // atomic multi-input apply:
+  //   • no undo step. Choosing a starting point is not the user's first edit; ⌘Z must
+  //     not wipe the template they just picked (mountTool's `setInput` is the history
+  //     wrapper — `applyPatch` bypasses it, exactly as lib/row-id.ts documents).
+  //   • no collab echo. lib/collab-plumbing.ts wraps `setInput` only.
+  //   • one render for the whole seed, hooks included, not one per input.
+  // Precedence is IDENTICAL to the pre-mount merge this replaced (`{...chosen,
+  // ...initialValues}`): a key the URL or the profile fill already supplied wins, so it
+  // is dropped from the patch rather than overwritten. `values` is empty on this branch
+  // by construction, so what survives in `initialValues` is exactly the profile fill.
+  // Row ids are re-stamped afterwards because these rows arrive AFTER the mount-time
+  // migration ran (on the blank model), and `ensureRowIds` is idempotent for the rest.
+  if (templatePick) {
+    void templatePick
+      .then(async chosen => {
+        // Navigated away before the pick landed (or before the chooser even opened,
+        // per the guard at its `templatePickTornDown` check above) — this runtime is
+        // already torn down by _cleanup; applying a patch to it now would re-run the
+        // tool's onInput hook and emit() against disconnected DOM. `chosen` is `{}` on
+        // this path anyway (the close armed by `onOpen` resolves blank), so the seed
+        // below would end up empty regardless — this is the explicit, load-bearing check.
+        if (templatePickTornDown) return;
+        const seed: Record<string, InputValue> = {};
+        for (const [k, v] of Object.entries(chosen ?? {})) if (!(k in initialValues)) seed[k] = v;
+        if (!Object.keys(seed).length) return;   // Blank canvas / Escape / close
+        await runtime.applyPatch(seed);
+        if (templatePickTornDown) return;   // torn down while applyPatch was in flight
+        await migrateBlockRowIds(runtime);
+      })
+      .catch(e => host.log?.('warn', 'template seed failed - staying blank: ' + String(e)));
+  }
+
+  // ── Live collab (plan 100 §5) ──────────────────────────────────────────────
+  // Wraps the undo wrapper above once more, so a local edit ALSO becomes ops for a
+  // registered sync provider (and an undo replay syncs like any other local edit).
+  // Returns null when no provider is registered — which is every build of this repo
+  // (plans/99 §1.1) — and in that state it has not touched the runtime at all, so
+  // the mount is byte-identical to single-player.
+  const collab = attachCollabPlumbing(runtime);
+
+  // The presence half of a collab is CHROME, so it cannot be composed here: it needs
+  // the stage, the render surface and the sidebar root, and none of them exist yet
+  // (the view's innerHTML is written a few hundred lines below). It is composed in
+  // ONE guarded block once they do — search "Live collab: presence chrome" — and
+  // these are the two handles that block hands back to the paint path, the stage
+  // ResizeObserver and the teardown, each of which is declared BEFORE it.
+  //
+  // Both stay null for every mount of this repo, and that is what a single-player
+  // mount pays for presence: two nullable reads on a resize and one per painted
+  // frame. No timer, no listener, no node (§11.14's solo-cost discipline).
+  let collabReanchor: (() => void) | null = null;
+  let collabTeardown: (() => void) | null = null;
 
   // Transient bottom-centre toast confirming what was undone/redone, with a
   // one-tap counter-action (Redo after an undo, and vice-versa) — that button
@@ -1419,7 +1626,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
   if (pagesMode) syncStrip();   // size the strip before the first fit
 
-  const ro = new ResizeObserver(fitCanvas);
+  // The stage resized, so the canvas re-fits — and every remote focus ring and
+  // cursor was anchored from rects that just moved. `collabReanchor` is null unless
+  // a collab is live, so this stays the one-call observer it has always been.
+  const ro = new ResizeObserver(() => { fitCanvas(); collabReanchor?.(); });
   ro.observe(stageEl);
   fitCanvas();
   if (canvasEl) canvasEl.addEventListener('canvas-resize', fitCanvas);
@@ -1442,6 +1652,81 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (themeToggle) hud.append(themeToggle);
     if (soundToggle) hud.append(soundToggle);
     stageEl.appendChild(hud);
+  }
+
+  // ── Live collab: presence chrome (plan 100 §4.6, §5) ───────────────────────
+  //
+  // The ONE place a mounted tool becomes a collab, and the only place in this view
+  // that knows presence exists. It is DEAD in this repo: nothing registers a session
+  // source (lib/collab-session-source.ts), so `acquireCollabSession` returns null
+  // having allocated nothing, the presence chunk is never fetched, no node is
+  // created, no listener or timer is armed, and the mount stays byte-identical to
+  // the single-player one it has always been.
+  //
+  // It sits HERE, and not beside the op plumbing it belongs to (search "Live collab
+  // (plan 100 §5)"), for two reasons that are both about the DOM: presence is chrome,
+  // so it needs the stage, the render surface and the sidebar root, which the view's
+  // innerHTML only creates further up; and the pill shares the stage's top-inline-end
+  // lane with the zoom HUD, so it can only measure what it is clearing after
+  // setupStageNav has built it.
+  //
+  // The composition itself lives in ./tool-collab.ts — see that file's header for why
+  // it is a module rather than a hundred lines here (it is the half of this that can
+  // actually be tested, and the half that must not ride the tool chunk).
+  const collabHandle = acquireCollabSession(tool.manifest.id, slot ?? null);
+  if (collabHandle) {
+    // ONE transport per mount. The plumbing attached at mount time talks to whatever
+    // `canvas-sync-provider` holds; the session attaches its OWN against this handle's
+    // adapter (and wraps it for an observer's role, which the bare plumbing cannot
+    // know about). Two attachments over one adapter would emit every local edit
+    // twice, so the session's is the one that survives. `detach()` is idempotent, so
+    // _cleanup calling it again later is free.
+    collab?.detach();
+
+    // The teardown holder is armed BEFORE the await, which is the whole reason this
+    // shape is not a plain `const collab = await …`. A navigation during the import
+    // (or during the token read behind it) runs _cleanup while nothing is mounted
+    // yet: `aborted` latches, and the composition that lands a moment later is torn
+    // straight back down instead of taking over a view that is already gone — with
+    // its presence heartbeat running, in a detached tree, forever.
+    let mounted: ToolCollab | null = null;
+    let aborted = false;
+    collabTeardown = () => {
+      aborted = true;
+      collabReanchor = null;
+      mounted?.teardown();
+      mounted = null;
+    };
+    try {
+      const { mountToolCollab } = await import('./tool-collab.ts');
+      const built = await mountToolCollab({
+        handle: collabHandle,
+        runtime,
+        toolManifest: tool.manifest,
+        host,
+        // Where a RECEIVED beam lands (the same object as `host` unless this mount is an
+        // acceptor's), and the export bar's `__export_*` markers, read at press time so a
+        // beamed session reopens at the size, unit, DPI and profile it was sent at rather
+        // than at tool defaults. `actionsApi` is built further down; both are closures, so
+        // neither is read until the human presses send.
+        libraryHost,
+        exportSettings: () => actionsApi?.sessionState?.() ?? null,
+        // The stage hosts the pill and the overlay layer; the render surface is
+        // passed to be MEASURED and never written to, which is what keeps an export
+        // byte-identical whether or not anyone is watching (§4.6, §8).
+        stage: stageEl,
+        canvas: contentEl,
+        sidebar: inputsEl,
+      });
+      if (aborted) built.teardown();
+      else { mounted = built; collabReanchor = () => built.reanchor(); }
+    } catch (e) {
+      // A presence stack that fails to load costs the user their collab, never their
+      // tool: the transport is closed and the mount carries on single-player.
+      console.warn('[lolly:collab] presence failed to mount', e);
+      collabTeardown = null;
+      try { collabHandle.close(); } catch { /* the transport's failure is not the view's */ }
+    }
   }
 
   // Mobile (≤640px): the sidebar becomes a top-anchored controls panel with the
@@ -1616,7 +1901,30 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // Cleanup: remove injected <style>, disconnect observer, tear down canvas nav + export.
   viewEl._cleanup = () => {
+    // FIRST, because everything below destroys the thing it reads. Starting a collab
+    // remounts this tool through a route that cannot carry an uploaded asset, a picked
+    // file, a long paragraph or the slot — so when (and only when) that remount is the
+    // reason we are being torn down, the live model crosses in memory instead. The
+    // predicate is three comparisons and no allocation, which is the whole cost every
+    // ordinary teardown pays for this.
+    if (willRemountForCollab(toolId)) {
+      const live: Record<string, unknown> = {};
+      // `undefined` is skipped rather than carried: the carry is applied ON TOP of the
+      // route, so a value the model does not hold would otherwise blank one the route
+      // (or the resumed slot) did.
+      for (const item of runtime.getModel()) if (item.value !== undefined) live[item.id] = item.value;
+      carryMountState(toolId, slot ?? null, live);
+    }
+    // Latch first: the template chooser is un-awaited and outlives nothing else here,
+    // so this is the ONLY thing that stops it landing on a torn-down runtime. Closing
+    // takes the modal itself down with the view (it was never inside viewEl's subtree —
+    // it's appended to document.body — so nothing below would otherwise touch it) and
+    // resolves its promise blank; the latch then short-circuits the pick handler even
+    // if a fetch already in flight resolves with a real (now-irrelevant) selection.
+    templatePickTornDown = true;
+    templatePickClose?.(); templatePickClose = null;
     runtime.stopLive?.(); // release the camera if a live session is running
+    (host.media as unknown as { armAnimSource?: (m: string | null) => void }).armAnimSource?.(null); // drop any armed anim source
     stopFrameFps(); // stop the dev fps meter if it was running
     runtime.stopMeter?.(); runtime.cancelRecording?.(); // release the mic / abort any take
     runtime.destroy?.(); // release per-mount executor resources (a Worker-isolated tool's run)
@@ -1630,6 +1938,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     styleEl.remove(); shutter.destroy(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
     filmstrip?.destroy();
     window.removeEventListener('keydown', onHistoryKey);
+    // Presence chrome first, transport last: the pill/rings/cursors come down, then
+    // the session says goodbye and closes the channel (see the block's own note).
+    // Null unless a collab was live, and idempotent when it was.
+    collabTeardown?.(); collabTeardown = null;
+    collab?.detach();                 // restore the un-wrapped setInput; drop any queued remote ops
+    // The team-session id belongs to THIS mount and dies with it: the Share dialog can be
+    // opened again from the Projects view over a LOCAL session of the same tool, and an
+    // origin that outlived its mount would key a room on the wrong session. A remount
+    // (the collab adoption path) re-earns it or does without — it is never resurrected.
+    releaseTeamSessionOrigin();
     clearTimeout(historyToastTimer); historyToastEl?.remove();
     if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
     // Everything renderInputs parked outside the sidebar's subtree — the document-
@@ -1665,6 +1983,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // Same for lottie players — a first-paint/deep-link export must not capture
     // an unmounted [data-lottie-src] container.
     await lottiePending;
+    // And for animated SVGs — a still/first export must inline the <svg> first, or
+    // it captures an empty [data-anim-src] marker.
+    await animSvgPending;
     // And for video: snapshotMotion (export.js) needs a decoded frame or it skips
     // the <video> and exports blank — videoPending resolves once frames are ready.
     await videoPending;
@@ -1838,9 +2159,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           // instead of silently dropping every row. JSON stays the fallback
           // for separator-bearing values and field-less blocks; blocksForUrl
           // collapses baked sub-field refs to their provenance URL first (the
-          // data: bytes would blow the cap).
+          // data: bytes would blow the cap). The JSON form copies every key, so
+          // the hidden row id comes off first — it is this device's bookkeeping,
+          // not a value, and 38 characters a row out of the same 8000 budget.
           const compact = encodeBlocksCompact(value, entry.fields ?? [], { keepUserIds: true });
-          const encoded = compact ?? JSON.stringify(blocksForUrl(value));
+          const encoded = compact ?? JSON.stringify(blocksForUrl(stripHiddenRowIds(value)));
           if (encoded.length <= 8000) params.set(id, encoded);
         }
         continue;
@@ -2661,6 +2984,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // reads a decoded frame rather than a blank one.
   let videoPending: Promise<unknown> = Promise.resolve();
   let videoModule: VideoModule | null = null;
+  // Same contract for the animated-SVG enhancer (anim-svg-mount.js): loaded the first
+  // paint that emits a [data-anim-src] marker, inlining a live, seekable <svg> so it
+  // animates in the preview and exports frame-accurately (parallel to Lottie).
+  let animSvgPending: Promise<unknown> = Promise.resolve();
+  let animSvgModule: AnimSvgModule | null = null;
   // Same contract again for the MilkDrop enhancer (lib/viz-tool-mount.js): the tool
   // renders a placeholder and the shell owns the WebGL canvas inside it, across paints.
   let vizPending: Promise<unknown> = Promise.resolve();
@@ -2787,6 +3115,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             .then(m => m.mountLottiePlayers(contentEl, { isCurrent: () => gen === renderGen }))
             .catch(err => console.warn('lottie mount failed:', err));
         }
+        // Animated-SVG markers, mounted by the shell like Lottie: inline a live,
+        // seekable <svg> so a catalog or uploaded animation actually plays in the
+        // preview (and can be sampled/exported frame-accurately).
+        if (contentEl.querySelector('[data-anim-src]')) {
+          animSvgPending = (animSvgModule
+            ? Promise.resolve(animSvgModule)
+            : import('./anim-svg-mount.ts').then(m => (animSvgModule = m)))
+            .then(m => m.mountAnimSvgPlayers(contentEl, { isCurrent: () => gen === renderGen }))
+            .catch(err => console.warn('anim-svg mount failed:', err));
+        }
         // Video position-keeper: restore each placed clip to where it was before this
         // rebuild (so it doesn't restart at 0), and settle once frames have decoded so
         // an export reads a real frame. Only paints with a keyed <video> load it.
@@ -2829,6 +3167,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         showCanvasError();
       }
     }
+
+    // The canvas just moved (or was rebuilt outright, taking every annotated node
+    // with it) and the sidebar was re-synced a moment ago — so any remote focus ring
+    // and cursor is anchored to geometry that no longer exists. Null unless a collab
+    // is live, which makes this one nullable read per painted frame (§11.14).
+    collabReanchor?.();
+
     syncUrl();
 
     // When a size-driving select changes, set the export dimensions to the chosen
@@ -2993,6 +3338,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (runtime.isLive()) { runtime.stopLive(); stopFrameFps(); setLiveUi(false); announce(t('Live camera stopped')); return; }
       liveBtn.disabled = true;
       try {
+        // Camera and the animated-SVG source share the media singleton; disarm the
+        // anim source so start() opens the camera rather than replaying the animation.
+        (host.media as unknown as { armAnimSource?: (m: string | null) => void }).armAnimSource?.(null);
         await runtime.startLive();
         startFrameFps(runtime.manifest.id); // dev-only fps meter (gated); measures the live onFrame rate
         setLiveUi(true);
@@ -3004,6 +3352,86 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         liveBtn.disabled = false;
       }
     });
+  }
+
+  // Live animated-SVG source (no camera): a tool that declares render.liveDefault gets
+  // its sample animation played THROUGH its onFrame hook — so e.g. filter shows its
+  // effect on a moving subject with no webcam. Auto-plays once brand vars have landed;
+  // a toggle pauses/resumes. Regular tools "play as they would" (this is the auto-play
+  // decision) — Sequence Studio, by contrast, seeks the animation to the timeline. A
+  // still export is unaffected: onFrame tools export the current frame.
+  // Gated OFF: the per-frame sampler (media.ts armAnimSource) rasterises a seeked CSS
+  // animation each frame, which is pathologically slow on a filter-heavy SVG (repeated
+  // commitStyles/style-recalc froze the renderer in testing). Re-enable once the sampler
+  // uses a performant frame source — pre-bake N frames of one loop into ImageBitmaps at
+  // arm time (spread across rAFs), then cycle them cheaply; or move the bake to an
+  // OffscreenCanvas/Worker. The manifest hint + sampler wiring stay ready for that.
+  const LIVE_ANIM_ENABLED = false;
+  const liveDefault = (runtime.manifest.render as { liveDefault?: string } | undefined)?.liveDefault;
+  if (LIVE_ANIM_ENABLED && stageEl && runtime.hasFrameHook && liveDefault) {
+    const animMedia = host.media as unknown as { armAnimSource?: (m: string | null) => void };
+    let markupPromise: Promise<string | null> | null = null;
+    // Fetch + sanitise the asset SVG once, then bake the LIVE brand primary into it: the
+    // sampler renders it in an isolated <img>, which can't inherit :root's --brand-primary,
+    // so we resolve the var to the brand's value here. Cached for the tool's lifetime.
+    const prepareMarkup = (): Promise<string | null> => {
+      if (!markupPromise) {
+        markupPromise = (async () => {
+          try {
+            const ref = await host.assets.get(liveDefault);
+            const url = (ref as { url?: string } | null)?.url;
+            if (!url) return null;
+            const { fetchAnimSvg } = await import('./anim-svg-mount.ts');
+            const clean = await fetchAnimSvg(url);
+            const bp = getComputedStyle(document.documentElement).getPropertyValue('--brand-primary').trim();
+            return bp ? clean.replace(/var\(--brand-primary\s*,\s*[^)]*\)/g, bp) : clean;
+          } catch (e) {
+            host.log('warn', 'live anim source prepare failed', { error: String(e) });
+            return null;
+          }
+        })();
+      }
+      return markupPromise;
+    };
+
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'canvas-live-toggle canvas-anim-toggle';
+    playBtn.setAttribute('aria-pressed', 'false');
+    playBtn.title = t('Play the sample animation through this effect');
+    playBtn.innerHTML = `<span class="canvas-live-dot" aria-hidden="true"></span><span class="canvas-live-label">${t('Play')}</span>`;
+    stageEl.appendChild(playBtn);
+    const setPlayUi = (on: boolean): void => {
+      playBtn.classList.toggle('is-live', on);
+      playBtn.setAttribute('aria-pressed', String(on));
+      playBtn.querySelector('.canvas-live-label')!.textContent = on ? t('Playing') : t('Play');
+    };
+    const startAnim = async (): Promise<void> => {
+      if (runtime.isLive()) return;
+      const markup = await prepareMarkup();
+      if (!markup || !animMedia.armAnimSource) return;
+      animMedia.armAnimSource(markup);
+      await runtime.startLive();
+      startFrameFps(runtime.manifest.id);
+      setPlayUi(true);
+    };
+    const stopAnim = (): void => {
+      runtime.stopLive();
+      stopFrameFps();
+      animMedia.armAnimSource?.(null);
+      setPlayUi(false);
+    };
+    playBtn.addEventListener('click', async () => {
+      if (runtime.isLive()) { stopAnim(); announce(t('Animation paused')); return; }
+      playBtn.disabled = true;
+      try { await startAnim(); announce(t('Playing the sample animation through the effect')); }
+      catch (e) { host.log('warn', 'startLive (anim) failed', { error: String(e) }); }
+      finally { playBtn.disabled = false; }
+    });
+    // TODO(auto-play): flip this on once the per-frame bake is confirmed smooth in the
+    // wild — the product decision is auto-play for regular tools. Manual for now so opening
+    // the tool can never stall on the live loop.
+    // void brandVarsReady.then(() => { setTimeout(() => { if (!runtime.isLive()) void startAnim().catch(() => {}); }, 120); });
   }
 
   // Device recording (engine v1.17): a tool declaring render.capture gets a Record
@@ -3499,8 +3927,10 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
       const compact = encodeBlocksCompact(value, fields ?? []);
       // Fall back to JSON if no fields defined (other tools). blocksForUrl
       // collapses baked sub-field refs to their provenance URL first — the raw
-      // data: bytes would blow the 8000-char cap and drop every row.
-      const encoded = compact ?? JSON.stringify(blocksForUrl(value));
+      // data: bytes would blow the 8000-char cap and drop every row — and the
+      // hidden row id comes off first (see stripHiddenRowIds): the recipient's
+      // rows are their own, and they cost 38 characters each of the same budget.
+      const encoded = compact ?? JSON.stringify(blocksForUrl(stripHiddenRowIds(value)));
       if (encoded.length <= 8000) parts.push(`${key}=${compact ? encoded : encodeURIComponent(encoded)}`);
       continue;
     }

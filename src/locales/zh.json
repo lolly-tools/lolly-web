@@ -2267,5 +2267,17 @@
   "… {n} more bytes not shown": "…还有{n}字节未显示",
   "← All team projects": "← 所有团队项目",
   "✓ Added": "✓ 已添加",
-  "✓ Found {n} tools at {base}.": "✓ 在 {base} 找到 {n} 个工具。"
+  "✓ Found {n} tools at {base}.": "✓ 在 {base} 找到 {n} 个工具。",
+  "Private collab": "私密协作",
+  "beta": "测试版",
+  "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.": "Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.",
+  "Invite one other device to co-edit this session directly - no account, no server.": "邀请另一台设备直接共同编辑此会话——无需账号，无需服务器。",
+  "Start a collab": "开始协作",
+  "Starting a collab": "正在开始协作",
+  "Work collab": "团队协作",
+  "Invite others on this instance to co-edit this session, live.": "邀请此实例上的其他人实时共同编辑此会话。",
+  "Live now - 1 person editing": "正在实时协作：1 人在编辑",
+  "Live now - {n} people editing": "正在实时协作：{n} 人在编辑",
+  "Collaborator": "Collaborator",
+  "{name} (away)": "{name} (away)"
 }

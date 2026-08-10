@@ -3196,11 +3196,30 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   position: absolute;
   top: 50%; left: 50%;
   z-index: 2;
+  aspect-ratio: 1;            /* height follows the JS-set width (the swirl viewBox is square) */
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.5);
   will-change: transform, opacity;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+}
+/* The inline Lolly swirl fills the mark; its three nested layers counter-spin at
+   1s / 5s / 9s with a slow hue drift — a quick flourish over the fraction of a second
+   the mark is up. Cheap here (small, brief, over the seal), unlike animating a filter on
+   the full-screen iris. The coloured spiral is var(--exsh-swirl), set per export to the
+   brand tone in lib/shutter.ts. Reduced motion drops the spin (styles/parts/base.css) —
+   the mark still pops, it just doesn't turn. */
+.export-shutter__mark svg { display: block; width: 100%; height: 100%; }
+.export-shutter__swirl-1,
+.export-shutter__swirl-2,
+.export-shutter__swirl-3 { transform-origin: 50% 50%; transform-box: fill-box; }
+.export-shutter__swirl-1 { animation: export-shutter-swirl 3s linear infinite; }
+.export-shutter__swirl-2 { animation: export-shutter-swirl 6s linear infinite; }
+.export-shutter__swirl-3 { animation: export-shutter-swirl 9s linear infinite; }
+@keyframes export-shutter-swirl {
+  100%     { transform: rotate(360deg); }
+  50%      { filter: hue-rotate(-25deg); }
+  0%, 100% { filter: hue-rotate(25deg); }
 }
 /* Shutter-closed flash. Sits ABOVE the swirl and mark so the sealed cover flashes
    too, not just the artwork behind it. Fast in, long out — over this duration
