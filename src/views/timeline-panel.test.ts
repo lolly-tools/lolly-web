@@ -878,7 +878,7 @@ test('the easing control opens on the BUILT-IN curve, and rendering it writes no
 
     // Every named curve is on offer, plus the route to the editor.
     const values = Array.from(inSel.options).map((o) => o.value);
-    assert.deepEqual(values, ['', 'linear', 'ease-out', 'ease-in', 'ease-in-out', 'overshoot', 'anticipate', '__custom']);
+    assert.deepEqual(values, ['', 'linear', 'ease-out', 'ease-in', 'ease-in-out', 'overshoot', 'anticipate', 'smooth', 'snappy', '__custom']);
   } finally { h.teardown(); }
 });
 

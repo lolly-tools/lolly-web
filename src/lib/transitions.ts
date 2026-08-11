@@ -98,6 +98,15 @@ export const EASINGS = Object.freeze({
   'ease-in-out': 'Ease in and out',
   overshoot: 'Overshoot',
   anticipate: 'Anticipate',
+  // Added with the keyframe grammar (plan 104 §5.1), which names eight presets and
+  // round-trips every one of them BY NAME through `engine/src/keyframes.ts`. Adding
+  // them here rather than only in the engine is what keeps ONE vocabulary: a curve
+  // authored on a transition and one authored on a keyframe are the same curve, and
+  // `kfEaseName` hands back exactly these names. Strictly additive — the six above
+  // keep their spelling, their order and their points, so every authored ease and
+  // every unauthored transition renders byte-identically to before.
+  smooth: 'Smooth',
+  snappy: 'Snappy',
 } as const);
 
 export type EasingName = keyof typeof EASINGS;
@@ -112,6 +121,13 @@ const EASING_POINTS: Readonly<Record<EasingName, readonly [number, number, numbe
   // Both are legal CSS and both are what people mean by "with a bit of life".
   overshoot: [0.34, 1.56, 0.64, 1],
   anticipate: [0.36, -0.4, 0.66, 1],
+  // The two the keyframe grammar adds. `smooth` is the standard accelerate-decelerate
+  // curve; `snappy` shares its in-ramp but holds the out-handle much later, so it
+  // leaves at the same rate and arrives abruptly — a deliberate sibling of smooth
+  // rather than a second overshoot. Byte-identical to KF_EASE_PRESETS.es/.ek in
+  // engine/src/keyframes.ts; transitions.test.ts pins the two tables together.
+  smooth: [0.4, 0, 0.2, 1],
+  snappy: [0.4, 0, 0.6, 1],
 });
 
 export function isEasingName(v: unknown): v is EasingName {
