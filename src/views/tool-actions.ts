@@ -361,7 +361,17 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // float formats (exr/hdr) on-device even without the Node float rasteriser — so the
   // Pro <optgroup> opens for it here (e.g. Bitmap Studio's EXR/Radiance masters).
   const toolDeepExport = !!manifest.hooks?.exportStill && !!host.codec;
-  const formats       = manifest.render.formats.filter(f => keepFormat(f, toolDeepExport));
+  const capFormats    = manifest.render.formats.filter(f => keepFormat(f, toolDeepExport));
+  // Org format policy (lib/export-policy.ts formatsFor): a cooperative narrowing
+  // overlay, exactly like a choice input's allow list — intersected with the
+  // capability-filtered set, applied only when at least one declared format
+  // survives (a stale/foreign list never renders an empty select), and dormant
+  // (undefined) with no control plane. The server enforces the same set on its
+  // own render path; this is honest UI, not the boundary.
+  const orgFormats    = getExportPolicy()?.formatsFor(manifest.id);
+  const orgAllow      = orgFormats && new Set(orgFormats.map(f => (f === 'jpeg' ? 'jpg' : f)));
+  const orgNarrowed   = orgAllow ? capFormats.filter(f => orgAllow.has(f)) : capFormats;
+  const formats       = orgNarrowed.length ? orgNarrowed : capFormats;
   const hasAnimated   = formats.some(isAnimatedFmt);
   // matchExportFormat: default the export to a dropped file's OWN format (a JPEG →
   // jpg) until the user picks one. Reads AssetRef.format off the flagged input.

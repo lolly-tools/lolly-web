@@ -92,6 +92,11 @@ export interface ToolPolicySpec {
    *  approval for them (absent = not gated). Mapped onto the generic export-policy
    *  seam so the tool view can offer "Request approval" in place of download. */
   approvalChain?: string;
+  /** The export formats policy binds this tool to (absent = unrestricted). Mapped
+   *  onto the export-policy seam; the export panel narrows its format select to
+   *  this set, the same cooperative overlay a choice input gets — the control
+   *  plane enforces the same set on its own render path. */
+  formats?: string[];
 }
 
 /** A tool the instance injects into the gallery (control-plane shape). `toolId` is
@@ -378,13 +383,18 @@ function applyExportPolicy(config: OrgConfig | null, failClosed = false): void {
   // of 2026-08-06; the legacy can['export.preflight'] capability is honoured by
   // orgFlagGovernance below, not applied here.
   const chains: Record<string, string> = {};
+  const formats: Record<string, string[]> = {};
   for (const [toolId, spec] of Object.entries(config.tools ?? {})) {
     if (spec?.approvalChain) chains[toolId] = spec.approvalChain;
+    // An empty list is a real (fully restrictive) policy and is passed through —
+    // the view's never-empty rule decides what to render, not this mapper.
+    if (Array.isArray(spec?.formats)) formats[toolId] = spec.formats.filter((f): f is string => typeof f === 'string');
   }
   setExportPolicy({
     canDownload: can['export.download'] !== false,
     canRequestApproval: !!can['export.request'],
     chains,
+    formats,
   });
 }
 

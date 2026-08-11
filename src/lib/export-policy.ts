@@ -28,6 +28,11 @@ export interface ExportPolicy {
   /** The approval chain bound to a tool's outputs, or `undefined` when none is —
    *  i.e. this tool's output isn't gated on this instance. */
   approvalChainFor(toolId: string): string | undefined;
+  /** The export formats policy binds a tool to, or `undefined` when the tool is
+   *  unrestricted. Cooperative narrowing, exactly like a choice input's allow
+   *  list: the view intersects it with the tool's own declared formats and never
+   *  renders an empty control from it. */
+  formatsFor(toolId: string): string[] | undefined;
 }
 
 /** The plain data a host supplies to describe the policy (the setter builds the
@@ -37,6 +42,8 @@ export interface ExportPolicySpec {
   canRequestApproval: boolean;
   /** toolId → approval chain id bound to that tool's outputs. */
   chains?: Record<string, string>;
+  /** toolId → the format subset that tool may export (absent = unrestricted). */
+  formats?: Record<string, string[]>;
 }
 
 /** Which export affordance a policy resolves to. Dormant/`canDownload` → the
@@ -61,10 +68,12 @@ export function getExportPolicy(): ExportPolicy | undefined {
 export function setExportPolicy(spec: ExportPolicySpec | undefined): void {
   if (!spec) { current = undefined; return; }
   const chains = spec.chains ?? {};
+  const formats = spec.formats ?? {};
   current = {
     canDownload: spec.canDownload,
     canRequestApproval: spec.canRequestApproval,
     approvalChainFor: (toolId: string) => chains[toolId],
+    formatsFor: (toolId: string) => formats[toolId],
   };
 }
 

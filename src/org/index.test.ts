@@ -258,8 +258,8 @@ test('member export capabilities + per-tool approvalChain populate the export-po
       inboxUnread: 0,
       can: { 'export.download': false, 'export.request': true },
       tools: {
-        'event-badge': { approvalChain: 'brand-signoff' },
-        'poster': { approvalChain: 'legal-review' },
+        'event-badge': { approvalChain: 'brand-signoff', formats: ['svg', 'pdf'] },
+        'poster': { approvalChain: 'legal-review', formats: [] },
         'qr-code': {},
       },
     },
@@ -273,6 +273,9 @@ test('member export capabilities + per-tool approvalChain populate the export-po
   assert.equal(policy!.approvalChainFor('event-badge'), 'brand-signoff');
   assert.equal(policy!.approvalChainFor('poster'), 'legal-review');
   assert.equal(policy!.approvalChainFor('qr-code'), undefined, 'a tool without approvalChain is ungated');
+  assert.deepEqual(policy!.formatsFor('event-badge'), ['svg', 'pdf'], 'per-tool format policy reaches the seam');
+  assert.deepEqual(policy!.formatsFor('poster'), [], 'an empty list is a real policy, passed through — the view decides');
+  assert.equal(policy!.formatsFor('qr-code'), undefined, 'a tool without a format policy is unrestricted');
   assert.equal(exportAffordance(policy), 'request-approval', 'withheld-but-requestable → the approval CTA');
   // A member registers the approval opener (so the swapped CTA can open the flow).
   assert.equal(openApprovalRequest({ toolId: 'event-badge' }), true, 'opener registered for a member');
