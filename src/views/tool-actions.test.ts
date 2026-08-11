@@ -134,6 +134,7 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'] }:
     subscribe: () => {},
     refresh: () => {},
     hasFrameHook: false,
+    isLive: () => false,
     export: async (_node: unknown, format: string, opts: Record<string, unknown>) => {
       seen.push({ format, opts: { ...opts } });
       return new dom.window.Blob(['x'], { type: 'video/webm' });
@@ -487,7 +488,7 @@ function formatOptionValues(opts: {
   };
   const runtime = {
     getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
     export: async () => new dom.window.Blob(['x']),
   };
   const host: Record<string, unknown> = {
@@ -549,7 +550,7 @@ function mountDims(
   };
   const runtime = {
     getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
     export: async () => new dom.window.Blob(['x']),
   };
   const host = { assets: { query: async () => [] }, state: { save: async () => {} }, export: { download: async () => {} } };
@@ -639,7 +640,7 @@ function mountPaged(opts: {
   };
   const runtime = {
     getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
     export: async (node: unknown, format: string, o: Record<string, unknown>) => {
       // Count only DOWNLOAD per-page exports, not the export-history thumbnail capture,
       // which (for render.paged) also targets the first [data-pdf-page] but sets thumbnail:true.
@@ -751,7 +752,7 @@ function mountPrintCard({ formats = ['png', 'pdf', 'svg', 'pdf-cmyk'], exportDef
   };
   const runtime = {
     getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false,
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
     export: async (_node: unknown, format: string, opts: Record<string, unknown>) => {
       seen.push({ format, opts: { ...opts } });
       return new dom.window.Blob(['x'], { type: 'application/pdf' });

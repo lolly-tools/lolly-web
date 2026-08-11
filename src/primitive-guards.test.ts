@@ -1063,7 +1063,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/timeline-panel.ts': 5,
   // 8 as of 2026-08-07: +1 for the badged/per-option-formats export-picker work
   // (schemas' badge/formats option fields); confirmed safe by the author.
-  'views/tool-actions.ts': 8,
+  // 8 → 9 on 2026-08-11: the deterministic live-drive export path paints the exact
+  // frame before capture via `drvNode.innerHTML = html`, where `html` is the engine's
+  // own runtime.applyFrameForExport() output — logic-less-Handlebars rendered markup
+  // (auto-escaped by the template layer), not raw user/peer/tool input. Same trusted
+  // rendered-markup class as the other sinks here.
+  'views/tool-actions.ts': 9,
   'views/tool-inputs.ts': 9,
   // 16 → 17 on 2026-08-09: the canvas "Play" button gained the same two-span label the
   // "Go live" button beside it already had (`<span class="canvas-live-dot">` +
