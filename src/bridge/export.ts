@@ -3579,6 +3579,67 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       const clone = el.cloneNode(true) as Element;
       stripCommentNodes(clone);
       unscopeStyleEls(clone);
+      // plans/101 (found via lolly-work's shot corpus): a nested <svg>'s
+      // presentation is mostly CASCADE-driven on screen — class rules, var()s,
+      // inherited text style — and the verbatim clone keeps only attributes
+      // plus its inner <style>. Standalone, classes match stylesheets that
+      // aren't there and var()s are undefined, so class-driven fills/strokes
+      // vanish (a green ✓ ring flattens to a black dot) and var() strokes
+      // don't paint at all. Bake each SVG descendant's COMPUTED presentation
+      // onto the clone as INLINE style — inline beats the surviving un-scoped
+      // <style> rules whose vars are undefined standalone; a presentation
+      // attribute would not (the same ruling outlineSvgTextRuns records).
+      // Guards: values equal to the SVG initial are skipped (an element whose
+      // paint arrives via attributes keeps them — the clone carries those);
+      // url(#…) paints are written verbatim, their defs travel inside the
+      // clone; only SVG-namespace elements are touched (foreignObject HTML
+      // has its own walk); <stop> takes its stop-* pair instead. Trades
+      // accepted and pinned in export-nested-svg.test.ts: inheritance is
+      // flattened to per-node literals (visually identical, structurally
+      // denormalised), and inline style outranks SMIL/CSS animation on the
+      // same property — a shot is a static capture anyway. The deep clone is
+      // a same-order copy, so the two element lists pair 1:1 (the invariant
+      // outlineSvgTextRuns leans on); topology mismatch skips the bake rather
+      // than mispairing. The PDF walker needs no mirror — it already resolves
+      // paints per node from the live DOM (computedPaint); this converges the
+      // two walkers.
+      {
+        const SVGNS = 'http://www.w3.org/2000/svg';
+        const PAINT = [
+          ['fill', 'rgb(0, 0, 0)'], ['fill-opacity', '1'], ['fill-rule', 'nonzero'],
+          ['stroke', 'none'], ['stroke-opacity', '1'], ['stroke-width', '1px'],
+          ['stroke-linecap', 'butt'], ['stroke-linejoin', 'miter'],
+          ['stroke-dasharray', 'none'], ['stroke-dashoffset', '0px'],
+          ['stroke-miterlimit', '4'], ['opacity', '1'],
+          ['paint-order', 'normal'], ['vector-effect', 'none'],
+        ] as const;
+        const TEXT = [
+          ['font-family', ''], ['font-size', ''], ['font-weight', '400'],
+          ['font-style', 'normal'], ['letter-spacing', 'normal'],
+          ['text-anchor', 'start'], ['dominant-baseline', 'auto'],
+        ] as const;
+        const STOP = [['stop-color', 'rgb(0, 0, 0)'], ['stop-opacity', '1']] as const;
+        const TEXT_TAGS = new Set(['text', 'tspan', 'textPath']);
+        const srcEls = el.querySelectorAll('*');
+        const cloneEls = clone.querySelectorAll('*');
+        if (srcEls.length === cloneEls.length) {
+          for (let i = 0; i < srcEls.length; i++) {
+            const s = srcEls[i]!;
+            const c = cloneEls[i]!;
+            if (s.namespaceURI !== SVGNS || !(c instanceof SVGElement)) continue;
+            const cs = getComputedStyle(s);
+            const bake = (props: readonly (readonly [string, string])[]): void => {
+              for (const [p, initial] of props) {
+                const v = cs.getPropertyValue(p);
+                if (v && v !== initial) c.style.setProperty(p, v);
+              }
+            };
+            if (s.localName === 'stop') { bake(STOP); continue; }
+            bake(PAINT);
+            if (TEXT_TAGS.has(s.localName)) bake(TEXT);
+          }
+        }
+      }
       // `currentColor` inside the svg resolves against the inherited CSS `color`
       // on screen, but the emitted file is a STANDALONE svg with no HTML
       // ancestors, so there it falls back to the initial value — black. The
