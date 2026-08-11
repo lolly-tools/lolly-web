@@ -16,6 +16,7 @@
 .updz {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   margin-bottom: .9rem; padding: 14px 16px;
+  min-height: 20vh; height:15em;
   border: 2px dashed hsl(var(--border)); border-radius: var(--radius);
   color: hsl(var(--muted-foreground)); font-size: calc(.9rem * var(--a11y-fs)); text-align: center;
   cursor: pointer;
