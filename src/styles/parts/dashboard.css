@@ -539,6 +539,62 @@
 /* Each capability group is a collapsible accordion panel: a summary row
    (icon · title · one-line description · chevron) over a grid of feature cards
    that expands below. Folded groups keep the whole map scannable at a glance. */
+/* ── Capabilities search ──────────────────────────────────────────────────
+   Eleven sections and ~60 cards is too much to read top-to-bottom, so the
+   search is the primary way in and sits above the accordion. Sticky, because a
+   query you can no longer see is a query you cannot refine — the offset clears
+   the panel's own header. */
+.dash-cap-search {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: .5rem;
+  margin: 0 0 .7rem; padding: .1rem 0;
+  background: hsl(var(--background));
+}
+.dash-cap-search-icon {
+  position: absolute; left: .7rem; display: inline-flex;
+  width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground)); pointer-events: none;
+}
+.dash-cap-search-icon svg { width: 100%; height: 100%; display: block; }
+.dash-cap-search-input {
+  flex: 1 1 auto; min-width: 0;
+  /* The left inset clears the lens glyph. Expressed in `em` so it follows this
+     input's own font-size — which already carries --a11y-fs — rather than
+     restating the multiplier on a geometry property, which the a11y contract
+     (lib/a11y-prefs-contract.test.ts) forbids at a use site. */
+  padding: .55rem .8rem .55rem 1.95em;
+  border: 1px solid hsl(var(--border)); border-radius: 999px;
+  background: hsl(var(--card) / .6); color: hsl(var(--foreground));
+  font: inherit; font-size: calc(.86rem * var(--a11y-fs));
+}
+.dash-cap-search-input::placeholder { color: hsl(var(--muted-foreground)); }
+.dash-cap-search-input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+/* The UA's own search-clear affordance would sit beside ours, so drop it. */
+.dash-cap-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.dash-cap-search-clear {
+  position: absolute; right: .5rem;
+  width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs));
+  border: 0; border-radius: 50%; cursor: pointer;
+  background: hsl(var(--muted) / .6); color: hsl(var(--muted-foreground));
+  font-size: calc(12px * var(--a11y-fs)); line-height: 1;
+}
+.dash-cap-search-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.dash-cap-count {
+  margin: -.35rem 0 .6rem .9rem;
+  color: hsl(var(--muted-foreground)); font-size: calc(.76rem * var(--a11y-fs));
+}
+.dash-cap-empty {
+  margin: .2rem 0 0; padding: 1.4rem 1rem; text-align: center;
+  color: hsl(var(--muted-foreground)); font-size: calc(.85rem * var(--a11y-fs));
+  border: 1px dashed hsl(var(--border)); border-radius: 14px;
+}
+/* The filter hides cards and whole sections with [hidden]. The UA's
+   `[hidden] { display: none }` is a plain type-less rule, so the class rules
+   below (`display: flex` on an item) would out-specify it and the "hidden"
+   card would stay on screen. These two lines are what actually make the filter
+   filter — do not fold them into the rules above. */
+.dash-cap-item[hidden], .dash-cap-group[hidden] { display: none; }
+
 .dash-cap-group {
   margin: 0 0 .7rem;
   border: 0;
@@ -562,6 +618,14 @@
 .dash-cap-group-icon svg { width: 1.85rem; height: 1.85rem; display: block; }
 .dash-cap-group-text { min-width: 0; flex: 1 1 auto; }
 .dash-cap-group-title { margin: 0; font-size: calc(1rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.01em; }
+/* How many cards are behind a folded section — otherwise the summary gives no
+   clue whether opening it reveals one card or eight. */
+.dash-cap-group-n {
+  display: inline-block; margin-left: .45rem; vertical-align: .08em;
+  padding: .1rem .4rem; border-radius: 999px;
+  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+  font-size: calc(.62rem * var(--a11y-fs)); font-weight: 700;
+}
 .dash-cap-group-desc { margin: .15rem 0 0; color: hsl(var(--muted-foreground)); font-size: calc(.8rem * var(--a11y-fs)); line-height: 1.45; }
 .dash-cap-group-head .plat-section-chev { flex: 0 0 auto; margin-left: .4rem; color: hsl(var(--muted-foreground)); }
 .dash-cap-group[open] > .dash-cap-group-head .plat-section-chev { transform: rotate(90deg); }
@@ -630,27 +694,111 @@
   to   { opacity: 1; transform: none; }
 }
 
-/* ── Capability detail popup (native <dialog>). ── */
+/* ── Capability detail popup (native <dialog>). ──────────────────────────────
+   Two shapes, one dialog. A card that names a screenshot opens WIDE and
+   two-pane — the shot carries the left, the prose the right — because a 560px
+   column on a 1600px desktop wasted the screen and forced the feature list into
+   a narrow scroll. A card with no shot keeps a single reading column and stays
+   narrow: the reason to be wide is the picture, so with no picture the width
+   would only stretch the measure past comfortable reading.
+   The two widths are the ONLY difference; `.has-shot` is set on open. */
 .dash-cap-modal {
   padding: 0;
-  width: min(560px, 92vw);
-  max-width: 92vw;
+  width: min(600px, 94vw);
+  max-width: 94vw;
   border: none;
   border-radius: calc(var(--radius) * 1.25);
   background: hsl(var(--card));
   color: hsl(var(--foreground));
   box-shadow: 0 28px 70px hsl(0 0% 0% / .38);
 }
+.dash-cap-modal.has-shot { width: min(1120px, 94vw); }
 .dash-cap-modal::backdrop { background: hsl(0 0% 0% / .5); backdrop-filter: blur(2px); }
 .dash-cap-modal[open] { animation: dash-modal-in .22s ease-out; }
 @keyframes dash-modal-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
-.dash-cap-modal-head { display: flex; align-items: center; gap: .6rem; padding: 1rem 1.1rem; border-bottom: 1px solid hsl(var(--border)); }
-.dash-cap-modal-icon { flex: 0 0 auto; display: inline-flex; width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.dash-cap-modal-head { display: flex; align-items: center; gap: .7rem; padding: 1.15rem 1.35rem; border-bottom: 1px solid hsl(var(--border)); }
+.dash-cap-modal-icon { flex: 0 0 auto; display: inline-flex; width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .dash-cap-modal-icon svg { width: 100%; height: 100%; display: block; }
-.dash-cap-modal-title { flex: 1 1 auto; margin: 0; font-size: calc(1.02rem * var(--a11y-fs)); font-weight: 700; }
-.dash-cap-modal-close { flex: 0 0 auto; width: calc(30px * var(--a11y-fs)); height: calc(30px * var(--a11y-fs)); border: 0; border-radius: 50%; background: hsl(var(--muted) / .5); color: hsl(var(--muted-foreground)); font-size: calc(15px * var(--a11y-fs)); line-height: 1; cursor: pointer; }
+.dash-cap-modal-title { flex: 1 1 auto; margin: 0; font-size: calc(1.2rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.015em; }
+.dash-cap-modal-close { flex: 0 0 auto; width: calc(32px * var(--a11y-fs)); height: calc(32px * var(--a11y-fs)); border: 0; border-radius: 50%; background: hsl(var(--muted) / .5); color: hsl(var(--muted-foreground)); font-size: calc(15px * var(--a11y-fs)); line-height: 1; cursor: pointer; }
 .dash-cap-modal-close:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
-.dash-cap-modal-body { padding: 1rem 1.1rem 1.25rem; max-height: 70vh; overflow: auto; }
+
+.dash-cap-modal-panes { display: grid; }
+/* Shot first and slightly wider than the prose: it is the subject, and a
+   screenshot scaled below about half the dialog stops being legible. */
+.dash-cap-modal.has-shot .dash-cap-modal-panes { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.dash-cap-modal-body { padding: 1.25rem 1.35rem 1.5rem; max-height: min(70vh, 640px); overflow: auto; }
+/* The measure. Prose set across a 500px+ pane reads badly, so the column is
+   capped in `ch` — the unit that tracks the actual font — and the pane keeps
+   the leftover space rather than the line growing into it. */
+.dash-cap-modal-body > * { max-width: 62ch; }
+
+/* The dialog's own type scale. `.cap-feat` (platform.css) is sized for a
+   264px CARD, where .8rem is right; in a dialog that is now the primary
+   reading surface it was too small and too tight. Scoped to the dialog so the
+   shared list keeps its card sizing everywhere else it is used. */
+.dash-cap-modal .dash-cap-feat { gap: 1.15rem; }
+.dash-cap-modal .dash-cap-feat dt {
+  margin: 0 0 .25rem;
+  font-size: calc(.92rem * var(--a11y-fs)); font-weight: 700;
+  letter-spacing: -.005em;
+}
+.dash-cap-modal .dash-cap-feat dd {
+  font-size: calc(.875rem * var(--a11y-fs)); line-height: 1.62;
+  color: hsl(var(--muted-foreground));
+}
+/* Inline code sat flush against the prose at this size; a little padding and a
+   tint separate a literal parameter name from the sentence around it. */
+.dash-cap-modal .dash-cap-feat dd code {
+  padding: .08em .32em; border-radius: .3em;
+  background: hsl(var(--muted) / .8); color: hsl(var(--foreground));
+  font-size: .88em;
+}
+.dash-cap-modal .dash-cap-feat dd strong { color: hsl(var(--foreground)); font-weight: 650; }
+
+/* The screenshot pane. The image sits on a pad that MATCHES the capture shown:
+   a light shot on white, a dark shot on the theme background — because the pad
+   is really the shot's own bezel, and a light image on a dark pad (or the
+   reverse) reads as a rendering fault rather than a frame. Which capture is
+   shown is decided in JS by theme, with `.is-dark-shot` set when the dark twin
+   is used (and cleared on the fallback to a light-only shot). */
+.dash-cap-modal-shot {
+  margin: 0; display: flex; flex-direction: column; gap: .55rem;
+  padding: 1.25rem 1.35rem 1.5rem;
+  background: hsl(var(--muted) / .45);
+  border-right: 1px solid hsl(var(--border));
+  min-width: 0;
+}
+.dash-cap-modal-shot img {
+  display: block; width: 100%; height: auto;
+  max-height: min(62vh, 560px); object-fit: contain; object-position: top center;
+  border-radius: calc(var(--radius) * .9);
+  border: 1px solid hsl(var(--border));
+  background: #fff;                       /* light capture → white bezel */
+  box-shadow: 0 6px 20px hsl(0 0% 0% / .1);
+}
+/* Dark twin shown: the capture carries dark chrome, so the bezel follows the
+   theme background instead of white. */
+.dash-cap-modal-shot.is-dark-shot img { background: hsl(var(--background)); }
+.dash-cap-modal-shot figcaption {
+  color: hsl(var(--muted-foreground));
+  font-size: calc(.68rem * var(--a11y-fs)); line-height: 1.4;
+}
+.dash-cap-modal-shot[hidden] { display: none; }
+
+/* Below the two-pane threshold the panes stack, shot first, and the dialog
+   drops back to one width — a 1120px dialog on a narrow window is just 94vw
+   with a stretched measure. */
+@media (max-width: 900px) {
+  .dash-cap-modal.has-shot { width: min(600px, 94vw); }
+  .dash-cap-modal.has-shot .dash-cap-modal-panes { grid-template-columns: minmax(0, 1fr); }
+  .dash-cap-modal-shot { border-right: 0; border-bottom: 1px solid hsl(var(--border)); padding-bottom: 1rem; }
+  .dash-cap-modal-shot img { max-height: 42vh; }
+  .dash-cap-modal-body { max-height: none; }
+  /* Stacked, the whole card scrolls as one — two independently scrolling panes
+     in a phone-height dialog is a trap. */
+  .dash-cap-modal-card { max-height: 86vh; overflow: auto; }
+}
 
 /* ── Reference panels (typography / themes / print) — collapsible <details>. */
 .dash-ref-grid { display: grid; gap: 1.1rem; margin: 0 0 1.1rem; }
