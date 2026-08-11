@@ -40,6 +40,7 @@ import { escape } from '../utils.ts';
 import { t, tRaw, loadNamespace } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { icon } from '../lib/icons.ts';
 import { createRecentStack } from '../lib/recent-stack.ts';
 import { renderPaletteWheel, wirePaletteWheel } from '../lib/palette-wheel.ts';
 import { renderBrandSeal, sealColors } from '../lib/brand-seal.ts';
@@ -76,6 +77,10 @@ import { DASH_SECTIONS, dashFlag } from './dashboard-registry.ts';
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+// The Capabilities search field's leading glyph — from the shared registry, not
+// inlined (see the R3 guard in primitive-guards.test.ts). Sized in CSS off
+// --a11y-fs like every other chrome icon, so no `size` is passed here.
+const SEARCH_GLYPH = icon('search');
 
 // ── Primary tabs ─────────────────────────────────────────────────────────────
 // The dashboard splits into four tabbed panels. Every section keeps its own id /
@@ -392,7 +397,7 @@ function wireCopyButtons(root: ParentNode): void {
 // directly) into the lazily-loaded `caps` namespace, merged into the catalog by the
 // loadNamespace('caps') below. A feature's `desc` carries authored inline HTML, so it
 // stays raw — its translation preserves the same tags (the pipeline validates that).
-function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }> }): string {
+function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }>; keywords?: string; shot?: string }): string {
   // The modal detail (full feature list) rides in an inert <template>.
   const feats = `<dl class="cap-feat dash-cap-feat">${
     card.features.map((f) => `<div><dt>${escape(t(f.name))}</dt><dd>${t(f.desc)}</dd></div>`).join('')
@@ -401,10 +406,27 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
   const peek = `<ul class="dash-cap-peek" aria-hidden="true">${
     card.features.map((f) => `<li>${escape(t(f.name))}</li>`).join('')
   }</ul>`;
+  // The search haystack, built HERE rather than scraped from the DOM at wire time —
+  // the feature descriptions live in an inert <template> whose text a querySelector
+  // sweep would have to clone to read, and the untranslated `keywords` have no
+  // rendered home at all. Lowercased once at build so the filter is a plain
+  // substring test per keystroke. Descriptions are stripped of their inline tags,
+  // else a search for "code" would match every <code> element on the page.
+  const haystack = [
+    t(card.title),
+    ...card.features.map((f) => `${t(f.name)} ${t(f.desc)}`),
+    card.keywords ?? '',
+  ].join(' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  // The shot is NOT rendered here — only carried on the item, so the dialog can
+  // build an <img> at open time. A 264px card has no room for a screenshot, and
+  // eagerly emitting ~45 <img> tags would fetch ~45 SVGs for a panel where most
+  // are never opened. One image, on demand, for the card you actually clicked.
+  const shotAttr = card.shot ? ` data-cap-shot="${escape(card.shot)}"` : '';
   return `
-    <div class="dash-cap-item">
+    <div class="dash-cap-item" data-cap-hay="${escape(haystack)}"${shotAttr}>
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
-              aria-label="${escape(card.features.length === 1 ? tRaw('{title} — 1 detail', { title: t(card.title) }) : tRaw('{title} — {n} details', { title: t(card.title), n: card.features.length }))}"
+              aria-label="${escape(card.features.length === 1 ? tRaw('{title} — 1 detail', { title: t(card.title) }) : tRaw('{title} — {n} details', { title: t(card.title), n: card.features.length }))}">
+
         <span class="dash-cap-card-top">
           <span class="dash-cap-icon" aria-hidden="true">${card.icon}</span>
           <span class="dash-cap-title">${escape(t(card.title))}</span>
@@ -429,20 +451,50 @@ async function capabilitiesSection(): Promise<string> {
   ]);
   // Each group is its own collapsible accordion panel — the section desc stays
   // visible in the summary as a table-of-contents, and the card grid expands below.
-  // The first (Experiences) opens by default; the rest are folded so the whole map
-  // is scannable at a glance. data-dash-collapse wires the shared fold sound cue.
+  // The first opens by default; the rest are folded so the whole map is scannable
+  // at a glance. data-dash-collapse wires the shared fold sound cue.
+  // A section's summary also carries its card count: the folded state otherwise
+  // gives no clue whether opening it reveals one card or eight.
   const groups = CAPABILITY_SECTIONS.map((s, idx) => `
     <details class="dash-cap-group" id="${s.id}" data-flag="${escape(s.flag)}" data-dash-collapse${idx === 0 ? ' open' : ''}>
       <summary class="dash-cap-group-head">
         <span class="dash-cap-group-icon" aria-hidden="true">${s.icon}</span>
         <div class="dash-cap-group-text">
-          <h3 class="dash-cap-group-title">${escape(t(s.title))}</h3>
+          <h3 class="dash-cap-group-title">${escape(t(s.title))}<span class="dash-cap-group-n">${s.cards.length}</span></h3>
           <p class="dash-cap-group-desc">${escape(t(s.desc))}</p>
         </div>
         ${COLLAPSE_CHEV}
       </summary>
       <div class="dash-cap-grid">${s.cards.map(capCard).join('')}</div>
     </details>`).join('');
+  // Search. This map is long by design — eleven sections, ~60 cards — so the one
+  // thing it must not require is reading it top to bottom to find "does this do
+  // CMYK". The field filters cards live and force-opens whichever sections still
+  // hold a match, so a query turns the accordion into a flat result list.
+  //
+  // It is deliberately NOT wrapped in a <form>: an Enter keypress inside a lone
+  // text input in a form triggers implicit submission and would reload the view.
+  const totalCards = CAPABILITY_SECTIONS.reduce((n, s) => n + s.cards.length, 0);
+  const search = `
+      <div class="dash-cap-search">
+        <span class="dash-cap-search-icon" aria-hidden="true">${SEARCH_GLYPH}</span>
+        <input type="search" class="dash-cap-search-input" data-cap-search
+               autocomplete="off" spellcheck="false"
+               aria-controls="dash-cap-results"
+               placeholder="${escape(t('Search {n} capabilities — try “cmyk”, “figma”, “offline”', { n: totalCards }))}"
+               aria-label="${escape(t('Search capabilities'))}">
+        <button type="button" class="dash-cap-search-clear" data-cap-search-clear hidden
+                aria-label="${escape(t('Clear search'))}">✕</button>
+      </div>
+      <p class="dash-cap-count" id="dash-cap-results" data-cap-count role="status" aria-live="polite" hidden></p>`;
+  // Shown only when a query matches nothing — an accordion of collapsed, empty
+  // sections reads as "broken", so say so in words.
+  const empty = `
+      <p class="dash-cap-empty" data-cap-empty hidden>${escape(t('Nothing matches that. Try a format (“svg”, “pptx”), a task (“print”, “share”) or a tool name.'))}</p>`;
+  // The dialog is two-pane on a wide screen: the screenshot carries the left
+  // (the thing being described), the feature list the right (what is true about
+  // it). On a card with no shot the figure is removed entirely and the dialog
+  // narrows to a single reading column — an empty pane would be worse than none.
   const modal = `
       <dialog class="dash-cap-modal" data-cap-modal>
         <div class="dash-cap-modal-card">
@@ -451,14 +503,23 @@ async function capabilitiesSection(): Promise<string> {
             <h3 class="dash-cap-modal-title" data-cap-modal-title></h3>
             <button type="button" class="dash-cap-modal-close" data-cap-modal-close aria-label="${escape(t('Close'))}">✕</button>
           </header>
-          <div class="dash-cap-modal-body" data-cap-modal-body></div>
+          <div class="dash-cap-modal-panes">
+            <figure class="dash-cap-modal-shot" data-cap-modal-shot hidden>
+              <!-- NOT loading="lazy": the src is only set when a card is opened, so
+                   there is nothing to defer, and deferring left the pane visibly
+                   blank for a beat after the dialog appeared. -->
+              <img data-cap-modal-img alt="" decoding="async">
+              <figcaption>${escape(t('Screenshot of the app, captured as signed vector'))}</figcaption>
+            </figure>
+            <div class="dash-cap-modal-body" data-cap-modal-body></div>
+          </div>
         </div>
       </dialog>`;
   return collapse({
     id: 'dash-caps',
     title: t('What Lolly can do'),
-    desc: t('The full feature set — what it makes, where it runs, how it is used. Pick any card to pop its detail open.'),
-    body: `${groups}${modal}`,
+    desc: t('Every capability, stated as a fact you can check — formats by name, limits included. Search it, or open a section. Pick any card for its detail.'),
+    body: `${search}${groups}${empty}${modal}`,
   });
 }
 
@@ -1006,19 +1067,121 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
     const mIcon = capModal.querySelector<HTMLElement>('[data-cap-modal-icon]')!;
     const mTitle = capModal.querySelector<HTMLElement>('[data-cap-modal-title]')!;
     const mBody = capModal.querySelector<HTMLElement>('[data-cap-modal-body]')!;
+    const mShot = capModal.querySelector<HTMLElement>('[data-cap-modal-shot]');
+    const mImg = capModal.querySelector<HTMLImageElement>('[data-cap-modal-img]');
     const close = () => { if (typeof capModal.close === 'function') capModal.close(); else capModal.removeAttribute('open'); };
     viewEl.querySelectorAll<HTMLButtonElement>('[data-cap-open]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tpl = btn.closest('.dash-cap-item')?.querySelector<HTMLTemplateElement>('template.dash-cap-detail');
+        const item = btn.closest('.dash-cap-item');
+        const tpl = item?.querySelector<HTMLTemplateElement>('template.dash-cap-detail');
         if (!tpl) return;
+        const title = btn.querySelector('.dash-cap-title')?.textContent ?? '';
         mIcon.innerHTML = btn.querySelector('.dash-cap-icon')?.innerHTML ?? '';
-        mTitle.textContent = btn.querySelector('.dash-cap-title')?.textContent ?? '';
+        mTitle.textContent = title;
         mBody.replaceChildren(tpl.content.cloneNode(true));
+        // The screenshot, only for cards that name one. `src` is set per open
+        // (and cleared on the way out) so the dialog can never show the previous
+        // card's picture for the instant before a new one decodes.
+        const slug = (item as HTMLElement | null)?.dataset.capShot;
+        if (mShot && mImg) {
+          mShot.classList.remove('is-dark-shot');
+          if (slug) {
+            const light = `/info/shots/${slug}.svg`;
+            // Under any non-light theme (dark, brand) prefer the dark twin the
+            // docs pipeline captured — `<slug>.dark.svg`. Not every shot has one
+            // (a light-only recipe like auth-url-render, whose bare canvas has no
+            // chrome to theme), so a one-shot onerror falls back to the light
+            // file — which also flips the frame pad back, so a light image is
+            // never left sitting on the dark pad meant for a dark capture.
+            mImg.onerror = () => {
+              mImg.onerror = null;
+              mShot.classList.remove('is-dark-shot');
+              mImg.src = light;
+            };
+            if (currentTheme() !== 'light') {
+              mShot.classList.add('is-dark-shot');
+              mImg.src = `/info/shots/${slug}.dark.svg`;
+            } else {
+              mImg.onerror = null;
+              mImg.src = light;
+            }
+            // The shot illustrates prose that is right beside it, so a described
+            // alt would be read twice. Name what it is, and let the list speak.
+            mImg.alt = t('{title} — screenshot', { title });
+            mShot.hidden = false;
+          } else {
+            mImg.onerror = null;
+            mImg.removeAttribute('src');
+            mShot.hidden = true;
+          }
+          capModal.classList.toggle('has-shot', Boolean(slug));
+        }
         if (typeof capModal.showModal === 'function') capModal.showModal(); else capModal.setAttribute('open', '');
       });
     });
     capModal.querySelector('[data-cap-modal-close]')?.addEventListener('click', close);
     capModal.addEventListener('click', (e) => { if (e.target === capModal) close(); }); // backdrop click
+  }
+
+  // ── Capabilities search ───────────────────────────────────────────────────
+  // Filters the cards live and force-opens the sections that still hold a match,
+  // so a query flattens the accordion into a result list. Every card's haystack
+  // was baked into data-cap-hay at render time (see capCard) — including the
+  // untranslated `keywords` and the feature prose that otherwise only exists
+  // inside an inert <template> — so a keystroke costs one substring test per
+  // card and never touches a template's content.
+  const capSearch = viewEl.querySelector<HTMLInputElement>('[data-cap-search]');
+  if (capSearch) {
+    const groups = [...viewEl.querySelectorAll<HTMLDetailsElement>('.dash-cap-group')];
+    const countEl = viewEl.querySelector<HTMLElement>('[data-cap-count]');
+    const emptyEl = viewEl.querySelector<HTMLElement>('[data-cap-empty]');
+    const clearBtn = viewEl.querySelector<HTMLButtonElement>('[data-cap-search-clear]');
+    // The fold state to restore when the query is cleared, captured once at wire
+    // time. Without this, clearing a search would leave every section hanging
+    // open — the user's own folding silently replaced by the filter's.
+    const wasOpen = new Map(groups.map((g) => [g, g.open]));
+
+    const apply = (raw: string): void => {
+      // Multi-word queries are AND-ed, so "print pdf" narrows instead of widening.
+      const terms = raw.toLowerCase().split(/\s+/).filter(Boolean);
+      const active = terms.length > 0;
+      let hits = 0;
+      for (const group of groups) {
+        // A section's own title and description are part of its cards' scope:
+        // matching "print production" should surface the whole section, not
+        // require the word to also appear on each card inside it.
+        const head = (group.querySelector('.dash-cap-group-text')?.textContent ?? '').toLowerCase();
+        let shown = 0;
+        for (const item of group.querySelectorAll<HTMLElement>('.dash-cap-item')) {
+          const hay = `${item.dataset.capHay ?? ''} ${head}`;
+          const match = !active || terms.every((term) => hay.includes(term));
+          item.hidden = !match;
+          if (match) shown++;
+        }
+        hits += shown;
+        group.hidden = active && shown === 0;
+        // Only drive the fold while filtering; on clear, hand it back untouched.
+        if (active) group.open = shown > 0;
+        else group.open = wasOpen.get(group) ?? false;
+      }
+      if (countEl) {
+        countEl.hidden = !active;
+        countEl.textContent = active
+          ? (hits === 1 ? t('1 capability matches') : t('{n} capabilities match', { n: hits }))
+          : '';
+      }
+      if (emptyEl) emptyEl.hidden = !(active && hits === 0);
+      if (clearBtn) clearBtn.hidden = !active;
+    };
+
+    capSearch.addEventListener('input', () => apply(capSearch.value));
+    // Esc clears rather than closing anything — the field is inside a <dialog>-free
+    // panel, so the key is free, and a filtered page with no visible way back is
+    // the trap this avoids.
+    capSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && capSearch.value) { e.stopPropagation(); capSearch.value = ''; apply(''); }
+    });
+    clearBtn?.addEventListener('click', () => { capSearch.value = ''; apply(''); capSearch.focus(); });
   }
 
   // Build-up: the capability cards start hidden and float in, staggered, when their grid
