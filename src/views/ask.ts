@@ -21,6 +21,7 @@ import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import { GROUP_LABELS, type SearchGroupId } from '../lib/search/registry.ts';
 import { docsIconName } from '../lib/search/providers/docs.ts';
@@ -112,6 +113,7 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
   viewEl.innerHTML = `
     ${backPillHtml()}
     <div class="ask-topright" data-topright>
+      ${homeFabHtml({ className: 'ask-top-btn' })}
       <a href="#/profile" class="ask-top-btn ask-profile-link" aria-label="${escape(t('Open your profile'))}" title="${escape(t('Profile'))}">${icon('user')}</a>
     </div>
     <div class="platform-layout ask-layout">
@@ -134,6 +136,7 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
     </div>`;
   armViewEnter(viewEl, '.plat-header, .ask-composer');
   mountBackPill(viewEl);
+  mountHomeFab(viewEl);
   // The theme switcher (icon-only cycle: light → dark → brand), styled locally as
   // .ask-top-btn — the profile link sits beside it (both top-right).
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'ask-top-btn ask-theme-btn' }));

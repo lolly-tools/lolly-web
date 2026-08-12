@@ -24,12 +24,31 @@
  * innerHTML swap each paint does), so a script may also park per-instance state
  * on that element instead of on `window.__*` globals that N instances stomp.
  */
-import type { Runtime } from '../../../../engine/src/runtime.js';
-import type { InputValue } from '../../../../engine/src/inputs.js';
+import type { Runtime, RuntimeState } from '../../../../engine/src/runtime.js';
+import type { InputModelItem, InputValue } from '../../../../engine/src/inputs.js';
 
 export interface CanvasCommitEl extends HTMLElement {
   /** Commit `id`→`value` to the runtime that owns THIS canvas (1:1, never fanned). */
   __lollyCommit?: (id: string, value: InputValue) => void;
+  /**
+   * READ the current input model of the runtime that owns THIS canvas. The dual of
+   * `__lollyCommit`: a tool that keeps its declared inputs as a pure DATA channel
+   * (never referenced in its template markup, so hydrated output stays byte-constant)
+   * seeds its own DOM from the model at boot by reading it here. Returns the live
+   * `InputModelItem[]` — the same array `runtime.getModel()` hands the shell, swapped
+   * wholesale on every change, so read it fresh each time rather than caching.
+   */
+  __lollyModel?: () => InputModelItem[];
+  /**
+   * Subscribe to model changes on the runtime that owns THIS canvas, returning an
+   * unsubscribe function. Fires once immediately with the current state, then on every
+   * edit (including edits that arrived from a collab peer, since inbound ops apply
+   * through the same model). A tool using its inputs as a data channel mirrors remote
+   * edits into its own DOM from here — echo-swallowing its own just-committed values so
+   * the loop settles. `cb` receives the full `RuntimeState` ({ model, hydrated }); there
+   * is no per-id diff, so compare each input's value against what the DOM already holds.
+   */
+  __lollySubscribe?: (cb: (state: RuntimeState) => void) => () => void;
   /**
    * Re-run `id`'s CURRENT runtime value through onInput, with no undo-history
    * entry. For canvas pollers waiting on an async extra (e.g. redact's PDF page
@@ -84,4 +103,6 @@ export function attachCanvasCommit(canvasEl: CanvasCommitEl, runtime: Runtime): 
     const set = (runtime as NudgeRuntime).setInputNoHistory ?? runtime.setInput;
     void set(cur.id, cur.value);
   };
+  canvasEl.__lollyModel = () => runtime.getModel();
+  canvasEl.__lollySubscribe = (cb) => runtime.subscribe(cb);
 }

@@ -41,6 +41,8 @@ import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountThemeFab } from '../components/theme-toggle.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { UserFontsHost } from '../user-fonts.ts';
 import type { PdfHandle, EmbeddedFont, EmbeddedImage, EmbeddedAttachment, ExtractedVector } from './pdf-import.ts';
@@ -451,7 +453,7 @@ function resultMarkup(x: Extracted): string {
 export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promise<void> {
   viewEl.innerHTML = `
     ${backPillHtml()}
-    <div class="gallery-topright">${langFabHtml()}</div>
+    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
     <div class="platform-layout pdfx-layout">
       <header class="plat-header">
         <h1 class="plat-title">${t('Take a PDF apart')}</h1>
@@ -472,6 +474,8 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   `;
   armViewEnter(viewEl, '.tools-home, .plat-header, .pdfx-drop');
   mountBackPill(viewEl);
+  mountHomeFab(viewEl);
+  mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;

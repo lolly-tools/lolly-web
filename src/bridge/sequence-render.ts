@@ -73,12 +73,22 @@ import {
   activeFrameWindow,
   crossfadeJunctions,
   normalizeFrameScene,
+  ownsLayerFx,
+  sequenceDrawPlan,
   sequenceError,
   toCodedError,
   SequenceError,
   type SeqLayer,
   type SeqErrorCode,
+  type SeqPlanEnv,
 } from './sequence-plan.ts';
+// The plate budget (plans/104 §5.5) and the spill geometry it prices. Both pure; the
+// budget is what turns "shoot the flown-past layer sharper" into a bounded promise.
+import {
+  planPlateBudget,
+  type PlateLayerNeed,
+} from './plate-budget.ts';
+import { parseDropShadows, spillPad } from '../lib/canvas-blur.ts';
 import {
   createClipAudio,
   type ClipAudio,
@@ -119,6 +129,8 @@ import {
   embedMp4Meta,
   embedWebmMeta,
   iccProfileBytes,
+  projectDepth,
+  resolveCamera,
 } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
@@ -126,7 +138,11 @@ import {
 // The class name is imported rather than restated so the two can never drift apart —
 // from sequence-dom.ts, which owns the DOM applier the clock itself now uses (that
 // also drops one of the bridge → views edges).
-import { OFF_CLASS } from './sequence-dom.ts';
+// …and `withAuthoredDom` is the other half of the same story: `.seq-off` is the class
+// the clock APPLIES, and the four inline properties it COMPOSES (transform, opacity,
+// filter, z-index) have to come off the stage for exactly as long — see the wrapper on
+// `renderSequence` below, and plans/104 §6 point 0.
+import { OFF_CLASS, withAuthoredDom } from './sequence-dom.ts';
 // bridge → views. Phase 3 already has this edge (sequence-providers.ts reuses the
 // clock's seek semantics); reusing the LIVE Lottie player instance is the only way
 // a Lottie box can be exported at all — re-mounting a second player would double
@@ -391,6 +407,129 @@ interface RasterOpts {
    * stage raster must not, because the artboard is not a planned layer.
    */
   opaque?: boolean;
+  /**
+   * Shoot the element with its INLINE `filter` removed — the blur rule, and the exact
+   * twin of `opaque` (plans/104 §5.5).
+   *
+   * `PlanItem.blur` is the WHOLE blur: the box's authored `filter: blur()`, plus the
+   * keyframe `b` channel, plus depth-of-field. The executor applies that one number.
+   * A plate that still carried the element's own blur would be blurred twice — softly
+   * at first (2 + 2 = 4px on a 2px box), then catastrophically the moment a fly-past
+   * adds 40px of DOF to a plate that was already soft. So every PLANNED layer's plate
+   * is shot clean and the planner owns the number; the stage background is not a
+   * planned layer and keeps its own filter, exactly as it keeps its own opacity.
+   *
+   * PAIRED WITH `drawItem`: a clean plate is only correct because the executor applies
+   * `PlanItem.blur`. The two land together (plans/104 M1 streams F + G) and neither is
+   * complete alone — a clean plate with an executor that ignores the number is a box
+   * that quietly lost its authored blur.
+   */
+  neutralFilter?: boolean;
+  /**
+   * Extra margin, in ELEMENT px, captured on all four sides (plans/104 §5.5).
+   *
+   * The capture canvas grows to `(bw + 2·pad) × (bh + 2·pad)` at scale S and the clone
+   * is translated INSIDE the scale — `scale(S) translate(pad, pad)` — so the offset is
+   * `pad·S` device px and the pad is expressed in the same units as the box. The plate
+   * therefore has its origin at `(-pad, -pad)` in box space, which is what a consumer
+   * has to subtract when it draws: content that spills outside the box rect (a soft
+   * silhouette, a shadow) lands INSIDE the canvas instead of being clipped away at the
+   * exact moment the executor wants to blur it.
+   *
+   * 0 — the default, and what every P0 call site passes — is byte-for-byte today's
+   * shot: the canvas is `bw·S × bh·S` and the transform string is `scale(S)` exactly as
+   * it always was. The budget that chooses a non-zero pad is the planner's (§5.5).
+   */
+  pad?: number;
+}
+
+/**
+ * The capture frame one plate shot asks dom-to-image for: canvas size in device px,
+ * and the clone transform that places the box inside it.
+ *
+ * Pure, exported and tested for one reason — `pad` (plans/104 §5.5) changes the shot's
+ * geometry, and "a document that uses no depth exports the same bytes it always did"
+ * has to be a pinned property rather than a reading of the diff. At pad 0 both numbers
+ * and the transform string are what they have always been.
+ *
+ * The translate sits INSIDE the scale so the pad stays in ELEMENT px: `scale(S)
+ * translate(p,p)` maps a point x to S·(x + p), i.e. the box lands `p·S` device px in
+ * from the top-left corner and the plate's origin is `(-p, -p)` in box space.
+ */
+export function plateShotFrame(
+  bw: number, bh: number, S: number, pad = 0,
+): { width: number; height: number; transform: string } {
+  // Non-finite / negative pads are simply no pad: this number can arrive from a
+  // budget calculation over hostile attribute values, and a NaN here would size a
+  // canvas to NaN and lose the whole plate.
+  const p = Number.isFinite(pad) && pad > 0 ? pad : 0;
+  return {
+    width: Math.max(1, Math.round((bw + p * 2) * S)),
+    height: Math.max(1, Math.round((bh + p * 2) * S)),
+    transform: p ? `scale(${S}) translate(${p}px, ${p}px)` : `scale(${S})`,
+  };
+}
+
+/** What one layer's plates must be shot at, measured over its WHOLE active window. */
+export interface PlateWindowDemand {
+  /**
+   * Capture margin on all four sides, stage-native px: the largest distance this
+   * layer's effects reach outside its own box at any frame (plans/104 §5.5).
+   *
+   * Zero on a layer with no blur and no authored filter — which is every layer of
+   * every document written before this feature, and the reason their plates are the
+   * exact canvases they always were.
+   */
+  pad: number;
+  /**
+   * The largest projection magnification over the window. Plates are shot at `S·eff`
+   * so a layer flown toward the camera does not arrive as a blown-up S-resolution
+   * plate. 1 on a flat scene, and 1 everywhere in P0, where there is no camera.
+   */
+  maxEff: number;
+}
+
+/**
+ * Ask the PLANNER what every layer will need, once, before anything is photographed.
+ *
+ * Deliberately not a re-derivation: it walks the same output grid the frame loop will
+ * walk and reads `PlanItem.blur` and `PlanItem.resolvedZ` off the same
+ * `sequenceDrawPlan` the executor consumes, so the plate a layer gets is sized by the
+ * numbers that will actually be drawn with it. The only arithmetic added on top is the
+ * engine's own `projectDepth` — the parity law's "import the formula, never restate
+ * it", applied to a budget instead of to a frame.
+ *
+ * O(frames × layers), the same shape as one extra pass of the frame loop's planning
+ * and a rounding error next to the rasterisation it sizes.
+ */
+export function plateWindowDemands(
+  layers: SeqLayer[], grid: number[], totalMs: number, env?: SeqPlanEnv | null,
+): Map<number, PlateWindowDemand> {
+  const out = new Map<number, PlateWindowDemand>();
+  const shadowsOf = new Map<number, ReturnType<typeof parseDropShadows>>();
+  for (const L of layers) {
+    out.set(L.idx, { pad: 0, maxEff: 1 });
+    // Only a layer whose fx the COMPOSITOR owns needs room for the spill: a layer that
+    // keeps its filter on its plate has its effect baked in and clipped at the box
+    // edge, exactly as every export before this feature did it (§5.5, `ownsLayerFx`).
+    shadowsOf.set(L.idx, L.shadowFilter && ownsLayerFx(L) ? parseDropShadows(L.shadowFilter) : []);
+  }
+  for (const t of grid) {
+    const cam = resolveCamera(env?.cameras ?? null, t);
+    for (const item of sequenceDrawPlan(layers, t, totalMs, env)) {
+      const rec = out.get(item.layer.idx);
+      if (!rec) continue;
+      const shadows = shadowsOf.get(item.layer.idx) ?? [];
+      const blur = ownsLayerFx(item.layer) ? item.blur : 0;
+      if (blur > 0 || shadows.length) {
+        const pad = spillPad(blur, shadows);
+        if (pad > rec.pad) rec.pad = pad;
+      }
+      const eff = projectDepth(cam, item.resolvedZ).eff;
+      if (eff > rec.maxEff) rec.maxEff = eff;
+    }
+  }
+  return out;
 }
 
 async function rasterBox(
@@ -399,6 +538,7 @@ async function rasterBox(
   const lib = await getDomToImage();
   const bw = Math.max(1, parseFloat(el.style.width) || el.offsetWidth || 1);
   const bh = Math.max(1, parseFloat(el.style.height) || el.offsetHeight || 1);
+  const frame = plateShotFrame(bw, bh, S, ropts.pad ?? 0);
   const restore: (() => void)[] = [];
   // THE STAGE IS LIVE, AND THE CLOCK HAS BEEN ON IT. Every box outside the
   // playhead window carries `.seq-off`, which timeline.css turns into
@@ -431,12 +571,26 @@ async function rasterBox(
     el.style.opacity = '1';
     restore.push(() => { el.style.opacity = prev; });
   }
+  if (ropts.neutralFilter) {
+    // REMOVE THE INLINE DECLARATION, and only that — because the inline declaration is
+    // exactly what the planner owns. `readLayer` splits `styleProp(el,'filter')`, which
+    // is `el.style.getPropertyValue('filter')`: inline by construction. A `filter`
+    // arriving from a tool's `styles.css` never reaches `SeqLayer.blur`/`shadowFilter`,
+    // so nobody would re-apply it — and writing `filter:none` here (which DOES
+    // out-specify a class) would delete it from the plate as well, silently losing an
+    // effect that shipped in every export before this feature existed. The neutralised
+    // set and the read set are now the same set: inline is compositor-owned, a
+    // stylesheet filter stays baked into the plate exactly as it always was.
+    const prev = el.style.filter;
+    el.style.removeProperty('filter');
+    restore.push(() => { if (prev) el.style.filter = prev; else el.style.removeProperty('filter'); });
+  }
   try {
     return await lib.toCanvas(el, {
-      width: Math.max(1, Math.round(bw * S)),
-      height: Math.max(1, Math.round(bh * S)),
+      width: frame.width,
+      height: frame.height,
       style: {
-        transform: `scale(${S})`, transformOrigin: 'top left',
+        transform: frame.transform, transformOrigin: 'top left',
         width: `${bw}px`, height: `${bh}px`, left: '0', top: '0', margin: '0',
       },
     });
@@ -659,8 +813,30 @@ export async function sequenceAudioPcm(
  * Contract with the export funnel: this returns the finished container with
  * provenance tags already embedded (like every other video renderer); the C2PA
  * stamp is applied uniformly by renderFormat afterwards.
+ *
+ * THE READ/RESTORE SEAM (plans/104 §6 point 0) is this wrapper, and it is the whole
+ * reason the render is one function inside another. Everything below reads or
+ * photographs the LIVE artboard — `parseSequenceStage` takes each box's rotation,
+ * opacity and blur off its inline style; `rasterBox` photographs the element itself —
+ * and the preview clock has been WRITING those very properties, composed for whatever
+ * frame the playhead is parked on. The playhead can be parked anywhere when an export
+ * starts. So the whole render runs inside `withAuthoredDom`: every live writer over
+ * this node hands its per-frame writes back and stays stood down until the last plate
+ * (and every live Lottie re-shot mid-render) is in, then re-asserts the frame the user
+ * was looking at. Failure paths included — the scope restores on a throw.
+ *
+ * It wraps the ENTIRE render rather than just the parse because the plates are not the
+ * only live read: the hybrid Lottie path re-photographs its box on demand, deep inside
+ * the frame loop, and an rAF tick landing between two of those shots would pose the
+ * stage again half way through the film.
  */
 export async function renderSequence(
+  node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts, host: SeqHost | null = null,
+): Promise<Blob> {
+  return await withAuthoredDom(node as HTMLElement, () => renderSequenceAuthored(node, format, opts, host));
+}
+
+async function renderSequenceAuthored(
   node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts, host: SeqHost | null = null,
 ): Promise<Blob> {
   const log = (l: string, m: string): void => host?.log?.(l, m);
@@ -765,6 +941,47 @@ export async function renderSequence(
   }
 
   const transparent = opts.background === 'transparent';
+
+  // ── plate geometry + the plate budget (plans/104 §5.5) ─────────────────
+  //
+  // Two numbers per layer, decided ONCE and then obeyed by the static plates, the
+  // per-frame live re-shots and the wire alike — a live plate that padded or scaled
+  // differently from the static one it replaces would shift the picture on exactly the
+  // frames it covers, which is the worst kind of bug to look at.
+  //
+  //   pad  — how far the layer's own effects reach outside its box, so the blur has
+  //          real content at the box edge instead of a hard cut. 0 with no effects.
+  //   eff  — how much EXTRA resolution the projection asked for, after the budget has
+  //          had its say. 1 with no camera, which is every P0 export, and `S * 1` is
+  //          exactly `S`.
+  const planEnv: SeqPlanEnv = { stageW: nativeW, stageH: nativeH };
+  const demands = plateWindowDemands(stage.layers, usedGrid, stage.totalMs, planEnv);
+  const budget = planPlateBudget({
+    layers: stage.layers.map((L): PlateLayerNeed => ({
+      idx: L.idx,
+      kind: L.kind,
+      w: L.rect.w,
+      h: L.rect.h,
+      pad: demands.get(L.idx)?.pad ?? 0,
+      maxEff: demands.get(L.idx)?.maxEff ?? 1,
+      // The lottie player is not consulted until the loop below, so a lottie layer is
+      // priced as if it WILL go live (two plates). Over-counting is the safe direction
+      // for a memory budget.
+      needsLiveRaster: L.kind === 'lottie',
+    })),
+    scale: S,
+    worker: supportsWorkerSequenceRender(),
+  });
+  // The no-silent-caps rule: exactly one line, naming what was clamped and why.
+  if (budget.warning) log('warn', budget.warning);
+  const padOf = (idx: number): number => budget.padOf.get(idx) ?? 0;
+  const plateScaleOf = (idx: number): number => S * (budget.effOf.get(idx) ?? 1);
+  // Whether this layer's plate is shot with its inline filter removed — the ONE
+  // predicate the executor's `itemFx` asks too, so a plate and the draw that places it
+  // can never disagree about who owns the effect.
+  const ownedFx = new Map(stage.layers.map((L) => [L.idx, ownsLayerFx(L)]));
+  const neutralOf = (idx: number): boolean => ownedFx.get(idx) ?? false;
+
   const wire: SeqJobLayer[] = [];
   const plates: SeqJob['plates'] = [];
   const clips: SeqJob['clips'] = [];
@@ -802,14 +1019,27 @@ export async function renderSequence(
           ...stageEl.querySelectorAll('[data-pdf-page][data-t-start]'),
         ]);
       }
+      // Every PLANNED layer's plate is shot the same way: at full opacity, with no
+      // filter, and with its own padding and resolution — the things the planner owns
+      // rather than the picture. The stage background above takes none of them (it is
+      // not a planned layer: no PlanItem carries its alpha or its blur).
       for (const L of stage.layers) {
         const w = win.get(L.idx)!;
         const el = L.el;
+        // `neutralFilter` follows the ONE ownership predicate (§5.5, `ownsLayerFx`): a
+        // layer with depth is shot clean and the compositor applies its whole filter;
+        // a layer without keeps its filter baked into the plate, which is what every
+        // pre-104 `shadow: content` / `blur` document has always exported.
+        const plateOpts: RasterOpts = { opaque: true, neutralFilter: neutralOf(L.idx), pad: padOf(L.idx) };
+        const PS = plateScaleOf(L.idx);
         let under: HTMLCanvasElement | null = null;
         let over: HTMLCanvasElement | null = null;
         let media: HTMLElement | null = null;
         let needsLiveRaster = false;
-        if (w.first >= 0 && L.kind !== 'audio') {
+        // A CAMERA is a pose over time, not a picture (plans/104 §5.4): no plate, the
+        // same way an audio bed has none. `w.first >= 0` would otherwise photograph its
+        // marker div — an empty, `data-export-hide` box — once per export.
+        if (w.first >= 0 && L.kind !== 'audio' && L.kind !== 'camera') {
           if (L.kind === 'video') {
             media = (el.matches?.('video') ? el : el.querySelector('video')) as HTMLElement | null;
             // A ZIP bundle re-dispatches each sub-format through renderFormat, whose
@@ -821,11 +1051,11 @@ export async function renderSequence(
               ...(media ? [media] : []),
               ...el.querySelectorAll('[data-motion-still]'),
             ];
-            under = await rasterBox(el, S, hide, { opaque: true });
-            over = await rasterBox(el, S, hide, { transparentBg: true, opaque: true });
+            under = await rasterBox(el, PS, hide, plateOpts);
+            over = await rasterBox(el, PS, hide, { ...plateOpts, transparentBg: true });
           } else if (L.kind === 'lottie') {
             const marker = el.matches?.('[data-lottie-src]') ? el : el.querySelector('[data-lottie-src]');
-            under = await rasterBox(el, S, [], { opaque: true }); // the still fallback if no player mounted
+            under = await rasterBox(el, PS, [], plateOpts); // the still fallback if no player mounted
             // A lottie layer only forces the hybrid split when a live player is
             // actually mounted; without one the static plate IS the picture, and
             // the sequence still runs fully worker-side.
@@ -835,7 +1065,7 @@ export async function renderSequence(
               needsLiveRaster = true;
             }
           } else {
-            under = await rasterBox(el, S, [], { opaque: true });
+            under = await rasterBox(el, PS, [], plateOpts);
           }
         }
         plates.push({ idx: L.idx, under, over });
@@ -849,6 +1079,14 @@ export async function renderSequence(
           objectFit: media?.style?.objectFit ?? '',
           objectPosition: media?.style?.objectPosition ?? '',
           needsLiveRaster,
+          // The margin the plates above were actually captured with — the executor
+          // subtracts it when it draws them. Sent rather than re-derived so a plate and
+          // the draw that places it can never disagree about where its origin is.
+          platePad: padOf(L.idx),
+          // …and the resolution they were captured at, over S. The filtered draw path
+          // sizes its scratch by it, so the pixels the budget bought are the pixels the
+          // blur runs on.
+          plateEff: budget.effOf.get(L.idx) ?? 1,
         }));
         if (L.kind === 'video' && w.first >= 0) {
           const url = mediaSrc(L);
@@ -869,10 +1107,14 @@ export async function renderSequence(
     const job: SeqJob = {
       layers: wire, grid: usedGrid, frameCount, fps, totalMs: stage.totalMs,
       outW, outH: targetH, scale: S,
+      // The stage the depth projection anchors on (plans/104 §4.1): its NATIVE size,
+      // the same number `S` was derived from, so the principal point stays the stage
+      // centre at every export scale.
+      stageW: nativeW, stageH: nativeH,
       bg: bgRaster, plates, clips,
       maxLiveProviders: MAX_LIVE_PROVIDERS, watchdogMs: WATCHDOG_MS,
     };
-    const liveRaster = makeLiveRaster(liveBoxes, S);
+    const liveRaster = makeLiveRaster(liveBoxes, plateScaleOf, padOf, neutralOf);
     const hybrid = liveBoxes.size > 0;
 
     // ── which thread executes ─────────────────────────────────────────────
@@ -980,7 +1222,10 @@ interface LottieScrubber { goToAndStop?(v: number, isFrame?: boolean): void; fra
  * touching lottie-web or dom-to-image at all.
  */
 function makeLiveRaster(
-  boxes: Map<number, { marker: Element; box: HTMLElement }>, S: number,
+  boxes: Map<number, { marker: Element; box: HTMLElement }>,
+  scaleOf: (idx: number) => number,
+  padOf: (idx: number) => number,
+  neutralOf: (idx: number) => boolean,
 ): SeqJobIO['lottieAt'] {
   if (!boxes.size) return undefined;
   const memo = new Map<number, { key: number; shot: HTMLCanvasElement }>();
@@ -994,7 +1239,13 @@ function makeLiveRaster(
     const prev = memo.get(layerIdx);
     if (prev && prev.key === key) return prev.shot;
     try { player.goToAndStop((key / rate) * 1000, false); } catch { return prev?.shot ?? null; }
-    const shot = await rasterBox(entry.box, S, [], { opaque: true });
+    // The SAME shot the static plates take — opaque, filter-neutral, identically
+    // padded and at the identical scale. A live plate is a drop-in replacement for the
+    // static one on the frames it covers, so any difference in how it is framed is a
+    // jump in the picture.
+    const shot = await rasterBox(entry.box, scaleOf(layerIdx), [], {
+      opaque: true, neutralFilter: neutralOf(layerIdx), pad: padOf(layerIdx),
+    });
     if (shot) { memo.set(layerIdx, { key, shot }); return shot; }
     return prev?.shot ?? null;
   };

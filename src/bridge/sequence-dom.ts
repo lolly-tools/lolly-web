@@ -24,10 +24,16 @@
  * live elements. The two are pinned to each other by tests/sequence-plan.test.ts,
  * which asserts the numeric parity rather than trusting a comment.
  *
- * EVERY WRITE IS REVERSIBLE. One class and two inline properties per box, with the
- * authored values captured before the first write and handed back verbatim on
- * restore (declaration-identical, not byte-identical: writing through
- * CSSStyleDeclaration re-serialises the whole `style` attribute).
+ * EVERY WRITE IS REVERSIBLE. One class and FOUR inline properties per box —
+ * `transform`, `opacity`, and (only on a stage that authors depth, plans/104)
+ * `filter` and `z-index` — with the authored values captured before the first write
+ * and handed back verbatim on restore (declaration-identical, not byte-identical:
+ * writing through CSSStyleDeclaration re-serialises the whole `style` attribute).
+ * That list is the WHOLE per-frame surface; anything that photographs a live stage —
+ * sequence-render's plate capture, clip-thumbs' borrow, sequence-cuts, and this
+ * module's own `driveSequenceTime` — neutralises exactly these, through the
+ * read/restore seam below, so a new one arriving here is a change to their contract
+ * too.
  *
  * Composition, not clobbering: a box carries authored inline styles from the tool
  * hook — `transform:rotate(-4deg)`, `opacity:0.8`. An entrance animation adds to
@@ -39,13 +45,28 @@
  * (`translate -> rotate(authored+anim) -> scale`), so a scrubbed preview, a live
  * take and a composited render agree. The transition maths itself is IMPORTED from
  * lib/transitions.ts — never re-derived here.
+ *
+ * DEPTH RIDES THE SAME RULE (plans/104). Keyframe evaluation and the camera
+ * projection come from the engine (`evaluateKf`, `projectLayer`, `dofBlur`), folded
+ * into per-layer numbers by ONE adapter — `foldKfPose` in sequence-plan.ts — that
+ * this module and the canvas planner both call. Neither side owns a formula, so
+ * neither side can drift from the other; tests/sequence-plan.test.ts asserts it.
+ * A document with no `data-t-z` and no `data-t-kf` never reaches any of it.
  */
 
 import { recTransition, isTransitionKind, type TransitionKind } from '../lib/transitions.ts';
 // The clamps are the bridge-side declarations in sequence-plan.ts (themselves
 // mirroring the tool hook + timeline-math). Importing them rather than restating
-// them is the point of this module existing.
-import { MIN_SPEED, MAX_SPEED, MIN_TRANSITION_MS, MAX_TRANSITION_MS } from './sequence-plan.ts';
+// them is the point of this module existing — and the same goes for the depth
+// adapters below: the keyframe/projection maths is the engine's, and the fold that
+// turns it into per-layer numbers belongs to exactly one module.
+import {
+  MIN_SPEED, MAX_SPEED, MIN_TRANSITION_MS, MAX_TRANSITION_MS,
+  REST_TRANSITION, composeFilter, foldKfPose, isProjectable, kfTrackOf,
+  planCameraView, readDepthZ, splitFilterBlur, viewMoves,
+  type SeqPlanEnv,
+} from './sequence-plan.ts';
+import { evaluateKf, type KfCameraView, type KfTrack } from '@lolly/engine';
 
 export { MIN_SPEED, MAX_SPEED, MIN_TRANSITION_MS, MAX_TRANSITION_MS };
 
@@ -76,6 +97,27 @@ export interface Timing {
   /** True when the box declared `data-t-mute="1"` (its audio stays silent). */
   mute: boolean;
   lane: 'seq' | '';
+  /**
+   * The box's DEPTH in px above the surface (`data-t-z`), held to the engine's own
+   * field clamp. 0 — the flat board — is what every document written before
+   * plans/104 reads as, and what keeps the projection an exact identity.
+   */
+  z: number;
+  /**
+   * The parsed keyframe track (`data-t-kf`), empty when the box is not keyframed.
+   * Parsed through the SHARED cache in sequence-plan.ts, so this reader and the
+   * canvas planner get the same frozen array for the same wire string — one parse,
+   * one memoised channel index, and no way for the two to read a track differently.
+   */
+  kf: KfTrack;
+  /**
+   * True when this element is a `[data-pdf-page]` FRAME PAGE (frames-as-scenes).
+   * It is timed like any other element and keeps its transitions — but §5.4 scopes
+   * v1's camera and keyframes to boxes on a `[data-sequence]` stage, so a frame is
+   * excluded from the projection. The hooks already refuse to stamp `data-t-z` /
+   * `data-t-kf` on one; this is the reader's own half of that contract.
+   */
+  frame: boolean;
 }
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
@@ -110,6 +152,9 @@ export function readTiming(el: Element): Timing {
     exitEase: el.getAttribute('data-t-exit-ease') || '',
     mute: el.getAttribute('data-t-mute') === '1',
     lane: el.getAttribute('data-t-lane') === 'seq' ? 'seq' : '',
+    z: readDepthZ(el.getAttribute('data-t-z')),
+    kf: kfTrackOf(el.getAttribute('data-t-kf')),
+    frame: el.getAttribute('data-pdf-page') != null,
   };
 }
 
@@ -213,14 +258,43 @@ export function composeOpacity(authored: string, alpha: number): string {
 interface Authored {
   transform: string;
   opacity: string;
+  /**
+   * The authored inline `filter`, and the two halves it comes apart into: the blur
+   * radius the fold adds to, and everything else (today the `shadow`/`depth`
+   * drop-shadow) which is re-composed after it. Split once, on capture, because the
+   * split is a regex and this record outlives every frame.
+   */
+  filter: string;
+  filterBlur: number;
+  filterRest: string;
+  /** The authored inline `z-index` ('' = auto, which is what every box ships with). */
+  zIndex: string;
   /** Layout size, measured BEFORE any transform was written (rects lie afterwards). */
   w: number;
   h: number;
+  /**
+   * The AUTHORED position, px — read from the inline style, which is exactly where
+   * the canvas planner reads it (`stylePx(el,'left')`). The projection anchors on the
+   * box's authored centre, so the two evaluators have to agree about where that is;
+   * a measured `offsetLeft` would answer relative to whatever ancestor happens to be
+   * positioned, which the planner never sees.
+   */
+  left: number;
+  top: number;
   /** Last strings we wrote, so a steady frame costs zero style writes. */
   lastTransform: string | null;
   lastOpacity: string | null;
+  lastFilter: string | null;
+  lastZIndex: string | null;
   /** Audio boxes render nothing visible — never worth a transform. */
   audio: boolean;
+  /**
+   * Camera markers render nothing visible either (plans/104 §5.4): a camera is a
+   * timeline citizen that carries a POSE, not a picture. Mirrors `audio` exactly —
+   * no transform, no filter, no z-index, no projection — because the audio exclusion
+   * only ever worked because both evaluators actively detect it.
+   */
+  camera: boolean;
 }
 
 /**
@@ -231,6 +305,13 @@ interface Authored {
  */
 export interface AuthoredStore {
   get(el: HTMLElement): Authored;
+  /**
+   * The authored values this store holds for `el`, WITHOUT capturing them if it does
+   * not — the read a photographer takes (plans/104 §6 point 0). `get` would capture
+   * whatever is on the element right now, which mid-keyframe is the applier's own
+   * composed pose: exactly the value that must never be mistaken for the authored one.
+   */
+  peek(el: HTMLElement): AuthoredStyle | null;
   /** Put one element back exactly as it was found. */
   restore(el: HTMLElement): void;
   /** Put everything back and forget it. */
@@ -238,6 +319,34 @@ export interface AuthoredStore {
   /** Forget entries for elements not in `keep` (they were destroyed by a repaint). */
   prune(keep: Set<HTMLElement>): void;
   size(): number;
+}
+
+/**
+ * One element's AUTHORED inline styles — the four properties the applier composes
+ * over — as a reader outside this module sees them.
+ *
+ * `''` means "no inline declaration", which is not the same as a neutral value: a
+ * box with no authored `filter` must be photographed with `filter:none`, and one with
+ * `blur(2px)` authored must be photographed with `blur(2px)` — never with whatever the
+ * playhead happened to compose.
+ */
+export interface AuthoredStyle {
+  transform: string;
+  opacity: string;
+  filter: string;
+  zIndex: string;
+  /** True when the applier has actually written at least one of the four. */
+  written: boolean;
+}
+
+/** The authored inline `left`/`top`, the planner's own read, with a layout fallback. */
+function authoredOrigin(el: HTMLElement): { left: number; top: number } {
+  const l = parseFloat(el.style?.left || '');
+  const t = parseFloat(el.style?.top || '');
+  return {
+    left: Number.isFinite(l) ? l : (el.offsetLeft || 0),
+    top: Number.isFinite(t) ? t : (el.offsetTop || 0),
+  };
 }
 
 function measure(el: HTMLElement): { w: number; h: number } {
@@ -263,35 +372,84 @@ export function createAuthoredStore(): AuthoredStore {
     if (el.style.opacity !== rec.opacity) {
       if (rec.opacity) el.style.opacity = rec.opacity; else el.style.removeProperty('opacity');
     }
+    // `filter` and `z-index` join the surface only on a depth stage, so on every
+    // other document `lastFilter`/`lastZIndex` stay null and these two comparisons
+    // are the only trace this feature leaves on the restore path.
+    if (el.style.filter !== rec.filter) {
+      if (rec.filter) el.style.filter = rec.filter; else el.style.removeProperty('filter');
+    }
+    if (el.style.zIndex !== rec.zIndex) {
+      if (rec.zIndex) el.style.zIndex = rec.zIndex; else el.style.removeProperty('z-index');
+    }
     rec.lastTransform = null;
     rec.lastOpacity = null;
+    rec.lastFilter = null;
+    rec.lastZIndex = null;
   };
   return {
     get(el) {
       let rec = map.get(el);
       if (!rec) {
         const size = measure(el);
+        const origin = authoredOrigin(el);
+        const filter = el.style.filter || '';
+        const fx = splitFilterBlur(filter);
         rec = {
           transform: el.style.transform || '',
           opacity: el.style.opacity || '',
+          filter,
+          filterBlur: fx.blur,
+          filterRest: fx.rest,
+          zIndex: el.style.zIndex || '',
           w: size.w,
           h: size.h,
+          left: origin.left,
+          top: origin.top,
           lastTransform: null,
           lastOpacity: null,
+          lastFilter: null,
+          lastZIndex: null,
           audio: !!el.querySelector('.lolly-box-audio'),
+          camera: !!(el.matches?.('[data-cam]') || el.querySelector?.('[data-cam]')),
         };
         map.set(el, rec);
-      } else if (!rec.w || !rec.h) {
-        // First measurement happened before layout (a box measured during the same
-        // frame it was painted). Re-measure until it answers, but only while we have
-        // written nothing — after that the rect would include our own transform.
-        if (rec.lastTransform == null) {
-          const size = measure(el);
-          if (size.w) rec.w = size.w;
-          if (size.h) rec.h = size.h;
+      } else {
+        // `left`/`top` are NEVER part of the composed surface — the applier writes
+        // transform/opacity/filter/z-index and nothing else — so the inline
+        // declaration is always the authored one and re-reading it is free (a string
+        // parse; no layout, and no fallback to `offsetLeft` here for exactly that
+        // reason). It has to be re-read because free-canvas moves a box during a
+        // gesture by writing `left`/`top` straight onto the element with no model
+        // write and no repaint: a cached origin would parallax a dragged lifted box
+        // from its PRE-drag centre and lag the pointer.
+        const l = parseFloat(el.style?.left || '');
+        const t = parseFloat(el.style?.top || '');
+        if (Number.isFinite(l)) rec.left = l;
+        if (Number.isFinite(t)) rec.top = t;
+        if (!rec.w || !rec.h) {
+          // First measurement happened before layout (a box measured during the same
+          // frame it was painted). Re-measure until it answers, but only while we have
+          // written nothing — after that the rect would include our own transform.
+          if (rec.lastTransform == null) {
+            const size = measure(el);
+            if (size.w) rec.w = size.w;
+            if (size.h) rec.h = size.h;
+          }
         }
       }
       return rec;
+    },
+    peek(el) {
+      const rec = map.get(el);
+      if (!rec) return null;
+      return {
+        transform: rec.transform,
+        opacity: rec.opacity,
+        filter: rec.filter,
+        zIndex: rec.zIndex,
+        written: rec.lastTransform !== null || rec.lastOpacity !== null
+          || rec.lastFilter !== null || rec.lastZIndex !== null,
+      };
     },
     restore(el) {
       const rec = map.get(el);
@@ -308,6 +466,209 @@ export function createAuthoredStore(): AuthoredStore {
   };
 }
 
+// ── the live-writer registry (the export-time read/restore seam) ────────────
+//
+// THE PROBLEM (plans/104 §6 point 0, the review's top finding, found twice).
+// `renderSequence` parses and PHOTOGRAPHS the live artboard — the same artboard the
+// preview clock has been writing on. Every read it takes is an authored read:
+// `readLayer` takes the box's rotation off `style.transform`, its opacity off
+// `style.opacity`, its blur off `style.filter` (sequence-plan.ts:225-231). Before
+// plans/104 those writes were brief transition windows, so an export taken mid-fade
+// was a little wrong in a way nobody had measured. Under keyframes nearly every t has
+// a composed transform, opacity and filter on nearly every box, and the failure is
+// total: authored geometry read PRE-PROJECTED and then projected again, a keyframed
+// blur baked into the plate AND applied again by the executor. The playhead can be
+// parked anywhere when an export starts, which is what makes this a correctness bug
+// rather than a nicety.
+//
+// THE FIX, and why it is a registry. The authored values are not on the DOM — that is
+// the whole point of the AuthoredStore — and the exporter is three modules away from
+// the clock that holds them. So every live writer (the preview clock, each
+// `createSequenceTime` session) announces itself here, and anything that READS or
+// PHOTOGRAPHS the stage asks the registry to make the DOM authored again first:
+//
+//   • `withAuthoredDom(root, fn)` — the whole-export scope. Every writer over `root`
+//     stands down (its writes handed back) AND STAYS DOWN for the duration, because an
+//     rAF tick landing mid-export would otherwise re-pose the stage between two plate
+//     shots. Balanced, so nested scopes compose; the writers re-assert on the way out.
+//     Used by `renderSequence` (the whole film) and by `renderSequenceCuts` (all N
+//     stills of a contact sheet) — a reader that opens its OWN session on the same
+//     root needs it as much as a photographer does, because that session's
+//     AuthoredStore captures whatever is on the element the first time it touches it.
+//   • `beginAuthoredDom(root)` — the same scope opened and closed by hand, for a
+//     reader whose span is not one function call: `driveSequenceTime`'s live take runs
+//     between `start()` and `stop()` on somebody else's timer.
+//   • `authoredStyleOf(el)` — the non-mutating read, for a photographer that can
+//     neutralise on its own CLONE instead (clip-thumbs' dom-to-image `style` override).
+//     Nothing on the live stage moves, so a thumbnail shot cannot flicker the editor.
+//   • `borrowAuthoredPose(el)` — one element restored in place, for a reader that walks
+//     the LIVE subtree and has no clone to neutralise (the vector twin).
+//
+// A writer that has written nothing costs every one of these exactly one Set iteration
+// over an empty-or-tiny registry: a document with no clock (a CLI render, a headless
+// test, an export of a stage nobody ever played) takes the identical path it took
+// before this existed.
+
+/**
+ * A live composer of per-frame writes — the preview clock, or a `createSequenceTime`
+ * session — as the read/restore seam sees it.
+ */
+export interface SequenceWriter {
+  /** The subtree this writer composes over. */
+  root: HTMLElement;
+  /** The authored values it is composing against. */
+  store: AuthoredStore;
+  /**
+   * Stop / allow this writer's per-frame writes. Called by the registry ONLY, and
+   * balanced by it: while paused, `apply`-shaped calls must write nothing at all
+   * (a paused clock keeps its clock, it just stops touching the DOM).
+   */
+  setPaused(paused: boolean): void;
+  /** Re-assert this writer's own current time. Must be a no-op while paused. */
+  reapply(): void;
+}
+
+const WRITERS = new Set<SequenceWriter>();
+/** How many scopes are currently holding each writer down. */
+const SUSPENDED = new WeakMap<SequenceWriter, number>();
+
+/**
+ * Announce a live writer. Returns the deregistration — call it when the writer stops
+ * writing for good (a clock's `destroy`, a session's `restore`), never merely when it
+ * pauses, or a photographer would stop being able to find its authored values.
+ */
+export function registerSequenceWriter(w: SequenceWriter): () => void {
+  WRITERS.add(w);
+  return () => { WRITERS.delete(w); };
+}
+
+/** Writers whose subtree overlaps `root` in either direction. */
+function writersOver(root: HTMLElement | null): SequenceWriter[] {
+  if (!root || !WRITERS.size) return [];
+  const out: SequenceWriter[] = [];
+  for (const w of WRITERS) {
+    const r = w.root;
+    if (!r) continue;
+    if (r === root || root.contains?.(r) || r.contains?.(root)) out.push(w);
+  }
+  return out;
+}
+
+/** Writers that hold a record for `el` (whether or not they have written to it yet). */
+function writersHolding(el: HTMLElement | null): { w: SequenceWriter; authored: AuthoredStyle }[] {
+  if (!el || !WRITERS.size) return [];
+  const out: { w: SequenceWriter; authored: AuthoredStyle }[] = [];
+  for (const w of WRITERS) {
+    const authored = w.store.peek(el);
+    if (authored) out.push({ w, authored });
+  }
+  return out;
+}
+
+function suspendWriter(w: SequenceWriter): void {
+  const depth = SUSPENDED.get(w) ?? 0;
+  SUSPENDED.set(w, depth + 1);
+  if (depth === 0) {
+    w.setPaused(true);
+    // The authored styles go back; the `.seq-off` visibility does NOT. Hiding is
+    // applied, not composed, and every photographer already strips it per shot
+    // (`rasterBox`, `borrowVisibility`) — lifting it here would un-hide the whole
+    // composition on the live stage for the length of an export.
+    w.store.restoreAll();
+  }
+}
+
+function resumeWriter(w: SequenceWriter): void {
+  const depth = SUSPENDED.get(w) ?? 0;
+  if (depth > 1) { SUSPENDED.set(w, depth - 1); return; }
+  SUSPENDED.set(w, 0);
+  w.setPaused(false);
+  w.reapply();
+}
+
+/**
+ * Run `fn` with `root` showing its AUTHORED pose — every live writer over it stood
+ * down, and held down until `fn` settles.
+ *
+ * This is the scope an export runs inside. It restores on every path including a
+ * throw, and it re-asserts the writers afterwards, so a failed export leaves the
+ * editor exactly where the user left it (the same contract `session.restore()` in
+ * sequence-cuts has always had).
+ */
+export async function withAuthoredDom<T>(root: HTMLElement, fn: () => T | Promise<T>): Promise<T> {
+  const release = beginAuthoredDom(root);
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+/**
+ * The same scope, opened and closed BY HAND — for a reader whose span is not one
+ * function call.
+ *
+ * `driveSequenceTime` is the case that forces it: a live capture's authored window
+ * opens at `start()` and closes at `stop()`, with the frames in between arriving on
+ * someone else's timer, so there is no `fn` to wrap. Idempotent release, because
+ * `stop()` is documented idempotent and safe before `start()`.
+ *
+ * The writers held are snapshotted HERE, before the caller opens its own session, so
+ * a session created inside the scope is not itself suspended and writes normally —
+ * which is the whole point: the scope stands the OTHER writers down (the preview
+ * clock), it does not stop the reader from composing.
+ */
+export function beginAuthoredDom(root: HTMLElement): () => void {
+  const held = writersOver(root);
+  for (const w of held) suspendWriter(w);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    // Reverse order, so nested scopes unwind the way they wound up.
+    for (const w of [...held].reverse()) {
+      try { resumeWriter(w); } catch { /* one writer's repaint must not strand the others */ }
+    }
+  };
+}
+
+/**
+ * The authored inline styles a live writer is composing over on `el`, or null when
+ * nobody is writing on it.
+ *
+ * Null is the byte-identity answer: no writer, or a writer that has not written to
+ * this element, means the DOM already IS authored and a caller must change nothing.
+ */
+export function authoredStyleOf(el: HTMLElement | null | undefined): AuthoredStyle | null {
+  for (const { authored } of writersHolding(el ?? null)) {
+    if (authored.written) return authored;
+  }
+  return null;
+}
+
+/**
+ * Put ONE element back to its authored pose in place, and hand back the undo.
+ *
+ * For a reader that walks the LIVE subtree and has no clone to neutralise on (the
+ * timeline's vector twin). The release re-asserts each writer at its own current time
+ * rather than re-writing the old values, so a playhead that moved during the read
+ * lands on the right pose instead of a stale one. A no-op — down to the returned
+ * closure — when nothing was written on `el`.
+ */
+export function borrowAuthoredPose(el: HTMLElement | null | undefined): () => void {
+  const held = writersHolding(el ?? null).filter((h) => h.authored.written);
+  if (!held.length) return () => { /* nothing composed here: nothing to borrow */ };
+  for (const { w } of held) w.store.restore(el as HTMLElement);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    for (const { w } of held) {
+      try { w.reapply(); } catch { /* a repaint mid-shot is the writer's problem, not the shot's */ }
+    }
+  };
+}
+
 // ── applyTime, against a plain element list ─────────────────────────────────
 
 /** Everything applyTime needs beyond the elements themselves. */
@@ -321,6 +682,32 @@ export interface ApplyCtx {
    * `sourceMs` is the position INSIDE the media: `clipIn + local * speed`.
    */
   media?(el: HTMLElement, timing: Timing, sourceMs: number, active: boolean): void;
+  /**
+   * The stage's NATIVE size, px — the projection's principal point is its centre
+   * (§4.1). A FUNCTION rather than two numbers on purpose: reading `offsetWidth`
+   * forces layout, and this pass runs every frame, so a stage that authors no depth
+   * must never pay for it. It is called at most once per apply, and only once
+   * something actually needs projecting.
+   */
+  stage?(): { w: number; h: number };
+  /**
+   * The camera clips governing this stage (§5.4), latest-in-array covering `t` wins.
+   * P0 passes none, and "none" resolves to the DEFAULT camera — which projects a
+   * z = 0 layer at eff = 1, i.e. leaves every existing document alone.
+   */
+  cameras?: SeqPlanEnv['cameras'];
+}
+
+/** The stage element's own native box, as `ApplyCtx.stage` wants it. */
+export function stageNativeSize(stage: HTMLElement | null): { w: number; h: number } {
+  if (!stage) return { w: 0, h: 0 };
+  // offsetWidth/Height is the UNTRANSFORMED layout box — the artboard's authored
+  // size, unaffected by whatever CSS scale the shell is previewing it at, which is
+  // also the number renderSequence sizes its output from. jsdom answers 0, hence the
+  // inline-style fallback (the tool hook writes both).
+  const w = stage.offsetWidth || parseFloat(stage.style?.width || '') || 0;
+  const h = stage.offsetHeight || parseFloat(stage.style?.height || '') || 0;
+  return { w: Number.isFinite(w) ? w : 0, h: Number.isFinite(h) ? h : 0 };
 }
 
 /** The class the panel's stylesheet turns into `display:none`. */
@@ -376,9 +763,56 @@ export function releaseShotBorrow(el: HTMLElement): void {
  * by having no `data-t-start`, so it is never in the caller's list and is never hidden.
  */
 export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyCtx): void {
-  for (const el of els) {
-    const timing = readTiming(el);
+  // Timing is read for EVERY element before anything is written, because the
+  // per-frame `z-index` (§4.2) is a RANK across the whole stage: it cannot be known
+  // while the first box is still being read. This first pass touches attributes only
+  // — no layout, no writes — so it costs the same as the read the single-pass version
+  // used to do inline.
+  const n = els.length;
+  const timings: Timing[] = new Array(n);
+  let anyBoxDepth = false;
+  // §5.4: a frames-as-scenes document is out of depth scope in v1 — the WHOLE
+  // document, not only its pages. The planner opts out on the same condition and for
+  // the same reason (the two evaluators are told different stage sizes there; see
+  // `sequenceDrawPlan`), so the two agree by construction rather than by coincidence.
+  let framesDoc = false;
+  for (let i = 0; i < n; i++) {
+    const timing = readTiming(els[i] as HTMLElement);
+    timings[i] = timing;
+    if (timing.z !== 0 || timing.kf.length > 0) anyBoxDepth = true;
+    if (timing.frame) framesDoc = true;
+  }
+  // The gate, and it is the byte-identity floor: with no box carrying depth and no
+  // camera on the stage, `view` stays null, the stage is never measured, `foldKfPose`
+  // is never called, and `filter`/`z-index` are never written. The condition is the
+  // planner's own (`sequenceDrawPlan` projects when `viewMoves(view) || z || kf`), so
+  // the moment P1 hands cameras in, both evaluators start projecting on the same
+  // frame rather than one of them lagging.
+  const hasCamera = !!ctx.cameras && ctx.cameras.length > 0;
+  let view: KfCameraView | null = null;
+  let moving = false;
+  if (!framesDoc && (anyBoxDepth || hasCamera)) {
+    const size = ctx.stage?.() ?? { w: 0, h: 0 };
+    view = planCameraView({ stageW: size.w, stageH: size.h, cameras: ctx.cameras ?? null }, tMs);
+    moving = viewMoves(view);
+  }
+  // Resolved depth per element, and which elements take part in the paint-order rank.
+  const zs = view ? new Float64Array(n) : null;
+  const ranked = view ? new Uint8Array(n) : null;
+  const recs: Authored[] = new Array(n);
+  let anyLift = false;
+  // True the moment any element in this pass is CARRYING a z-index we wrote — which
+  // is what makes the rank pass below responsible for taking it away again, not only
+  // for putting it on. A track whose z curve returns to the flat board would otherwise
+  // leave the last rank frozen on the boxes, and a stale rank is a wrong paint order.
+  let anyStaleRank = false;
+
+  for (let i = 0; i < n; i++) {
+    const el = els[i] as HTMLElement;
+    const timing = timings[i] as Timing;
     const rec = ctx.store.get(el);
+    recs[i] = rec;
+    if (rec.lastZIndex !== null) anyStaleRank = true;
     const active = isActiveAt(timing, tMs, ctx.seqMs);
     // Class-only visibility. We deliberately do NOT also write `style.visibility`:
     // it is a property the tool's own boxCss is free to author, and a belt-and-braces
@@ -393,11 +827,42 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     if (active) { el.classList.remove(OFF_CLASS); releaseShotBorrow(el); }
     else if (!el.hasAttribute?.(BORROW_ATTR)) el.classList.add(OFF_CLASS);
 
-    const tr = active && !rec.audio ? transitionAt(timing, tMs, ctx.seqMs) : null;
-    if (tr) {
-      const off = recTransition(tr.kind, tr.p, rec.w, rec.h, tr.ease);
-      const transform = composeTransform(rec.transform, off);
-      const opacity = composeOpacity(rec.opacity, off.alpha);
+    // An audio bed and a camera marker are timeline citizens with no picture: no
+    // transition, no projection, no style write of any kind (§5.4).
+    const silent = rec.audio || rec.camera;
+    const tr = active && !silent ? transitionAt(timing, tMs, ctx.seqMs) : null;
+    // The §5.4 exclusions, asked through the SAME predicate the planner asks — an
+    // audio bed, a camera marker, and a `[data-pdf-page]` frame page (which keeps its
+    // ordinary transitions, but v1's camera and keyframes reach only boxes on a
+    // [data-sequence] stage).
+    // Two questions, and they are NOT the same one. "Does this element take part in
+    // the paint order at all" is the §5.4 exclusion set (audio bed, camera marker,
+    // frame page); "does it need the fold computed" additionally requires that
+    // something actually moved it. Conflating them is what made the DOM rank a
+    // SUBSET of what the planner sorts — see the rank pass below.
+    const projectable = isProjectable({
+      kind: rec.camera ? 'camera' : rec.audio ? 'audio' : 'static',
+      frameScene: timing.frame,
+    });
+    const projecting = view !== null && active && projectable
+      && (moving || timing.z !== 0 || timing.kf.length > 0);
+    if (tr || projecting) {
+      const off = tr ? recTransition(tr.kind, tr.p, rec.w, rec.h, tr.ease) : REST_TRANSITION;
+      // ONE fold, shared with the canvas planner — see foldKfPose. `t` is the
+      // sequence clock; a keyframe track runs on LOCAL box time, unscaled (§5.1).
+      const fold = projecting && view
+        ? foldKfPose({
+          view,
+          cx: rec.left + rec.w / 2,
+          cy: rec.top + rec.h / 2,
+          tr: off,
+          pose: evaluateKf(timing.kf, tMs - timing.start),
+          zField: timing.z,
+          authoredBlur: rec.filterBlur,
+        })
+        : { dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha, blur: rec.filterBlur, z: 0 };
+      const transform = composeTransform(rec.transform, { dx: fold.dx, dy: fold.dy, sc: fold.scale, rot: fold.rot });
+      const opacity = composeOpacity(rec.opacity, fold.alpha);
       if (transform !== rec.lastTransform) {
         if (transform) el.style.transform = transform; else el.style.removeProperty('transform');
         rec.lastTransform = transform;
@@ -406,14 +871,100 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
         el.style.opacity = opacity;
         rec.lastOpacity = opacity;
       }
-    } else if (rec.lastTransform !== null || rec.lastOpacity !== null) {
-      // Left the window (or went off screen): hand the authored styles straight back.
-      ctx.store.restore(el);
+      // `filter` is written ONLY when the total blur has actually moved off the
+      // authored one — compared as a NUMBER, so a box whose blur nothing touched
+      // keeps its authored declaration spelled exactly as the hook wrote it, rather
+      // than an equivalent re-serialisation of it. Blur first, then whatever else the
+      // author asked for (the `shadow`/`depth` drop-shadow), so the shadow keeps
+      // following the blurred silhouette (§5.5).
+      const filter = fold.blur === rec.filterBlur ? rec.filter : composeFilter(fold.blur, rec.filterRest);
+      if (filter !== (rec.lastFilter ?? rec.filter)) {
+        if (filter) el.style.filter = filter; else el.style.removeProperty('filter');
+        rec.lastFilter = filter;
+      }
+      if (zs && ranked) {
+        zs[i] = fold.z;
+        // Ranked = "has a picture and is on screen", NOT "was projected". A flat box
+        // resolves to z = 0 and still has to be IN the sort, or it floats above every
+        // lifted one (see the rank pass).
+        ranked[i] = projectable ? 1 : 0;
+        if (projecting && fold.z !== 0) anyLift = true;
+      }
+    } else {
+      // No transition, no projection — but an ACTIVE box with a picture is still a
+      // participant in the paint order at its authored depth (z = 0, the array's own
+      // initial value). Only then does the restore below apply.
+      if (zs && ranked && active && projectable) ranked[i] = 1;
+      if (rec.lastTransform !== null || rec.lastOpacity !== null || rec.lastFilter !== null) {
+        // Left the window (or went off screen): hand the authored styles straight
+        // back. `lastZIndex` is deliberately NOT in this test — the rank pass below
+        // owns that slot for the whole stage and will restore it in the same frame if
+        // this element has dropped out of the rank; restoring it here would take a
+        // rank away from a box that is about to be given one again.
+        ctx.store.restore(el);
+      }
     }
 
     if (ctx.media) {
       const local = Math.max(0, tMs - timing.start);
       ctx.media(el, timing, timing.clipIn + local * timing.speed, active);
+    }
+  }
+
+  // §4.2 — paint order IS depth order. Affine-per-layer only reproduces a true
+  // perspective render when the two agree, and z is keyframable, so two layers' z
+  // curves can cross mid-move. The canvas planner sorts its PlanItems; a live DOM
+  // cannot be re-ordered, so the same ranking is expressed as `z-index`.
+  //
+  // Skipped whole unless something is actually lifted — the planner's own gate — so a
+  // stage that only keyframes x/y/opacity never grows a stacking property it did not
+  // have. Ranks start at 1 for the same reason: `z-index: 0` and `z-index: auto` are
+  // not the same declaration, and only one of them is what these boxes shipped with.
+  //
+  // THE RANK SET IS THE SORT SET. Every ACTIVE element with a picture is ranked, not
+  // only the ones the fold touched: in CSS a positioned box with an integer `z-index`
+  // paints in a higher stacking level than every `auto` sibling, so ranking only the
+  // projected boxes would mean "the lifted ones float above all the flat ones" — the
+  // exact opposite of the planner, which sorts the WHOLE plan (a flat item carries
+  // `resolvedZ = 0`) the moment anything is lifted. A flat box and a SUNKEN one
+  // (`z = -200`, a shipped value) is the two-box counter-example: the planner paints
+  // the sunken one first, a projecting-only rank painted it last.
+  //
+  // The pass ALSO runs when the stage has flattened back out (`anyStaleRank`), because
+  // then it is the pass that takes the rank away: a z curve returning to the board
+  // must return the paint order to DOM order with it.
+  if ((zs && ranked && anyLift) || anyStaleRank) {
+    const order: number[] = [];
+    if (zs && ranked && anyLift) {
+      for (let i = 0; i < n; i++) if (ranked[i]) order.push(i);
+      order.sort((a, b) => (zs[a] as number) - (zs[b] as number) || a - b);
+    }
+    const rank = new Map<number, string>();
+    for (let r = 0; r < order.length; r++) rank.set(order[r] as number, String(r + 1));
+    for (let i = 0; i < n; i++) {
+      const rec = recs[i] as Authored | undefined;
+      if (!rec) continue;
+      const el = els[i] as HTMLElement;
+      const zi = rank.get(i);
+      // Somebody else may own this slot: free-canvas hoists a DRAGGED box to
+      // `z-index: 9999` straight on the element for the length of the gesture (no
+      // model write, no repaint). If the inline value is not the one we last wrote,
+      // the rank is not ours to move — leave it, and drop our claim so the restore
+      // path cannot hand back a value the other writer has since replaced.
+      const mine = rec.lastZIndex === null
+        ? (el.style.zIndex || '') === rec.zIndex
+        : el.style.zIndex === rec.lastZIndex;
+      if (!mine) { rec.lastZIndex = null; continue; }
+      if (zi === undefined) {
+        // Not ranked this frame. If we ever ranked it, hand the authored value back.
+        if (rec.lastZIndex !== null) {
+          if (rec.zIndex) el.style.zIndex = rec.zIndex; else el.style.removeProperty('z-index');
+          rec.lastZIndex = null;
+        }
+      } else if (zi !== (rec.lastZIndex ?? rec.zIndex)) {
+        el.style.zIndex = zi;
+        rec.lastZIndex = zi;
+      }
     }
   }
 }
@@ -462,7 +1013,10 @@ export interface SequenceTimeSession {
  * on frame 2 and bake it in. `restore()` is what makes the DOM byte-for-byte the
  * caller's again — always call it in a `finally`.
  */
-export function createSequenceTime(root: HTMLElement, opts: { media?: ApplyCtx['media'] } = {}): SequenceTimeSession {
+export function createSequenceTime(
+  root: HTMLElement,
+  opts: { media?: ApplyCtx['media']; cameras?: ApplyCtx['cameras'] } = {},
+): SequenceTimeSession {
   const store = createAuthoredStore();
   // ANY element carrying `data-t-start` — deliberately NOT restricted to `.lolly-box`, so a
   // sequenced `[data-pdf-page]` frame page (frames-as-scenes) is gated by the exact same
@@ -473,8 +1027,22 @@ export function createSequenceTime(root: HTMLElement, opts: { media?: ApplyCtx['
     const stage = sequenceStageOf(root) ?? root;
     return [...stage.querySelectorAll<HTMLElement>('[data-t-start]')];
   };
-  return {
+  // What the read/restore seam knows this session by. `lastT` is remembered so a
+  // suspended session can be put back exactly where it was, rather than at 0 — an
+  // export that finishes must hand the editor back the frame the user was looking at.
+  let paused = false;
+  let lastT: number | null = null;
+  let unregister: (() => void) | null = null;
+  const session: SequenceTimeSession = {
     apply(tMs) {
+      lastT = tMs;
+      if (paused) return;
+      // Registered lazily, on the first write rather than at construction: a session
+      // that never applied has composed nothing, so there is nothing for a
+      // photographer to restore and no reason to hold its root alive in the registry.
+      // (Re-registered here too, because `restore()` deregisters and a session may be
+      // driven again afterwards — `driveSequenceTime`'s stop/start is exactly that.)
+      if (!unregister) unregister = registerSequenceWriter(writer);
       const els = boxes();
       // A repaint mints new nodes; dropping the dead entries keeps the store from
       // handing a stale authored value to a fresh box at the same position.
@@ -482,7 +1050,12 @@ export function createSequenceTime(root: HTMLElement, opts: { media?: ApplyCtx['
       applyTimeToElements(els, tMs, {
         seqMs: sequenceDurationMs(root),
         store,
+        // Lazy by contract: a stage that authors no depth never calls this, so no
+        // frame of an ordinary composition pays a forced layout for a feature it
+        // does not use.
+        stage: () => stageNativeSize(sequenceStageOf(root) ?? root),
         ...(opts.media ? { media: opts.media } : {}),
+        ...(opts.cameras ? { cameras: opts.cameras } : {}),
       });
     },
     durationMs: () => sequenceDurationMs(root),
@@ -495,8 +1068,21 @@ export function createSequenceTime(root: HTMLElement, opts: { media?: ApplyCtx['
       // visibility, so a restore arriving afterwards must not re-hide anything.
       for (const el of boxes()) { el.classList.remove(OFF_CLASS); releaseShotBorrow(el); }
       store.restoreAll();
+      // This session is no longer composing anything, so the seam must stop counting
+      // it — a deregistered writer is one nobody can suspend, restore or read through.
+      unregister?.();
+      unregister = null;
+      paused = false;
+      lastT = null;
     },
   };
+  const writer: SequenceWriter = {
+    root,
+    store,
+    setPaused(v) { paused = v; },
+    reapply() { if (!paused && lastT != null) session.apply(lastT); },
+  };
+  return session;
 }
 
 // Sessions opened by the free-function form below, keyed by root so repeated calls
@@ -552,6 +1138,14 @@ export function driveSequenceTime(
     schedule?: (fn: () => void, ms: number) => () => void;
   },
 ): SequenceDriver {
+  // THE READ/RESTORE SEAM (plans/104 §6 point 0), the live-capture half. This driver
+  // opens a SECOND session on a root the preview clock is very likely already posing,
+  // and `AuthoredStore.get()` captures whatever is on the element at first touch — so
+  // without standing the clock down first, every frame of a live take would compose on
+  // top of the pose the playhead happened to be parked on. Held open for the whole
+  // take rather than per frame, because a clock tick landing between two of ours would
+  // re-pose the stage mid-recording.
+  let releaseAuthored: (() => void) | null = null;
   const session = createSequenceTime(root);
   const now = o.now ?? (typeof performance !== 'undefined' && performance.now ? () => performance.now() : () => Date.now());
   const schedule = o.schedule ?? ((fn, ms) => {
@@ -579,6 +1173,8 @@ export function driveSequenceTime(
     start() {
       if (running) return;
       running = true;
+      // Before the first apply: this session must not be inside the snapshot it takes.
+      releaseAuthored ??= beginAuthoredDom(root);
       t0 = now();
       tick();
     },
@@ -586,6 +1182,10 @@ export function driveSequenceTime(
       running = false;
       if (cancel) { cancel(); cancel = null; }
       session.restore();
+      // Last, so the preview clock re-asserts onto an artboard this driver has already
+      // handed back — the same unwind order `withAuthoredDom` gives an export.
+      releaseAuthored?.();
+      releaseAuthored = null;
     },
   };
 }

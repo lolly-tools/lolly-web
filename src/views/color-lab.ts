@@ -111,6 +111,7 @@ import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { collectDevice, renderDeviceCards, wireDeviceLive } from '../lib/device-info.ts';
 import type { ClientGroup, ClientGroupKey } from '../lib/device-info.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { t, tRaw } from '../i18n.ts';
@@ -502,6 +503,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
 
   view.innerHTML = shellHtml();
   mountBackPill(view);
+  mountHomeFab(view);
 
   const $ = <T extends HTMLElement = HTMLElement>(sel: string): T | null =>
     view.querySelector<T>(sel);
@@ -511,6 +513,8 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // write as best-effort — but the call itself needs an object, so stub it.
   const chrome = $('[data-lab-chrome]');
   if (chrome) {
+    // The home escape is baked into shellHtml()'s chrome (no new raw-HTML sink);
+    // the theme cycle is appended after it, both in the Lab's .lab-chrome-btn skin.
     chrome.appendChild(createThemeToggle(
       host.profile ? (host as { profile: NonNullable<ColorLabHost['profile']> }) : { profile: { get: async () => ({}) } },
       { className: 'lab-chrome-btn' },
@@ -3026,7 +3030,7 @@ function shellHtml(): string {
           theme. Icon-only, like the zoom controls it is modelled on. */''}
     <div class="lab-back">
       ${backPillHtml()}
-      <div class="lab-chrome" data-lab-chrome></div>
+      <div class="lab-chrome" data-lab-chrome>${homeFabHtml({ className: 'lab-chrome-btn' })}</div>
     </div>
 
     <header class="lab-head">

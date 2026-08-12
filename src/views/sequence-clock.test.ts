@@ -1361,3 +1361,77 @@ test('audio: a non-module source still goes to decodeAudioData', async () => {
     });
   });
 });
+
+// ── the export-time read/restore seam (plans/104 §6 point 0) ───────────────
+//
+// The clock is the writer that seam exists for: an export parses and photographs the
+// very elements it has been composing transform/opacity/filter/z-index onto, and the
+// playhead can be parked anywhere when the user presses Export.
+
+const { withAuthoredDom, authoredStyleOf } = await import('../bridge/sequence-dom.ts');
+
+test('seam: withAuthoredDom stands the clock down, and hands the frame back afterwards', async () => {
+  const { canvas, els } = stage(4000, [{ start: 0, dur: 4000, enter: 'fade', enterMs: 2000, style: 'opacity:0.6;' }]);
+  // A REAL frame queue rather than `syncRaf`: this test seeks twice, and the sync seam
+  // leaves `frame` non-zero after its first callback (it resets it before the assignment
+  // lands), so every later `schedule()` short-circuits.
+  const q = frameQueue();
+  const clock = createSequenceClock({ canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0 });
+  clock.seek(1000);                                   // mid-fade: the box IS composed
+  q.flush();
+  const el = els[0] as HTMLElement;
+  const posed = el.style.opacity;
+  assert.notEqual(posed, '', 'the clock really did compose an opacity');
+  assert.notEqual(posed, '0.6', 'and it is not the authored one');
+
+  const inside = await withAuthoredDom(canvas, async () => {
+    // A rAF tick landing mid-export must not re-pose the stage between two plate
+    // shots — the whole reason the pause is a flag rather than a one-off restore.
+    // (400 rather than a later time on purpose: `recTransition`'s fade reaches full
+    // alpha before its window ends, so a "mid-fade" t too near the end is at rest and
+    // would compose the authored value back — a passing assertion that proved nothing.)
+    clock.seek(400);
+    q.flush();
+    await Promise.resolve();
+    return el.style.opacity;
+  });
+  assert.equal(inside, '0.6', 'the authored opacity, for the whole scope');
+  assert.notEqual(el.style.opacity, '0.6', 'and the playhead is re-asserted on the way out');
+  assert.notEqual(el.style.opacity, posed, 'at t = 400, where the clock got to — not 1000');
+  assert.equal(clock.t(), 400, 'the time it reached while it was held');
+  clock.destroy();
+  canvas.remove();
+});
+
+test('seam: a destroyed clock deregisters — nothing answers authored reads for it', async () => {
+  const { canvas, els } = stage(4000, [{ start: 0, dur: 4000, enter: 'fade', enterMs: 2000, style: 'opacity:0.6;' }]);
+  const clock = createSequenceClock({ canvasEl: canvas, ...syncRaf });
+  clock.seek(1000);
+  const el = els[0] as HTMLElement;
+  assert.equal(authoredStyleOf(el)?.opacity, '0.6', 'the live clock claims the box');
+  clock.destroy();
+  assert.equal(authoredStyleOf(el), null, 'and lets go of it with its last write');
+  // The scope over a canvas nobody is writing to is transparent, down to the style.
+  const before = el.getAttribute('style');
+  await withAuthoredDom(canvas, () => undefined);
+  assert.equal(el.getAttribute('style'), before);
+  canvas.remove();
+});
+
+test('seam: a clean composition is never written to, so the scope has nothing to undo', async () => {
+  // The byte-identity floor: no transition, no depth — the applier composes nothing,
+  // the registry answers null, and an export sees the document it always saw.
+  const { canvas, els } = stage(4000, [{ start: 0, dur: 4000, style: 'opacity:0.6;' }]);
+  const clock = createSequenceClock({ canvasEl: canvas, ...syncRaf });
+  const el = els[0] as HTMLElement;
+  const before = el.getAttribute('style');
+  clock.seek(1000);
+  assert.equal(el.getAttribute('style'), before, 'not one declaration rewritten');
+  assert.equal(authoredStyleOf(el), null, 'nothing composed: nothing claimed');
+  await withAuthoredDom(canvas, () => {
+    assert.equal(el.getAttribute('style'), before);
+  });
+  assert.equal(el.getAttribute('style'), before);
+  clock.destroy();
+  canvas.remove();
+});

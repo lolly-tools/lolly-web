@@ -205,6 +205,14 @@ interface CanvasCfg {
   /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
    *  leaves every preset on its built-in curve, so they sit outside that same check. */
   enterEaseField?: string; exitEaseField?: string;
+  /** OPTIONAL, same terms: the box's KEYFRAME TRACK (plans/104 §5.1). Absent means the
+   *  tool is not keyframable — and, in `timeline-math`, that a split/trim/join has no
+   *  track to rebase. */
+  kfField?: string;
+  /** OPTIONAL, same terms: the box's DEPTH (plans/104 §5.3, px above the surface).
+   *  Not a timing field — named alongside them because a keyframe's `z` channel
+   *  replaces it for its segment, so every writer that carries one carries the other. */
+  zField?: string;
   minSize?: number;
   addKinds?: AddKind[];
   import?: unknown;
@@ -487,6 +495,10 @@ const SVG = {
   // Auto-arrange the connected cards into a tidy hierarchy.
   tidy: '<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v3"/><path d="M6 16v-2a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2"/>',
   dup: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  // "+Keyframe" — the same diamond lib/icons.ts's `keyframe` draws, because it is the
+  // same action wearing the same glyph in its other home (the timeline transport).
+  // plans/104 §8's M2.5 revision: TWO homes, ONE action.
+  keyframe: '<path d="M12 3 21 12 12 21 3 12Z"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
   more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
@@ -925,9 +937,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // above default (so the reads are simple), but a tool that never named them in its canvas
   // block has a hooks.js that cannot draw an arrowhead or an authored dash pattern, and
   // authoring one into its boxes would store a decoration the render silently ignores —
-  // worse, one the compact URL drops on the way out because the field is undeclared. Both
-  // Layout Studio packs declare the set; Sequence Studio (the other `pathField` tool) does
-  // not, so it gets the Line tool and no head controls, which is exactly what it can draw.
+  // worse, one the compact URL drops on the way out because the field is undeclared. Every
+  // `pathField` tool shipping today declares the head set — both Layout Studio packs, and
+  // Sequence Studio since its 1.3.0 (fields headStart/headEnd, canvas headStartField/
+  // headEndField) — so the check is a live gate for a tool that has not opted in yet, not a
+  // description of one that exists.
   const hasHeadCfg = !!(cv.headStartField || cv.headEndField);
   const hasBindCfg = !!(cv.bindStartField || cv.bindEndField);
   const hasRouteCfg = !!cv.routeField;
@@ -1060,7 +1074,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       laneField: cv.laneField, idField: cfg.idField,
       // OPTIONAL, and deliberately outside the ten-field presence check above: a tool
       // that declares no link sub-field is still fully time-capable, it just never
-      // offers "Detach audio" (progressive capability — Layout Studio opts in later).
+      // offers "Detach audio" (progressive capability). Both shipping time-capable
+      // tools declare it today — Sequence Studio, and Layout Studio since its 1.12.0
+      // (`linkOf`) — so this is a live gate for the next tool to opt in, not a
+      // description of one that exists.
       linkField: cv.linkField || '',
       // Also optional, for the same reason: the authored easing curves are additive on
       // top of a time model that was complete without them, so a manifest that declares
@@ -1070,6 +1087,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Same again: a shared group collapses overlays onto one panel lane row
       // (generated captions), and a tool without a group field never groups.
       groupField: cv.groupField || '',
+      // And again: the keyframe track. It is the ONE field a split/trim-in/join
+      // rebases instead of copying (plans/104 §5.6) — a tool that declares none is
+      // simply not keyframable, and every rebase branch in timeline-math is inert.
+      kfField: cv.kfField || '',
+      // And the depth field, for the one thing the time math needs it for: a `z`
+      // keyframe REPLACES it for its segment (§5.2), so writing an honest full pose
+      // means knowing what the unkeyed value is.
+      zField: cv.zField || '',
     } : null;
   // Scene-mode import (`canvas.import.mode: 'scenes'`, e.g. Sequence Studio): an
   // imported design's frames land as timed clips appended to the main sequence
@@ -1434,6 +1459,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         reserve: reserveBottom,
       });
       timelinePanel.setOpen(timelineWantOpen);   // the intent may have flipped mid-load
+      // The contextual bar's "+Keyframe" asks the panel for its enabled state and had to
+      // stand in for it while the chunk was in flight (see kfCtxHtml). Now that the real
+      // rule exists, force ONE rebuild against it — the bar is otherwise only rebuilt
+      // when the selection SET changes, so a selection made before the panel loaded would
+      // keep the provisional answer for as long as it stands.
+      ctxSelKey = null;
+      renderChrome();
       if (timelineWantOpen) maybePromptSequenceFrames(); else hideSeqPrompt();
     } catch (err) {
       console.error('[free-canvas] timeline panel failed to load:', err);
@@ -2836,6 +2868,54 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     });
   }
 
+  /**
+   * "+Keyframe" in its SECOND home (plans/104 §8's M2.5 revision — "TWO homes, one
+   * action"). The first is the timeline transport's left additive cluster; this is the
+   * diamond beside Duplicate / Delete on the selected object itself, because the
+   * selection is what the action acts on and the canvas is where the selection lives.
+   *
+   * Offered only for a tool whose manifest declares a `kf` sub-field (progressive
+   * capability, exactly like the timeline rail button next to it), and DISABLED rather
+   * than hidden when the selection has nothing to pose — a control that appears and
+   * disappears as you click around teaches nothing, and the tooltip is where the reason
+   * goes. Audio is the one exclusion: keyframed gain is plan 101's, not this feature's.
+   *
+   * WHICH boxes count is the PANEL's answer, not a local copy of it (`keyframableIds`
+   * on the handle). "Two homes, one action" has to mean one ENABLEMENT rule too, or the
+   * homes disagree about what the action can do: the panel's rule reads the live canvas
+   * as well as the model — a box carrying an audio asset is a sound whatever its `kind`
+   * says — and a model-only filter here rendered that box ENABLED, then wrote nothing
+   * and said nothing when it was pressed.
+   *
+   * Before the lazy panel chunk has ever loaded there is no rule to ask, so the model
+   * half stands in; `ensureTimeline` invalidates `ctxSelKey` the moment the panel does
+   * exist, which rebuilds this bar against the real answer.
+   */
+  function kfCtxHtml(boxes: Box[], idx: number[]): string {
+    if (!timeCfg?.kfField) return '';
+    const n = timelinePanel
+      ? timelinePanel.keyframableIds(idx.map((i) => idOf(boxes[i], i))).length
+      : idx.filter((i) => String(boxes[i]?.kind ?? '') !== 'audio').length;
+    const tip = n ? t('+Keyframe') : t('Sound has no pose to keyframe');
+    return `<button type="button" class="fc-cbtn" data-cx="kf" aria-disabled="${n ? 'false' : 'true'}"`
+      + ` title="${escape(tip)}" aria-label="${escape(tip)}">${icon(SVG.keyframe)}</button>`;
+  }
+
+  /**
+   * The press. It opens the timeline first — `ensureTimeline(true)` loads the lazy
+   * chunk and resolves only once the panel exists — then calls the panel's ONE writer,
+   * which reads the shared selection itself. Same `withPanel` shape as the context
+   * menu's timing items above, and for the same reason: a broken chunk means no write
+   * rather than a half-written box.
+   *
+   * Opening the panel is not incidental. §8's latch model says the playhead's position
+   * IS the arm, so the surface that shows the playhead has to be up before a keyframe
+   * can honestly be written at it.
+   */
+  function addKeyframeFromCanvas(): void {
+    void ensureTimeline(true).then(() => { timelinePanel?.addKeyframe(); });
+  }
+
   // Every box is ONE unified object (fill + shape + image + text), so the bar
   // always offers every control. Rebuilt only when the selection set changes (so
   // the colour pickers show the selected box); positioned each frame elsewhere.
@@ -2860,6 +2940,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       <button type="button" class="fc-cbtn" data-cx="setimg" title="${escape(t('Set image'))}" aria-label="${escape(t('Set image'))}">${icon(SVG.image)}</button>
       <button type="button" class="fc-cbtn" data-cx="more" title="${escape(t('More — shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
       <span class="fc-sep fc-sep-v"></span>
+      ${kfCtxHtml(boxes, idx)}
       <button type="button" class="fc-cbtn" data-cx="dup" title="${escape(t('Duplicate'))}" aria-label="${escape(t('Duplicate'))}">${icon(SVG.dup)}</button>
       <button type="button" class="fc-cbtn fc-danger" data-cx="del" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">${icon(SVG.trash)}</button>
       ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" title="${escape(t('Select more — tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
@@ -2872,6 +2953,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       else if (cx === 'stroke') openStrokePanel(b);
       else if (cx === 'nodes') { if (selection.size) startPenEdit([...selection][0]!); }
       else if (cx === 'edit') { if (selection.size) startTextEdit([...selection][0]!, { selectAll: true }); }
+      else if (cx === 'kf') { if (b.getAttribute('aria-disabled') !== 'true') addKeyframeFromCanvas(); }
       else if (cx === 'dup') duplicateSelection();
       else if (cx === 'del') deleteSelection();
       else if (cx === 'setimg') pickImage();
@@ -4389,10 +4471,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
 
     // The model may have moved while shaping — re-read and apply by id, one commit.
+    // `kfField` and `zField` ride along with the timing (plans/104, the M1-flagged
+    // gap): a clip on screen 2s..5s stays 2s..5s, and a clip that was FLYING stays
+    // flying — outlining its text must not quietly un-animate it, or drop it back to
+    // the floor. Both are per-box authored values with no cross-box identity (unlike
+    // `linkOf`, which is deliberately absent from this list), and the keyframe
+    // channels are relative offsets, so a glyph box inherits the motion correctly
+    // wherever the outlining put it.
     const timeCarry = timeCfg ? [
       timeCfg.startField, timeCfg.durField, timeCfg.clipInField, timeCfg.speedField,
       timeCfg.enterField, timeCfg.exitField, timeCfg.enterMsField, timeCfg.exitMsField,
       timeCfg.muteField, timeCfg.laneField, timeCfg.enterEaseField, timeCfg.exitEaseField,
+      timeCfg.kfField, timeCfg.zField,
     ].filter((f): f is string => Boolean(f)) : [];
     const shadowCarry = [cfg.shadowColorField, cfg.shadowXField, cfg.shadowYField, cfg.shadowBlurField]
       .filter(Boolean) as string[];
@@ -7479,16 +7569,54 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const d = g.moveDelta || { dx: 0, dy: 0 };
       const sel = g.sel;
       endGesture();
-      // Containment-on-drop: the moved boxes re-bucket into the frame their centre now
-      // lands in. moveBoxes preserves index order, so g.sel indices stay valid.
-      if (Math.abs(d.dx) > 0.5 || Math.abs(d.dy) > 0.5) commit(assignFrames(cascadeFrameChildren(boxes, moveBoxes(boxes, [...sel], d.dx, d.dy, cfg), sel), new Set(sel)));
-      else renderChrome();
+      if (Math.abs(d.dx) > 0.5 || Math.abs(d.dy) > 0.5) {
+        // PLAYHEAD-CONTEXTUAL WRITES (plans/104 §8). The gesture is untouched — the
+        // preview path never knew about this and still does not — and the redirection
+        // happens HERE, at the one commit, which is what keeps a keyframed drag one
+        // undo step exactly like an ordinary one.
+        //
+        // A MIXED selection is split rather than refused: the boxes parked on a
+        // keyframe are posed, the rest are moved, and both halves compose into ONE
+        // array committed once. Refusing the whole gesture because one box in five is
+        // not animated would make the feature feel like a mode, which is the thing
+        // this model exists to avoid.
+        const kfIds = new Set(timelinePanel?.kfPoseIds([...sel].map((i) => idOf(boxes[i], i))) ?? []);
+        const moveIdx = [...sel].filter((i) => !kfIds.has(idOf(boxes[i], i)));
+        let next = moveIdx.length ? moveBoxes(boxes, moveIdx, d.dx, d.dy, cfg) : boxes;
+        if (kfIds.size && timelinePanel) next = timelinePanel.kfPoseWrite(next, [...kfIds], { x: d.dx, y: d.dy });
+        // Containment-on-drop: the moved boxes re-bucket into the frame their centre
+        // now lands in. moveBoxes preserves index order, so g.sel indices stay valid —
+        // and only the boxes that actually MOVED are re-bucketed: a posed box's own
+        // geometry never changed, so it cannot have crossed a frame edge.
+        commit(assignFrames(cascadeFrameChildren(boxes, next, moveIdx), new Set(moveIdx)));
+      } else renderChrome();
       return;
     }
     if (g.type === 'resize' || g.type === 'rotate') {
       const live = g.liveRect || g.startRect;
       const idx = g.index;
+      const rotId = idOf(boxes[idx], idx);
+      // ROTATE is a pose channel (`r`); RESIZE is not, and never will be — w/h are not
+      // keyframable (§5.2), so a resize always writes the box itself. That asymmetry
+      // is stated in the inspector too ("Size is not keyframable"), because it is the
+      // one place this model asks the user to hold two rules at once.
+      // ZERO DELTA IS NOT A POSE. `liveRect` is only ever assigned in pointermove, so a
+      // press-and-release on the rotate handle leaves `live === g.startRect` and `dr`
+      // exactly 0 — and a redirected write of `{ r: 0 }` is not a no-op: `kfActiveChannels`
+      // ADDS `r` to the box's channel set, so on a track that does not already animate
+      // rotation (a URL-authored `t0_x0*t1000_x40`, or one built from the inspector's
+      // z/s/o/b fields) a click on the handle rewrites the wire and spends an undo step on
+      // a gesture that moved nothing. The move branch above is guarded for the same reason
+      // (0.5px there); below the tolerance this falls through to the base write, which is
+      // the identical no-op an unkeyframed box already gets — the two stay in step.
+      const dr = g.type === 'rotate' ? num(live.rot, 0) - num(g.startRect.rot, 0) : 0;
+      const rotKf = g.type === 'rotate' && Math.abs(dr) > 0.01
+        && (timelinePanel?.kfPoseIds([rotId]).length ?? 0) > 0;
       endGesture();
+      if (rotKf && timelinePanel) {
+        commit(timelinePanel.kfPoseWrite(boxes, [rotId], { r: dr }));
+        return;
+      }
       // Containment-on-resize: a resize/rotate can move the box's centre across a frame
       // edge, so re-bucket the single edited box.
       commit(assignFrames(boxes.map((b, i) => (i === idx ? withRect(b, live, cfg) : b)), new Set([idx])));
@@ -8616,7 +8744,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function isMutatingKey(e: KeyboardEvent): boolean {
     const k = e.key;
-    if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') return true;
+    // Alt+←/→ is the seek chord the nudge branch below declines — it edits nothing, so it
+    // must not be answered with "this card is not on screen". Alt+↑/↓ is NOT that chord
+    // and nudges like any other arrow, so it is a mutating press (this used to decline all
+    // four, which made Alt+↑/↓ a key that did nothing anywhere).
+    if (k === 'ArrowLeft' || k === 'ArrowRight') return !e.altKey;
+    if (k === 'ArrowUp' || k === 'ArrowDown') return true;
     if (k === 'Delete' || k === 'Backspace') return true;
     if (k === 'Enter' || k === 'F2') return true;
     if (!(e.metaKey || e.ctrlKey)) return false;
@@ -8747,9 +8880,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       renderChrome();
       return;
     }
-    // Arrow-nudge (Shift = 10px).
+    // Arrow-nudge (Shift = 10px). Alt+←/→ is RESERVED, and only that pair: it is the
+    // timeline panel's keyframe walk (plans/104 §8, and §9.2 records the decline as "the
+    // seek chord"), so the chord means one thing in this editor rather than seeking in
+    // the panel and nudging on the canvas. It is a reservation, not a collision: the panel
+    // binds its keys on its OWN root, this handler is on `window` and bails outright while
+    // focus is inside `.tl-panel`, so the two never race for the same press — the chord is
+    // simply panel-focus-scoped, like `k`/`s`/`e`. Alt+↑/↓ is NOT that chord: declining it
+    // too (as this once did) bought nothing and left a key that did nothing anywhere, so it
+    // nudges like any other arrow.
     const nudges: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-    if (nudges[e.key] && selection.size) {
+    const altSeek = e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
+    if (nudges[e.key] && selection.size && !altSeek) {
       e.preventDefault();
       const step = (e.shiftKey ? 10 : 1);
       const [ux, uy] = nudges[e.key]!;
@@ -8760,7 +8902,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // over the selected indices only — no-op on frameless tools (Layout Studio), so a
       // no-frame nudge stays byte-identical to the old moveBoxes-only path.
       const idx = selIndices(boxes);
-      commit(assignFrames(cascadeFrameChildren(boxes, moveBoxes(boxes, idx, ux * step, uy * step, cfg), idx), new Set(idx)));
+      // …and the SAME playhead-contextual split, for the same reason (plans/104 §8).
+      // The nudge is the keyboard equivalent of the drag: on a diamond, dragging a box
+      // poses the keyframe, so nudging it by the same pixel must pose it too — or the
+      // accessible route silently gets the opposite model-write semantics from the
+      // pointer one. One commit either way, so it stays one undo step.
+      const kfIds = new Set(timelinePanel?.kfPoseIds(idx.map((i) => idOf(boxes[i], i))) ?? []);
+      const moveIdx = idx.filter((i) => !kfIds.has(idOf(boxes[i], i)));
+      let next = moveIdx.length ? moveBoxes(boxes, moveIdx, ux * step, uy * step, cfg) : boxes;
+      if (kfIds.size && timelinePanel) next = timelinePanel.kfPoseWrite(next, [...kfIds], { x: ux * step, y: uy * step });
+      commit(assignFrames(cascadeFrameChildren(boxes, next, moveIdx), new Set(moveIdx)));
     }
   }
 

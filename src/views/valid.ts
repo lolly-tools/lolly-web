@@ -39,14 +39,31 @@ import { takePendingVerify } from '../lib/verify-handoff.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountThemeFab } from '../components/theme-toggle.ts';
 // The pure verdict/scorecard model — no DOM, no CSS import, so it's importable (and
 // tested) standalone. See valid-verdict.ts's header for why this lives apart from the
 // rendering below.
 import {
   isExpiredOnly, isExpectedRow, pipStatusWord, scorecardModel, resolveState, sourceTypeLabel,
-  stateTone, STATE_COPY,
+  stateTone, STATE_COPY, hashFailed,
 } from './valid-verdict.ts';
 import type { Check, SignerIdentity, Signer, Claim, VerifyReport, Watermark, ScorecardItem } from './valid-verdict.ts';
+// The C2PA 2.4 text-binding models — same pure-module rule as valid-verdict.ts.
+// The copy for every carrier state, the snippet cap, and the ONE url gate both
+// the paste path and the external-manifest fetch go through, all testable
+// without a browser (valid-text.test.ts).
+import {
+  TEXT_FORMAT_LABEL, formatLabel, pastedFileName, textSnippet, classifyUrl, classifyPastedUrl,
+  verifyTextNotices, suppressModifiedBadge, aiDisclosureRows,
+} from './valid-text.ts';
+import type { VerifyNotice, NoticeContext } from './valid-text.ts';
+// Deep engine import, NOT the `@lolly/engine` barrel — the beam-pack.ts:125
+// precedent: index.ts does not re-export the c2pa-extract surface, and widening
+// that one shared facade for a single lazy view is what the bundle budget is
+// there to prevent. `sniffFormat` names a PASTED payload's file (pasted.html /
+// pasted.txt); the verification itself always re-sniffs the bytes.
+import { sniffFormat } from '../../../../engine/src/c2pa-extract.ts';
 
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
 // plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
@@ -281,6 +298,18 @@ function noCredentialSignal(report: VerifyReport, watermark?: Watermark, mine?: 
   return null;
 }
 
+// The format chip beside a filename. The three C2PA 2.4 text bindings are said
+// in words — 'code' is "an §A.9 manifest delimiter appeared in this text", and
+// printing the token raw read as a claim about the file's LANGUAGE that the
+// sniffer never made. Every other format keeps its own token, exactly as before,
+// and both the collapsed summary and the full report use this one function so
+// they cannot drift.
+const formatChip = (format: string | null): string => {
+  if (!format) return '';
+  const label = TEXT_FORMAT_LABEL[format] ? t(formatLabel(format)) : format;
+  return ` <span class="valid-fmt">${escape(label)}</span>`;
+};
+
 function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadata, watermark?: Watermark, seal?: SealVerifyResult, mine?: LocalExportMatch): string {
   const { state, identity } = resolveState(report);
   // Attribution chip: OIDC email for a device credential, else the CA signer's
@@ -309,7 +338,7 @@ function summaryInner(fileName: string, report: VerifyReport, meta?: FileMetadat
   return `
     ${lead}
     ${aiDecl ? `<span class="valid-item-ai" title="${escape(aiDecl)}">${svgIcon('aiSpark')}<span>${t('AI')}</span></span>` : ''}
-    <span class="valid-item-name">${escape(fileName)}${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}</span>
+    <span class="valid-item-name">${escape(fileName)}${formatChip(report.format)}</span>
     ${who ? `<span class="valid-item-signer" title="${escape(tRaw('Signed by {who}', { who }))}">${svgIcon('mail')}<span>${escape(who)}</span></span>` : ''}
     ${miniScoreHtml(report, watermark, [...extraPips(origin, makerHint, isVideo, meta), ...(sealPip(seal) ? [sealPip(seal)!] : [])])}
     <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>`;
@@ -453,6 +482,86 @@ function aiFlagHtml(origin: AiOrigin | undefined, makerHint = ''): string {
         <span class="valid-ai-flag-note">${note}</span>
       </span>
       <span class="valid-ai-flag-tag" aria-hidden="true">${t('AI')}</span>
+    </div>`;
+}
+
+// ── C2PA 2.4 text-binding notes ──────────────────────────────────────────────
+// The sentences `state` cannot say. Every one of them is resolved in the pure
+// module (valid-text.ts) — this only paints. Two escaping rules hold here:
+// `t(source, params)` ESCAPES its params and returns markup-ready text, so it is
+// injected as-is (double-escaping would show `&amp;lt;` to the reader); anything
+// that came out of the checked FILE — the engine's `detail`, the credential's own
+// URL — is escape()'d at the point of use and never linkified. A reference
+// inside an untrusted document is a claim about where its credential lives, not
+// somewhere this page invites a click.
+const NOTE_ICON: Record<string, IconName> = {
+  'manifest-elsewhere': 'link',
+  'external-used': 'link',
+  fragment: 'scissors',
+  'multiple-wrappers': 'layers',
+  'multiple-manifests': 'layers',
+  'no-manifest-block': 'info',
+  'empty-block': 'info',
+  'corrupted-wrapper': 'info',
+  'unsupported-reference': 'lock',
+  'malformed-base64': 'info',
+  'unterminated-script': 'scissors',
+  'too-large': 'info',
+  unreadable: 'eye',
+  'wrappers-truncated': 'layers',
+  'exclusions-narrower': 'hash',
+  'exclusions-other': 'alert',
+  reserialized: 'convert',
+};
+function noteHtml(n: VerifyNotice, fileIndex: number): string {
+  return `
+    <div class="valid-note valid-note--${n.tone}" role="note" data-note="${escape(n.id)}">
+      <span class="valid-note-ic" aria-hidden="true">${svgIcon(NOTE_ICON[n.id] ?? 'info')}</span>
+      <div class="valid-note-text">
+        <strong>${t(n.title)}</strong>
+        <span>${t(n.body, n.params)}</span>
+        ${n.url ? `<code class="valid-note-url">${escape(n.url)}</code>` : ''}
+        ${n.detail ? `<span class="valid-note-detail">${escape(n.detail)}</span>` : ''}
+      </div>
+      ${n.fetchPath
+    ? `<button type="button" class="btn valid-note-action" data-fetch-manifest="${fileIndex}" data-manifest-path="${escape(n.fetchPath)}">${t('Fetch and check')}</button>`
+    : ''}
+    </div>`;
+}
+function notesHtml(notes: VerifyNotice[], fileIndex: number): string {
+  return notes.length ? `<div class="valid-notes">${notes.map((n) => noteHtml(n, fileIndex)).join('')}</div>` : '';
+}
+
+// ── §18.28 ai-disclosure ─────────────────────────────────────────────────────
+// CLAIM CONTENT, not a detection: the signer wrote down which model made this.
+// Worded as the declaration it is ("declares…"), attributed to whoever signed —
+// which is the same posture as the selfnote line under the credential facts, and
+// the reason this never borrows the aiFlag's red-alert framing. It rides the
+// shared violet (--vf-ai-*, the GEN-AI pill family) because it IS the same
+// subject, and appears for EVERY format, not only the text bindings.
+function aiDisclosureHtml(report: VerifyReport, identity: SignerIdentity | undefined): string {
+  const rows = aiDisclosureRows(report);
+  if (!rows.length) return '';
+  const body = rows.map((r) => `
+        <li class="valid-aidecl-row">
+          <span class="valid-aidecl-model">${r.model
+    ? tRaw('Declares it was generated by <strong>{model}</strong>', { model: escape(r.model) })
+    : t('Declares AI involvement without naming a model')}</span>
+          ${r.modelType ? `<span class="valid-aidecl-fact">${t('Model type: {type}', { type: r.modelType })}</span>` : ''}
+          ${r.oversight ? `<span class="valid-aidecl-fact">${t('Human oversight, as declared: {level}', { level: r.oversight })}</span>` : ''}
+          ${r.domains ? `<span class="valid-aidecl-fact">${t('Scientific domain: {domains}', { domains: r.domains })}</span>` : ''}
+        </li>`).join('');
+  return `
+    <div class="valid-aidecl" role="note">
+      <span class="valid-aidecl-ic" aria-hidden="true">${svgIcon('aiSpark')}</span>
+      <div class="valid-aidecl-text">
+        <strong>${rows.length > 1 ? t('AI disclosures in this credential') : t('AI disclosure in this credential')}</strong>
+        <ul class="valid-aidecl-list">${body}</ul>
+        <span class="valid-aidecl-note">${identity
+    ? t('A declaration recorded in the credential, made by its CA-verified signer. It says what the signer says was used — it is not a detection.')
+    : t('A declaration recorded in the credential, self-asserted by whoever signed it. It says what the signer says was used — it is not a detection, and its absence from a file proves nothing either way.')}</span>
+      </div>
+      <span class="valid-aidecl-tag" aria-hidden="true">${t('AI')}</span>
     </div>`;
 }
 
@@ -951,8 +1060,13 @@ function checksHtml(report: VerifyReport): string {
 // a smaller one beside the embedded metadata. Images and video render inline;
 // PDF gets the browser's native viewer; formats a browser can't decode (TIFF,
 // MKV) fall back to a labelled placeholder. The object URL is owned by handle().
-type PreviewKind = 'image' | 'video' | 'pdf' | 'none';
-interface Preview { url?: string; kind: PreviewKind; format: string; name: string; }
+// A text payload has no pixels to show, so its "preview" is the text itself —
+// the first ~2 KB, escaped into a <pre>. That is the only faithful preview a
+// pasted HTML document or an armoured source file has, and rendering it as
+// MARKUP (in an iframe, say) would be showing the reader a browser's
+// interpretation of an unverified document rather than its bytes.
+type PreviewKind = 'image' | 'video' | 'pdf' | 'text' | 'none';
+interface Preview { url?: string; kind: PreviewKind; format: string; name: string; snippet?: { body: string; more: boolean }; }
 const PREVIEW_IMG = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif']);
 const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
 // Raster formats a <canvas> can decode to RGBA — shared by the Lolly-Imprint/
@@ -961,12 +1075,19 @@ const PREVIEW_VID = new Set(['mp4', 'm4v', 'mov', 'webm']);
 // SVG is deliberately excluded even though it's in PREVIEW_IMG: watermarks
 // live in RASTER pixels, and rasterising a vector for the sake of a scan
 // would be meaningless (there is no pixel grid to have carried a mark).
+// DELIBERATELY unchanged by the text-payload work: a watermark lives in raster
+// pixels, and there are none in a text file — no format below is text.
 const WM_DECODABLE = new Set(['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp', 'avif']);
+// The three C2PA 2.4 text bindings. Keyed on the SNIFFED format only (never on
+// the file extension): 'code'/'text' mean "a C2PA carrier was found in this
+// text", which no extension can tell us.
+const PREVIEW_TEXT = new Set(['html', 'code', 'text']);
 function previewKind(format: string | null, name: string): PreviewKind {
   const f = (format || name.split('.').pop() || '').toLowerCase();
   if (PREVIEW_IMG.has(f)) return 'image';
   if (PREVIEW_VID.has(f)) return 'video';
   if (f === 'pdf') return 'pdf';
+  if (PREVIEW_TEXT.has(f)) return 'text';
   return 'none';
 }
 function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
@@ -978,13 +1099,25 @@ function mediaPreviewHtml(p: Preview | undefined, size: 'lg' | 'sm'): string {
     return `<figure class="${cls}"><video src="${escape(p.url)}#t=0.1" preload="metadata" playsinline muted${size === 'lg' ? ' controls' : ''}></video></figure>`;
   if (p.kind === 'pdf' && p.url && size === 'lg')
     return `<figure class="${cls}"><embed src="${escape(p.url)}#toolbar=0&view=FitH" type="application/pdf"></figure>`;
+  // SECURITY: the payload reaches the page as ESCAPED text inside a <pre> and
+  // nowhere else — never parsed, never rendered as markup, never given a URL. A
+  // pasted document written to look like a credential cannot execute here.
+  if (p.kind === 'text' && p.snippet && size === 'lg')
+    return `<figure class="${cls}"><pre class="valid-preview-text">${escape(p.snippet.body)}</pre>${p.snippet.more
+      ? `<figcaption>${t('Only the first {n} characters are shown here.', { n: p.snippet.body.length })}</figcaption>`
+      : ''}</figure>`;
   // Not inline-previewable at this size — a quiet labelled placeholder (large only).
   if (size === 'lg')
     return `<figure class="${cls} is-placeholder"><span class="valid-preview-ic" aria-hidden="true">${svgIcon('image')}</span><figcaption>${t('No inline preview for {format}', { format: (p.format || t('this format')).toUpperCase() })}</figcaption></figure>`;
   return '';
 }
 
-function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch, seal?: SealVerifyResult): string {
+// `notes` is the resolved text-binding/paste model (valid-text.ts), built by the
+// caller because it needs the page origin, the address the file was read from
+// and whether it arrived through the clipboard — none of which this renderer
+// should know about. Empty for every ordinary binary drop, which is why the
+// whole feature is invisible on those paths.
+function renderReportBody(fileName: string, report: VerifyReport, meta: FileMetadata | undefined, preview: Preview | undefined, fileIndex: number, watermark?: Watermark, mine?: LocalExportMatch, seal?: SealVerifyResult, notes: VerifyNotice[] = []): string {
   const { state, sub, identity } = resolveState(report);
   const claim: Partial<Claim> = report.claim ?? {};
   const signer: Partial<Signer> = report.signer ?? {};
@@ -1047,10 +1180,11 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           ${fact(t('Algorithm'), signer.alg, 'cpu')}
           ${fact(t('Certificate valid'), signer.notBefore ? `${fmtDate(signer.notBefore)} → ${fmtDate(signer.notAfter)}` : null, 'calendar')}
           ${fact(t('Manifest'), claim.manifestLabel, 'document')}
+          ${fact(t('C2PA version'), report.specVersion ?? null, 'checklist')}
         </dl>` : '';
   const summaryBlock = `
       <div class="valid-summary valid-panel">
-        <p class="valid-file"><strong>${escape(fileName)}</strong>${report.format ? ` <span class="valid-fmt">${escape(report.format)}</span>` : ''}${report.reason ? ` — ${escape(report.reason)}` : ''}</p>
+        <p class="valid-file"><strong>${escape(fileName)}</strong>${formatChip(report.format)}${report.reason ? ` — ${escape(report.reason)}` : ''}</p>
         ${selfnoteBlock}
         ${factsBlock}
       </div>`;
@@ -1073,11 +1207,25 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
     : t('Signed with an on-device key, not a CA identity.')}</p>` : '';
   // Mirrors lollyValidationsHtml's badge treatment for the broken-credential
   // verdict — three plain facts instead of one sentence to parse.
-  const invalidBadgesHtml = state === STATE_COPY.invalid ? `
+  // The third badge is an INFERENCE, not a fact — and when a note below already
+  // names the known innocent cause of this mismatch (a carrier re-serialized on
+  // its way through the clipboard), stamping "Modified after signing" over the
+  // top of it would be the page contradicting itself in favour of the accusation.
+  // The two factual badges stay: a credential is here, and these bytes are not
+  // the ones it hashed. Same rule as the expired-cert lesson.
+  // ...and the OTHER two badges are inferences too, from the one row that can
+  // support them: a failed hard binding. `resolveState` now routes the states
+  // where no hash mismatch was established (a carrier problem, an exclusion
+  // carve-out, an external credential) to their own heroes, but the gate is
+  // re-asserted here on the evidence itself rather than on the state identity —
+  // "Bytes no longer match" must never be printed over a report whose own check
+  // list says the data hash is valid.
+  const knownCauseMismatch = suppressModifiedBadge(notes);
+  const invalidBadgesHtml = state === STATE_COPY.invalid && hashFailed(report) ? `
           <div class="valid-hero-vbadges">
             <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('seal')}</span><span>${t('Content Credentials detected')}</span></div>
             <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('hash')}</span><span>${t('Bytes no longer match')}</span></div>
-            <div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('pen')}</span><span>${t('Modified after signing')}</span></div>
+            ${knownCauseMismatch ? '' : `<div class="valid-vbadge is-fail"><span class="valid-vbadge-ic" aria-hidden="true">${svgIcon('pen')}</span><span>${t('Modified after signing')}</span></div>`}
           </div>` : '';
   // The middle-ground verdict: mixed tones in one badge group, unlike the pure
   // pass (lolly) or pure fail (invalid) groups above — two green facts about
@@ -1121,13 +1269,18 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           </div>
           ${state === STATE_COPY.lolly ? lollyValidationsHtml
     : state === STATE_COPY.likelyLolly ? likelyLollyBadgesHtml
-    : state === STATE_COPY.invalid ? invalidBadgesHtml
+    // Keyed on the badge markup existing, not on the state: an invalid report
+    // with no hash failure produces none, and falls back to the prose sub that
+    // resolveState reworded for exactly that case.
+    : invalidBadgesHtml ? invalidBadgesHtml
       : `<p>${sub}</p>${identityLine}`}
         </div>
         ${report.found || watermark?.present || pips.length ? scorecardHtml(report, watermark, pips) : ''}
       </div>
       ${deepScanBlock(fileIndex, report.format, fileName)}
       ${aiFlagHtml(aiOrigin, makerHint)}
+      ${aiDisclosureHtml(report, identity)}
+      ${notesHtml(notes, fileIndex)}
       ${mine ? mineNote(mine) : ''}
       ${panelsBlock}
       ${claimPanelHtml(fileIndex, report.format, fileName, report.found)}
@@ -1319,7 +1472,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   viewEl.innerHTML = `
     ${backPillHtml()}
-    <div class="gallery-topright">${langFabHtml()}</div>
+    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
     <div class="platform-layout valid-layout">
       <header class="plat-header">
         <h1 class="plat-title">${t('Verify')}</h1>
@@ -1329,10 +1482,24 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       </header>
 
       <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
-        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus" hidden>
+        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,.html,.htm,.js,.css,.md,.txt,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus,text/*" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
         <strong>${t('Drop files here')}</strong>
-        <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm · mp3 · wav — check one or several at once')}</span>
+        <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm · mp3 · wav · html · txt — check one or several at once')}</span>
+        <span>${t('or paste source text — a C2PA credential can travel inside an HTML document or plain text')}</span>
+      </div>
+
+      <div class="valid-paste">
+        <button type="button" class="btn valid-paste-open" data-paste-open aria-expanded="false" aria-controls="valid-paste-panel">${t('Paste text')}</button>
+        <div class="valid-paste-panel" id="valid-paste-panel" data-paste-panel hidden>
+          <label class="valid-paste-label" for="valid-paste-text">${t('Paste the text, markup or source you want to check')}</label>
+          <textarea id="valid-paste-text" class="valid-paste-text" data-paste-text rows="8" spellcheck="false" autocomplete="off"></textarea>
+          <div class="valid-paste-actions">
+            <button type="button" class="btn valid-paste-verify" data-paste-verify>${t('Verify this text')}</button>
+            <button type="button" class="btn valid-paste-cancel" data-paste-cancel>${t('Cancel')}</button>
+          </div>
+          <p class="valid-paste-foot">${t('The text is checked on this device, exactly as pasted. Invisible characters matter here — a C2PA text credential is made of them — so paste rather than retype.')}</p>
+        </div>
       </div>
 
       <div class="valid-report" data-report hidden></div>
@@ -1340,6 +1507,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   `;
   armViewEnter(viewEl, '.tools-home, .plat-header, .valid-drop');
   mountBackPill(viewEl);
+  mountHomeFab(viewEl);
+  mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
@@ -1351,13 +1520,17 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // (EXIF/XMP/… — PDF via the shell's pdf bridge, everything else on the engine),
   // or an error message. Kept narrow so both the single- and multi-file paths
   // share the exact engine call. Bytes are read once and reused for both reads.
-  async function verifyFile(file: File): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark; mine?: LocalExportMatch; seal?: SealVerifyResult }> {
+  // `externalManifest` is only ever set by fetchExternalManifest below — the
+  // credential this page fetched, at the user's explicit request, from a
+  // same-origin address the document itself named (engine 1.116.0). Every other
+  // caller passes nothing and gets byte-identical behaviour.
+  async function verifyFile(file: File, opts: { externalManifest?: Uint8Array } = {}): Promise<{ report?: VerifyReport; error?: string; meta?: FileMetadata; watermark?: Watermark; mine?: LocalExportMatch; seal?: SealVerifyResult; snippet?: { body: string; more: boolean } }> {
     try {
       if (file.size > MAX_VERIFY_BYTES) {
         return { error: t('File is too large to verify here (over {n} MB).', { n: Math.round(MAX_VERIFY_BYTES / 1024 / 1024) }) };
       }
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const report = await verifyC2pa(bytes, VERIFY_OPTS);
+      const report = await verifyC2pa(bytes, opts.externalManifest ? { ...VERIFY_OPTS, externalManifest: opts.externalManifest } : VERIFY_OPTS);
       // SEAL runs on the same bytes, fully on-device and with NO key resolver:
       // the web shell deliberately passes none, so verification here makes zero
       // network requests of any kind. A record carrying its key inline (`pk=`)
@@ -1386,7 +1559,21 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         }
       }
       const mine = await localExportByHash(bytes);
-      return { report, meta, watermark, mine, seal };
+      // The text bindings' stand-in for the image preview. Decoded from the
+      // bytes we already hold (no second read), non-fatally, and only for the
+      // three formats the sniffer identified AS text — an extension never
+      // decides this, and a binary file is never decoded as if it were text.
+      let snippet: { body: string; more: boolean } | undefined;
+      if (previewKind(report.format, file.name) === 'text') {
+        // Two caps, and the panel must not confuse them: only the first 64 KB is
+        // decoded at all (a 200 MB text file must not become a 200 MB string for
+        // a preview), and only the first ~2 KB of THAT is shown. So the caption
+        // counts what is on screen rather than claiming a total it cannot know.
+        const head = bytes.subarray(0, 64 * 1024);
+        const cut = textSnippet(new TextDecoder('utf-8', { fatal: false }).decode(head));
+        snippet = { body: cut.body, more: cut.omitted > 0 || bytes.length > head.length };
+      }
+      return { report, meta, watermark, mine, seal, snippet };
     } catch (err) {
       return { error: (err as Error)?.message || String(err) };
     }
@@ -1942,12 +2129,15 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // Object URLs minted for the media previews. Revoked wholesale at the start of
   // the next check so a fresh drop never leaks the previous batch's blobs.
   let previewUrls: string[] = [];
-  function makePreview(file: File, report?: VerifyReport): Preview {
+  function makePreview(file: File, report?: VerifyReport, snippet?: { body: string; more: boolean }): Preview {
     const kind = previewKind(report?.format ?? null, file.name);
     const format = report?.format || (file.name.split('.').pop() || '');
-    const url = kind === 'none' ? undefined : URL.createObjectURL(file);
+    // A text preview is the decoded snippet, never a blob URL: nothing loads the
+    // file, so there is nothing to revoke and no way for a pasted document to be
+    // fetched back as a resource.
+    const url = kind === 'none' || kind === 'text' ? undefined : URL.createObjectURL(file);
     if (url) previewUrls.push(url);
-    return { url, kind, format, name: file.name };
+    return { url, kind, format, name: file.name, ...(snippet ? { snippet } : {}) };
   }
 
   // The File objects behind the current batch of reports, indexed exactly like the
@@ -1958,6 +2148,25 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // Each report's scalar-input digest, same indexing — what a [data-recreate]
   // click (the "Recreate with these settings" CTA) seeds the tool link from.
   let activeDigests: Array<Record<string, string> | undefined> = [];
+  // How the CURRENT batch arrived, which two of the text-binding sentences
+  // depend on: `activeSourceUrl` is the address the file was read from (the
+  // `?src=`/dropped-link paths — a relative credential reference only means
+  // something next to it), and `activePasted` marks the clipboard path, where a
+  // hash mismatch on markup has a known innocent cause. Both are per-batch and
+  // reset by handle(), so they can never leak onto a later drop.
+  let activeSourceUrl: string | null = null;
+  let activePasted = false;
+  // Set by the callers immediately before they hand their files to handle().
+  let pendingSourceUrl: string | null = null;
+  let pendingPasted = false;
+
+  /** The text-binding/paste notes for one report — see valid-text.ts. */
+  const notesFor = (report: VerifyReport, i: number): VerifyNotice[] => verifyTextNotices(report, {
+    origin: location.origin,
+    base: activeSourceUrl,
+    pasted: activePasted,
+    refetchable: !!activeFiles[i],
+  } satisfies NoticeContext);
 
   async function handle(files: FileList | File[] | null | undefined): Promise<void> {
     const list = files ? [...files] : [];
@@ -1966,6 +2175,12 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     previewUrls = [];
     activeFiles = list;
     activeDigests = [];
+    // A source address only describes a single fetched file; a multi-file batch
+    // has none, and the pending markers are one-shot either way.
+    activeSourceUrl = list.length === 1 ? pendingSourceUrl : null;
+    activePasted = list.length === 1 && pendingPasted;
+    pendingSourceUrl = null;
+    pendingPasted = false;
     scannedIndexes.clear(); // fresh batch — allow each file to be scanned again
     reportEl.hidden = false;
 
@@ -1973,10 +2188,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     if (list.length === 1) {
       const file = list[0]!;
       reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: file.name })}</p></div>`;
-      const { report, error, meta, watermark, mine, seal } = await verifyFile(file);
+      const { report, error, meta, watermark, mine, seal, snippet } = await verifyFile(file);
       activeDigests[0] = report?.environment?.inputs;
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
-        ? renderReportBody(file.name, report, meta, makePreview(file, report), 0, watermark, mine, seal)
+        ? renderReportBody(file.name, report, meta, makePreview(file, report, snippet), 0, watermark, mine, seal, notesFor(report, 0))
         : `<p class="valid-busy">${t('Could not check this file: {message}', { message: error! })}</p>`;
       const panels = reportEl.querySelector<HTMLElement>('.valid-panels');
       if (panels) layoutMasonry(panels);
@@ -2035,7 +2250,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     let allValid = true, anyAi = false, anyLolly = false;
     for (let i = 0; i < list.length; i++) {
       const file = list[i]!, card = cards[i]!;
-      const { report, error, meta, watermark, mine, seal } = await verifyFile(file);
+      const { report, error, meta, watermark, mine, seal, snippet } = await verifyFile(file);
       activeDigests[i] = report?.environment?.inputs;
       if (report) {
         // A no-credential file with a positive signal (made here / imprint) gets
@@ -2043,7 +2258,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         const cardTone = noCredentialSignal(report, watermark, mine) ? 'good' : stateTone(report);
         card.className = `valid-item is-${cardTone}`;
         card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark, seal, mine)}</summary>` +
-          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report), i, watermark, mine, seal)}</div>`;
+          `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report, snippet), i, watermark, mine, seal, notesFor(report, i))}</div>`;
       } else {
         card.className = 'valid-item is-bad';
         card.innerHTML = errorSummary(file.name, error!);
@@ -2244,9 +2459,23 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     if (!file) return;
     const res = await verifyFile(file);
     const banner = `<div class="valid-claim-done" role="status"><span class="valid-claim-done-ic" aria-hidden="true">✓</span> ${t('Your credentials were added and the file downloaded. Its credential chain now includes your claim.')}</div>`;
+    repaintCard(i, file, res, banner, `${banner}<p class="valid-busy">${t('Signed and downloaded, but the re-check could not run: {message}', { message: res.error ?? '' })}</p>`);
+  }
+
+  /** Swap one file's rendered report for a freshly-verified one, led by a banner.
+   *  Extracted unchanged from rerenderClaimed so the external-manifest re-check
+   *  (fetchExternalManifest) lands its result exactly the same way — single-file
+   *  and batch layouts, tone, masonry and claim prefill all in one place. */
+  function repaintCard(
+    i: number,
+    file: File,
+    res: Awaited<ReturnType<typeof verifyFile>>,
+    banner: string,
+    failedHtml: string,
+  ): void {
     const bodyHtml = res.report
-      ? banner + renderReportBody(file.name, res.report, res.meta, makePreview(file, res.report), i, res.watermark, res.mine, res.seal)
-      : `${banner}<p class="valid-busy">${t('Signed and downloaded, but the re-check could not run: {message}', { message: res.error ?? '' })}</p>`;
+      ? banner + renderReportBody(file.name, res.report, res.meta, makePreview(file, res.report, res.snippet), i, res.watermark, res.mine, res.seal, notesFor(res.report, i))
+      : failedHtml;
     if (activeFiles.length === 1) {
       const listWrap = reportEl.querySelector<HTMLElement>('.valid-reports-list');
       if (listWrap) listWrap.innerHTML = bodyHtml;
@@ -2262,6 +2491,44 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
     reportEl.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
     void prefillClaim();
+  }
+
+  // ── "Fetch and check" — the §A.7.1.2 / §A.9.3 external credential ───────────
+  //
+  // A text asset may REFERENCE its Content Credential instead of carrying it.
+  // The engine reports that honestly and never fetches (plans/105 M1); this is
+  // the only place the reference is ever resolved, and every condition below has
+  // to hold: the user clicked, the address came from the file's OWN reference
+  // (re-classified here, never trusted from the DOM attribute alone), and it
+  // resolves to a same-origin path under the exact `?src=` policy. A
+  // cross-origin reference is refused in words — reaching out to it would hand a
+  // third party the fact that you are checking this file, which is the promise
+  // this page is built on.
+  async function fetchExternalManifest(btn: HTMLButtonElement): Promise<void> {
+    const i = Number(btn.dataset.fetchManifest);
+    const file = activeFiles[i];
+    // Re-classified from the attribute rather than trusted as a path: this
+    // button's address originated inside an unverified document, and one gate
+    // that everything passes through is worth more than a value that was safe
+    // when it was written.
+    const gate = classifyUrl(btn.dataset.manifestPath ?? '', location.origin);
+    if (!file || gate.kind !== 'same-origin') return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t('Fetching…');
+    try {
+      const res = await fetch(gate.path);
+      if (!res.ok) throw new Error(String(res.status));
+      const manifest = new Uint8Array(await res.arrayBuffer());
+      if (!manifest.length) throw new Error('empty');
+      const out = await verifyFile(file, { externalManifest: manifest });
+      const banner = `<div class="valid-claim-done" role="status"><span class="valid-claim-done-ic" aria-hidden="true">✓</span> ${t('Fetched the credential from {url} and checked this file against it.', { url: gate.path })}</div>`;
+      repaintCard(i, file, out, banner, `${banner}<p class="valid-busy">${t('Could not check this file: {message}', { message: out.error ?? '' })}</p>`);
+    } catch (err) {
+      btn.textContent = t('Couldn’t fetch that credential');
+      host.log('warn', 'valid: external manifest fetch failed', { error: String((err as Error)?.message || err) });
+      setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 2000);
+    }
   }
 
   // Sign a fresh Content Credential into one file, PRESERVING any existing chain as
@@ -2337,6 +2604,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     if (view) void viewPayload(view);
     const dl = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-payload-download]');
     if (dl) void downloadPayload(dl);
+    const fetchManifest = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-fetch-manifest]');
+    if (fetchManifest) void fetchExternalManifest(fetchManifest);
     // Script panel: expand the clamped script / copy it. Both act on the pre
     // in the SAME panel — a batch report renders one panel per file.
     const sx = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-script-expand]');
@@ -2373,6 +2642,117 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     void handleDroppedLink(e.dataTransfer);
   });
 
+  // ── The paste path ─────────────────────────────────────────────────────────
+  //
+  // C2PA 2.4 puts credentials in text — an HTML document (§A.7), an armour block
+  // in source (§A.9), invisible variation selectors in prose (§A.8) — and text
+  // arrives by CLIPBOARD far more often than as a file. A page that could only
+  // take files would tell someone holding a signed paragraph to invent a file
+  // for it, and would lose the §A.8 wrapper on the way if they retyped it.
+  //
+  // Bound at the document (the upscale-dialog precedent) and removed on view
+  // teardown. Two rules: FILES win — pasting a screenshot has always been free
+  // here and stays that way — and a paste aimed at a real text field is never
+  // taken, so the claim form and the fallback textarea below type normally. The
+  // default is only prevented when the payload is actually adopted.
+  const isTypingTarget = (el: EventTarget | null): boolean =>
+    !!(el instanceof Element) && !!el.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+
+  const pastedFiles = (dt: DataTransfer | null): File[] => {
+    const out: File[] = [];
+    for (const item of dt?.items ?? []) {
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) out.push(f);
+      }
+    }
+    return out.length ? out : [...(dt?.files ?? [])];
+  };
+
+  /**
+   * Verify a text payload from the clipboard (or a dragged selection).
+   *
+   * Pasted text that IS an address is followed instead of checked — but only
+   * under the same gate `?src=` uses, and a cross-origin one is refused in
+   * words. Everything else becomes a File of the EXACT bytes pasted (never
+   * trimmed, never normalised: §A.8's wrapper and §15.12.1.3's NFC hash both
+   * live in characters an eager cleanup would eat).
+   */
+  async function handlePastedText(text: string): Promise<void> {
+    const gate = classifyPastedUrl(text, location.origin);
+    if (gate?.kind === 'same-origin') {
+      await verifyFromUrl(gate.path, () => tRaw('Could not read {src} from this site.', { src: gate.path }));
+      return;
+    }
+    if (gate?.kind === 'elsewhere') {
+      sayVerifyProblem(t('That address is on another site, and nothing is fetched on your behalf here — save the file and drop it on this page instead.'));
+      return;
+    }
+    if (gate?.kind === 'unresolvable') {
+      sayVerifyProblem(t('That looks like an address rather than something to check, and it is not one this page will follow. Save the file and drop it here instead.'));
+      return;
+    }
+    // Cheap pre-check before the encode: characters can only outnumber bytes,
+    // so anything past the limit here is past it in bytes too (verifyFile makes
+    // the exact check on the encoded File).
+    if (text.length > MAX_VERIFY_BYTES) {
+      sayVerifyProblem(t('That text is too large to check here (over {n} MB).', { n: Math.round(MAX_VERIFY_BYTES / 1024 / 1024) }));
+      return;
+    }
+    const bytes = new TextEncoder().encode(text);
+    pendingPasted = true;
+    await handle([new File([bytes as BlobPart], pastedFileName(sniffFormat(bytes)), { type: 'text/plain' })]);
+  }
+
+  const onPaste = (e: ClipboardEvent): void => {
+    if (isTypingTarget(e.target)) return;
+    const files = pastedFiles(e.clipboardData);
+    if (files.length) { e.preventDefault(); void handle(files); return; }
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    if (text.trim()) { e.preventDefault(); void handlePastedText(text); }
+  };
+  document.addEventListener('paste', onPaste);
+  // `view._cleanup` is the shell's teardown hook (main.ts runs it on every route
+  // change). CHAINED, not replaced: another mount may already own one, and a
+  // document-level listener that outlived its view would hijack pastes on every
+  // page after this one.
+  {
+    const el = viewEl as HTMLElement & { _cleanup?: () => void };
+    const prev = el._cleanup;
+    el._cleanup = () => { prev?.(); document.removeEventListener('paste', onPaste); };
+  }
+
+  // The visible fallback. The clipboard is NEVER read programmatically here —
+  // navigator.clipboard.readText() would raise a permission prompt for a page
+  // that has not been asked to read anything, and on the platforms where the
+  // paste event is awkward (an iPad without a keyboard, a locked-down browser)
+  // the honest answer is a plain textarea the person pastes into themselves.
+  const pasteOpen = viewEl.querySelector<HTMLButtonElement>('[data-paste-open]')!;
+  const pastePanel = viewEl.querySelector<HTMLElement>('[data-paste-panel]')!;
+  const pasteText = viewEl.querySelector<HTMLTextAreaElement>('[data-paste-text]')!;
+  const setPasteOpen = (open: boolean, restoreFocus = false): void => {
+    pastePanel.hidden = !open;
+    pasteOpen.setAttribute('aria-expanded', String(open));
+    if (open) pasteText.focus();
+    else if (restoreFocus) pasteOpen.focus();
+  };
+  pasteOpen.addEventListener('click', () => setPasteOpen(pastePanel.hidden));
+  viewEl.querySelector<HTMLButtonElement>('[data-paste-cancel]')!
+    .addEventListener('click', () => setPasteOpen(false, true));
+  viewEl.querySelector<HTMLButtonElement>('[data-paste-verify]')!.addEventListener('click', () => {
+    const text = pasteText.value;
+    if (!text.trim()) { pasteText.focus(); return; }
+    setPasteOpen(false);
+    void handlePastedText(text);
+  });
+  // House rule: Esc closes and hands focus back to what opened it. Scoped to the
+  // panel, so it can't swallow an Esc meant for anything else on the page.
+  pastePanel.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    setPasteOpen(false, true);
+  });
+
   // A cross-page image drag carries text/uri-list (and text/html with the <img>),
   // never the pixels. Fetching the URL is the only way to get bytes — it happens
   // solely on this explicit user drop, same-origin drops (our own docs images)
@@ -2393,6 +2773,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       const res = await fetch(url);
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();
+      // The one path where the checked file HAS an address. A credential
+      // reference inside it may be relative, and relative to this is the only
+      // thing it can be relative to — see NoticeContext.base.
+      pendingSourceUrl = url;
       await handle([new File([blob], name, { type: blob.type })]);
     } catch {
       sayVerifyProblem(onFail(new URL(url, location.origin).hostname));
@@ -2411,6 +2795,13 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       if (/^https?:\/\//i.test(text)) url = text;
     }
     if (!/^https?:\/\//i.test(url)) {
+      // No file, no link — but text/plain with something in it IS the payload:
+      // dragging a selection out of an editor is the same gesture as pasting it,
+      // and a C2PA text credential travels in exactly that kind of selection.
+      // Read raw (never trimmed): the invisible characters §A.8 hides a manifest
+      // in are part of the bytes, and the hash is over all of them.
+      const dropped = dt?.getData('text/plain') ?? '';
+      if (dropped.trim()) { await handlePastedText(dropped); return; }
       say(t('That drop carried no file. Drag a file from your computer, or drop an image from a web page.'));
       return;
     }

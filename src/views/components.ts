@@ -78,6 +78,8 @@ import { mountZoomHud } from '../components/zoom-hud.ts';
 import { viewTopbarHtml } from '../components/view-topbar.ts';
 import { mountBodyPopover, type BodyPopoverHandle } from '../components/body-popover.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountThemeFab } from '../components/theme-toggle.ts';
 
 // A demo palette for the colour specimens (not the live brand).
 const DEMO: PaletteEntry[] = [
@@ -263,7 +265,7 @@ function neutralizeMarkup(html: string): string {
   return html.replace(/<dialog\b/gi, '<div data-cl-dialog').replace(/<\/dialog>/gi, '</div>');
 }
 
-export async function mountComponents(viewEl: HTMLElement, _host: HostV1): Promise<void> {
+export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promise<void> {
   document.title = 'Components — Lolly';
   viewEl.classList.add('cl-view', 'components-view');
 
@@ -275,6 +277,7 @@ export async function mountComponents(viewEl: HTMLElement, _host: HostV1): Promi
 
   viewEl.innerHTML = `
     ${backPillHtml({ class: 'home-full cl-back' })}
+    <div class="gallery-topright">${homeFabHtml()}</div>
     <header class="cl-head">
       <h1 class="cl-title">${escape(t('Component library'))}</h1>
       <p class="cl-sub">${escape(t('Live samples of the shell’s components — common primitives first, then by view. Full inventory and unification notes: plans/76-component-audit.md.'))}</p>
@@ -335,6 +338,11 @@ export async function mountComponents(viewEl: HTMLElement, _host: HostV1): Promi
   // returns to the view you arrived from (and falls back to the gallery on a cold
   // deep link), so this view no longer decides that for itself.
   mountBackPill(viewEl);
+  // The always-home escape (a dev/design surface is deep-linkable, so it needs a
+  // way to the main app) plus the theme cycle — genuinely useful here for eyeing
+  // a specimen in light, dark and brand.
+  mountHomeFab(viewEl);
+  mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
 
   armViewEnter(viewEl, '.tools-home, .cl-head, .cl-recs, .cl-section');
 }

@@ -61,6 +61,18 @@ export function createThemeToggle(
 }
 
 /**
+ * Append the theme-cycle FAB (skinned `.theme-fab`, topbar.css) to a view's
+ * fixed top-right cluster — the shared way the nav-less views (#/start,
+ * Dashboard, Verify, Convert, Spreadsheet, PDF, Script) expose light/dark/brand
+ * beside the home + language FABs, wherever there's real estate for it. A no-op
+ * when the cluster isn't present, so a view that skips the row (or a loading
+ * branch that has no cluster yet) simply doesn't get one.
+ */
+export function mountThemeFab(cluster: Element | null, host: ThemeToggleHost): void {
+  if (cluster) cluster.appendChild(createThemeToggle(host, { className: 'theme-fab' }));
+}
+
+/**
  * The theme picker as a segmented control (Light / Dark / Brand) for a view-settings
  * popover — matching the `.view-seg` controls those popovers already carry (the gallery's
  * "Featured view", the catalog's "Favourites"). Returned as an HTML string so it drops

@@ -19,6 +19,10 @@ import { mountDataGrid, type DataGridHandle } from '../components/data-grid.ts';
 import { sourceToGrid, gridToTarget } from './convert.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
+import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountThemeFab } from '../components/theme-toggle.ts';
 import '../styles/parts/platform.css';
 import '../styles/parts/data-view.css';
 
@@ -36,6 +40,8 @@ const DOWNLOAD_TARGETS = [
 export async function mountDataView(viewEl: HTMLElement, host: HostV1, _params = ''): Promise<void> {
   document.title = 'Spreadsheet — Lolly';
   viewEl.innerHTML = `
+    ${backPillHtml()}
+    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
     <div class="platform-layout data-view">
       <header class="plat-header">
         <h1 class="plat-title">${t('Spreadsheet')}</h1>
@@ -56,6 +62,14 @@ export async function mountDataView(viewEl: HTMLElement, host: HostV1, _params =
         </div>
       </div>
     </div>`;
+
+  // Reached as a tile OR a deep link — carry the full escape chrome (back pill +
+  // always-home) plus the language + theme FABs, so nobody sent straight to the
+  // spreadsheet is stranded with no way out.
+  mountBackPill(viewEl);
+  mountHomeFab(viewEl);
+  mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+  attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
   const fileInput = viewEl.querySelector<HTMLInputElement>('[data-file]')!;

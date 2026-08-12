@@ -66,6 +66,10 @@ const PATHS = {
   // the aspect-warning surface — an amber "check this" mark, not an error stop.
   alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   dashboard: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  // Lucide "house" — the /start studio's always-available escape to the front
+  // door (Tools). A history-independent Home, so a studio reached mid-session is
+  // never a one-way trip regardless of what sits in the back stack.
+  home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   // plain outline (no check) — the /valid hero fallback + drop-zone glyph
   shield: SHIELD_OUTLINE,
   // merged: footer-nav.ts NAV_ICONS.shield ("Verify" nav link) === profile.ts VERIFY_SHIELD, byte-identical
@@ -236,6 +240,27 @@ const PATHS = {
   // Lucide pause / scissors.
   pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
   scissors: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>',
+  /**
+   * The clip inspector's **Animate** group (enter/exit kind + duration + curve).
+   * Two axes and an ease curve rising between them — the same picture
+   * components/easing-editor.ts plots, so the group header and the control it
+   * opens onto read as one thing. Nothing else in the registry says "a value
+   * moving over time": `sparkle`/`aiSpark` mean generated, `zap` means fast,
+   * `convert` means round-trip.
+   */
+  animate: '<path d="M4 4v16h16"/><path d="M7 17c6.5 0 3.5-10 10-10"/>',
+  /**
+   * The clip inspector's **Keyframes** group, and the diamond vocabulary the
+   * timeline strip uses for a pose (plans/104 §8). A keyframe has been a diamond
+   * since the first NLE; no registry glyph came close.
+   */
+  keyframe: '<path d="M12 3 21 12 12 21 3 12Z"/>',
+  /**
+   * Lucide `unlink` — break the A/V link between a picture and the sound detached
+   * from it. The paired direction re-uses `link`, which the bar's link chip
+   * already wears, so the two directions of one relationship look related.
+   */
+  unlink: '<path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.71 1.72"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><path d="M8 2v3"/><path d="M2 8h3"/><path d="M16 19v3"/><path d="M19 16h3"/>',
 
   // ---- Atmosphere layers (the player's background-noise beds, music-player.ts) ----
   // Lucide cloud-rain / waves / wind / flame; `noise` is Lucide audio-waveform, the

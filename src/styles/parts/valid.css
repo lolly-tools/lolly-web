@@ -246,6 +246,8 @@
 /* Shared domed seal for the "damage / absent / uncertain" hues. */
 .valid-result.is-invalid .valid-hero-icon,
 .valid-result.is-expired .valid-hero-icon,
+.valid-result.is-carrier .valid-hero-icon,
+.valid-result.is-uncovered .valid-hero-icon,
 .valid-result.is-likelylolly .valid-hero-icon {
   color: hsl(0 0% 100%);
 }
@@ -255,9 +257,12 @@
     inset 0 2px 3px hsl(0 0% 100% / 0.45), inset 0 -8px 14px hsl(11 80% 22% / 0.55),
     0 12px 28px -10px hsl(var(--vf-fail) / 0.6), 0 3px 10px -4px hsl(0 0% 0% / 0.4);
 }
-/* Expired and "likely made with Lolly" share the same amber-warn medallion —
-   both are honest middle grounds, not a pass or a broken credential. */
+/* Expired, "likely made with Lolly", an unreadable carrier and a credential
+   that does not cover the whole file share the same amber-warn medallion — all
+   four are honest middle grounds, not a pass and not a broken credential. */
 .valid-result.is-expired .valid-hero-icon,
+.valid-result.is-carrier .valid-hero-icon,
+.valid-result.is-uncovered .valid-hero-icon,
 .valid-result.is-likelylolly .valid-hero-icon {
   background: radial-gradient(circle at 34% 26%, hsl(var(--vf-warn-1)), hsl(var(--vf-warn-2)) 72%);
   color: hsl(30 75% 16%);
@@ -1227,3 +1232,107 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   color: hsl(var(--foreground)); background: hsl(140 60% 45% / 0.16); border: 1px solid hsl(140 55% 45% / 0.4);
 }
 .valid-claim-done-ic { display: inline-flex; width: 1.3em; height: 1.3em; align-items: center; justify-content: center; border-radius: 999px; background: hsl(140 55% 40%); color: #fff; font-size: 0.85em; flex: 0 0 auto; }
+
+/* ── C2PA 2.4 text bindings: the paste affordance, the carrier notes, the
+   AI-disclosure panel and the text preview (plans/105 M2) ────────────────────
+
+   Everything here is ADDITIVE — no existing selector changes — because the
+   binary drop path must render byte-identically to before. */
+
+/* The "Paste text" fallback under the drop zone. Deliberately OUTSIDE
+   .valid-drop: that element is itself a button (click → file picker), so a
+   control nested inside it would open the picker on the way past. */
+.valid-paste { margin-top: 0.65rem; display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+.valid-paste-panel {
+  width: 100%; display: grid; gap: 0.6rem;
+  padding: 0.9rem 1rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--card));
+}
+.valid-paste-label { font-size: calc(0.75rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: hsl(var(--muted-foreground)); }
+.valid-paste-text {
+  width: 100%; resize: vertical; min-height: 8rem;
+  padding: 0.6rem 0.7rem; font-family: var(--font-mono); font-size: calc(0.8rem * var(--a11y-fs)); line-height: 1.5;
+  color: hsl(var(--foreground)); background: hsl(var(--background));
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+}
+.valid-paste-text:focus { outline: none; border-color: hsl(var(--primary) / 0.6); box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15); }
+.valid-paste-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.valid-paste-foot { margin: 0; font-size: calc(0.72rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+
+/* Carrier notes. Neutral by default — a text credential that could not be used
+   is usually a producer bug, a truncated copy or invisible characters lost in a
+   clipboard, and the copy says so; only the one shape where content really does
+   sit outside the credential takes the amber --vf-warn hue. Same box grammar as
+   .valid-wm so the page keeps one note treatment. */
+.valid-notes { display: grid; gap: 0.7rem; }
+.valid-note {
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid hsl(var(--border)); border-radius: 0.75rem;
+  background: hsl(var(--muted) / 0.4);
+}
+.valid-note-ic {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 0.55rem;
+  background: hsl(var(--muted-foreground) / 0.16); color: hsl(var(--muted-foreground));
+}
+.valid-note-ic svg { width: 1.15rem; height: 1.15rem; }
+.valid-note-text { display: grid; gap: 0.2rem; min-width: 0; }
+.valid-note-text strong { font-size: calc(0.9rem * var(--a11y-fs)); font-weight: 650; color: hsl(var(--foreground)); }
+.valid-note-text > span { font-size: calc(0.8rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+/* The credential's own reference, shown as inert monospace text — never a link.
+   It is a claim made by an unverified document about where its credential
+   lives; overflow-wrap keeps a hostile 2 KB URL inside the card. */
+.valid-note-url {
+  font-family: var(--font-mono); font-size: calc(0.74rem * var(--a11y-fs));
+  color: hsl(var(--foreground)); background: hsl(var(--background) / 0.7);
+  border: 1px solid hsl(var(--border)); border-radius: 0.4rem;
+  padding: 0.15rem 0.4rem; overflow-wrap: anywhere; justify-self: start; max-width: 100%;
+}
+.valid-note-detail { font-size: calc(0.75rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); opacity: 0.9; overflow-wrap: anywhere; }
+.valid-note-action { flex: 0 0 auto; align-self: center; white-space: nowrap; }
+.valid-note--warn { border-color: hsl(var(--vf-warn) / 0.4); background: hsl(var(--vf-warn) / 0.08); }
+.valid-note--warn .valid-note-ic { background: hsl(var(--vf-warn) / 0.22); color: hsl(30 75% 30%); }
+
+/* §18.28 ai-disclosure — the shared GEN-AI violet (--vf-ai-*, tokens.css), the
+   same family as the catalog's GEN-AI pill and the /verify AI banner, because it
+   is the same subject. Quieter than .valid-ai-flag on purpose: that one reports
+   a declaration of AI-generated CONTENT, this one records which model the signer
+   says was involved. */
+.valid-aidecl {
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border: 1px solid hsl(var(--vf-ai-1) / 0.5); border-radius: 0.75rem;
+  background: hsl(var(--vf-ai-1) / 0.1);
+}
+.valid-aidecl-ic {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 0.55rem;
+  background: linear-gradient(150deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2))); color: hsl(0 0% 100%);
+}
+.valid-aidecl-ic svg { width: 1.15rem; height: 1.15rem; }
+.valid-aidecl-text { display: grid; gap: 0.3rem; min-width: 0; }
+.valid-aidecl-text > strong { font-size: calc(0.9rem * var(--a11y-fs)); font-weight: 650; color: hsl(var(--foreground)); }
+.valid-aidecl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.valid-aidecl-row { display: grid; gap: 0.1rem; }
+.valid-aidecl-model { font-size: calc(0.84rem * var(--a11y-fs)); color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+.valid-aidecl-fact { font-size: calc(0.76rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.valid-aidecl-note { font-size: calc(0.75rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+.valid-aidecl-tag {
+  flex: 0 0 auto; align-self: flex-start;
+  font-size: calc(0.66rem * var(--a11y-fs)); font-weight: 800; letter-spacing: 0.06em;
+  padding: 0.18rem 0.5rem; border-radius: 999px; color: hsl(0 0% 100%);
+  background: linear-gradient(120deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
+}
+
+/* The text payload's preview: its own first ~2 KB, escaped into a <pre>. Sits in
+   the .valid-preview slot the image/video/pdf previews use, so the hero layout
+   is untouched. Scrolls inside its own box — a single 2 KB line must never widen
+   the card. */
+.valid-preview.is-text { display: block; max-height: 22rem; overflow: auto; border-radius: var(--radius); border: 1px solid hsl(var(--border)); background: hsl(var(--background) / 0.6); }
+.valid-preview-text {
+  margin: 0; padding: 0.7rem 0.85rem;
+  font-family: var(--font-mono); font-size: calc(0.7rem * var(--a11y-fs)); line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: hsl(var(--foreground));
+}
+.valid-preview.is-text figcaption { padding: 0 0.85rem 0.6rem; font-size: calc(0.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }

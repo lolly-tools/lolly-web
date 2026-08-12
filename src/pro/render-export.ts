@@ -17,7 +17,8 @@ import { toCssPx, serializeUrlState, packQuery, isPackAvailable, PACK_PARAM } fr
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { csvToMarks } from '../lib/print-marks-csv.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import type { InputValue } from '../../../../engine/src/inputs.ts';
+import type { InputValue, InputModelItem } from '../../../../engine/src/inputs.ts';
+import type { CanvasCommitEl } from '../lib/canvas-commit.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import type { Unit } from '../../../../engine/src/units.ts';
 
@@ -181,7 +182,7 @@ function withToolNet(host: HostV1, manifest: ToolManifest): HostV1 {
 async function mountToolCanvas(
   styles: string | null | undefined,
   hydrated: string,
-  { layoutW, fixedHeight, composeStack, host, settleMs }: { layoutW: number; fixedHeight?: number; composeStack?: readonly string[]; host: HostV1; settleMs?: number },
+  { layoutW, fixedHeight, composeStack, host, settleMs, getModel }: { layoutW: number; fixedHeight?: number; composeStack?: readonly string[]; host: HostV1; settleMs?: number; getModel?: () => InputModelItem[] },
 ): Promise<{ stage: ExportStage; canvas: HTMLDivElement }> {
   const stage: ExportStage = document.createElement('div');
   stage.setAttribute('aria-hidden', 'true');
@@ -229,6 +230,14 @@ async function mountToolCanvas(
     // Awaited (unlike the live mount): an offscreen render exports immediately,
     // so the vars must be on the node before the settle/capture below.
     await applyBrandVars(canvas, host);
+    // A tool that keeps its declared inputs as a pure DATA channel (render.sidebar:false,
+    // e.g. Run Web Code) never references them in its markup, so this off-screen render's
+    // hydrated string carries none of the row's values — the template's own script would
+    // fall back to the shared-origin IndexedDB draft (the user's LAST pen) and render the
+    // wrong content. Hand it the model READ channel the live view exposes (canvas-commit.ts)
+    // so its boot-seed reads THIS render's values. Write-only here: an off-screen render is
+    // one-shot, so no __lollyCommit/__lollySubscribe.
+    if (getModel) (canvas as CanvasCommitEl).__lollyModel = getModel;
     runTemplateScripts(canvas);
     await waitForQuiescence(canvas, { silenceMs: settleMs !== undefined && settleMs > 0 ? settleMs : SETTLE_MS });
     // Resolve embeds to local blob/data URLs before export so the embedded render
@@ -315,7 +324,7 @@ export async function renderRowToBlob(row: BatchRow, host: HostV1, { format, wid
   const outW = dim(width);
   const outH = dim(height);
 
-  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, fixedHeight: layoutH, composeStack, host, settleMs });
+  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, fixedHeight: layoutH, composeStack, host, settleMs, getModel: () => runtime.getModel() });
 
   try {
     const fmt = chooseFormat(tool.manifest, format);
@@ -405,7 +414,7 @@ export async function renderToolPages(row: BatchRow, host: HostV1, { format, thu
   // No fixed height: let the document lay out its FULL height so every page box is
   // measured (page boxes are fixed-size, so they render identically whether or not
   // the viewport clips them).
-  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, host });
+  const { stage, canvas } = await mountToolCanvas(tool.styles, runtime.getHydrated(), { layoutW, host, getModel: () => runtime.getModel() });
 
   try {
     const fmt = chooseFormat(tool.manifest, format);

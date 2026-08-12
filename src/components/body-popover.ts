@@ -86,6 +86,33 @@ export interface BodyPopoverOptions {
   /** Called on window resize INSTEAD OF re-running `position()` — e.g. to close
    *  the popover outright when a responsive breakpoint no longer applies. */
   onResize?(popover: BodyPopoverHandle): void;
+  /** Called AFTER a close that actually closed something, whichever route took it:
+   *  the caller's own `close()`, Escape, an outside pointerdown, or a route change.
+   *  For a caller whose content is not owned by the popover — the timeline inspector
+   *  moves a LIVE element into it and must move it back before `close()` detaches the
+   *  whole popover with that element still inside. Never call `close()` from here. */
+  onClose?(): void;
+  /**
+   * "Is this node logically part of me?" — the escape hatch for a popover that SPAWNS
+   * popovers of its own on `document.body`.
+   *
+   * The dismissal test is `!menu.contains(target) && !anchor.contains(target)`, and a
+   * child popover is a sibling `<div>` on the body: `contains()` says false, so the
+   * FIRST pointerdown inside the child (a bezier handle, a preset button) reads as an
+   * outside click and closes the parent under the user's hands — taking any live
+   * element the parent had borrowed with it. A `pointAnchor` cannot cover this either:
+   * its `contains()` is hard-wired to false by design.
+   *
+   * Also consulted on Escape, against `document.activeElement`: with focus trapped
+   * inside the child, Escape belongs to the CHILD, and both popovers listen on
+   * `document` (stopPropagation cannot stop a sibling listener on the same node), so
+   * without this the parent closes underneath it and its focus restore lands on a node
+   * the parent has just hidden. One Escape, the innermost popover — which is the rule
+   * everywhere else in the shell.
+   *
+   * Optional and absent by default, so every existing caller is unchanged.
+   */
+  isInside?(node: Node | null): boolean;
 }
 
 function defaultPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
@@ -211,7 +238,16 @@ export function mountBodyPopover(
   // modally — e.g. folder-overlay's, which a context menu can mount inside via
   // `container` — doesn't ALSO process this Escape as its own close request and
   // cascade-close behind us; only the popover should close.
-  const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); } };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape') return;
+    // A popover this one spawned owns the Escape while focus is inside it (see
+    // `isInside`). Returning WITHOUT preventDefault/stopPropagation leaves the child's
+    // own listener — registered later on the same node — to handle it.
+    if (opts.isInside?.(document.activeElement)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    close(true);
+  };
   const onNavAway = (): void => close();
 
   function close(returnFocus = false): void {
@@ -223,6 +259,9 @@ export function mountBodyPopover(
     outside = null;
     trap?.release();
     trap = null;
+    // BEFORE the element is detached, so a caller that lent this popover a live
+    // element of its own can take it back rather than lose it with the removal.
+    opts.onClose?.();
     menu.remove();
     menu = null;
     anchor.setAttribute?.('aria-expanded', 'false');
@@ -241,7 +280,10 @@ export function mountBodyPopover(
     position(el, anchor);
     anchor.setAttribute?.('aria-expanded', 'true');
 
-    outside = (e) => { if (menu && !menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) close(); };
+    outside = (e) => {
+      const target = e.target as Node;
+      if (menu && !menu.contains(target) && !anchor.contains(target) && !opts.isInside?.(target)) close();
+    };
     // Deferred so the very click that opened the popover doesn't also fire as
     // its own outside-click dismissal.
     setTimeout(() => document.addEventListener('pointerdown', outside!), 0);

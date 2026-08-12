@@ -384,6 +384,14 @@
 }
 .fc-cbtn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .fc-cbtn:hover { background: hsl(var(--muted)); }
+/* An action the SELECTION cannot take right now (today: "+Keyframe" on a sound clip,
+   plans/104 §8). Dimmed and inert, never hidden and never removed — a control that
+   comes and goes as you click around teaches nothing, and its tooltip is where the
+   reason lives. `aria-disabled` rather than the `disabled` property, so it keeps its
+   place in the tab order and can still be read. Same posture, same numbers, as
+   `.tl-btn[aria-disabled="true"]` in parts/timeline.css — the button's other home. */
+.fc-cbtn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+.fc-cbtn[aria-disabled="true"]:hover { background: transparent; }
 /* The transform readout. `min-width` is the whole point: this text grows from
    "241, -235" to "113, -92 · 1920×1080" DURING a drag, and the bar is centred on the
    selection, so every character the readout gained shoved half of it — and every

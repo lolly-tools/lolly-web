@@ -204,6 +204,33 @@
 /* hover + open (aria-expanded) tint centralised with the top-right cluster in
    overrides.css (@layer overrides — the tools-home glass treatment). */
 
+/* The always-home FAB (components/home-fab.ts) and the theme-cycle FAB
+   (components/theme-toggle.ts, className 'theme-fab') — the pair of history-free
+   controls twinned with the language FAB in the fixed top-right cluster of the
+   nav-less views (#/start, Dashboard, Verify, Convert, Spreadsheet, PDF, Script).
+   Box mirrors .lang-fab; the glass fill (buttons.css) and transparent-border glow
+   + hover (overrides layer) are shared with the rest of the cluster, so each
+   reads as one of the same set. Lives here rather than a lazy view sheet because
+   they appear across views. Views with their OWN top-right idiom (Ask, Colour
+   Lab) skin these locally instead and never hit these rules. */
+.home-fab,
+.theme-fab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--chrome-h);
+  height: var(--chrome-h);
+  padding: 0;
+  border: 1px solid hsl(var(--primary));
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.home-fab svg,
+.theme-fab svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
+
 .lang-menu {
   position: fixed;
   z-index: 100000;

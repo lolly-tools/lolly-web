@@ -3,7 +3,8 @@
  * Profile view — personal details + appearance preferences.
  *
  * Theme selection auto-saves on click (it's a preference, not a form field), as
- * do the sound switch and the Accessibility card's three prefs.
+ * do the sound switch and the Accessibility card's four prefs (Reduce motion,
+ * Hide colourful previews, High contrast, Large text — A11Y_ROWS below).
  * The other personal details save on form submit.
  *
  * Activity / Storage / Feature flags / Content Credentials are collapsible
@@ -81,6 +82,7 @@ import { relativeTime, fmtBytes, sessionRow } from '../folder-tiles.ts';
 import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '@lolly-tools/core/host-v1';
 import type { FeatureFlag } from '../feature-flags.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 
 /** A saved session as the web state bridge lists it — StateEntry plus the
  *  export filename and the thumbnail this view renders. */
@@ -503,6 +505,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     ${backPillHtml()}
     <div class="gallery-topbar" style="justify-content:flex-end">
       <div class="gallery-topright">
+        ${homeFabHtml()}
         ${langFabHtml()}
       </div>
     </div>
@@ -928,6 +931,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   mountBackPill(viewEl);
+  mountHomeFab(viewEl);
 
   // Sound switch — the unified "Sound:" toggle (speaker indicator + sliding switch). Auto-saves
   // each flip to profile.sfxMuted + localStorage and chirps when re-enabled (via applySfxMuted,

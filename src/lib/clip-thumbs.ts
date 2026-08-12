@@ -1269,6 +1269,78 @@ async function getDomToImage(): Promise<DomToImageLib | null> {
   return domToImageMore;
 }
 
+// ── the authored-pose seam (plans/104 §6.5) ────────────────────────────────
+//
+// A thumbnail always shows the box's AUTHORED pose. It is a picture of the clip, not a
+// picture of the frame the playhead happens to be parked on — and once keyframes are in
+// play "the frame the playhead is parked on" can be a box lifted, scaled, faded and
+// blurred half way through a move, which is a bar that changes every time the user
+// scrubs past it.
+//
+// The authored values live in the applier's AuthoredStore (bridge/sequence-dom.ts), and
+// they arrive here INJECTED rather than imported for exactly the reason OFF_CLASS is
+// copied above: `bridge/sequence-dom.ts` drags sequence-plan → @lolly/engine behind it,
+// and this module is imported by picker.ts for `onIdle` alone. The timeline panel — the
+// one module that already owns both — wires the seam; with nothing wired every path
+// below behaves exactly as it did before plans/104.
+
+/** One element's authored inline styles. `''` means "no declaration", not "neutral". */
+export interface AuthoredPose {
+  transform: string;
+  opacity: string;
+  filter: string;
+  zIndex: string;
+}
+
+export interface AuthoredPoseSeam {
+  /**
+   * The authored styles a live writer is composing over `el`, or null when nobody is
+   * writing on it — in which case the DOM already IS authored and nothing may change.
+   */
+  read(el: HTMLElement): AuthoredPose | null;
+  /**
+   * Put `el` back to its authored pose IN PLACE, returning the undo (which re-asserts
+   * the writer at its own current time). For a reader that walks the live subtree and
+   * has no clone to neutralise on.
+   */
+  borrow(el: HTMLElement): () => void;
+}
+
+let poseSeam: AuthoredPoseSeam | null = null;
+
+/** Wire the authored-pose seam. Returns the removal, restoring whatever was there. */
+export function setAuthoredPoseSeam(seam: AuthoredPoseSeam | null): () => void {
+  const prev = poseSeam;
+  poseSeam = seam;
+  return () => { if (poseSeam === seam) poseSeam = prev; };
+}
+
+/**
+ * The inline style a node shot puts on dom-to-image's CLONE.
+ *
+ * Pure and exported because it is the whole of the authored-pose contract for the
+ * raster path, and node has no rasteriser to prove it through (`defaultNodeRasterer`
+ * resolves null here). Two properties are asserted by it: a shot taken mid-keyframe
+ * carries the same style as a shot taken at rest, and a box nothing is composing over
+ * gets byte-for-byte the five declarations this has always emitted.
+ *
+ * `transform` is the fit scale, never the box's own: a thumbnail is the clip
+ * unrotated, at bar height. `opacity`/`filter` appear only when a live writer is
+ * composing over this box, and then they carry its AUTHORED values — an empty string
+ * would REMOVE the clone's declaration and drop it back onto the composed value
+ * dom-to-image copied out of getComputedStyle, which is the opposite of the point.
+ */
+export function nodeShotStyle(
+  el: HTMLElement, bw: number, bh: number, S: number,
+): Record<string, string> {
+  const authored = poseSeam?.read(el) ?? null;
+  return {
+    transform: `scale(${S})`, transformOrigin: 'top left',
+    width: `${bw}px`, height: `${bh}px`, left: '0', top: '0', margin: '0',
+    ...(authored ? { opacity: authored.opacity || '1', filter: authored.filter || 'none' } : {}),
+  };
+}
+
 /**
  * The real shot. Modelled line for line on `rasterBox` in bridge/sequence-render.ts,
  * which is already hardened against this exact live stage — deliberately NOT on
@@ -1294,6 +1366,14 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
   // does NOT live here — `captureNode` owns it, so it brackets any rasterer (including
   // an injected one) and, more importantly, so it is released when the library call
   // REALLY settles rather than when the caller stops waiting for it.
+  //
+  // The AUTHORED pose (plans/104 §6.5) is neutralised on the CLONE — see
+  // `nodeShotStyle` — because the library's `style` option is applied to the clone
+  // after its computed styles are copied across, which is how the fit transform
+  // already beats both the editor's zoom and the `tl-shot` park. Nothing on the live
+  // stage moves, so a shot of the box the user is currently looking at cannot flicker
+  // it. A bar photographed mid-fade used to come out faded; mid-keyframe it would come
+  // out blurred and lifted as well.
   try {
     return await lib.toCanvas(el, {
       width: clampInt(bw * S, 1, MAX_STILL_W),
@@ -1303,10 +1383,7 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
       // call. At a 34px bar the substituted platform face is indistinguishable.
       // Image inlining stays ON: that is the picture.
       disableEmbedFonts: true,
-      style: {
-        transform: `scale(${S})`, transformOrigin: 'top left',
-        width: `${bw}px`, height: `${bh}px`, left: '0', top: '0', margin: '0',
-      },
+      style: nodeShotStyle(el, bw, bh, S),
     });
   } catch {
     return null;
@@ -1375,9 +1452,17 @@ function borrowVisibility(el: HTMLElement): () => void {
  */
 export async function withBorrowedVisibility<T>(el: HTMLElement, fn: () => Promise<T>): Promise<T> {
   const restore = borrowVisibility(el);
+  // The vector twin reads the LIVE subtree — there is no clone to neutralise the
+  // applier's pose on, the way `defaultNodeRasterer` does — so the authored values go
+  // back on the element itself for the walk (plans/104 §6.5). A no-op, closure and all,
+  // when nothing was composed on this box; and while the box is parked by
+  // `borrowVisibility` the park's `!important` transform still wins, so what this
+  // actually rescues is the box's opacity and blur.
+  const pose = poseSeam?.borrow(el) ?? null;
   try {
     return await fn();
   } finally {
+    pose?.();
     restore();
   }
 }

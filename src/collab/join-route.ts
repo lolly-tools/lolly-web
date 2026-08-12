@@ -170,6 +170,8 @@ import { ulid } from '../lib/row-id.ts';
 import type { CollabLaunchContext } from '../lib/collab-launch.ts';
 import { announce } from '../a11y.ts';
 import { loadNamespace, tRaw } from '../i18n.ts';
+import { homeFabEl } from '../components/home-fab.ts';
+import { createThemeToggle } from '../components/theme-toggle.ts';
 // Deep-imported like `i18n.ts`'s `lang.ts` and `brand-vars.ts`'s `tokens.ts`: the engine
 // barrel is one shared facade whose whole retained surface would land in this lazy chunk
 // for a single version string.
@@ -1012,6 +1014,28 @@ const CARD = 'max-width:44rem;margin:0 auto;padding:2.5rem 1.25rem';
 const TITLE = 'margin:0 0 .5rem;font-size:1.35rem;font-weight:650';
 const BODY = 'margin:0 0 1rem;color:hsl(var(--muted-foreground))';
 
+// The fixed top-right escape cluster the ceremony shares with every other
+// nav-less view: an always-home FAB (history-free — it goes to the front door no
+// matter how the reader arrived), plus the theme cycle when a host can persist it
+// (the reply route hands off WITHOUT one, so it gets home only). Every ceremony
+// screen — terminal card, enable gate, code door — is painted by card(), which
+// replaceChildren()s `view`; so the cluster is rebuilt as a sibling on each paint
+// and dies with the view. Nothing to tear down, and no state survives a leave.
+let ceremonyHost: JoinRouteHost | null = null;
+function ceremonyChrome(): HTMLElement {
+  const cluster = node('div', { class: 'gallery-topright', attrs: { 'data-collab-chrome': '' } }, [homeFabEl()]);
+  if (ceremonyHost?.profile) {
+    // Cast for the same reason color-lab.ts does: createThemeToggle only ever
+    // reads/writes profile, and JoinRouteHost's profile (optional, nullable get)
+    // satisfies that use even though it is not nominally a SetThemeHost.
+    cluster.appendChild(createThemeToggle(
+      ceremonyHost as unknown as Parameters<typeof createThemeToggle>[0],
+      { className: 'theme-fab' },
+    ));
+  }
+  return cluster;
+}
+
 /** A plain page: a heading, a sentence, whatever else, and the way back. */
 function card(view: HTMLElement, title: string, body: string, extra: readonly (Node | null)[] = []): HTMLElement {
   const back = node('a', { class: 'btn', text: tRaw(STRINGS.backToTools), attrs: { href: '#/' } });
@@ -1022,6 +1046,10 @@ function card(view: HTMLElement, title: string, body: string, extra: readonly (N
     back,
   ]);
   view.replaceChildren(box);
+  // The escape cluster is a fixed-position sibling of the card box, re-added on
+  // every paint (replaceChildren above drops the previous one). Appended AFTER the
+  // box so the card's own heading still takes focus first.
+  view.appendChild(ceremonyChrome());
   announce(title);
   return box;
 }
@@ -1314,6 +1342,9 @@ export async function mountJoinRoute(
   params = '',
   deps: JoinRouteDeps = {},
 ): Promise<void> {
+  // Set before the first card() (the enable gate can paint one immediately): this
+  // route has a host, so its escape cluster carries the theme cycle as well as Home.
+  ceremonyHost = host ?? null;
   const scanning = new AbortController();
   let dialog: CollabCeremonyHandle | null = null;
   let handed: CollabConnection | null = null;
@@ -1541,6 +1572,10 @@ export async function mountJoinReplyRoute(
   params = '',
   deps: JoinReplyDeps = {},
 ): Promise<void> {
+  // No host on this route by design — it hands a payload to the tab that owns the
+  // ceremony and reads no profile of its own — so its escape cluster is Home only,
+  // no theme cycle (nothing to persist a theme to). Set before the first card().
+  ceremonyHost = null;
   await loadNamespace('collab'); // see mountJoinRoute — the copy loads before it paints
   // One answer here, not two: §6.3's enable-on-accept is deliberately `#/join` only. A
   // reply link is opened on the device that MINTED the invite, whose flag is necessarily

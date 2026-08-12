@@ -353,6 +353,273 @@
    is still readable where it is being chosen. */
 .tl-ease { max-width: 11ch; }
 
+/* ─── Inspector groups (progressive disclosure) ──────────────────────────────
+   Time / Animate / Keyframes / Sound — and P1's Camera (plans/104 §8). A header
+   that reads as resolved VALUES when shut, and the controls that produced them
+   when open.
+
+   Three constraints this block is written around, all of them documented rules
+   elsewhere in the app rather than taste:
+
+     • NO transform / filter / backdrop-filter on `.tl-group` or `.tl-group-body`.
+       Both are ancestors of the easing `<select>`, whose popover is
+       `position: fixed`, and either property would make them its containing block
+       — the trap already documented on `.tl-panel` and `.fc-toolbar`. The ONLY
+       transform below is on the caret `<svg>`, a leaf that is an ancestor of
+       nothing.
+     • NOTHING styles `[hidden]`. Collapse is the `hidden` property on the body
+       (and on the chip row when open); parts/a11y.css's app-wide
+       `[hidden] { display: none !important }` does the hiding, and
+       styles/hidden-attribute-guard.test.ts fails the build for a sheet that
+       tries to give a `[hidden]` element a display back.
+     • Logical properties only (`margin-inline`, `padding-inline`), and the caret's
+       collapsed direction flips under `[dir="rtl"]` — the panel ships in 26
+       languages, four of which are right-to-left. */
+.tl-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* The disclosure control. A real <button> with aria-expanded, so it is reachable by
+   Tab and speaks its state; the visible text label is its accessible name, and the
+   icon beside it is decorative (aria-hidden), never a replacement for the word. */
+.tl-group-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* CONSTANT WIDTH, which is what makes the strip stop reflowing: the segment is the
+   icon, the word and the chips whether the group is open or shut, because its body is
+   in a popover either way. The cap is on the SEGMENT (the chips ellipsis inside it),
+   so a long summary cannot push its neighbours off the fold. */
+.tl-group-head { max-width: 22em; }
+.tl-group-head:hover { background: hsl(var(--muted) / 0.6); }
+.tl-group-head:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-group.is-open > .tl-group-head {
+  background: hsl(var(--muted) / 0.5);
+  border-color: hsl(var(--border));
+}
+/* Icon box AND paint ride the type multiplier, per the a11y `largeText` contract:
+   a header that grows its word and keeps a 14px glyph reads as a broken pair. */
+.tl-group-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: hsl(var(--muted-foreground));
+}
+.tl-group-icon svg {
+  width: calc(14px * var(--a11y-fs));
+  height: calc(14px * var(--a11y-fs));
+}
+.tl-group-label {
+  font-size: calc(10.5px * var(--a11y-fs));
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+  color: hsl(var(--muted-foreground));
+}
+.tl-group-chips { display: inline-flex; align-items: center; gap: 6px; }
+/* The collapsed reading. Tabular figures so a scrub does not make the row jitter as
+   digits change width — the same reason `.tl-num` and the ruler labels ask for them. */
+.tl-group-chip {
+  font-size: calc(11.5px * var(--a11y-fs));
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--card-foreground));
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-group-chip + .tl-group-chip {
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid hsl(var(--border));
+}
+.tl-group-caret {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: hsl(var(--muted-foreground));
+}
+.tl-group-caret svg {
+  width: calc(12px * var(--a11y-fs));
+  height: calc(12px * var(--a11y-fs));
+}
+/* Shut, the chevron points along the reading direction; open, it points down at the
+   fields it revealed. One glyph, rotated — a second registry entry for the same arrow
+   would be two things to keep in sync. Leaf-only, see the block comment above. */
+.tl-group:not(.is-open) .tl-group-caret { transform: rotate(-90deg); }
+[dir="rtl"] .tl-group:not(.is-open) .tl-group-caret { transform: rotate(90deg); }
+
+/* ─── The group popover (plans/104 §8, M2.5) ─────────────────────────────────
+   An open group's body is NOT in the strip any more: `mountBodyPopover` mounts it on
+   the body, positioned ABOVE the transport (the panel is docked at the bottom, so
+   "below the anchor" would open into the tracks). Which means the body finally gets
+   to be a COLUMN with real widths — the truncated "Ease in ar…" pickers were the
+   whole complaint the revision answers.
+
+   Same two rules as the segments above: no transform / filter / backdrop-filter
+   anywhere in here (the ease `<select>`s open `position: fixed` popovers of their own,
+   and any of those properties would make this their containing block), and nothing
+   styles `[hidden]`. */
+.tl-group-pop {
+  padding: 10px 12px 12px;
+  max-width: min(420px, calc(100vw - 24px));
+  max-height: 52vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.tl-group-pop-body,
+.tl-group-pop .tl-group-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+/* A label + its control per line, the label holding a column so the controls line up.
+   `.tl-field` is inline in the strip; in here it is a row that fills the card. */
+.tl-group-pop .tl-field {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.tl-group-pop .tl-field .field-label { flex: 0 0 auto; }
+/* REAL widths. This is the point of the popover: in the strip these were capped to
+   11ch and a curve read as "Ease in ar…". */
+.tl-group-pop .tl-num { width: 8.5em; }
+.tl-group-pop .tl-select,
+.tl-group-pop .tl-ease,
+.tl-group-pop .tl-kf-ease { max-width: none; width: 15ch; }
+.tl-group-pop .tl-kf-time { width: 7em; }
+.tl-group-pop .tl-kf-list { max-height: 168px; }
+.tl-group-pop .tl-kf-row { gap: 6px; }
+/* The pose block: one row per channel, and the §5.2 fact ("size is not keyframable")
+   rides its `title` rather than standing on screen as grey text. */
+.tl-kf-pose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tl-group-body { display: inline-flex; align-items: center; gap: 8px; }
+
+/* ─── Keyframes group (plans/104 §8) ─────────────────────────────────────────
+   The inspector is a horizontal strip, and this group stays in it: the latch line,
+   the pose fields, the note, the list and the way out all flow INLINE. Only the
+   list itself stacks, and it is bounded and scrolls — a clip with forty poses must
+   not push the panel's chrome past the tracks it exists to edit. */
+.tl-kf-latch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+/* "Scene pose" ⇄ "Keyframe @ 0:01.8". Tabular figures for the same reason the
+   transport pill asks for them: this changes as you scrub, and proportional digits
+   make the words either side of it shuffle. */
+.tl-kf-state {
+  font-size: calc(11.5px * var(--a11y-fs));
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+/* ON a diamond. A colour and a weight, never a border on one side — a one-sided
+   accent rule is the pattern this shell does not use. */
+.tl-kf-state.is-on {
+  color: var(--brand-primary, hsl(var(--primary)));
+  font-weight: 600;
+}
+/* An action that says what it does in words, with the glyph beside the text. */
+.tl-action {
+  width: auto;
+  gap: 5px;
+  padding-inline: 7px;
+}
+.tl-action-label {
+  font-size: calc(11.5px * var(--a11y-fs));
+  white-space: nowrap;
+}
+.tl-action.is-danger { color: hsl(var(--destructive)); }
+.tl-action.is-danger:hover { background: hsl(var(--destructive) / 0.12); }
+.tl-kf-pose-num { width: 5.5em; }
+/* THE keyboard and screen-reader route to the diamonds. Real controls, one row per
+   keyframe, bounded height so a long track scrolls inside its own box. */
+.tl-kf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 0 0 auto;
+  max-height: 92px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-inline-end: 2px;
+}
+.tl-kf-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 3px;
+  border-radius: 6px;
+}
+/* The row the playhead is parked on. A tinted BACKGROUND, not an edge stripe. */
+.tl-kf-row.is-current { background: hsl(var(--primary) / 0.14); }
+.tl-kf-time { width: 5.5em; }
+.tl-kf-ease { max-width: 11ch; }
+
+/* ─── Diamonds on the bars (plans/104 §8) ────────────────────────────────────
+   POINTER SUGAR. The strip is aria-hidden and its dots are non-interactive
+   `<span>`s, because a `role="option"` bar may not own interactive children — the
+   same rule the `.tl-seam` chips and the `.tl-dropslot` live under. Everything a
+   dot can do is also a labelled button in the inspector's Keyframes list.
+
+   Positioned exactly like `.tl-seam`: absolute `left` in bar-local px with the
+   half-size offset in the MARGIN, never a transform. The diamond SHAPE is a
+   clip-path rather than a rotated square, so this file introduces no transform on
+   anything inside a bar at all. */
+.tl-kf-strip {
+  position: absolute;
+  inset-block: 0;
+  inset-inline: 0;
+  pointer-events: none;   /* the bar keeps its own press everywhere but on a dot */
+  z-index: 3;
+}
+.tl-kf-dot {
+  position: absolute;
+  top: 50%;
+  margin: -5px 0 0 -5px;
+  width: 10px;
+  height: 10px;
+  pointer-events: auto;
+  cursor: ew-resize;
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.55);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+.tl-kf-dot:hover { background: hsl(var(--foreground) / 0.85); }
+/* The SELECTED diamond draws large — the state §3 records from the reference tool.
+   Size and paint only: growing it must not move it, so the margin grows with it. */
+.tl-kf-dot.is-selected {
+  margin: -7px 0 0 -7px;
+  width: 14px;
+  height: 14px;
+  background: var(--brand-primary, hsl(var(--primary)));
+  box-shadow: 0 0 0 1px hsl(var(--background));
+}
+/* Alt is held: this drag will COPY rather than move. */
+.tl-kf-dot.is-duplicating { background: var(--brand-primary, hsl(var(--primary))); opacity: 0.75; }
+
 /* ─── Ruler ──────────────────────────────────────────────────────────────────
    The inner strip is TRANSLATED to follow the tracks' scrollLeft (never
    scrolled itself), so the ruler must clip. */

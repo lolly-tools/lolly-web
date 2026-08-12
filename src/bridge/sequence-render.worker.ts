@@ -42,6 +42,8 @@
  */
 
 import {
+  EMPTY_KF_TRACK,
+  ownsLayerFx,
   sequenceDrawPlan,
   activeFrameWindow,
   crossfadeJunctions,
@@ -52,6 +54,7 @@ import {
   type SeqLayer,
   type PlanItem,
 } from './sequence-plan.ts';
+import type { KfTrack } from '@lolly/engine';
 import {
   createVideoProvider,
   type InstrumentedProvider,
@@ -65,6 +68,13 @@ import {
   type StreamingMux,
 } from './video-encode-core.ts';
 import { parseClipShape } from '@lolly/engine';
+// The two blur lanes (plans/104 §5.5, §11 S1). DOM-free at import, so the executor
+// keeps its own DOM-free contract; the probe inside decides which lane a context gets.
+import {
+  laneFor, releaseBlurScratches, releaseStage, renderFx, scaleFilter, scratchPadCap,
+  spillPad, takeStage,
+  type BlurStage, type FxSpec,
+} from '../lib/canvas-blur.ts';
 
 export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 export type AnyCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -175,6 +185,43 @@ export interface SeqJobLayer {
   openEnded: boolean;
   /** True for a timed frame-page scene layer — see SeqLayer.frameScene. */
   frameScene: boolean;
+  /** The box's depth, px above the surface — see SeqLayer.z. */
+  z: number;
+  /**
+   * The PARSED keyframe track, as plain data.
+   *
+   * A `KfTrack` is arrays of records of numbers and strings and nothing else, which
+   * is the whole reason the engine hands it back in that shape: a compiled bezier
+   * closure inside the cached form would throw DataCloneError on `postMessage` and
+   * silently kill worker offload (§5.1). The evaluator's own caches — the per-track
+   * channel index, the bezier control points — are module state, so they simply
+   * rebuild on this side from the values that crossed. `structuredClone(toJobLayer(…))`
+   * is pinned in sequence-render-worker.test.ts.
+   */
+  kf: KfTrack;
+  /** The AUTHORED blur radius, px, split out of the inline filter — see SeqLayer.blur. */
+  blur: number;
+  /** Everything else the authored filter said — see SeqLayer.shadowFilter. */
+  shadowFilter: string;
+  /**
+   * The margin, in stage-native px, this layer's plates were CAPTURED with
+   * (`rasterBox`'s `pad`, plans/104 §5.5). The plate's origin is `(-platePad,
+   * -platePad)` in box space, so every draw of it subtracts the pad and adds twice it
+   * to the size. 0 — what P0 always computes — makes those expressions the identical
+   * numbers they were before padding existed, which is the byte-identity floor.
+   */
+  platePad?: number;
+  /**
+   * The RESOLUTION multiplier this layer's plates were captured at, over the export
+   * scale S (the plate budget's bucketed `eff`, plans/104 §5.5). 1 — every P0 export —
+   * means "shot at exactly S", which is what every plate before depth was.
+   *
+   * The executor needs it because the FILTERED path composites through a scratch, and
+   * a scratch sized in S px would resample an `S·eff` plate down to S and then blow the
+   * result back up by eff — throwing away precisely the resolution the budget just paid
+   * for, on precisely the layers (lifted, depth-shadowed) that asked for it.
+   */
+  plateEff?: number;
   /** Computed object-fit of the layer's media element ('' when it has none). */
   objectFit: string;
   /** Computed object-position of the layer's media element. */
@@ -189,7 +236,11 @@ export interface SeqJobLayer {
 
 /** Strip a parsed `SeqLayer` to its wire form. `media` supplies the two style reads. */
 export function toJobLayer(
-  L: SeqLayer, extra: { objectFit?: string; objectPosition?: string; needsLiveRaster?: boolean } = {},
+  L: SeqLayer,
+  extra: {
+    objectFit?: string; objectPosition?: string; needsLiveRaster?: boolean;
+    platePad?: number; plateEff?: number;
+  } = {},
 ): SeqJobLayer {
   return {
     idx: L.idx, startMs: L.startMs, durMs: L.durMs, clipInMs: L.clipInMs, speed: L.speed,
@@ -200,6 +251,9 @@ export function toJobLayer(
     opacity: L.opacity, blend: L.blend, radius: L.radius, clipPath: L.clipPath,
     openEnded: L.openEnded,
     frameScene: L.frameScene,
+    z: L.z, kf: L.kf, blur: L.blur, shadowFilter: L.shadowFilter,
+    platePad: extra.platePad ?? 0,
+    plateEff: Number.isFinite(extra.plateEff) && (extra.plateEff as number) > 0 ? extra.plateEff as number : 1,
     objectFit: extra.objectFit ?? '',
     objectPosition: extra.objectPosition ?? '',
     needsLiveRaster: extra.needsLiveRaster ?? false,
@@ -225,6 +279,14 @@ export function hydrateJobLayer(w: SeqJobLayer): SeqLayer {
     lane: w.lane, kind: w.kind, rect: { ...w.rect }, opacity: w.opacity, blend: w.blend,
     radius: w.radius, clipPath: w.clipPath, openEnded: w.openEnded,
     frameScene: w.frameScene ?? false,
+    // A structured clone arrives unfrozen and, from an older job, possibly absent
+    // entirely — so the track is re-normalised to the empty singleton rather than
+    // trusted to be an array. Nothing mutates it after this point, which is the one
+    // thing the engine's memoised channel index asks of a track.
+    z: Number.isFinite(w.z) ? w.z : 0,
+    kf: Array.isArray(w.kf) ? w.kf : EMPTY_KF_TRACK,
+    blur: Number.isFinite(w.blur) ? w.blur : 0,
+    shadowFilter: w.shadowFilter ?? '',
   };
 }
 
@@ -265,6 +327,14 @@ export interface SeqJob {
   outH: number;
   /** Export pixels per authored px. */
   scale: number;
+  /**
+   * The stage's NATIVE size (BEFORE `scale`), px — the projection's principal point
+   * is its centre (plans/104 §4.1). Optional so an older or hand-built job still
+   * runs: absent means a zero-sized stage, and a zero-sized stage only differs from a
+   * real one once a layer is actually lifted off it.
+   */
+  stageW?: number;
+  stageH?: number;
   /** The artboard behind every layer, or null for a transparent export. */
   bg: CanvasImageSource | null;
   plates: SeqJobPlate[];
@@ -319,6 +389,10 @@ interface LayerRes {
   provider: InstrumentedProvider | null;
   objectFit: string;
   objectPosition: string;
+  /** Margin the plates above were captured with, stage-native px (SeqJobLayer.platePad). */
+  platePad: number;
+  /** Resolution multiplier over S the plates were captured at (SeqJobLayer.plateEff). */
+  plateEff: number;
   /** The live raster for the frame being composed, when one was supplied. */
   live: CanvasImageSource | null;
   /** Output-grid frame indices this layer is on screen for, inclusive. */
@@ -335,21 +409,146 @@ interface LayerRes {
 // ── the executor ────────────────────────────────────────────────────────────
 
 /**
+ * The effects one plan item asks for, in DEVICE px — or null when the layer is CLEAN.
+ *
+ * CLEAN means: no blur of any kind (authored, keyframed or depth-of-field) and no
+ * authored filter remainder. That is the byte-identity gate (plans/104 §5.5): a clean
+ * layer never enters the restructured path, never allocates a scratch, and issues the
+ * exact canvas calls in the exact order it issued before this existed.
+ *
+ * `item.blur` is the planner's TOTAL blur at stage-native scale, so it is multiplied by
+ * S here and nowhere else; the authored remainder (today: the `shadow` / `depth`
+ * drop-shadow) is scaled the same way, because the plate it used to be baked into was
+ * photographed at S.
+ */
+export function itemFx(item: PlanItem, S: number): FxSpec | null {
+  // The plate KEEPS its own filter unless this layer authored depth (`ownsLayerFx`,
+  // and the plate loop shoots to the same predicate). Re-applying it here would then
+  // be the second application — a shadow drawn twice, a blur squared. This is also the
+  // byte-identity floor: a pre-104 `shadow: content` document never reaches the
+  // restructured path at all.
+  if (!ownsLayerFx(item.layer)) return null;
+  const rest = item.layer.shadowFilter;
+  const sigma = item.blur > 0 ? item.blur * S : 0;
+  if (!(sigma > 0) && !rest) return null;
+  const scaled = scaleFilter(rest, S);
+  return { sigma, rest: scaled.rest, shadows: scaled.shadows };
+}
+
+/**
+ * Apply the layer's `clip-path` / `border-radius` to `ctx`, with the box's top-left at
+ * `(ox, oy)`. False means the clip encloses nothing and the layer must not be drawn.
+ *
+ * Clips are authored against the UNSCALED box, so they are parsed there and scaled — a
+ * `12px` radius must grow with the export, a `50%` must not drift.
+ */
+function clipLayer(ctx: AnyCtx, L: SeqLayer, ox: number, oy: number, w: number, h: number, S: number): boolean {
+  if (L.clipPath) {
+    const shape = parseClipShape(L.clipPath, L.rect.w, L.rect.h);
+    if (shape) {
+      if (shape.kind === 'empty') return false;   // a well-formed clip enclosing nothing
+      const p = new Path2D();
+      if (shape.kind === 'circle') p.arc(ox + shape.cx * S, oy + shape.cy * S, shape.r * S, 0, Math.PI * 2);
+      else if (shape.kind === 'ellipse') p.ellipse(ox + shape.cx * S, oy + shape.cy * S, shape.rx * S, shape.ry * S, 0, 0, Math.PI * 2);
+      else if (shape.kind === 'inset') p.rect(ox + shape.x * S, oy + shape.y * S, shape.w * S, shape.h * S);
+      else {
+        shape.points.forEach(([px, py], i) => (i ? p.lineTo(ox + px * S, oy + py * S) : p.moveTo(ox + px * S, oy + py * S)));
+        p.closePath();
+      }
+      ctx.clip(p);
+    }
+  } else if (L.radius) {
+    const r = radiiOf(L.radius, L.rect.w, L.rect.h).map((v) => v * S) as [number, number, number, number];
+    if (r.some((v) => v > 0)) {
+      const p = new Path2D();
+      p.roundRect(ox, oy, w, h, r);
+      ctx.clip(p);
+    }
+  }
+  return true;
+}
+
+/**
+ * Paint the layer's picture into `ctx` with the box's top-left at `(ox, oy)`.
+ *
+ * `pp` is the plate's own capture margin in DEVICE px: a plate shot with `pad` has its
+ * origin at `(-pad, -pad)` in box space and is `2·pad` bigger on each axis, so every
+ * plate draw subtracts it and adds twice it. At pp = 0 — every P0 export — the four
+ * expressions evaluate to the identical numbers the un-padded draws used.
+ */
+async function paintLayer(
+  ctx: AnyCtx, item: PlanItem, res: LayerRes | undefined,
+  ox: number, oy: number, w: number, h: number, pp: number,
+): Promise<void> {
+  const L = item.layer;
+  const px = ox - pp;
+  const py = oy - pp;
+  const pw = w + pp * 2;
+  const ph = h + pp * 2;
+
+  if (L.kind === 'lottie') {
+    if (res?.live) ctx.drawImage(res.live, px, py, pw, ph);
+    else if (res?.under) ctx.drawImage(res.under, px, py, pw, ph);
+    return;
+  }
+
+  if (L.kind === 'video') {
+    // Background + anything painted UNDER the media, then the frame, then the
+    // box's own text back on top (the DOM order the preview paints in).
+    if (res?.under) ctx.drawImage(res.under, px, py, pw, ph);
+    if (res?.provider && item.sourceSec != null) {
+      const f = fitRect(res.objectFit || 'contain', res.objectPosition || '', res.provider.w, res.provider.h, w, h);
+      await res.provider.drawAt(ctx, item.sourceSec, { dx: ox + f.x, dy: oy + f.y, dw: f.w, dh: f.h });
+    }
+    if (res?.over) ctx.drawImage(res.over, px, py, pw, ph);
+    return;
+  }
+
+  if (res?.under) ctx.drawImage(res.under, px, py, pw, ph);
+}
+
+/**
  * Draw ONE plan item. No decisions live here beyond "how do I express this on a
- * canvas" — activity, alpha, rotation and source time all arrive decided.
+ * canvas" — activity, alpha, rotation, blur and source time all arrive decided.
  *
  * The transform order reproduces sequence-clock's composed CSS transform exactly:
  * `translate(anim) → rotate(authored + anim) → scale(anim)` about the box centre,
  * which is the same matrix the preview builds and the same one renderRecord's
  * drawObject issues.
+ *
+ * TWO PATHS, AND WHICH ONE A LAYER TAKES IS THE POINT (plans/104 §5.5).
+ *
+ *  • CLEAN (the compositor owns no effect here): clip into the destination and draw.
+ *    Byte for byte the path this function has always taken. `itemFx` returning null is
+ *    the only gate, and it asks `ownsLayerFx` FIRST — a layer with no depth keeps its
+ *    filter on its plate, exactly as every pre-104 `shadow: content` document did.
+ *
+ *  • FILTERED: clip the content into a PADDED scratch, run the scratch through a blur
+ *    lane, composite the result. The order matters and it is the DOM's: a radius clips
+ *    the CONTENT and the filter applies to the clipped result — so a blurred rounded
+ *    box spills softly OUTSIDE its radius — while a `clip-path` applies to the FILTER
+ *    OUTPUT, so its blur and drop-shadow are cut off at the path. Clipping everything
+ *    at the destination first (what this function used to do) shaved the radius case's
+ *    spill straight off at the moment the blur produced it; clipping nothing at the
+ *    destination let the clip-path case's spill escape a boundary the browser cuts.
+ *
+ * The scratch also solves a subtler problem: a blur applied INSIDE `ctx.scale(eff)` is
+ * interpreted in user space by some engines and device space by others. Blurring at
+ * plate resolution under identity and drawing the result through the transform is one
+ * answer on every engine — and it is CSS's answer, where `filter` applies in the
+ * element's own box and `transform` magnifies what comes out.
  */
 export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | undefined, S: number): Promise<void> {
   const L = item.layer;
-  if (L.kind === 'audio') return;                 // a timeline citizen with no picture
+  // Timeline citizens with no picture: an audio bed, and (plans/104 §5.4) a camera
+  // marker, which carries a pose rather than pixels. Neither is given a plate, and
+  // neither may leave one behind here either.
+  if (L.kind === 'audio' || L.kind === 'camera') return;
   if (item.alpha <= 0) return;
   const w = L.rect.w * S;
   const h = L.rect.h * S;
   if (w <= 0 || h <= 0) return;
+  const pp = (res?.platePad ?? 0) * S;
 
   ctx.save();
   try {
@@ -359,52 +558,87 @@ export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | unde
     if (item.rot) ctx.rotate((item.rot * Math.PI) / 180);
     if (item.scale !== 1) ctx.scale(item.scale, item.scale);
 
-    // Clips are authored against the UNSCALED box, so they are parsed there and
-    // scaled — a `12px` radius must grow with the export, a `50%` must not drift.
     const ox = -w / 2;
     const oy = -h / 2;
-    if (L.clipPath) {
-      const shape = parseClipShape(L.clipPath, L.rect.w, L.rect.h);
-      if (shape) {
-        if (shape.kind === 'empty') return;       // a well-formed clip enclosing nothing
-        const p = new Path2D();
-        if (shape.kind === 'circle') p.arc(ox + shape.cx * S, oy + shape.cy * S, shape.r * S, 0, Math.PI * 2);
-        else if (shape.kind === 'ellipse') p.ellipse(ox + shape.cx * S, oy + shape.cy * S, shape.rx * S, shape.ry * S, 0, 0, Math.PI * 2);
-        else if (shape.kind === 'inset') p.rect(ox + shape.x * S, oy + shape.y * S, shape.w * S, shape.h * S);
-        else {
-          shape.points.forEach(([px, py], i) => (i ? p.lineTo(ox + px * S, oy + py * S) : p.moveTo(ox + px * S, oy + py * S)));
-          p.closePath();
-        }
-        ctx.clip(p);
-      }
-    } else if (L.radius) {
-      const r = radiiOf(L.radius, L.rect.w, L.rect.h).map((v) => v * S) as [number, number, number, number];
-      if (r.some((v) => v > 0)) {
-        const p = new Path2D();
-        p.roundRect(ox, oy, w, h, r);
-        ctx.clip(p);
-      }
-    }
+    // THE SCRATCH'S OWN RESOLUTION, over S. The plate was captured at `S·plateEff` —
+    // the budget bought that resolution precisely so a flown-past layer is not a
+    // blown-up S-resolution plate — and this layer lands on the destination magnified
+    // by `item.scale`, which carries eff. A scratch sized in S px resamples the plate
+    // DOWN to S, blurs it there, and then lets the transform blow the result back up:
+    // the bought pixels thrown away on exactly the layers (lifted, depth-shadowed)
+    // that paid for them. So the scratch is the PLATE's resolution.
+    //
+    // The plate's, rather than `min(item.scale, plateEff)` — which would be the
+    // tightest allocation frame by frame, and would resize the pooled scratch on every
+    // one of them, which is the exact cost the pool exists to avoid. `plateEff` is
+    // already the bucketed window maximum, so this is one size per layer per render.
+    // 1 on every flat layer, which is the byte-identity floor: at k = 1 every
+    // expression below is the one that shipped.
+    const k = Math.max(1, res?.plateEff ?? 1);
+    const fx = itemFx(item, S * k);
 
-    if (L.kind === 'lottie') {
-      if (res?.live) ctx.drawImage(res.live, ox, oy, w, h);
-      else if (res?.under) ctx.drawImage(res.under, ox, oy, w, h);
+    if (!fx) {
+      if (!clipLayer(ctx, L, ox, oy, w, h, S)) return;
+      await paintLayer(ctx, item, res, ox, oy, w, h, pp);
       return;
     }
 
-    if (L.kind === 'video') {
-      // Background + anything painted UNDER the media, then the frame, then the
-      // box's own text back on top (the DOM order the preview paints in).
-      if (res?.under) ctx.drawImage(res.under, ox, oy, w, h);
-      if (res?.provider && item.sourceSec != null) {
-        const f = fitRect(res.objectFit || 'contain', res.objectPosition || '', res.provider.w, res.provider.h, w, h);
-        await res.provider.drawAt(ctx, item.sourceSec, { dx: ox + f.x, dy: oy + f.y, dw: f.w, dh: f.h });
-      }
-      if (res?.over) ctx.drawImage(res.over, ox, oy, w, h);
+    // WHERE THE CLIP GOES, and the two answers are not the same (Filter Effects §5 /
+    // CSS Masking): `border-radius` clips the element's own content, and the filter
+    // then applies to that — soft spill escapes the radius. `clip-path` applies to the
+    // FILTER OUTPUT — the browser cuts the blur and the drop-shadow off at the path.
+    // The DOM evaluator writes `filter` on the element and gets the browser's order
+    // for free, so the canvas has to reproduce both or preview and export disagree for
+    // every clip-path'd blurred box. (The plate itself already carries the clip —
+    // dom-to-image copies `clip-path` onto its clone — so this is about the SPILL, not
+    // about the picture.) Taken FIRST so an empty clip costs no scratch at all.
+    const clipsAfter = !!L.clipPath;
+    if (clipsAfter && !clipLayer(ctx, L, ox, oy, w, h, S)) return;
+
+    const sw = w * k;
+    const sh = h * k;
+    const ppk = pp * k;
+    // The scratch's margin, in the scratch's own px. Never less than the PLATE's own
+    // margin: the plate is drawn `ppk` outside the box on each side, and a scratch
+    // narrower than that would clip the padded capture away before the blur ever saw
+    // it. Never more than `scratchPadCap` allows, either: an authored 300 px blur asks
+    // for a 4880×4320 scratch (21 Mpx, ~84 MB, and `renderFx` holds three or four at
+    // once) that the plate budget never sees, and `takeStage` answering null means the
+    // layer is drawn UNFILTERED — worse than a spill clipped a long way out.
+    const pad = Math.max(
+      Math.ceil(ppk),
+      Math.min(spillPad(fx.sigma, fx.shadows), scratchPadCap(Math.ceil(sw), Math.ceil(sh))),
+    );
+    const stage = takeStage(Math.ceil(sw) + pad * 2, Math.ceil(sh) + pad * 2);
+    if (!stage) {
+      // No canvas in this realm (bare Node, a refused allocation). Draw the picture
+      // sharp rather than not at all: a visibly un-softened layer beats a missing one.
+      if (!clipsAfter && !clipLayer(ctx, L, ox, oy, w, h, S)) return;
+      await paintLayer(ctx, item, res, ox, oy, w, h, pp);
       return;
     }
 
-    if (res?.under) ctx.drawImage(res.under, ox, oy, w, h);
+    let out: BlurStage | null = null;
+    try {
+      stage.ctx.save();
+      stage.ctx.translate(pad, pad);
+      const visible = clipsAfter || clipLayer(stage.ctx, L, 0, 0, sw, sh, S * k);
+      if (visible) await paintLayer(stage.ctx, item, res, 0, 0, sw, sh, ppk);
+      stage.ctx.restore();
+      if (!visible) return;
+      out = renderFx(stage.canvas, fx, laneFor(ctx));
+      // The scratch maps 1:1 onto its own px, so drawing it at `size / k` in this
+      // (already `item.scale`-scaled) space puts the content back at exactly
+      // (ox, oy, w, h) with the spill around it — at k = 1, the identical four numbers
+      // the un-scaled draw always used.
+      ctx.drawImage(
+        (out?.canvas ?? stage.canvas) as CanvasImageSource,
+        ox - pad / k, oy - pad / k, stage.canvas.width / k, stage.canvas.height / k,
+      );
+    } finally {
+      releaseStage(out);
+      releaseStage(stage);
+    }
   } finally {
     ctx.restore();
   }
@@ -425,6 +659,10 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
   const clipOf = new Map(job.clips.map((c) => [c.idx, c.src]));
   const plateOf = new Map(job.plates.map((p) => [p.idx, p]));
   const S = job.scale;
+  // The stage the planner projects through. P0 carries no cameras, so this resolves
+  // to the DEFAULT camera for every frame — which is not an identity: it is what
+  // makes a lifted layer read as lifted (plans/104 §5.4).
+  const env = { stageW: job.stageW ?? 0, stageH: job.stageH ?? 0 };
 
   const ext = new Map(crossfadeJunctions(layers).map((j) => [j.aIdx, j.ms]));
   const res = new Map<number, LayerRes>();
@@ -438,6 +676,8 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
       provider: null,
       objectFit: w?.objectFit ?? '',
       objectPosition: w?.objectPosition ?? '',
+      platePad: Number.isFinite(w?.platePad) ? (w?.platePad as number) : 0,
+      plateEff: Number.isFinite(w?.plateEff) && (w?.plateEff as number) > 0 ? (w?.plateEff as number) : 1,
       live: null,
       first: win.first, last: win.last, span: win.span,
       lastStats: null, srcClaimedSec: 0,
@@ -477,6 +717,11 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
     reconcileProviders(layers, res, job.fps, log);
   } finally {
     await disposeAll();
+    // The blur lanes pool their scratches across frames, which is the whole reason a
+    // 300-frame export does not spend itself in the allocator — but a FINISHED export
+    // has no next frame, and holding plate-sized canvases warm for one is just a leak
+    // with good manners. No-op on a render that never blurred anything.
+    releaseBlurScratches();
   }
 
   /** Paint the whole stage at `t`, opening/closing providers on their edges. */
@@ -505,7 +750,7 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
     ctx.clearRect(0, 0, job.outW, job.outH);
     if (job.bg) ctx.drawImage(job.bg, 0, 0, job.outW, job.outH);
 
-    const plan = sequenceDrawPlan(layers, t, job.totalMs);
+    const plan = sequenceDrawPlan(layers, t, job.totalMs, env);
     // The live-DOM rasters for this frame, fetched BEFORE any drawing so the
     // request/response hop overlaps nothing and stays strictly one-at-a-time.
     const taken: { r: LayerRes; img: CanvasImageSource }[] = [];

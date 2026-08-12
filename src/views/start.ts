@@ -110,6 +110,8 @@ import type { LangSwitchHost } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { backPillHtml, mountBackPill, resolveBackTarget } from '../components/back-pill.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountThemeFab } from '../components/theme-toggle.ts';
 import { navigateTo } from '../nav.ts';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
@@ -306,6 +308,19 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const backPill = backPillHtml({ class: 'start-back' });
   const wireBackPill = (): void => { mountBackPill(viewEl); };
 
+  // The history-INDEPENDENT escape, twinned with the language FAB in the fixed
+  // top-right cluster (shared chrome — components/home-fab.ts). The back pill
+  // answers "where did I come from"; this answers "just get me out", always to
+  // the front door. The studio paints no global nav of its own, so it is the
+  // one exit that never depends on the back stack.
+  const homeFab = homeFabHtml();
+  const wireHomeFab = (): void => {
+    mountHomeFab(viewEl);
+    // Light/dark/brand beside the escape — the studio is where you're shaping the
+    // brand, so flipping the theme to check it in place belongs right here.
+    mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+  };
+
   // A locked catalog is authoritative — its brand (colours, fonts, radius) can't
   // be adjusted; every write funnels through installUserTokens, which refuses. So
   // skip the whole studio and say why, rather than dead-ending on an error.
@@ -317,7 +332,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     takePendingDesignSystemFile();
     viewEl.innerHTML = `
       <div class="start">
-        <div class="gallery-topright">${langFabHtml()}</div>
+        <div class="gallery-topright">${homeFab}${langFabHtml()}</div>
         ${backPill}
         <header class="start-head">
           <p class="start-eyebrow">${t('Brand')}</p>
@@ -327,6 +342,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       </div>`;
     attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
     wireBackPill();
+    wireHomeFab();
     return;
   }
 
@@ -357,7 +373,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
   viewEl.innerHTML = `
     <div class="start start--studio">
-      <div class="gallery-topright start-topright">${langFabHtml()}</div>
+      <div class="gallery-topright start-topright">${homeFab}${langFabHtml()}</div>
       ${backPill}
       <header class="start-head">
         <p class="start-eyebrow">${t('Design system')}</p>
@@ -449,6 +465,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
 
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
   wireBackPill();
+  wireHomeFab();
 
   // Mount liveness: #view itself is the router's persistent container (it never
   // disconnects — navigation just replaces its innerHTML), so "are we still the
@@ -1220,9 +1237,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
    *  stash from its own PAINT, and the paint runs on a mount, so this remounts
    *  the studio on that room rather than flipping to it in place. */
   function sendToLogosRoom(): void {
-    const target = '#/start?area=logos';
-    if (window.location.hash !== target) window.location.hash = target;
-    else window.dispatchEvent(new Event('lolly:remount'));
+    // A start→start hand-off: REPLACE the current history entry rather than
+    // pushing a new #/start?area=logos one. A push left a phantom studio stop
+    // that the browser Back button (and the back pill's history.back()) had to
+    // unwind before it could leave the studio at all — the "back loop" that
+    // stranded anyone who reached /start mid-session. The remount is what drains
+    // the logos stash (the room reads it on paint), so it fires unconditionally.
+    try { history.replaceState(null, '', '#/start?area=logos'); } catch { /* sandboxed */ }
+    window.dispatchEvent(new Event('lolly:remount'));
   }
 
   // ── The website source (plan 97 §9, M6) ──────────────────────────────────────

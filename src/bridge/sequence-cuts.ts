@@ -29,8 +29,17 @@
  * so every `<video>` is already an `<img>` of the frame the preview was parked on.
  * We deliberately do NOT re-seek per cut: the poster contract is "the video is
  * where you left it", and it holds for cut 12 exactly as it does for cut 1. What
- * moves between cuts is the timeline's own visibility/transform/opacity state,
- * which is all `applySequenceTime` writes.
+ * moves between cuts is the timeline's own visibility state and the four inline
+ * properties the applier composes — `transform`, `opacity`, and, on a stage that
+ * authors depth (plans/104), `filter` and `z-index`. That list is all
+ * `applySequenceTime` writes, and `restoreSequenceTime` hands every one of them back.
+ *
+ * AND THE STAGE IT STARTS FROM IS THE AUTHORED ONE. The whole run sits inside
+ * `withAuthoredDom` (plans/104 §6 point 0): the preview clock has been writing those
+ * same four properties for whatever frame the playhead is parked on, and this module's
+ * session would capture that composed pose as "authored" the first time it touched a
+ * box — so every cut would carry the parked frame baked in, and by how much would
+ * depend on where the user last scrubbed.
  *
  * INJECTED DEPENDENCIES. The renderers stay in export.ts (they are that file's
  * private machinery) and arrive as `CutsDeps`. That is not ceremony: it is what
@@ -41,6 +50,7 @@
 import {
   createSequenceTime,
   sequenceDurationMs,
+  withAuthoredDom,
   type SequenceTimeSession,
 } from './sequence-dom.ts';
 import { CUTS_FORMATS } from '@lolly/engine';
@@ -168,6 +178,21 @@ export interface CutsDeps {
  * editor after a failed export.
  */
 export async function renderSequenceCuts(
+  node: Element, format: string, opts: ExportOpts, deps: CutsDeps,
+): Promise<Blob> {
+  // THE READ/RESTORE SEAM (plans/104 §6 point 0). The comment above about re-capturing
+  // the authored styles on cut 2 is the same bug one level up: the PREVIEW CLOCK has
+  // already written cut 0. This sheet opens its own session on the live artboard, and
+  // `AuthoredStore.get()` captures whatever is on the element the first time it is
+  // touched — mid-keyframe that is the clock's composed pose, and every one of the N
+  // stills would then carry the frame the user happened to be parked on, baked in.
+  // The scope stands every OTHER writer over `node` down (handing its writes back) and
+  // holds it down until the last cut is packed; the session opened INSIDE it is not in
+  // the snapshot, so it composes normally.
+  return await withAuthoredDom(node as HTMLElement, () => renderCutsAuthored(node, format, opts, deps));
+}
+
+async function renderCutsAuthored(
   node: Element, format: string, opts: ExportOpts, deps: CutsDeps,
 ): Promise<Blob> {
   const log = (l: string, m: string): void => deps.log?.(l, m);

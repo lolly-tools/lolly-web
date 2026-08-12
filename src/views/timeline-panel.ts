@@ -47,7 +47,7 @@ import { mountBodyPopover, pointAnchor, type PopoverAnchor } from '../components
 import {
   filmstrip, peaks, stillFrames, nodeStill, nodeKey, peekNodeRaster, nodeRasterPending,
   nodeRasterFailed, onNodeShotSettled, releaseClipThumbs, onIdle, svgMarkup, withBorrowedVisibility,
-  MAX_NODE_RASTER_NODES,
+  setAuthoredPoseSeam, MAX_NODE_RASTER_NODES,
 } from '../lib/clip-thumbs.ts';
 // The vector twin vocabulary. Imported for its markup builders ONLY: the panel must
 // never gain a static edge to bridge/export.ts (vector-paint imports nothing at all,
@@ -57,9 +57,23 @@ import {
   escXml, n3, parseSvgRoot, rectBody, stillTilePx, svgDoc, tileBody, waveformPathD,
   type VectorTwin, type VectorTwinCanvas,
 } from '../lib/vector-paint.ts';
-import { TRANSITIONS, TRANSITION_KINDS, isTransitionKind, EASINGS, easingToWire } from '../lib/transitions.ts';
+import { TRANSITIONS, TRANSITION_KINDS, DEFAULT_TRANSITION, isTransitionKind, EASINGS, easingToWire } from '../lib/transitions.ts';
+// The keyframe wire's own vocabulary. The panel does EDITING GLUE only — every keyframe
+// NUMBER comes from the engine module or from timeline-math's kf* primitives, and what
+// is imported here is exactly the vocabulary a control has to speak to offer a choice:
+// the preset tokens the ease picker lists, the two adapters that carry one token to and
+// from the shared easing editor's CSS wire, and `parseKf` for "how many poses are on
+// this track" — never a `split('*')` of its own.
+import {
+  KF_CLAMPS, KF_EASE_TOKENS, KF_HOLD_EASE, KF_Z_FIELD_CLAMP, kfEaseCss, kfEaseName, parseKf,
+} from '../../../../engine/src/keyframes.ts';
+import type { KfChannel, KfPose, KfTrack } from '../../../../engine/src/keyframes.ts';
 import { mountEasingEditor, type EasingEditorHandle } from '../components/easing-editor.ts';
-import { MAX_TRANSITION_MS, MIN_TRANSITION_MS, createSequenceClock, type SequenceClock } from './sequence-clock.ts';
+import {
+  MAX_TRANSITION_MS, MIN_TRANSITION_MS, createSequenceClock,
+  authoredStyleOf, borrowAuthoredPose,
+  type SequenceClock,
+} from './sequence-clock.ts';
 import {
   DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, MIN_TRIM_BAR_PX, ONION_MAX_STEPS,
   boxTiming, deriveDuration, edgeZonePx, fmtDelta, fmtDur, fmtTime, indexOfId, isTimed,
@@ -68,6 +82,12 @@ import {
   setClipIn, setDuration, setSpeed,
   detachAudio, isThroughEdit, joinClips, reattachAudio, splitAll,
   snapTime, trimClip,
+  // The keyframe surface's arithmetic (plans/104 §8). EVERY number the diamonds, the
+  // latch and the CRUD list need is one of these — the panel converts a pointer to an
+  // intent and hands the intent over.
+  clearKfTrack, kfBoxTrack, kfDiamondAt, kfDiamondTimes, kfDuplicateMs, kfFormatChannel,
+  kfKeyAt, kfLocalMs, kfLocalSec, kfPoseAt, kfSeekDiamond, kfSlideMs, kfTimelineSec, kfWriteMs,
+  kfTrackDelete, kfTrackDuplicate, kfTrackRetime, kfTrackSetEase, setKfTrack, writeKfPose,
   type Box, type MediaDurFn, type TimeCfg,
 } from './timeline-math.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
@@ -202,6 +222,47 @@ export interface TimelinePanel {
    */
   promote(id: string, want?: { start?: number; dur?: number | null }): void;
   demote(id: string): void;
+  /**
+   * PLAYHEAD-CONTEXTUAL WRITES, the canvas half (plans/104 §8).
+   *
+   * The panel owns the clock and therefore owns the only honest answer to "is this
+   * box parked on one of its own keyframes right now". free-canvas asks that at its
+   * single pointerup commit and, for the ids that come back, hands the gesture's
+   * delta here instead of moving the box — which is what makes a drag on a diamond
+   * pose THAT keyframe while a drag anywhere else moves the clip, with no mode, no
+   * record-arm and no second gesture to learn.
+   *
+   * Two calls rather than one so the caller keeps its own writers: `kfPoseIds` is a
+   * question (no writes, no side effects), `kfPoseWrite` is a pure transform of a
+   * boxes array. Neither commits — the caller composes both halves of a mixed
+   * selection into ONE array and makes ONE commit, so a multi-select is one undo step.
+   */
+  kfPoseIds(ids: readonly string[]): string[];
+  kfPoseWrite(boxes: Box[], ids: readonly string[], delta: KfPose): Box[];
+  /**
+   * "+Keyframe", the ACTION (plans/104 §8's M2.5 revision: "TWO homes, one action").
+   *
+   * The panel's own transport button, the canvas contextual bar's diamond and the `K`
+   * shortcut are three doors onto this one function — there is no second copy of the
+   * rules anywhere. It reads the shared selection itself, so a caller passes nothing:
+   * a timed box is keyed at the playhead; an UNTIMED one is promoted onto the timeline
+   * and keyed in the SAME array, so the whole thing is one commit and one undo step.
+   * Boxes with nothing to pose (audio, until plan 101) fall out; an empty selection
+   * writes nothing at all.
+   */
+  addKeyframe(): void;
+  /**
+   * The SCOPE half of that action, as a question — which of these ids "+Keyframe"
+   * would actually key. free-canvas's contextual-bar diamond asks it for its own
+   * enabled state, so the two homes of one action share one ENABLEMENT rule as well as
+   * one writer: the panel's rule reads the live canvas as well as the model (a box
+   * carrying an audio asset is a sound whatever its `kind` says), which a caller
+   * re-deriving from the model alone cannot see — it would offer a button that then
+   * writes nothing and says nothing.
+   *
+   * Pure: no writes, no DOM mutation, no announce.
+   */
+  keyframableIds(ids: readonly string[]): string[];
 }
 
 // ── tunables ──────────────────────────────────────────────────────────────────
@@ -286,8 +347,15 @@ export interface PanelShortcut {
    * be added without documenting it, or documented without existing.
    *
    * Empty for a modifier-only row (Alt), which has no keydown branch of its own.
+   *
+   * `altKey` is the ONE chord this panel binds, and it is documented rather than
+   * hidden: Alt+←/→ (previous/next keyframe) reuses the arrow keys the bare press
+   * already owns, because "the same key, one step coarser" is the only mapping that
+   * needs no second thing to remember — and Alt is already this panel's modifier
+   * vocabulary (it bypasses snapping everywhere else, i.e. it always means "not the
+   * ordinary reading of this gesture").
    */
-  events: Array<{ key: string; shiftKey?: boolean }>;
+  events: Array<{ key: string; shiftKey?: boolean; altKey?: boolean }>;
 }
 
 /**
@@ -316,6 +384,11 @@ export const PANEL_SHORTCUTS: PanelShortcut[] = [
     keys: ',  .', label: t('Nudge the selected edge'), hint: t('Hold Shift for ten frames'),
     events: [{ key: ',' }, { key: '.' }, { key: '<' }, { key: '>' }],
   },
+  {
+    keys: 'Alt + ← →', label: t('Previous or next keyframe'),
+    events: [{ key: 'ArrowLeft', altKey: true }, { key: 'ArrowRight', altKey: true }],
+  },
+  { keys: 'K', label: t('+Keyframe'), hint: t('Adds or updates the pose at the playhead'), events: [{ key: 'k' }] },
   { keys: 'E', label: t('Trim to the playhead'), events: [{ key: 'e' }] },
   { keys: 'S', label: t('Split at playhead'), events: [{ key: 's' }] },
   { keys: 'Shift + S', label: t('Split every clip at the playhead'), events: [{ key: 'S', shiftKey: true }] },
@@ -340,6 +413,43 @@ const finite = (v: unknown, fallback: number): number => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
   return Number.isFinite(n) ? n : fallback;
 };
+
+/**
+ * The middle dot between two readings inside ONE inspector chip. A separator, not a
+ * word — no `t()`, and it must never be built by concatenating a translated fragment
+ * either side of it, which is how a summary turns into an untranslatable sentence.
+ * (Between two SEPARATE chips the sheet draws a `border-inline-start` instead, which is
+ * why that rule is logical rather than a physical left border: see parts/timeline.css.)
+ */
+const CHIP_SEP = ' · ';
+
+/**
+ * The Animate segment's WHOLE collapsed reading: the two kind names, `Rise · Fade`.
+ *
+ * §8's M2.6 pass, verbatim: "Chips must not duplicate the popup's contents… ANIMATE's
+ * chip drops the ms/curve dump — kind names only". M2.5 printed
+ * `In: Rise · 400ms · Ease out` beside `Out: Cut (no animation)`, which is every field
+ * of the group re-rendered as text on the door of the group — so the door taught the
+ * user nothing they would not read one press later, at twice the width. The segment is
+ * a door with at most one glance token; the popup is where the details live.
+ *
+ * A CUT contributes NOTHING rather than a placeholder: "Rise · Cut (no animation)" is a
+ * summary that spends half its width on the absence of an animation, and an em dash in
+ * its place is a token that has to be learned. Both directions cut → no chip at all,
+ * which is exactly how the segment reads a box that has never been animated. The
+ * vocabulary is the SAME registry the `<select>`s a press away are built from
+ * (`TRANSITIONS`), so the chip can never name a kind by a word the control does not use.
+ */
+function animateSummary(enter: unknown, exit: unknown): string[] {
+  const name = (v: unknown): string => {
+    const k = isTransitionKind(v) ? v : DEFAULT_TRANSITION;
+    return k === 'none' ? '' : t(TRANSITIONS[k]);
+  };
+  const parts = [name(enter), name(exit)].filter(Boolean);
+  // ONE chip, not two: `setSummary` draws a separator rule between chips, and a single
+  // reading split across two of them would read as two facts.
+  return parts.length ? [parts.join(CHIP_SEP)] : [];
+}
 
 /** Seconds → panel pixels at the current zoom. */
 export function timeToPx(tSec: number, pxPerSec: number): number {
@@ -536,7 +646,7 @@ export function edgeBase(pointerType: string | undefined): number {
 
 // ── the controller ────────────────────────────────────────────────────────────
 
-type GestureKind = 'trim' | 'move' | 'reorder' | 'seek' | 'resize';
+type GestureKind = 'trim' | 'move' | 'reorder' | 'seek' | 'resize' | 'kf';
 
 interface Gesture {
   kind: GestureKind;
@@ -559,6 +669,13 @@ interface Gesture {
   edge?: 'in' | 'out';
   /** Trim only: the limit signal has already been spoken for this gesture. */
   limitSaid?: boolean;
+  /**
+   * Diamond drag only (`kind === 'kf'`): the keyframe's LOCAL ms at pointerdown, and
+   * the dot being dragged. Absolute-from-the-snapshot like `start0`/`dur0`, so a
+   * retime is never accumulated across frames.
+   */
+  kfT0?: number;
+  kfDot?: HTMLElement | null;
   /** Snapshot of the timing at pointerdown, so the drag is always absolute, never accumulated. */
   start0: number;
   dur0: number;
@@ -802,6 +919,26 @@ function writeOnionPref(pref: OnionPref | null): void {
   } catch { /* storage off */ }
 }
 
+/**
+ * Disclosure, since §8's M2.5 revision: the inspector strip carries only the SEGMENTS
+ * (icon + label + the resolved value chips, at a constant width), and an open group's
+ * body is a body-mounted popover ABOVE the transport.
+ *
+ * There is therefore no per-group open MAP any more, and its absence is the point:
+ *
+ *   • ONE popover at a time — opening a second group swaps, the way a menu bar does.
+ *     A map of independently-open groups cannot express that, and the strip it used to
+ *     describe (bodies inline, side by side) is exactly what the revision removed.
+ *   • DEFAULT ALL-SHUT. Nothing auto-discloses on selection: a popover that opens
+ *     itself over the canvas because you clicked a box is a popover you have to close.
+ *   • Still UI state and still session-local — it lives in `openGroup` inside the panel
+ *     closure below, never in the model (plans/104 §8: "never a model field") and never
+ *     in storage. A group left open is a working posture, not a setting.
+ */
+
+/** Unique `aria-controls` targets: the inspector is rebuilt constantly, ids must not collide. */
+let groupBodySeq = 0;
+
 export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const { stageEl, canvasEl, runtime, host, blockId, cfg, getBoxes, commit, selection, onDirty, reserve } = opts;
   const addKinds: TimelineAddKind[] = Array.isArray(opts.addKinds) ? opts.addKinds.filter((k) => k && k.id) : [];
@@ -862,6 +999,28 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     b.innerHTML = glyph;
     return b;
   };
+  /**
+   * A button that says what it does IN WORDS, with the glyph beside the text rather
+   * than instead of it.
+   *
+   * The panel's `btn()` above is the TOOLBAR recipe — a 24px target in a row of
+   * peers, where the icon is the whole control and the label lives in `aria-label` +
+   * a tooltip. That is the wrong register inside the inspector, where an action
+   * arrives alone in a disclosed group with nothing beside it to give it context:
+   * "+Keyframe" and "Animate" are decisions, and a decision gets a word. Built ON
+   * `btn` (never beside it) so there is still exactly one place that mints the icon
+   * markup and the accessible name.
+   */
+  const actionBtn = (cls: string, label: string, glyph: IconName): HTMLButtonElement => {
+    const b = btn(`tl-action ${cls}`, label, icon(glyph));
+    // The text IS the label now, so the hover bubble would just repeat it.
+    b.removeAttribute('data-tip');
+    const span = document.createElement('span');
+    span.className = 'tl-action-label';
+    span.textContent = label;
+    b.appendChild(span);
+    return b;
+  };
   // Every glyph now comes from the registry (lib/icons.ts). The `.tl-glyph` CSS
   // drawings this file used to emit for pause / scissors / plus existed only because
   // those three had no registry entry and a hand-inlined 24×24 <svg> here trips the R3
@@ -907,6 +1066,29 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const scriptBtn = btn('tl-script', t('Script a voiceover'), icon('speech'));
   scriptBtn.hidden = true;   // decided below, beside the mic's check
 
+  /**
+   * "+Keyframe" — one of its TWO homes (plans/104 §8's M2.5 revision).
+   *
+   * It sits at the END of the left cluster, AFTER the keyboard sheet (§8's M2.6 pass:
+   * "the transport diamond moves to after the keyboard icon"). M2.5 put it fourth,
+   * among `+` / mic / script on the reasoning that it is the fourth thing this panel
+   * can ADD — but on the built strip that reading did not survive contact: the three
+   * additive buttons all put something NEW on a track, and a diamond poses a box that
+   * is already there, so it read as an interruption mid-cluster. The other home is the
+   * canvas's selected-object contextual bar (views/free-canvas.ts), and both call the
+   * SAME exported action — `addKeyframeAction` below — so there is one writer, one set
+   * of rules and one undo step however the press arrived.
+   *
+   * DISABLED, never hidden, when the selection has nothing keyframable in it: a
+   * control that vanishes teaches nothing, and this one's whole job is to be the
+   * answer to "how do I animate this". `aria-disabled` rather than the `disabled`
+   * property, so it keeps its place in the tab order and can still explain itself.
+   * A tool whose manifest declares no `kf` sub-field never grows the button at all —
+   * the same progressive-capability gate the `+` and the mic already carry.
+   */
+  const kfBtn = btn('tl-kf-btn', t('+Keyframe'), icon('keyframe'));
+  kfBtn.hidden = !cfg.kfField;
+
   /** The take HUD: a live level meter and the elapsed clock, shown only during a take. */
   const rec = document.createElement('div');
   rec.className = 'tl-rec';
@@ -937,7 +1119,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   transport.append(playBtn, timeEl);
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
-  tools.append(addBtn, micBtn, scriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn);
+  // `kfBtn` LAST — the end of the left cluster, after the keyboard sheet (§8's M2.6).
+  tools.append(addBtn, micBtn, scriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
   bar.append(transport, tools, rec, recNote, inspector);
@@ -1176,6 +1359,63 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     el.style.width = `${Math.max(2, timeToPx(dur, pxPerSec))}px`;
   }
 
+  /**
+   * The diamonds: one strip per ANIMATED clip, one dot per keyframe (plans/104 §8).
+   *
+   * POINTER SUGAR, and the word is exact. A bar is `role="option"` inside a listbox,
+   * where an interactive child is illegal — so these are `<span>`s, aria-hidden, out
+   * of the tab order, and everything they can do (retime, duplicate, re-ease, delete)
+   * is also a real labelled button in the inspector's Keyframes group. That list is
+   * the keyboard and screen-reader route; this is the one you can grab.
+   *
+   * Positioned exactly like `.tl-seam`: an absolute `left` in bar-local pixels, with
+   * the half-size offset in the SHEET's `margin`, never a `transform`. A transform on
+   * a diamond would make its bar a containing block for the fixed-position popovers
+   * the panel body-mounts (the trap documented on `.tl-panel`), and the seam chips
+   * learned that first.
+   *
+   * On an `is-tight` bar the strip hides outright — the trim-grip precedent: a target
+   * you cannot hit is worse than no target, and the inspector list still has every
+   * keyframe. Reconciled in place (`restyle`'s no-churn law): the dots are re-used and
+   * only their count changes with the track.
+   *
+   * `keyframable` is the caller's `isKeyframable` answer. A bar that is NOT keyframable
+   * shows no diamonds even if its row carries a track: the inspector offers that box no
+   * Keyframes group and "+Keyframe" refuses it, so dots would be the one affordance
+   * pointing at a surface nothing else admits to (a sound with a hand-authored `kf=`
+   * from a share URL is the only way to get one).
+   */
+  function syncDiamonds(el: HTMLElement, box: Box, tight: boolean, keyframable: boolean): void {
+    const track = cfg.kfField && keyframable ? kfBoxTrack(box, cfg) : null;
+    let strip = el.querySelector<HTMLElement>('.tl-kf-strip');
+    if (!track?.length) { strip?.remove(); return; }
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.className = 'tl-kf-strip';
+      strip.setAttribute('aria-hidden', 'true');
+      el.appendChild(strip);
+    }
+    strip.hidden = tight;
+    while (strip.childElementCount > track.length) strip.lastElementChild?.remove();
+    while (strip.childElementCount < track.length) {
+      const dot = document.createElement('span');
+      dot.className = 'tl-kf-dot';
+      dot.tabIndex = -1;
+      strip.appendChild(dot);
+    }
+    for (let i = 0; i < track.length; i++) {
+      const dot = strip.children[i] as HTMLElement;
+      const k = track[i]!;
+      dot.dataset.t = String(k.t);
+      dot.style.left = `${timeToPx(kfLocalSec(k.t), pxPerSec)}px`;
+      // `title`, not [data-tip]: the bubble primitive draws a ::after ABOVE the
+      // element and this one lives inside the `.tl-tracks` scroller, which clips —
+      // the same reason the scenery chip's `+` uses a native tooltip.
+      const tip = t('Keyframe @ {t}', { t: fmtTime(kfTimelineSec(box, cfg, k.t)) });
+      if (dot.title !== tip) dot.title = tip;
+    }
+  }
+
   // ── rows ────────────────────────────────────────────────────────────────────
 
   function makeBar(id: string, lane: '' | 'seq'): HTMLElement {
@@ -1390,13 +1630,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (linkEl.title !== tip) linkEl.title = tip;
       }
       el.setAttribute('aria-selected', isSel ? 'true' : 'false');
-      el.dataset.kind = mediaOf(id).kind || (seqSet.has(id) ? 'clip' : 'overlay');
+      // Read once and shared with the diamond gate below — `mediaOf` is a live DOM
+      // query, and this loop runs per bar per restyle.
+      const mediaKind = mediaOf(id).kind;
+      el.dataset.kind = mediaKind || (seqSet.has(id) ? 'clip' : 'overlay');
       // Too narrow to carry two trim zones (see MIN_TRIM_BAR_PX): hide the grips and
       // say where the precise route is, rather than offering a target that would eat
       // the whole bar. Read off the width we just WROTE — asking the DOM for
       // offsetWidth here would force a layout per bar per keystroke.
       const tight = timeToPx(dur, pxPerSec) < MIN_TRIM_BAR_PX;
       el.classList.toggle('is-tight', tight);
+      syncDiamonds(el, b, tight, isKeyframable(b, id, mediaKind));
       const base = `${text} · ${fmtTime(start)} → ${fmtTime(start + dur)}`;
       el.title = tight
         ? `${base} · ${t('This clip is too narrow to trim here. Zoom in, or set its Length in the panel.')}`
@@ -1441,9 +1685,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     updateRuler(total);
     updateRovingTabindex();
     renderInspector(boxes);
+    // AFTER the row is built (it may have just been rebuilt from scratch, taking the
+    // latch's marks with it) and after the diamonds have been re-laid: this reads the
+    // playhead against what is now on screen. `renderInspector` resets the memo when
+    // it rebuilds, so a repaint can never leave the header saying the wrong thing.
+    syncKfLatch();
     // The mic's label follows the selection (record vs record-over), so it repaints
     // with everything else rather than needing its own observer.
     syncMicBtn();
+    // And so does "+Keyframe": it is enabled by what is SELECTED, which is one of the
+    // two things that bring us here.
+    syncKfBtn();
     // So does the blade's — its scope depends on the selection and on the model, which
     // are exactly the two things that bring us here. The other half (the playhead
     // crossing a clip boundary) rides `tl-time`, so neither costs a per-tick pass.
@@ -1542,16 +1794,31 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * pure, so composing them on the intermediate array is ONE undo step, not two — and
    * a promoted start lands on exactly the value a drag to the same time would.
    */
-  function promote(id: string, want?: { start?: number; dur?: number | null }): void {
-    const rows = getBoxes();
+  /**
+   * The PURE half of {@link promote}: the promoted array, no commit and no side
+   * effects. Split out for the one caller that must compose it with a second write —
+   * "+Keyframe" on an UNTIMED box, which promotes it and poses its first keyframe in
+   * ONE commit and therefore one undo step (§8's M2.5 revision). Everything about the
+   * resolution — the playhead start, the authored → media → DEFAULT_CLIP_S length
+   * ladder, the overlay lane — is documented on `promote` and lives HERE so neither
+   * caller re-derives it.
+   */
+  function promoteRows(rows: Box[], id: string, want?: { start?: number; dur?: number | null }): Box[] {
     const i = indexOfId(rows, cfg, id);
-    if (!id || i < 0) return;
+    if (!id || i < 0) return rows;
     const media = mediaOf(id).dur;
     const start = want?.start ?? clock.t() / 1000;
     const own = boxTiming(rows[i]!, cfg).dur;
     const dur = want && 'dur' in want ? want.dur : (own ?? media ?? DEFAULT_CLIP_S);
     const moved = moveOverlay(rows, cfg, id, start);
-    const next = dur == null ? moved : setDuration(moved, cfg, id, dur, media, mediaDur);
+    return dur == null ? moved : setDuration(moved, cfg, id, dur, media, mediaDur);
+  }
+
+  function promote(id: string, want?: { start?: number; dur?: number | null }): void {
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (!id || i < 0) return;
+    const next = promoteRows(rows, id, want);
     // Both writers keep row IDENTITY for every row they did not change, so an
     // all-identical array means this promote had nothing to write — a seq-lane clip,
     // whose start the magnetic spine owns and whose length is derived. Skip the commit
@@ -1887,8 +2154,51 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     ctxMenu.open();
   }
 
+  /**
+   * The diamond's own menu: the three things §3 lists on the transport's right —
+   * EASING / DUPLICATE / DELETE — offered where the pointer already is.
+   *
+   * Pointer sugar again, and the same three actions are labelled buttons in the
+   * inspector's list, so nothing here is the only way to reach anything.
+   */
+  const kfCtxPoint = pointAnchor();
+  let kfCtxId = '';
+  let kfCtxT = 0;
+
+  const kfCtxMenu = mountBodyPopover(kfCtxPoint, (el, pop) => {
+    const rows = getBoxes();
+    const i = kfCtxId ? indexOfId(rows, cfg, kfCtxId) : -1;
+    const key = i < 0 ? null : kfKeyAt(kfBoxTrack(rows[i]!, cfg), kfCtxT);
+    if (!key) { queueMicrotask(() => pop.close()); return null; }
+    el.textContent = '';
+    const act = (fn: () => void) => () => { pop.close(); fn(); };
+    el.appendChild(menuItem(t('Keyframe curve'), 'animate', act(() => openKfEaseEditor(kfCtxId, kfCtxT, null, kfCtxPoint.x, kfCtxPoint.y))));
+    el.appendChild(menuItem(t('Duplicate keyframe'), 'duplicate', act(() => duplicateKeyframe(kfCtxId, kfCtxT))));
+    el.appendChild(menuItem(t('Delete keyframe'), 'trash', act(() => deleteKeyframe(kfCtxId, kfCtxT)), { danger: true }));
+    return el.querySelector<HTMLElement>('.folder-menu-item');
+  }, { className: 'folder-menu tl-menu tl-ctx-menu', ariaLabel: t('Keyframe actions'), position: menuPosition });
+
   function onContextMenu(e: MouseEvent): void {
     const target = e.target as HTMLElement | null;
+    // The diamond first: it lives inside a bar, so the bar's menu would always win.
+    const dot = target?.closest<HTMLElement>('.tl-kf-dot');
+    const dotBar = dot?.closest<HTMLElement>('.tl-clip');
+    if (dot && dotBar?.dataset.id && cfg.kfField) {
+      const at = finite(dot.dataset.t, NaN);
+      if (Number.isFinite(at)) {
+        e.preventDefault();
+        e.stopPropagation();
+        kfCtxId = dotBar.dataset.id;
+        kfCtxT = at;
+        if (!selection.get().includes(kfCtxId)) selectAndReveal([kfCtxId]);
+        kfCtxPoint.x = e.clientX;
+        kfCtxPoint.y = e.clientY;
+        kfCtxPoint.delegate = null;
+        kfCtxMenu.close();
+        kfCtxMenu.open();
+        return;
+      }
+    }
     const el = target?.closest<HTMLElement>('.tl-clip, .tl-chip, .tl-chip-add');
     const id = el?.dataset.id || '';
     if (!id) return;
@@ -1927,6 +2237,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * move.
    */
   let inspectorShown = false;
+  /**
+   * WHICH box the inspector row currently describes. The group segments are built
+   * inside `renderInspector` but pressed long afterwards, so a head's click handler
+   * reads this rather than closing over an `id` that a later rebuild has replaced.
+   */
+  let inspectorId = '';
   let inspectorEnterT: ReturnType<typeof setTimeout> | null = null;
 
   /* ── the custom-easing popover ─────────────────────────────────────────────
@@ -1977,6 +2293,841 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     easeMenu.open();
   }
 
+  /* ── the KEYFRAME curve popover ────────────────────────────────────────────
+     The same editor, the same pointAnchor/delegate shape, a DIFFERENT commit —
+     which is the whole reason it is a second instance rather than a flag on the
+     one above. `openEaseEditor`'s onCommit replaces a whole FIELD; a keyframe's
+     ease is one token inside a track, so committing it means: parse (already
+     done), splice that one key's ease through the engine's own
+     `kfEaseToken ↔ cubic-bezier` adapter, re-serialise, ONE write. The adapter is
+     not optional — the canonical CSS wire uses commas and the kf charset bans
+     them (§5.1), so a raw hand-off would emit a token the grammar rejects. */
+  const kfEasePoint = pointAnchor();
+  let kfEaseBoxId = '';
+  let kfEaseAtMs = 0;
+  let kfEaseEditor: EasingEditorHandle | null = null;
+
+  const kfEaseMenu = mountBodyPopover(kfEasePoint, (el, pop) => {
+    const rows = getBoxes();
+    const i = kfEaseBoxId ? indexOfId(rows, cfg, kfEaseBoxId) : -1;
+    const track = i < 0 ? null : kfBoxTrack(rows[i]!, cfg);
+    const key = track ? kfKeyAt(track, kfEaseAtMs) : null;
+    if (!key || !track) { queueMicrotask(() => pop.close()); return null; }
+    kfEaseEditor?.destroy();
+    kfEaseEditor = mountEasingEditor(el, {
+      // A preset keeps its NAME (so the editor opens on the named curve the picker
+      // shows), and anything else — a custom bezier, or `eh`, which has no curve at
+      // all — hands over the CSS spelling the editor understands.
+      value: kfEaseName(key.ease) || kfEaseCss(key.ease),
+      onCommit: (wire) => {
+        const live = getBoxes();
+        const j = indexOfId(live, cfg, kfEaseBoxId);
+        if (j < 0) return;
+        write(setKfTrack(live, cfg, kfEaseBoxId, kfTrackSetEase(kfBoxTrack(live[j]!, cfg), kfEaseAtMs, wire)));
+      },
+    });
+    return kfEaseEditor.focusTarget;
+  }, {
+    className: 'folder-menu tl-menu tl-ease-pop',
+    role: 'dialog',
+    ariaLabel: t('Keyframe curve'),
+    position: menuPosition,
+  });
+
+  /** Open the curve editor for ONE keyframe of one box. */
+  function openKfEaseEditor(id: string, atMs: number, trigger: HTMLElement | null, x?: number, y?: number): void {
+    if (!id || indexOfId(getBoxes(), cfg, id) < 0) return;
+    kfEaseBoxId = id;
+    kfEaseAtMs = atMs;
+    const r = trigger?.getBoundingClientRect();
+    kfEasePoint.x = x ?? r?.left ?? 0;
+    kfEasePoint.y = y ?? r?.bottom ?? 0;
+    kfEasePoint.delegate = trigger;
+    kfEaseMenu.close();
+    kfEaseMenu.open();
+  }
+
+  // ── the keyframe writers (one commit each, like every other panel writer) ────
+
+  /** The playhead, in the seconds every kf helper speaks. */
+  function playheadSec(): number {
+    return clock.t() / 1000;
+  }
+
+  /**
+   * CAN this box be keyframed at all (plans/104 §8, M2.5) — the ONE rule, with five
+   * readers: "+Keyframe"'s scope, the transport button's enabled state, the canvas
+   * contextual bar's enabled state (through `keyframableIds` on the handle), the
+   * inspector's Keyframes group, and the diamonds on the bar.
+   *
+   * Deliberately permissive: a box is keyframable timed or not, because the M2.5
+   * revision made the button itself the door — an untimed box is promoted onto the
+   * timeline and keyed in the same commit. Two exclusions, both named in §8:
+   *
+   *   • `audio` — sound has no pose to strike; keyframed gain is plan 101's, and until
+   *     it exists an audio clip in a mixed selection must fall out rather than be
+   *     silently given an x/y/s/r/o track no evaluator reads. The kind is taken from
+   *     the MODEL row and from the live canvas, because a box carrying an audio asset
+   *     is an audio clip whatever its `kind` says. That second source is exactly why
+   *     this is a function and not an inline `kind !== 'audio'` at each site: a model
+   *     read alone offers the affordance to a box the writer then refuses.
+   *   • a `camera` is keyframable (it exists only to be animated) but is never
+   *     PROMOTED by "+Keyframe" — a camera is timed by construction, so that button's
+   *     promote branch can only be reached by a content box.
+   *
+   * `mediaKind` is the caller's already-paid `mediaOf(id).kind` where it has one (the
+   * restyle loop reads it a line earlier for `data-kind`); omit it and this reads the
+   * live canvas itself.
+   */
+  function isKeyframable(row: Box | undefined, id: string, mediaKind?: string): boolean {
+    if (!cfg.kfField || !row) return false;
+    return String(row.kind ?? '') !== 'audio' && (mediaKind ?? mediaOf(id).kind) !== 'audio';
+  }
+
+  /** WHICH of the selected boxes "+Keyframe" would act on. */
+  function kfActionIds(): string[] {
+    if (!cfg.kfField) return [];
+    const rows = getBoxes();
+    return selection.get().filter((id) => isKeyframable(rows[indexOfId(rows, cfg, id)], id));
+  }
+
+  /**
+   * THE "+Keyframe" action — one implementation, three doors (the transport button,
+   * the canvas contextual bar, and `K`), which is the whole point of §8's M2.5
+   * revision: "TWO homes, one action".
+   *
+   * Add-or-update the full pose at the playhead on every keyframable selected box, in
+   * ONE write, so a multi-select press is ONE undo step (§8's gesture/commit law,
+   * applied to a press). `writeKfPose` returns the array by identity for a box it
+   * cannot key, so anything unkeyable simply falls out.
+   *
+   * AUTO-PROMOTION is the new half: a selected box with no time at all is promoted
+   * onto an overlay lane and keyed **inside the same array**, so the commit below is
+   * still one write and one ⌘Z takes both back. `promoteRows` is the panel's existing
+   * resolution (playhead start, authored → media → DEFAULT_CLIP_S length), composed —
+   * never re-derived.
+   */
+  function addKeyframeAction(opts?: { speak?: boolean }): void {
+    if (!cfg.kfField) return;
+    const ids = kfActionIds();
+    if (!ids.length) return;
+    const at = playheadSec();
+    const before = getBoxes();
+    let next = before;
+    // Where the FIRST written keyframe actually landed — which is the playhead unless
+    // it sat outside the clip, in which case `kfWriteMs` clamped it to the clip's own
+    // edge. Announcing the playhead there would name a time no keyframe exists at.
+    let landed: number | null = null;
+    let promoted = 0;
+    for (const id of ids) {
+      const i = indexOfId(next, cfg, id);
+      if (i < 0) continue;
+      // A camera is timed by construction; only a content box can be scenery here.
+      if (!isTimed(next[i]!, cfg) && String(next[i]!.kind ?? '') !== 'camera') {
+        // The CAPTURED playhead, not `promoteRows`'s own `clock.t()` fallback. Both
+        // reads are the playhead, but they are two reads: while the transport is
+        // playing the second one is later, so the clip would start after the time its
+        // first keyframe is then written at — the pose lands at a non-zero local ms (or
+        // gets clamped to the clip edge) instead of at the box's own t = 0, and the
+        // announcement names a time no keyframe is at. One gesture, one instant.
+        const grown = promoteRows(next, id, { start: at });
+        if (grown !== next) { next = grown; promoted++; }
+      }
+      const step = writeKfPose(next, cfg, id, at, {}, 'set');
+      if (step !== next && landed === null) {
+        const j = indexOfId(next, cfg, id);
+        if (j >= 0) landed = kfTimelineSec(next[j]!, cfg, kfWriteMs(next[j]!, cfg, at));
+      }
+      next = step;
+    }
+    if (next === before) return;
+    write(next);
+    if (!opts?.speak) return;
+    // The promotion is the surprising half, so it is the half that is spoken: a box
+    // that was "always on" a moment ago now has a start and a length.
+    announce(promoted
+      ? t('Added to the timeline. Keyframe at {t}', { t: fmtTime(landed ?? at) })
+      : t('Keyframe at {t}', { t: fmtTime(landed ?? at) }));
+  }
+
+  /**
+   * The transport button's enabled state, memoised on the ACHIEVED state rather than
+   * on the selection: this runs on every repaint, and the attribute must not be
+   * rewritten on each one. Disabled — `aria-disabled`, never `hidden` — is a real
+   * state here: with nothing keyframable selected the button stays in place and its
+   * tooltip says what would make it work.
+   */
+  let kfBtnKey = '\u0000';
+  function syncKfBtn(): void {
+    if (!cfg.kfField) return;
+    const n = kfActionIds().length;
+    const key = String(n);
+    if (key === kfBtnKey) return;
+    kfBtnKey = key;
+    const tip = n === 0
+      ? t('Select something on the canvas to keyframe it')
+      : n === 1 ? t('+Keyframe') : t('+Keyframe on {n} objects', { n: String(n) });
+    kfBtn.setAttribute('aria-disabled', n === 0 ? 'true' : 'false');
+    kfBtn.setAttribute('aria-label', tip);
+    kfBtn.setAttribute('data-tip', tip);
+  }
+  kfBtn.addEventListener('click', () => {
+    if (kfBtn.getAttribute('aria-disabled') === 'true') return;
+    addKeyframeAction({ speak: true });
+  });
+
+  /** The Animate door: a t = 0 pose, which is where an animation starts (§8). */
+  function animateBox(id: string): void {
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0 || !cfg.kfField) return;
+    // t = 0 in the box's OWN time, which is its start on the timeline — not the
+    // playhead. A door that opened onto a track whose only key sat wherever the
+    // playhead happened to be would make the clip jump the moment it was animated.
+    const next = writeKfPose(rows, cfg, id, kfTimelineSec(rows[i]!, cfg, 0), {}, 'set');
+    if (next === rows) return;
+    write(next);
+    announce(t('Animating. Move the playhead and press K to add a pose.'));
+  }
+
+  /** One track's worth of edit, from the CRUD list or the diamond menu. */
+  function writeTrack(id: string, edit: (track: KfTrack) => Parameters<typeof setKfTrack>[3]): void {
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return;
+    write(setKfTrack(rows, cfg, id, edit(kfBoxTrack(rows[i]!, cfg))));
+  }
+
+  /**
+   * Alt+←/→ — the playhead to the previous / next diamond of the SELECTED boxes.
+   *
+   * Same selection rule as the latch, for the same reason: the diamonds you can walk
+   * are the ones you declared you were working on. Stops at the ends rather than
+   * wrapping — a shortcut that silently teleports to the other end of a sequence is
+   * how you lose your place.
+   */
+  function seekDiamond(dir: number): void {
+    if (!cfg.kfField) return;
+    const to = kfSeekDiamond(getBoxes(), cfg, selection.get(), playheadSec(), dir);
+    if (to === null) { announce(dir > 0 ? t('Last keyframe') : t('First keyframe')); return; }
+    clock.seek(to * 1000);
+    announce(t('Keyframe @ {t}', { t: fmtTime(to) }));
+  }
+
+  /** Delete one keyframe, from wherever it was asked for. */
+  function deleteKeyframe(id: string, atMs: number): void {
+    writeTrack(id, (track) => kfTrackDelete(track, atMs));
+    announce(t('Keyframe deleted'));
+  }
+
+  /** Copy one keyframe into the gap after it. */
+  function duplicateKeyframe(id: string, atMs: number): void {
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return;
+    const dur = span(rows[i]!, durationSec()).dur;
+    writeTrack(id, (track) => kfTrackDuplicate(track, atMs, kfDuplicateMs(track, atMs, dur)));
+  }
+
+  // ── the latch (plans/104 §8) ────────────────────────────────────────────────
+  //
+  // ONE question, asked once per tick: is the playhead parked exactly on a diamond?
+  // Everything downstream is a reading of that answer — the group header's wording,
+  // whether the pose fields accept an edit, which list row is marked, which diamond
+  // draws large, and (through `kfPoseIds`, below) whether a canvas drag writes a
+  // keyframe or the base.
+  //
+  // It is deliberately NOT part of `inspectorKey`: the latch moves with the playhead,
+  // sixty times a second while playing, and rebuilding a row of controls at that rate
+  // would throw away the focus and the half-typed value of whoever was using them.
+  // So the row is built from MODEL values and re-READ here, in place.
+
+  interface KfPoseField { ch: KfChannel; el: HTMLInputElement }
+  interface KfLatchRefs {
+    id: string;
+    /** "Scene pose" ⇄ "Keyframe @ 0:01.8". */
+    state: HTMLElement;
+    /** The pose controls — enabled only ON a diamond. */
+    pose: KfPoseField[];
+    /** The CRUD list, whose rows carry `data-t`. */
+    list: HTMLElement;
+  }
+  let kfLatch: KfLatchRefs | null = null;
+  let kfLatchKey = '\u0000';
+
+  /** The pose readout's own memo — see `syncKfLatch` for why the two are separate. */
+  let kfPoseKey = '\u0000';
+
+  /**
+   * The pose channels the inspector offers, and the shape of each control.
+   *
+   * Four, and the reason they are these four: `x`/`y`/`r` are authored ON THE CANVAS
+   * (drag and rotate, redirected at free-canvas's single pointerup commit), so
+   * duplicating them as number fields here would be a second, worse door onto a
+   * gesture that already works. These are the ones with no canvas handle.
+   *
+   * `z` clamps to the FIELD range (`KF_Z_FIELD_CLAMP`), not the wider wire range: the
+   * wire has to carry a camera dolly, a control does not, and a depth a user can
+   * scrub to should stay inside the band the guard never has to rescue (§5.1).
+   */
+  const KF_POSE_FIELDS: ReadonlyArray<{ ch: KfChannel; label: string; step: number; range: readonly [number, number] }> = [
+    { ch: 'z', label: t('Depth'), step: 10, range: KF_Z_FIELD_CLAMP },
+    { ch: 's', label: t('Scale'), step: 0.05, range: KF_CLAMPS.s },
+    { ch: 'o', label: t('Opacity'), step: 0.05, range: KF_CLAMPS.o },
+    { ch: 'b', label: t('Blur'), step: 0.5, range: KF_CLAMPS.b },
+  ];
+
+  /**
+   * Build the Keyframes group's body for an ANIMATED box (or a camera).
+   *
+   * Order is the reading order of the feature: where am I (the latch), what can I
+   * change here (the pose), what is on this track (the list), and how do I stop
+   * (remove). The list is the KEYBOARD AND SCREEN-READER ROUTE to the diamonds — real
+   * buttons with real labels — which is what lets the diamonds themselves stay
+   * aria-hidden pointer sugar on a `role="option"` bar.
+   */
+  function buildKeyframes(group: InspectorGroup, id: string, box: Box, track: KfTrack): void {
+    const body = group.body;
+    const dur = span(box, durationSec()).dur;
+
+    // ── the latch line ────────────────────────────────────────────────────────
+    // The READOUT only. Its "+Keyframe" button moved out to the transport and the
+    // canvas contextual bar in §8's M2.5 revision: one action wants one home per
+    // surface, and a third copy inside a popover that has to be opened first is the
+    // one nobody would find.
+    const latch = document.createElement('div');
+    latch.className = 'tl-kf-latch';
+    const state = document.createElement('span');
+    state.className = 'tl-kf-state';
+    // No aria-live: this changes on every scrub, and narrating "Keyframe at 0:01.2,
+    // scene pose, keyframe at 0:01.4…" through a drag is not information. The state
+    // is spoken where it is ACTED on — the pose fields' own labels below carry it.
+    state.textContent = t('Scene pose');
+    latch.append(state);
+    body.appendChild(latch);
+
+    // ── the pose ──────────────────────────────────────────────────────────────
+    // §5.2, as a TOOLTIP rather than standing grey text (§8's M2.5 revision): that
+    // width/height are not keyframable is a permanent property of the model, and a
+    // sentence permanently on screen reads as a warning about something wrong.
+    const poseWrap = document.createElement('div');
+    poseWrap.className = 'tl-kf-pose';
+    poseWrap.title = t('Size is not keyframable. Resizing changes the clip itself.');
+    body.appendChild(poseWrap);
+    const pose: KfPoseField[] = [];
+    for (const f of KF_POSE_FIELDS) {
+      const el = document.createElement('input');
+      el.className = 'field-input tl-num tl-kf-pose-num';
+      el.type = 'number';
+      el.step = String(f.step);
+      el.min = String(f.range[0]);
+      el.max = String(f.range[1]);
+      el.dataset.ch = f.ch;
+      el.addEventListener('change', () => {
+        const raw = el.value.trim();
+        if (raw === '') return;
+        // RE-DERIVE THE LATCH AT COMMIT TIME, because `el.disabled` is not the guard it
+        // looks like. `syncKfLatch` flips it on every clock tick; disabling a FOCUSED
+        // input blurs it, and a browser commits the pending edit as `change` on that
+        // blur — so a number typed while parked on a diamond could otherwise land as a
+        // BRAND-NEW keyframe wherever the playhead had since travelled (a ruler scrub
+        // `preventDefault()`s, so the field keeps focus throughout). §8's model is
+        // "nobody keyframes by accident": off a diamond an edit here is refused, and the
+        // field is re-read from the model so it never shows a number nothing stored.
+        const rows = getBoxes();
+        const j = indexOfId(rows, cfg, id);
+        const at = playheadSec();
+        if (j < 0 || kfDiamondAt(rows[j]!, cfg, at) === null) {
+          kfPoseKey = '\u0000';   // the memo would otherwise call the stale value current
+          syncKfLatch();
+          return;
+        }
+        // `min`/`max` are the SPINNER's range, not a validator: a typed value is
+        // committed verbatim on `change`, so without this a Depth of 5000 reached the
+        // engine's much wider WIRE clamp and stored a number the field's own range says
+        // is impossible (§5.1 names the inspector as a `KF_Z_FIELD_CLAMP` site).
+        // Reflected back into the control, so the field never disagrees with the model.
+        const v = clamp(finite(raw, 0), f.range[0], f.range[1]);
+        el.value = kfFormatChannel(f.ch, v);
+        // 'set', not 'add': a typed number IS the value. The writer still composes a
+        // FULL pose around it (every active channel evaluated at this instant), so a
+        // diamond never becomes a partial one by being edited.
+        // The SAME `rows`/`at` the latch check above was made against — re-reading them
+        // here would be asking a second time whether this edit is allowed to land.
+        write(writeKfPose(rows, cfg, id, at, { [f.ch]: v }, 'set'));
+      });
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-kf-pose-row';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = f.label;
+      wrap.append(lab, el);
+      poseWrap.appendChild(wrap);
+      pose.push({ ch: f.ch, el });
+    }
+
+    // ── the list ──────────────────────────────────────────────────────────────
+    const list = document.createElement('div');
+    list.className = 'tl-kf-list';
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', t('Keyframes'));
+    for (const k of track) {
+      const at = fmtTime(kfTimelineSec(box, cfg, k.t));
+      const row = document.createElement('div');
+      row.className = 'tl-kf-row';
+      row.dataset.t = String(k.t);
+
+      const time = document.createElement('input');
+      time.className = 'field-input tl-num tl-kf-time';
+      time.type = 'number';
+      // The wire's own quantum is the millisecond (§4.6), so the grid is milliseconds
+      // and the step is a hundredth of a second — fine enough to place a beat, coarse
+      // enough that the arrow keys are usable.
+      time.step = '10';
+      time.min = '0';
+      time.value = String(k.t);
+      // NAMED WITH ITS ROW, exactly as Duplicate and Delete already are. §8 makes this
+      // list the keyboard and screen-reader route to the diamonds (which is what lets
+      // the diamonds themselves stay aria-hidden), so a four-key track that tabs as
+      // "Keyframe time" four times identifies nothing: the row is the only thing that
+      // distinguishes one control from the next, and the row has no label of its own.
+      time.setAttribute('aria-label', t('Keyframe time in milliseconds at {t}', { t: at }));
+      time.addEventListener('change', () => {
+        writeTrack(id, (tr) => kfTrackRetime(tr, k.t, kfSlideMs(finite(time.value, k.t), 0, dur)));
+      });
+
+      const ease = kfEaseSelect(id, k.t, k.ease, at);
+
+      const dup = btn('tl-kf-dup', t('Duplicate keyframe at {t}', { t: at }), icon('duplicate'));
+      dup.addEventListener('click', () => duplicateKeyframe(id, k.t));
+      const del = btn('tl-kf-del', t('Delete keyframe at {t}', { t: at }), icon('trash'));
+      del.addEventListener('click', () => deleteKeyframe(id, k.t));
+
+      row.append(time, ease, dup, del);
+      list.appendChild(row);
+    }
+    body.appendChild(list);
+
+    // ── the way out ───────────────────────────────────────────────────────────
+    // Destructive, named with its own count, and one commit — so ⌘Z brings the whole
+    // animation back. Disabling animation IS this: there is no stored flag to clear.
+    // Absent on an empty track (a camera, before its first pose): there is nothing to
+    // remove, and "Remove 0 keyframes" is a button that describes nothing.
+    if (track.length) {
+      const remove = actionBtn(
+        'tl-kf-clear',
+        track.length === 1 ? t('Remove 1 keyframe') : t('Remove {n} keyframes', { n: String(track.length) }),
+        'trash',
+      );
+      remove.classList.add('is-danger');
+      remove.addEventListener('click', () => {
+        write(clearKfTrack(getBoxes(), cfg, id));
+        announce(t('Keyframes removed'));
+      });
+      body.appendChild(remove);
+    }
+
+    kfLatch = { id, state, pose, list };
+    kfLatchKey = '\u0000';   // force the next sync: this row has never been read
+    kfPoseKey = '\u0000';
+  }
+
+  /**
+   * The ease picker for ONE keyframe — the same vocabulary the transition picker uses.
+   * `at` is the row's formatted time: its accessible name has to carry it for the same
+   * reason the time field's does (see there).
+   */
+  function kfEaseSelect(id: string, atMs: number, ease: string, at: string): HTMLSelectElement {
+    const el = document.createElement('select');
+    el.className = 'field-select tl-select tl-kf-ease';
+    el.setAttribute('aria-label', t('Keyframe curve at {t}', { t: at }));
+    const opt = (v: string, label: string): void => {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = label;
+      el.appendChild(o);
+    };
+    for (const tok of KF_EASE_TOKENS) {
+      // The engine names the curve; `EASINGS` gives that name its word. One
+      // vocabulary, so a curve cannot be called two things in two places.
+      const name = kfEaseName(tok);
+      opt(tok, name && Object.hasOwn(EASINGS, name) ? t((EASINGS as Record<string, string>)[name]!) : tok);
+    }
+    opt(KF_HOLD_EASE, t('Hold'));
+    // An authored bezier has no preset to select, so it brings its own option and
+    // prints its own numbers — exactly as the transition picker does.
+    if (!KF_EASE_TOKENS.includes(ease as (typeof KF_EASE_TOKENS)[number]) && ease !== KF_HOLD_EASE) opt(ease, kfEaseCss(ease));
+    opt('__custom', t('Custom…'));
+    el.value = ease;
+    el.addEventListener('change', () => {
+      const v = el.value;
+      if (v === '__custom') {
+        el.value = ease;              // a ROUTE, not a value — the model did not change
+        openKfEaseEditor(id, atMs, el);
+        return;
+      }
+      writeTrack(id, (track) => kfTrackSetEase(track, atMs, v));
+    });
+    return el;
+  }
+
+  /**
+   * Read the latch, once, and reflect it — the group header's wording, the pose
+   * fields' values and enablement, the marked list row, the enlarged diamond.
+   *
+   * TWO memos, because the two halves change at different rates and the expensive one
+   * must not be paid for the cheap one:
+   *
+   *   • `kfLatchKey` — the STRUCTURE. Keyed on the latch ANSWER (which selected box is
+   *     parked on which diamond) plus the track, so scrubbing across a two-second gap
+   *     asks this a hundred times and writes no DOM at all. The bars/dots walk, the
+   *     header wording and the list marking live under it.
+   *   • `kfPoseKey` — the POSE READOUT. Keyed on the playhead's own local millisecond,
+   *     because §8's M2.5 revision made these fields track it: off a diamond they now
+   *     print the EVALUATED value at the playhead (the engine's `evaluateKf`, through
+   *     `kfPoseAt` — the same arithmetic the preview and the export read), disabled.
+   *     Four `<input>.value` writes per changed millisecond, and only while the
+   *     Keyframes popover is actually built.
+   */
+  function syncKfLatch(): void {
+    if (!cfg.kfField) return;
+    const rows = getBoxes();
+    const at = playheadSec();
+    const sel = selection.get();
+    const onOf = new Map<string, number | null>();
+    for (const id of sel) {
+      const i = indexOfId(rows, cfg, id);
+      onOf.set(id, i < 0 ? null : kfDiamondAt(rows[i]!, cfg, at));
+    }
+    const refs = kfLatch;
+    const i = refs ? indexOfId(rows, cfg, refs.id) : -1;
+    const box = i >= 0 ? rows[i]! : null;
+    const on = refs && box
+      ? (onOf.has(refs.id) ? onOf.get(refs.id)! : kfDiamondAt(box, cfg, at))
+      : null;
+    const key = `${sel.map((id) => `${id}:${onOf.get(id) ?? ''}`).join(',')}|${refs?.id ?? ''}|${
+      box && cfg.kfField ? String(box[cfg.kfField] ?? '') : ''}`;
+    if (key !== kfLatchKey) {
+      kfLatchKey = key;
+
+      // The selected diamond draws large (§3's observed-Depthfield note). Only on a
+      // SELECTED bar: an unselected clip's diamonds are a picture of its animation, not
+      // a control surface, and marking one of them would claim an edit target the
+      // playhead does not actually own.
+      for (const [id, el] of bars) {
+        const strip = el.querySelector<HTMLElement>('.tl-kf-strip');
+        if (!strip) continue;
+        const dotOn = onOf.get(id) ?? null;
+        for (const dot of Array.from(strip.children) as HTMLElement[]) {
+          dot.classList.toggle('is-selected', dotOn !== null && dot.dataset.t === String(dotOn));
+        }
+      }
+
+      if (refs && box) {
+        refs.state.textContent = on === null
+          ? t('Scene pose')
+          : t('Keyframe @ {t}', { t: fmtTime(kfTimelineSec(box, cfg, on)) });
+        refs.state.classList.toggle('is-on', on !== null);
+        for (const row of Array.from(refs.list.children) as HTMLElement[]) {
+          row.classList.toggle('is-current', on !== null && row.dataset.t === String(on));
+        }
+      }
+    }
+
+    if (!refs || !box) return;
+    // Where to READ the pose from: the diamond when parked on one, otherwise the
+    // playhead itself. `kfPoseAt` evaluates the track through the engine, so an
+    // off-diamond number is the value the box is actually striking at this instant —
+    // the same number the preview shows and the export writes.
+    const readMs = on ?? kfLocalMs(box, cfg, at);
+    const poseKey = `${refs.id}|${on ?? ''}|${readMs}|${String(box[cfg.kfField] ?? '')}`;
+    if (poseKey === kfPoseKey) return;
+    kfPoseKey = poseKey;
+    for (const f of refs.pose) {
+      // EVALUATED, never blank (§8's M2.5 point 3: blanking was honest but read as
+      // broken). A disabled control showing the live value says "this is what it is
+      // doing here, and there is no keyframe here to change it on" — which is the
+      // truth. The memo above is keyed on `readMs`, so this genuinely tracks the
+      // playhead rather than freezing at whatever the last diamond was.
+      const v = kfPoseAt(box, cfg, readMs, [f.ch])[f.ch];
+      const shown = typeof v === 'number' ? kfFormatChannel(f.ch, v) : '';
+      if (f.el.value !== shown) f.el.value = shown;
+      // OFF a diamond these are inert: there is no keyframe to pose, and an edit here
+      // would have to invent one silently. "+Keyframe" is the one press that changes
+      // that, and the title says so rather than leaving a dead control unexplained.
+      f.el.disabled = on === null;
+      f.el.title = on === null ? t('Move the playhead onto a keyframe, or add one.') : '';
+    }
+  }
+
+  /**
+   * Build one inspector group: a SEGMENT for the strip (a disclosure button carrying
+   * an icon, a text label and the resolved value chips) plus the body its fields live
+   * in — which, since §8's M2.5 revision, is NOT appended to the segment.
+   *
+   * The row this replaced was eleven labelled inputs in a horizontal overflow
+   * scroller, and the keyframe row would have made it fourteen (plans/104 §8,
+   * "Inspector regrouping"). Grouping answered that; the M2.5 revision answers what
+   * grouping left behind — an open group still had to fit its whole body INSIDE the
+   * strip, which is why the ease pickers were truncated to "Ease in ar…". So the body
+   * is now mounted in a popover ABOVE the transport and the segment keeps a constant
+   * width whether it is open or shut.
+   *
+   * Three properties this shape has to keep, all of them contracts elsewhere:
+   *
+   *   • the body is hidden with the `hidden` PROPERTY while it is not in a popover, so
+   *     a shut group leaves the accessibility tree as well as the picture — and no
+   *     sheet may style `[hidden]` (styles/hidden-attribute-guard.test.ts fails the
+   *     build for a rule that tries). Nothing here is display-toggled by class.
+   *   • no `transform` / `filter` / `backdrop-filter` on the group or its body — the
+   *     fixed-popover containing-block trap documented on `.tl-panel` and
+   *     `.fc-toolbar`. It is now doubly load-bearing: the body itself is reparented
+   *     into a `position: fixed` popover, and the ease `<select>`s inside it open
+   *     fixed popovers of their own. The caret rotation is on a LEAF `<svg>`, which is
+   *     an ancestor of nothing.
+   *   • the head is a real `<button>` with `aria-expanded`, keyboard reachable — the
+   *     diamonds on the bars are aria-hidden pointer sugar, so the inspector is the AT
+   *     route and it cannot become a div that listens for clicks.
+   */
+  interface InspectorGroup {
+    /** The group wrapper (`.tl-group[data-group]`) — append it to the inspector. */
+    root: HTMLElement;
+    /** Where controls go. Reparented into the popover while this group is open. */
+    body: HTMLElement;
+    /** The disclosure control. Its accessible name is label + summary. */
+    head: HTMLButtonElement;
+    /** The group's own translated name — also the popover's accessible name. */
+    label: string;
+    /** Replace the value summary. Empty strings are dropped. */
+    setSummary(parts: string[]): void;
+    /** Is this group's body currently showing in the popover? */
+    isOpen(): boolean;
+  }
+
+  /**
+   * The live segments of the row just built, by group id — what the popover machinery
+   * re-points itself at after a rebuild.
+   */
+  const groupsById = new Map<string, InspectorGroup>();
+
+  /** Which group is showing, and for which box. Session UI state; never the model. */
+  let openGroup: { gid: string; id: string } | null = null;
+  /** The popover's own content host, so a rebuild can swap the body inside it. */
+  let groupPopHost: HTMLElement | null = null;
+  /**
+   * A POINT anchor, not the head button: the inspector is rebuilt on every commit, so
+   * the button that opened the popover is a detached node moments later. The point
+   * supplies geometry and its `delegate` — re-pointed by `renderInspector` — receives
+   * the focus restore and the `aria-expanded` upkeep. Exactly the pattern the ease
+   * editor already uses, and the reason the M2 fix round established it.
+   */
+  const groupPoint = pointAnchor();
+
+  /**
+   * ABOVE the transport, never below it.
+   *
+   * The panel is docked at the BOTTOM of the stage and the bar is its top edge, so a
+   * popover dropped under its anchor would open into the tracks it exists to edit (and
+   * off the bottom of the window on a short viewport). Bottom-aligned to the panel's
+   * own top edge, near-edge aligned to the anchor (left under ltr, right under rtl —
+   * `menuPosition`'s rule, for the same reason), and clamped into the viewport.
+   */
+  function groupPopPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
+    const r = anchor.getBoundingClientRect();
+    const pw = el.offsetWidth;
+    const ph = el.offsetHeight;
+    const vw = window.innerWidth || 1024;
+    const panelTop = root.getBoundingClientRect().top || (window.innerHeight || 768);
+    const rtl = document.documentElement.dir === 'rtl';
+    const near = rtl ? r.right - pw : r.left;
+    const left = Math.max(8, Math.min(near, vw - pw - 12));
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(Math.max(8, panelTop - ph - 8))}px`;
+  }
+
+  const groupPop = mountBodyPopover(groupPoint, (el) => {
+    el.textContent = '';
+    const host = document.createElement('div');
+    host.className = 'tl-group-pop-body';
+    el.appendChild(host);
+    groupPopHost = host;
+    const g = openGroup ? groupsById.get(openGroup.gid) : null;
+    if (g) {
+      g.body.hidden = false;
+      host.appendChild(g.body);
+      // WHICH group this is, not the constant "Clip settings" — every group opens
+      // the same popover, so a dialog that always announces the same name never tells a
+      // screen-reader user which one they just opened. Set after `open()` has already
+      // stamped the fallback, so the constant only ever survives the (unreachable)
+      // no-group case.
+      el.setAttribute('aria-label', g.label);
+    }
+    // Focus the first real control, so a keyboard user lands ON the fields the press
+    // revealed rather than on the popover box. `trapFocus` keeps them there until Esc.
+    return host.querySelector<HTMLElement>('input, select, button, [tabindex]') ?? host;
+  }, {
+    className: 'folder-menu tl-menu tl-group-pop',
+    role: 'dialog',
+    ariaLabel: t('Clip settings'),
+    position: groupPopPosition,
+    // The bodies borrowed into this card carry the ease `<select>`s, and picking
+    // "Custom…" opens a curve editor — a SIBLING popover on `document.body`, so
+    // `menu.contains()` says false and the first press inside it would otherwise
+    // dismiss this card mid-drag (and hide the very `<select>` the editor restores
+    // focus to). `.tl-ease-pop` is the class both curve editors mount with.
+    isInside: (n) => {
+      const el = (n as Element | null)?.closest ? (n as Element) : ((n as ChildNode | null)?.parentElement ?? null);
+      return !!el?.closest('.tl-ease-pop');
+    },
+    // EVERY route out — Escape, an outside press, a route change, the caller's own
+    // close — lands here, which is what makes the borrowed body safe: the popover is
+    // about to detach its element, and the group's live body is inside it.
+    onClose: () => restoreGroupBody(),
+  });
+
+  /**
+   * Put the borrowed body back in its segment (hidden) and forget the open state.
+   *
+   * Called from the popover's own `onClose`, so it runs however the popover was
+   * dismissed. It must NOT call `groupPop.close()` — that is what called it.
+   */
+  function restoreGroupBody(): void {
+    const g = openGroup ? groupsById.get(openGroup.gid) : null;
+    if (g) {
+      if (g.body.parentElement === groupPopHost) {
+        g.body.hidden = true;
+        g.root.appendChild(g.body);
+      }
+      g.root.classList.remove('is-open');
+      g.head.setAttribute('aria-expanded', 'false');
+    }
+    openGroup = null;
+    groupPopHost = null;
+  }
+
+  /** Shut the popover, whoever asked. Idempotent; `restoreGroupBody` runs underneath. */
+  function closeGroupPopover(returnFocus = false): void {
+    // The delegate is still needed by `close()` itself (aria-expanded, focus restore),
+    // so it is cleared AFTER, not before.
+    groupPop.close(returnFocus);
+    groupPoint.delegate = null;
+    // Belt and braces for the never-opened case, where `close()` returns early and the
+    // hook above never runs.
+    if (openGroup) restoreGroupBody();
+  }
+
+  /**
+   * Aim the point at one segment.
+   *
+   * A `pointAnchor`'s rect is degenerate (`left === right === x`), so the NEAR edge has
+   * to be chosen here rather than in the placement: under `dir=rtl` that is the
+   * segment's right edge, which is what makes the card open towards the button that
+   * spawned it in Arabic, Hebrew, Farsi and Urdu instead of away from it.
+   */
+  function aimGroupPoint(head: HTMLElement): void {
+    const r = head.getBoundingClientRect();
+    groupPoint.x = document.documentElement.dir === 'rtl' ? r.right : r.left;
+    groupPoint.y = r.bottom;
+    groupPoint.delegate = head;
+  }
+
+  /** Open ONE group's body in the popover, swapping out whatever was showing. */
+  function openGroupPopover(gid: string, id: string): void {
+    const g = groupsById.get(gid);
+    if (!g) return;
+    if (openGroup?.gid === gid) { closeGroupPopover(true); return; }
+    closeGroupPopover();
+    openGroup = { gid, id };
+    aimGroupPoint(g.head);
+    g.root.classList.add('is-open');
+    groupPop.open();
+  }
+
+  /**
+   * After a rebuild: re-point the popover at the segment that replaced its anchor, and
+   * move the freshly built body inside it. A field edit inside the popover commits,
+   * which rebuilds the whole inspector row — without this the popover would be left
+   * holding the DETACHED body of a row that no longer exists, and Escape would restore
+   * focus to a node that is not in the document.
+   */
+  function resyncGroupPopover(id: string): void {
+    if (!openGroup) return;
+    const g = groupsById.get(openGroup.gid);
+    // The selection moved on, or this box no longer offers the group (its track was
+    // removed, its sound detached): there is nothing to re-point at, so shut.
+    if (!g || openGroup.id !== id) { closeGroupPopover(); return; }
+    if (!groupPopHost) { closeGroupPopover(); return; }
+    aimGroupPoint(g.head);
+    g.head.setAttribute('aria-expanded', 'true');
+    g.root.classList.add('is-open');
+    groupPopHost.textContent = '';
+    g.body.hidden = false;
+    groupPopHost.appendChild(g.body);
+  }
+
+  /** One group of the clip inspector. Shut by default, always. */
+  function inspectorGroup(gid: string, labelText: string, glyph: IconName): InspectorGroup {
+    const wrap = document.createElement('div');
+    wrap.className = 'tl-group';
+    wrap.dataset.group = gid;
+
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'tl-group-head';
+    head.setAttribute('aria-expanded', 'false');
+    head.setAttribute('aria-haspopup', 'dialog');
+    const bodyId = `tl-g-${gid}-${++groupBodySeq}`;
+    head.setAttribute('aria-controls', bodyId);
+
+    // Icon BESIDE the text, never instead of it: the glyph is decorative
+    // (`icon()` stamps aria-hidden), and the button's accessible name is the label
+    // plus whatever the summary currently reads.
+    const ico = document.createElement('span');
+    ico.className = 'tl-group-icon';
+    ico.innerHTML = icon(glyph);
+    const lab = document.createElement('span');
+    lab.className = 'tl-group-label';
+    lab.textContent = labelText;
+    // ALWAYS shown now, which is what makes the segment a constant width: the chips are
+    // the segment's whole reading, and the body they summarise is somewhere else.
+    const chipRow = document.createElement('span');
+    chipRow.className = 'tl-group-chips';
+    const caret = document.createElement('span');
+    caret.className = 'tl-group-caret';
+    caret.innerHTML = icon('chevronDown');
+    head.append(ico, lab, chipRow, caret);
+
+    const body = document.createElement('div');
+    body.className = 'tl-group-body';
+    body.id = bodyId;
+    body.hidden = true;
+    wrap.append(head, body);
+
+    const group: InspectorGroup = {
+      root: wrap, body, head, label: labelText,
+      setSummary(parts: string[]): void {
+        chipRow.textContent = '';
+        for (const p of parts) {
+          if (!p) continue;
+          const c = document.createElement('span');
+          c.className = 'tl-group-chip';
+          c.textContent = p;
+          chipRow.appendChild(c);
+        }
+      },
+      isOpen: () => openGroup?.gid === gid && !body.hidden,
+    };
+    groupsById.set(gid, group);
+
+    head.addEventListener('click', () => {
+      // Purely a UI disclosure: no write() anywhere on this path, and `inspectorKey`
+      // never sees it (see its comment) — so this can never dirty the session.
+      openGroupPopover(gid, inspectorId);
+    });
+
+    return group;
+  }
+
   function renderInspector(boxes: Box[]): void {
     // Bars AND chips: an untimed box has no bar, and gating on `bars` alone is what
     // made "always on" a dead end — selecting a scenery chip rendered an empty bar and
@@ -1985,10 +3136,37 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const id = ids.length === 1 ? ids[0]! : '';
     const i = id ? indexOfId(boxes, cfg, id) : -1;
     const box = i >= 0 ? boxes[i]! : null;
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : ''])}` : '';
+    // MODEL VALUES ONLY — appended to, never trimmed. Group disclosure is session UI
+    // state and deliberately absent: folding it in here would rebuild the whole row on
+    // every toggle (throwing away the focus the user just pressed with), and would make
+    // a repaint memo that is supposed to answer "did the MODEL change" answer something
+    // else. The three added at the tail are what the regroup reads that the flat row
+    // did not: the keyframe track and the box kind gate the Keyframes group's very
+    // existence (plans/104 §8). The A/V link no longer decides anything in this row —
+    // M2.6 sent detach / re-attach back to the clip context menu — but it STAYS in the
+    // key, because this list is appended to and never trimmed: a spare entry costs one
+    // string compare, and dropping one is how a row starts printing stale values the
+    // day something reads that field again. `z` joins them for the same reason `kf`
+    // did: the pose row shows the box's depth wherever no keyframe overrides it (§5.2),
+    // so a depth edit made anywhere else must repaint this row or it prints a stale
+    // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
+    inspectorId = id;
     inspector.textContent = '';
+    // The segments about to be destroyed are the popover's anchor and its content. The
+    // map is rebuilt below; `resyncGroupPopover` at the end of this function re-points
+    // an open popover at the segment that replaced its anchor (or shuts it), which is
+    // what makes editing a field inside the popover — a commit, hence a rebuild — not
+    // close the popover under the user's hands.
+    groupsById.clear();
+    // The row about to be destroyed owned the latch's DOM. Drop the reference before
+    // anything can read a detached node, and reset the memo so the rebuilt row is
+    // re-read rather than assumed to still match.
+    kfLatch = null;
+    kfLatchKey = '\u0000';
+    kfPoseKey = '\u0000';
     // An empty row still claims the bar's 10px flex gap, which reads as an unexplained
     // notch beside the tool buttons once the selection is dropped. Take it out of the
     // layout instead, so the toolbar returns to exactly the shape it had before.
@@ -1997,6 +3175,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       inspectorShown = false;
       if (inspectorEnterT) { clearTimeout(inspectorEnterT); inspectorEnterT = null; }
       inspector.classList.remove('is-entering');
+      // Nothing selected, so there is no clip whose settings this could be showing.
+      closeGroupPopover();
       return;
     }
     if (!inspectorShown) {
@@ -2110,6 +3290,28 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     const timed = isTimed(box, cfg);
 
+    // ── the groups ────────────────────────────────────────────────────────────
+    //
+    // P1 SEAM (plans/104 §8): a `camera` box swaps Time + Animate for a **Camera**
+    // group — pose channels (pan / dolly / focus / aperture / perspective) with the
+    // DRAG / SCROLL / SHIFT-DRAG affordance chips. It plugs in exactly here: build it
+    // with `inspectorGroup('camera', <the translated Camera label>, 'camera')` — the
+    // `camera` glyph is already in the registry — and skip the two groups below when
+    // `isCamera`, leaving Keyframes and the timed ⇄ always-on toggle untouched: a camera
+    // is timed like any other box, and its whole purpose is animation. Nothing else in
+    // this function needs to know. (The label is deliberately NOT written as a `t()`
+    // call inside this comment: scripts/translate.ts's spa corpus is a REGEX over source,
+    // so a commented-out call site would mint a corpus key with nothing rendering it.)
+    const isCamera = String(box.kind ?? '') === 'camera';
+
+    // ── Time ──────────────────────────────────────────────────────────────────
+    // Shut, like every group since §8's M2.5 revision — including on an UNTIMED box,
+    // where Start and Length are still the typed promotion route (the `.tl-timing`
+    // switch below is the one-press one). Auto-opening a popover over the canvas
+    // because a box was selected is a popover the user has to dismiss.
+    const timeG = inspectorGroup('time', t('Time'), 'clock');
+    inspector.appendChild(timeG.root);
+
     if (!timed) {
       // ── UNTIMED (scenery) ───────────────────────────────────────────────────
       // Start and Length are the promotion route: this is the ONLY place in the UI a
@@ -2119,10 +3321,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const hint = t('Type a time to place this on the timeline');
       const untimedStart = numField(null, 0.1, 0, (v) => promote(id, { start: v }), '—');
       untimedStart.title = hint;
-      inspector.appendChild(row(t('Start'), untimedStart));
+      timeG.body.appendChild(row(t('Start'), untimedStart));
       const untimedLen = numField(null, 0.1, MIN_DUR, (v) => promote(id, { dur: v }), '—');
       untimedLen.title = hint;
-      inspector.appendChild(row(t('Length'), untimedLen));
+      timeG.body.appendChild(row(t('Length'), untimedLen));
+      timeG.setSummary([t('Always on')]);
     } else {
       // ── TIMED ───────────────────────────────────────────────────────────────
       // Numeric start / duration / trim-in.
@@ -2137,18 +3340,19 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         startField.disabled = true;
         startField.title = t('Set by the clip order. Drag the clip along the sequence row to move it.');
       }
-      inspector.appendChild(row(t('Start'), startField));
+      timeG.body.appendChild(row(t('Start'), startField));
       // Length is ABSOLUTE (`setDuration`), seeded from the span the bar actually shows.
       // The old shape seeded from `timing.dur ?? 0` and committed a DELTA against it,
       // so on an open-ended clip — which displays as `total - start` and read 0 — typing
       // 5 landed on trimClip's own 3 s fallback + 5 = 8 s.
-      inspector.appendChild(row(t('Length'), numField(span(box, durationSec()).dur, 0.1, MIN_DUR, (v) => {
+      const shown = span(box, durationSec());
+      timeG.body.appendChild(row(t('Length'), numField(shown.dur, 0.1, MIN_DUR, (v) => {
         write(setDuration(getBoxes(), cfg, id, v, mediaOf(id).dur, mediaDur));
       })));
       // Trim in and Speed go through the clamped setters, NOT patchBox: a raw write puts
       // clipIn + dur x speed past the end of the source, which the player cannot recover
       // from (it seeks past duration and the bar plays nothing).
-      inspector.appendChild(row(t('Trim in'), numField(timing.clipIn, 0.1, 0, (v) => {
+      timeG.body.appendChild(row(t('Trim in'), numField(timing.clipIn, 0.1, 0, (v) => {
         write(setClipIn(getBoxes(), cfg, id, v, mediaOf(id).dur, mediaDur));
       })));
 
@@ -2163,22 +3367,32 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       }
       speed.value = String(timing.speed);
       speed.addEventListener('change', () => write(setSpeed(getBoxes(), cfg, id, finite(speed.value, 1), mediaOf(id).dur, mediaDur)));
-      inspector.appendChild(row(t('Speed'), speed));
+      timeG.body.appendChild(row(t('Speed'), speed));
+      // The collapsed reading: where it starts, how long it runs, how fast — the three
+      // numbers a clip is identified by. Formatted by timeline-math's own formatters
+      // (`fmtTime` / `fmtDur`), the same ones the transport pill and the trim badge use,
+      // so a summary can never disagree with the readout beside it. Trim-in stays behind
+      // the disclosure: it is a property of the SOURCE, not of the clip's place in time.
+      timeG.setSummary([fmtTime(timing.start ?? 0), fmtDur(shown.dur), `×${timing.speed}`]);
     }
 
+    // ── Animate ───────────────────────────────────────────────────────────────
     // Enter / exit + their durations. Authorable either side of the timed line: a box
     // that is always on can still be given the transition it will use once it is timed,
     // and the fields are plain value writes, so nothing here depends on a bar existing.
-    inspector.appendChild(row(t('Animate in'), kindSelect(box[cfg.enterField], (v) => write(patchBox(getBoxes(), id, { [cfg.enterField]: v })))));
-    inspector.appendChild(row(t('In (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
+    const animG = inspectorGroup('animate', t('Animate'), 'animate');
+    inspector.appendChild(animG.root);
+    animG.body.appendChild(row(t('Animate in'), kindSelect(box[cfg.enterField], (v) => write(patchBox(getBoxes(), id, { [cfg.enterField]: v })))));
+    animG.body.appendChild(row(t('In (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
     // The curve sits beside its duration, not beside its kind: "how long" and "how it
     // moves over that time" are the pair a user tunes together. Offered only where the
     // manifest declares a field for it — a tool that never asked for authored easing is
     // not given a control that would write a sub-field it does not read.
-    if (cfg.enterEaseField) inspector.appendChild(row(t('In curve'), easeSelect(cfg.enterEaseField, box[cfg.enterEaseField])));
-    inspector.appendChild(row(t('Animate out'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v })))));
-    inspector.appendChild(row(t('Out (ms)'), numField(finite(box[cfg.exitMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.exitMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
-    if (cfg.exitEaseField) inspector.appendChild(row(t('Out curve'), easeSelect(cfg.exitEaseField, box[cfg.exitEaseField])));
+    if (cfg.enterEaseField) animG.body.appendChild(row(t('In curve'), easeSelect(cfg.enterEaseField, box[cfg.enterEaseField])));
+    animG.body.appendChild(row(t('Animate out'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v })))));
+    animG.body.appendChild(row(t('Out (ms)'), numField(finite(box[cfg.exitMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.exitMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
+    if (cfg.exitEaseField) animG.body.appendChild(row(t('Out curve'), easeSelect(cfg.exitEaseField, box[cfg.exitEaseField])));
+    animG.setSummary(animateSummary(box[cfg.enterField], box[cfg.exitField]));
     // A rebuild mints a new <select>, so an editor that is still open is anchored to a
     // detached node — its focus restore on Escape would land nowhere. Re-point the
     // delegate at the control that replaced it.
@@ -2188,11 +3402,97 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       if (live) easePoint.delegate = live;
     }
 
-    // Mute — a playback concern, so only on something that plays.
+    // ── Keyframes ─────────────────────────────────────────────────────────────
+    //
+    // THE DISCLOSURE LAW (plans/51:80, restated by plans/104 §8): nobody keyframes by
+    // accident. A camera exists only to be animated, so it always carries the group; a
+    // content box earns it by already having a track. Every other box has no keyframe
+    // affordance anywhere in the UI — not a disabled one, not an empty one. Animate is
+    // DERIVED, never stored: the gate reads the track itself, so there is no second
+    // source of truth to drift (§8, "Animate is DERIVED, not stored").
+    //
+    // The body itself is built below. The DOOR is the shape of it: a box with no
+    // track and no camera kind gets ONE action ("Animate") behind a collapsed
+    // disclosure, and nothing else — no diamonds on its bar, no latch, no list. A
+    // camera is born disclosed, because a camera exists only to be animated.
+    //
+    // `isKeyframable` is the SAME gate "+Keyframe" uses, and it has to be: without it
+    // a detached sound got the group and its Animate door, which wrote precisely the
+    // x/y/s/r/o track the button refuses to write and no evaluator reads — a door onto
+    // a room the rest of the UI says does not exist (§8's disclosure law is explicit:
+    // "Every other box has no keyframe affordance anywhere in the UI").
+    const kfRaw = cfg.kfField ? String(box[cfg.kfField] ?? '') : '';
+    if (cfg.kfField && isKeyframable(box, id)) {
+      // parseKf is the engine's own reader (plans/104 §5.1) — never a `split('*')` here.
+      // It never throws, so a hand-edited share URL summarises as "No keyframes" rather
+      // than taking the inspector down with it.
+      const track = kfRaw ? parseKf(kfRaw) : null;
+      const n = track ? track.length : 0;
+      const kfG = inspectorGroup('keyframes', t('Keyframes'), 'keyframe');
+      inspector.appendChild(kfG.root);
+      kfG.setSummary([
+        n === 0 ? t('Not animated')
+          : n === 1 ? t('1 keyframe') : t('{n} keyframes', { n: String(n) }),
+      ]);
+
+      if (n === 0 && !isCamera) {
+        // ── the door ─────────────────────────────────────────────────────────
+        // One action, one commit, one undo step. Enabling is DERIVED, not stored
+        // (§8): what it writes is a t = 0 pose, and the track's existence IS the
+        // animated state from then on — there is no flag anywhere to drift.
+        const door = actionBtn('tl-kf-animate', t('Animate'), 'keyframe');
+        door.title = t('Adds a first pose at the start of this clip. Everything else stays where it is.');
+        door.addEventListener('click', () => animateBox(id));
+        kfG.body.appendChild(door);
+      } else {
+        buildKeyframes(kfG, id, box, track ?? parseKf(''));
+        // The same rebuild-detaches-the-anchor fix the transition editor carries above,
+        // and this row needs it MORE: committing a keyframe curve changes `kf`, `kf` is
+        // part of `inspectorKey`, so every commit from the open editor rebuilds the very
+        // <select> it is anchored to. Without this, Escape restores focus to a node that
+        // is no longer in the document.
+        // Only when there WAS a delegate: the diamond's context-menu route opens the
+        // same editor with none (a pointer, not a control), and giving it one here
+        // would invent a focus target the press never had.
+        if (kfEaseMenu.isOpen() && kfEaseBoxId === id && kfEasePoint.delegate) {
+          const live = Array.from(kfG.body.querySelectorAll<HTMLSelectElement>('.tl-kf-ease'))
+            .find((s) => (s.closest('.tl-kf-row') as HTMLElement | null)?.dataset.t === String(kfEaseAtMs));
+          if (live) kfEasePoint.delegate = live;
+        }
+      }
+    }
+
+    // ── Sound: a TOGGLE, never a group ────────────────────────────────────────
+    //
+    // §8's M2.6 pass: "SOUND stops being a popover group entirely… it becomes a
+    // speaker/mute icon toggle on the strip (direct click flips mute — the NLE
+    // convention), no popup." Mute is ONE bit, and a disclosure onto one switch is a
+    // door onto a door: the M2.5 group cost a press, a popover mount and a "Sound on"
+    // chip to say what a speaker glyph with `aria-pressed` says standing still.
+    //
+    // The A/V link went back to the CLIP CONTEXT MENU, its pre-M2 home (`ctxMenu`
+    // above, which never stopped offering Re-attach / Detach) — plus the `Shift + D`
+    // chord. Detaching a clip's audio is a structural edit that grows a second bar on
+    // another lane; it is not a sibling of a mute switch, and it is not something the
+    // inspector needs a permanent seat for.
+    //
+    // Mute is a playback concern, so it exists only on something that plays.
     if (timed) {
       const muted = box[cfg.muteField] === true || box[cfg.muteField] === 'true';
-      const mute = btn('tl-mute', muted ? t('Unmute clip') : t('Mute clip'), icon(muted ? 'volumeOff' : 'volumeOn'));
+      const muteLabel = muted ? t('Unmute clip') : t('Mute clip');
+      const mute = btn('tl-mute', muteLabel, icon(muted ? 'volumeOff' : 'volumeOn'));
+      // PRESSED means silent. The glyph flips with it (speaker ⇄ speaker-off) so the
+      // state is readable without hovering, and the label names the ACTION the press
+      // performs — both existing keys, neither invented for this pass.
       mute.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      // `title`, not the `[data-tip]` bubble `btn()` stamps: `.tl-inspector` is an
+      // overflow scroller, so a bubble drawn above the control is clipped — the same
+      // reason the `.tl-timing` switch at the end of the row carries a title.
+      mute.removeAttribute('data-tip');
+      mute.title = muteLabel;
+      // ONE model write per press, like every other writer in this panel. `muted` is
+      // read from the row this build painted, so the toggle can never invert twice off
+      // one gesture; the rebuild that follows the commit re-reads it.
       mute.addEventListener('click', () => write(patchBox(getBoxes(), id, { [cfg.muteField]: muted ? '' : 'true' })));
       inspector.appendChild(mute);
     }
@@ -2212,6 +3512,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       : t('Place this box on the timeline at the playhead');
     toggle.addEventListener('click', () => (timed ? demote(id) : promote(id)));
     inspector.appendChild(toggle);
+
+    // LAST, once every segment exists: an open popover follows the row it belongs to
+    // through the rebuild this commit caused, or shuts if that row is gone.
+    resyncGroupPopover(id);
   }
 
   // ── thumbnails (cache-owned bitmaps: draw synchronously, never retain) ───────
@@ -2416,6 +3720,38 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       el.classList.add('has-thumbs');
     };
 
+    /**
+     * ONE bitmap, once, over the box's own flat fill — the STATIC bar (plans/104 §8's
+     * M2.5 revision, point 4).
+     *
+     * A filmstrip or a waveform repeats because it is a picture of time passing. A
+     * photograph of a text card is not: it is identical in every tile, so a three-second
+     * title card read as the same sentence printed twenty times at 6px — noise wearing
+     * the costume of information. Drawn once at the leading edge, with the fill carrying
+     * the rest of the bar, so the bar reads as one label over one colour.
+     *
+     * The fill is re-laid here rather than relied on from `paintFill`'s earlier pass:
+     * `clearRect` is what makes the upgrade flicker-free (one synchronous overwrite),
+     * and it takes the underlay with it.
+     */
+    const drawSingle = (c: CanvasRenderingContext2D, bm: ImageBitmap): void => {
+      c.clearRect(0, 0, w, h);
+      if (isPaintedColor(job.fill)) {
+        c.fillStyle = job.fill;
+        c.fillRect(0, 0, w, h);
+      }
+      const tile = stillTilePx(bm.height > 0 ? bm.width / bm.height : 0, h);
+      // The FULL tile, cut by the canvas edge — never squeezed into `min(tile, w)`.
+      // `drawTiled` has always drawn every tile at its own aspect and let the last one
+      // overhang, and the vector twin below models exactly that (the walk is sized to
+      // `tile` and clipped at `min(tile, w)`). Scaling here instead made a bar narrower
+      // than one tile — a short clip, or any clip at low zoom — show a squeezed whole
+      // thumbnail on screen against an undistorted left slice in the exported SVG, which
+      // is the preview-authenticity rule broken in the one place it is cheapest to keep.
+      c.drawImage(bm, 0, 0, tile, h);
+      el.classList.add('has-thumbs');
+    };
+
     // The box's own background, flat across the bar. It is honest — it IS the colour
     // that box paints on the frame — and it costs one fillRect, which is why it is
     // also the UNDERLAY a node raster upgrades from (below).
@@ -2448,11 +3784,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // `has-thumbs` is only ever added — no flash either. A declined, deferred, failed,
     // timed-out or aborted raster simply leaves the underlay standing.
     //
-    // ONE bitmap, tiled, exactly like a still: a node-mode box cannot animate by
-    // construction (any <video>/<img>/Lottie/audio child would have classified it as
-    // media instead, and this tool has no box nesting — an animated neighbour is a
-    // SIBLING with its own bar), so N rasters would buy N identical pictures. The trim
-    // window below is skipped for the same reason: there is no time axis here.
+    // ONE bitmap, drawn ONCE: a node-mode box cannot animate by construction (any
+    // <video>/<img>/Lottie/audio child would have classified it as media instead, and
+    // this tool has no box nesting — an animated neighbour is a SIBLING with its own
+    // bar), so N rasters would buy N identical pictures and N TILES of one raster buy
+    // N identical thumbnails. This branch used to tile it like a still, which is what
+    // §8's M2.5 revision (point 4) calls clip-bar label noise: the picture repeated
+    // dozens of times across a wide bar. It is drawn once now, at the leading edge,
+    // over the flat fill. The trim window below is skipped for the same reason the
+    // repeat is: there is no time axis here.
     if (mode === 'node') {
       if (isPaintedColor(job.fill)) paintFill();
       if (!job.allowRaster || !job.box || !job.sig) return;
@@ -2464,7 +3804,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // already sized the canvas, and is the FIRST touch of it when there was none.
         const ctx = sized();
         if (!ctx) return;
-        drawTiled(ctx, bm);
+        drawSingle(ctx, bm);
         // ONLY once the raster actually landed. A declined, deferred, failed or aborted
         // shot returns above and keeps `paintFill`'s honest flat-colour twin — an export
         // must not claim a crisp walk of a box the bar never showed.
@@ -2510,18 +3850,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
             const blob = await withBorrowedVisibility(box, () => renderSvgFromHtml(box, { width: bw, height: bh }));
             const root = parseSvgRoot(await blob.text());
             if (!root) return null;
-            // The canvas draws ONE bitmap repeated at its own aspect, so the vector does
-            // the same: the walk is sized to the tile box and stretched to it (the tile
-            // advance already carries the aspect, so nothing is distorted).
+            // The canvas draws ONE bitmap ONCE at its own aspect over the flat fill,
+            // so the vector does exactly that: the walk is sized to the tile box and
+            // stretched to it (the tile advance already carries the aspect, so nothing
+            // is distorted), placed once, over a rect of the same fill the canvas laid.
             root.setAttribute('width', n3(tile));
             root.setAttribute('height', n3(h));
             root.setAttribute('preserveAspectRatio', 'none');
             const inner = new XMLSerializer().serializeToString(root);
-            // Null when the bar would need more tiles than the vector form emits: the
-            // canvas loop is uncapped, so a short run would export a bar the user sees
-            // fully tiled with a blank right-hand end. The PNG is the honest answer.
-            const body = tileBody(inner, tile, w, h);
-            return body === null ? null : svgDoc(w, h, body);
+            // `tileBody` over the SINGLE-tile width: one <use>, clipped exactly where
+            // the canvas's own edge cuts it. It cannot return null at one tile, but the
+            // guard stays — a null twin falls through to the PNG, which is always what
+            // the user is actually looking at.
+            const under = isPaintedColor(job.fill) ? rectBody(job.fill, w, h) : '';
+            const body = tileBody(inner, tile, Math.min(tile, w), h);
+            return body === null ? null : svgDoc(w, h, under + body);
           } catch {
             return null; // any failure leaves the walker on its unmodified raster path
           }
@@ -2768,14 +4111,40 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * at the 12px tolerance and then committed at 8, i.e. snapped on screen and landed off
    * the cut.
    */
+  /**
+   * The keyframes of the SELECTED boxes, as timeline seconds — the latch's own
+   * candidates (plans/104 §8).
+   *
+   * Selected only, and that is the whole design: a timeline with six animated clips
+   * has dozens of diamonds, and snapping to all of them would make the playhead
+   * unplaceable. Selecting a clip is how you say "this is the one I am posing", and
+   * the latch follows that declaration rather than guessing from proximity.
+   */
+  function latchCandidates(boxes: Box[]): number[] {
+    if (!cfg.kfField) return [];
+    const out: number[] = [];
+    for (const id of selection.get()) {
+      const i = indexOfId(boxes, cfg, id);
+      if (i >= 0) out.push(...kfDiamondTimes(boxes[i]!, cfg));
+    }
+    return out;
+  }
+
   function maybeSnap(
     raw: number,
     alt: boolean,
     excludeId?: string,
     coarse: boolean = isCoarsePointer(gesture?.pointerType),
+    latch = false,
   ): number {
     if (!snapOn || alt) { showSnapline(null); snappedAt = null; return raw; }
-    const cands = snapCandidates(getBoxes(), cfg, clock.t() / 1000, raw, excludeId);
+    const boxes = getBoxes();
+    const cands = snapCandidates(boxes, cfg, clock.t() / 1000, raw, excludeId);
+    // The playhead latches onto diamonds; a CLIP being dragged does not. A clip's
+    // edges snap to structure (cuts, the ruler's seconds, the playhead) — adding
+    // another clip's keyframes to that set would make a move jump to a mark that has
+    // nothing to do with where the clip belongs.
+    if (latch) cands.push(...latchCandidates(boxes));
     // A finger cannot land on an 8px window. The tolerance follows the pointer that
     // started the gesture (timeline-math's own SNAP_PX default stays 6 for every other
     // caller — this panel is the only one that knows what started the drag).
@@ -2889,7 +4258,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     if (target.closest('.tl-ruler')) {
       e.preventDefault();
-      const at = maybeSnap(timeAt(e.clientX), e.altKey);
+      const at = maybeSnap(timeAt(e.clientX), e.altKey, undefined, undefined, true);
       clock.seek(at * 1000, { scrubbing: true });
       beginGesture(e, { kind: 'seek', id: '', el: ruler, x0: e.clientX, y0: e.clientY, start0: 0, dur0: 0, index0: 0, index: 0, h0: panelH });
       return;
@@ -2939,6 +4308,19 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const base = { id, el: barEl, x0: e.clientX, y0: e.clientY, start0: start, dur0: dur, h0: panelH };
     if (edge) {
       beginGesture(e, { ...base, kind: 'trim', edge, index0: 0, index: 0 });
+      return;
+    }
+
+    // A DIAMOND under the pointer — checked after the trim zone and before move, in
+    // that order and deliberately. A keyframe at local t = 0 sits exactly on the
+    // in-edge, and a clip you cannot trim because its first pose is parked there
+    // would be a worse trade than a first pose you retime from the inspector's list
+    // (which is where every diamond is reachable anyway, and the same trade the
+    // `is-tight` rule already makes for the whole strip).
+    const dot = target.closest<HTMLElement>('.tl-kf-dot');
+    const dotT = dot ? finite(dot.dataset.t, NaN) : NaN;
+    if (dot && cfg.kfField && Number.isFinite(dotT)) {
+      beginGesture(e, { ...base, kind: 'kf', index0: 0, index: 0, kfT0: dotT, kfDot: dot });
       return;
     }
     if (lane === 'seq') {
@@ -3001,7 +4383,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return;
     }
     if (g.kind === 'seek') {
-      const at = maybeSnap(timeAt(g.x), g.alt);
+      const at = maybeSnap(timeAt(g.x), g.alt, undefined, undefined, true);
       clock.seek(at * 1000, { scrubbing: true });
       return;
     }
@@ -3032,6 +4414,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         chip.style.left = `${timeToPx(boxTiming(rows[i]!, cfg).start ?? 0, pxPerSec)}px`;
       }
     };
+    if (g.kind === 'kf') {
+      // PANEL DOM ONLY, like every other preview here: the dot moves, the model does
+      // not. Alt is the DUPLICATE modifier on this gesture (it is the drag's own
+      // meaning, not a snap bypass — a keyframe snaps to nothing), so the class says
+      // so while the pointer is down and the copy is made once, on release.
+      const dot = g.kfDot;
+      if (!dot) return;
+      const to = kfSlideMs(g.kfT0 ?? 0, deltaSec, g.dur0);
+      dot.style.left = `${timeToPx(kfLocalSec(to), pxPerSec)}px`;
+      dot.classList.toggle('is-duplicating', g.alt);
+      return;
+    }
     if (g.kind === 'move') {
       previewRows(moveOverlay(getBoxes(), cfg, g.id, maybeSnap(g.start0 + deltaSec, g.alt, g.id)));
       return;
@@ -3111,6 +4505,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         g.el.style.transform = '';
         delete g.el.dataset.dropIndex;
       }
+      // The dragged diamond's alt cue. Cleared HERE with everything else, so an
+      // Escape mid-drag cannot strand a dot painted as "about to be copied".
+      g.kfDot?.classList.remove('is-duplicating');
     }
     for (const node of bars.values()) node.classList.remove('is-drop-target', 'is-trimming');
     for (const e of Array.from(laneWrap.querySelectorAll<HTMLElement>('.tl-edge'))) {
@@ -3137,13 +4534,32 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // `gesture` is already null (endGesture, above), so every maybeSnap below has to be
     // told what kind of pointer this was — see maybeSnap's own note.
     const coarse = isCoarsePointer(g.pointerType);
-    if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt, undefined, coarse); clock.seek(at * 1000); sync(); scheduleThumbs(); return; }
+    if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt, undefined, coarse, true); clock.seek(at * 1000); sync(); scheduleThumbs(); return; }
     if (!g.moved) { sync(); scheduleThumbs(); return; }
 
     // ── the ONE model write of the gesture ────────────────────────────────────
     const boxes = getBoxes();
     const deltaSec = pxToTime(g.x - g.x0, pxPerSec);
     const alt = e.altKey || g.alt;
+    if (g.kind === 'kf') {
+      // ONE commit on release, whichever it was: a retime REPLACES anything already
+      // parked at the destination (the wire cannot hold two poses at one instant),
+      // an alt-drag leaves the original where it was and copies it.
+      const from = g.kfT0 ?? 0;
+      const to = kfSlideMs(from, deltaSec, g.dur0);
+      if (to !== from) {
+        const j = indexOfId(boxes, cfg, g.id);
+        const at = j >= 0 ? fmtTime(kfTimelineSec(boxes[j]!, cfg, to)) : '';
+        writeTrack(g.id, (track) => (alt ? kfTrackDuplicate(track, from, to) : kfTrackRetime(track, from, to)));
+        announce(alt ? t('Keyframe copied to {t}', { t: at }) : t('Keyframe moved to {t}', { t: at }));
+      } else {
+        // Nothing landed, so nothing was written — but the dot has been dragged and
+        // must go back to where the model still says it is.
+        scheduleSync();
+      }
+      scheduleThumbs();
+      return;
+    }
     if (g.kind === 'move') {
       // moveOverlay owns the clamp AND the ms rounding, so a drag and the inspector's
       // Start field land on exactly the same value for the same time.
@@ -4550,6 +5966,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // going back/forward, and Ctrl+- / Ctrl+= zoomed the timeline instead of the page —
     // every one of them preventDefault()ed. free-canvas.ts guards its `v`/`p` tool
     // letters the same way.
+    // …with ONE documented exception, taken BEFORE the guard because the guard is a
+    // bare `return`: Alt+←/→ walks the selected clip's keyframes (plans/104 §8). Alt
+    // is already this panel's "not the ordinary reading" modifier — it bypasses
+    // snapping on every drag — and no browser binds Alt+arrow on a focused element,
+    // which is the same test every bare letter below had to pass.
+    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      e.stopPropagation();
+      seekDiamond(e.key === 'ArrowRight' ? 1 : -1);
+      return;
+    }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const total = durationSec();
     const stepS = e.shiftKey ? 1 : FRAME_S;
@@ -4611,6 +6038,20 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         e.preventDefault(); e.stopPropagation();
         trimBy((e.shiftKey ? TRIM_SHIFT_FRAMES : 1) * FRAME_S); return;
       case 'e': case 'E': e.preventDefault(); e.stopPropagation(); trimToPlayhead(); return;
+      // "+Keyframe" from the keyboard — the THIRD door onto `addKeyframeAction`, and
+      // literally the same call the transport button and the canvas contextual bar
+      // make (§8's M2.5 revision: two homes, one action). So `K` inherits every rule
+      // from it, including the auto-promotion of an untimed selected box: the panel
+      // being open with something selected IS the disclosure, and a keyboard user must
+      // not be given the smaller half of a feature. Always preventDefault, including
+      // on a selection with nothing to key: a shortcut that sometimes falls through to
+      // the page is a shortcut nobody can trust.
+      case 'k': case 'K': {
+        e.preventDefault();
+        e.stopPropagation();
+        addKeyframeAction({ speak: true });
+        return;
+      }
       // Onion skin: `o` toggles it, Shift+O opens its options — the same bare-letter /
       // Shift-letter split `s`/`S` and `d`/`D` already use, and the only key space left
       // that no browser binding fights for. Both cases fold into ONE branch and the
@@ -4787,7 +6228,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       detail: { atMs: tMs, activeIds, playing, mode, opacity, past: ghosts.past, future: ghosts.future },
     }));
   }
-  const unsubTick = clock.onTick((tMs) => { updatePlayhead(tMs); syncPlayBtn(); emitTime(tMs); });
+  const unsubTick = clock.onTick((tMs) => {
+    updatePlayhead(tMs);
+    syncPlayBtn();
+    emitTime(tMs);
+    // The latch is a question about the PLAYHEAD, so it is asked on the same tick the
+    // playhead moves on — and answers with no DOM write at all unless the answer
+    // changed (see its memo). Outside emitTime's own gate, which is keyed on the
+    // ACTIVE set: crossing a diamond changes neither what is on screen nor which
+    // clips are playing, so that gate would swallow every latch there is.
+    syncKfLatch();
+  });
 
   /**
    * `fc-seek` — the canvas→panel half. The off-playhead banner's "Go to it" asks for a
@@ -4820,6 +6271,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (disposed) return;
     try { clock.reapply(); } catch { /* the clock is gone; the panel is going with it */ }
   });
+
+  /**
+   * A thumbnail is a picture of the CLIP, never of the frame the playhead is parked on
+   * (plans/104 §6.5). clip-thumbs cannot reach the authored values itself — importing
+   * bridge/sequence-dom.ts would drag sequence-plan → @lolly/engine into the chunk
+   * picker.ts loads for `onIdle` alone — so the panel, which already owns both ends,
+   * hands it the two readers. Removed with the panel: a seam pointing at a destroyed
+   * clock's store would answer authored reads out of nothing.
+   */
+  const unsubPose = setAuthoredPoseSeam({ read: authoredStyleOf, borrow: borrowAuthoredPose });
 
   const ro = typeof ResizeObserver === 'function'
     ? new ResizeObserver(() => { if (open && !gesture) { restyle(getBoxes()); updatePlayhead(clock.t()); } })
@@ -4867,6 +6328,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       ctxMenu.close();
       onionMenu.close();
       easeMenu.close();
+      // …and the inspector's group popover most of all: it is positioned ABOVE the
+      // panel, so a hidden panel would leave a settings card floating over the canvas
+      // with nothing under it to explain what it belongs to.
+      closeGroupPopover();
       keysModal?.close();
       clock.pause();
       syncPlayBtn();   // a paused clock emits no ticks, so project the state now
@@ -4892,10 +6357,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     try { ctxMenu.close(); } catch { /* never opened */ }
     try { onionMenu.close(); } catch { /* never opened */ }
     try { easeMenu.close(); } catch { /* never opened */ }
+    try { kfEaseMenu.close(); } catch { /* never opened */ }
+    try { kfCtxMenu.close(); } catch { /* never opened */ }
     // The editor holds a rAF loop and a document-level pointerup; closing the popover
     // only takes its DOM away.
     try { easeEditor?.destroy(); } catch { /* never opened */ }
     easeEditor = null;
+    try { kfEaseEditor?.destroy(); } catch { /* never opened */ }
+    kfEaseEditor = null;
+    try { closeGroupPopover(); } catch { /* never opened */ }
+    kfLatch = null;
     try { keysModal?.close(); } catch { /* never opened */ }
     if (onionHold) { clearTimeout(onionHold); onionHold = 0; }
     try { clock.pause(); } catch { /* already gone */ }
@@ -4903,6 +6374,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     cancelIdle?.();
     cancelIdle = null;
     try { unsubShot(); } catch { /* already gone */ }
+    try { unsubPose(); } catch { /* already gone */ }
     // The decoded pictures outlive the panel otherwise: nothing else in the web shell
     // consumes this cache (picker.ts imports `onIdle` alone), so up to CACHE_LIMIT
     // ImageBitmaps — filmstrips of dozens each, plus every frame's node raster — would
@@ -4934,7 +6406,53 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     host.log?.('debug', 'timeline panel destroyed');
   }
 
-  return { destroy, setOpen, isOpen: () => open, promote, demote };
+  /**
+   * Of `ids`, the ones whose OWN keyframe sits exactly under the playhead right now.
+   *
+   * Exact equality, because the latch has already put the playhead there (§8): a
+   * tolerance would make a canvas drag key a keyframe the panel's own header says
+   * you are not on, which is the one way this model can lie.
+   */
+  function kfPoseIds(ids: readonly string[]): string[] {
+    // A CLOSED panel arms nothing. §8's model is "the playhead's position IS the arm",
+    // and with the panel shut there is no playhead on screen, no diamonds, no latch
+    // header and no "+Keyframe" anywhere — so a drag that quietly wrote a keyframe
+    // instead of moving the box would be the one thing this model exists to prevent:
+    // a keyframe nobody asked for, from a gesture that looked like an ordinary move.
+    // `setOpen(false)` keeps the clock's time, so the answer would otherwise survive
+    // the close.
+    if (!open || !cfg.kfField) return [];
+    const rows = getBoxes();
+    const at = playheadSec();
+    const out: string[] = [];
+    for (const id of ids) {
+      const i = indexOfId(rows, cfg, id);
+      if (i >= 0 && kfDiamondAt(rows[i]!, cfg, at) !== null) out.push(id);
+    }
+    return out;
+  }
+
+  /**
+   * The gesture's delta, folded into each box's keyframe at the playhead — a FULL
+   * pose over its active channel set, so every diamond stays a complete honest one.
+   * Pure: no commit, no announce, no DOM. The caller writes once.
+   */
+  function kfPoseWrite(boxes: Box[], ids: readonly string[], delta: KfPose): Box[] {
+    if (!cfg.kfField) return boxes;
+    const at = playheadSec();
+    let next = boxes;
+    for (const id of ids) next = writeKfPose(next, cfg, id, at, delta, 'add');
+    return next;
+  }
+
+  return {
+    destroy, setOpen, isOpen: () => open, promote, demote, kfPoseIds, kfPoseWrite,
+    addKeyframe: () => addKeyframeAction({ speak: true }),
+    keyframableIds: (ids) => {
+      const rows = getBoxes();
+      return ids.filter((id) => isKeyframable(rows[indexOfId(rows, cfg, id)], id));
+    },
+  };
 }
 
 /**

@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import {
   resolveState, stateTone, isExpiredOnly, scorecardModel, STATE_COPY,
   sourceTypeLabel, SOURCE_TYPE_LABEL, INGEST_SOURCE_TYPE_LABEL,
+  hashFailed, hasHashVerdict, isCarrierOnly, isExclusionsOnly,
   type VerifyReport, type Check, type Watermark,
 } from './valid-verdict.ts';
 
@@ -300,4 +301,233 @@ test('verify ?src= refuses anything that can name another host', () => {
   ]) {
     assert.equal(acceptsSrc(bad), false, `${bad} must not be fetched`);
   }
+});
+
+// ── The credential stored elsewhere (C2PA 2.4 §A.7.1.2 / §A.9.3) ─────────────
+//
+// The engine reports `state: 'invalid'` + `manifest.inaccessible` for a text
+// asset that REFERENCES its credential instead of carrying it, because `state`
+// is integrity-only and no integrity check could run. Every word of the flat
+// broken verdict — "Credential broken", "Bytes no longer match", "Modified
+// after signing" — is false about that file: nothing was compared. This is the
+// same lesson the expired-certificate state exists for.
+
+test('an external credential reference is its own state, never "Credential broken"', () => {
+  const r = baseReport({
+    state: 'invalid',
+    checks: [{ code: 'manifest.inaccessible', ok: false, explanation: 'references an external manifest' }],
+  });
+  const { state } = resolveState(r);
+  assert.equal(state, STATE_COPY.external);
+  assert.notEqual(state, STATE_COPY.invalid);
+  assert.ok(!/broken|modified|changed/i.test(state.title), state.title);
+  // Neutral, not red and not green: nothing was checked either way.
+  assert.equal(stateTone(r), 'none');
+});
+
+test('a real failure alongside the external reference keeps the broken verdict', () => {
+  // The rewording is for ONE specific single-cause report. It must never become
+  // a softener for a file that also failed something real.
+  const r = baseReport({
+    state: 'invalid',
+    checks: [
+      { code: 'manifest.inaccessible', ok: false, explanation: '' },
+      { code: 'claimSignature.mismatch', ok: false, explanation: '' },
+    ],
+  });
+  assert.equal(resolveState(r).state, STATE_COPY.invalid);
+  assert.equal(stateTone(r), 'bad');
+});
+
+test('the scorecard does not report a manifest it never read as "readable"', () => {
+  const r = baseReport({
+    state: 'invalid',
+    checks: [{ code: 'manifest.inaccessible', ok: false, explanation: '' }],
+  });
+  const readable = scorecardModel(r).find((i) => i.label === 'Manifest readable')!;
+  assert.equal(readable.status, 'na', 'nothing in these bytes was read');
+  // A credential that IS in the file still reads as before.
+  const embedded = baseReport({ checks: [{ code: 'assertion.dataHash.match', ok: true, explanation: '' }] });
+  assert.equal(scorecardModel(embedded).find((i) => i.label === 'Manifest readable')!.status, 'pass');
+});
+
+test('a credential fetched from elsewhere never claims to be "embedded"', () => {
+  // The verdict is earned — these bytes DO match that credential — but every
+  // stock sub says "its embedded credential", and after a sidecar fetch that
+  // word is the one thing in the sentence that is false.
+  const r = baseReport({
+    state: 'valid',
+    checks: [{ code: 'assertion.dataHash.match', ok: true, explanation: '' }],
+    textBinding: { kind: 'html', manifestUrl: '/creds/doc.c2pa', externalManifestUsed: true },
+  });
+  const { sub } = resolveState(r);
+  assert.ok(!/embedded/i.test(sub), sub);
+  assert.match(sub, /not inside the file/);
+  // An ordinary embedded credential keeps its existing wording untouched.
+  const embedded = baseReport({ state: 'valid', checks: [{ code: 'assertion.dataHash.match', ok: true, explanation: '' }] });
+  assert.equal(resolveState(embedded).sub, STATE_COPY.valid.sub);
+});
+
+// ── "Bytes no longer match" needs a row that says so ────────────────────────
+//
+// Every hero sentence and badge about the FILE's bytes is an inference from one
+// check row: a failed hard binding. Nine of the C2PA 2.4 text statuses return
+// before that row is ever produced, and the §A.7.1.3 / §A.9.4 carve-out fails
+// the report with that row PASSING beside it. Printing the accusation in either
+// case is the page arguing with its own check list.
+
+test('hashFailed / hasHashVerdict read the rows, and nothing else', () => {
+  const none = baseReport({ state: 'invalid', checks: [check('manifest.html.multipleManifests', false)] });
+  assert.equal(hasHashVerdict(none), false, 'nothing was hashed');
+  assert.equal(hashFailed(none), false);
+  const passed = baseReport({ checks: [check('assertion.dataHash.match', true)] });
+  assert.equal(hasHashVerdict(passed), true);
+  assert.equal(hashFailed(passed), false, 'a PASS is a verdict, not a failure');
+  const failed = baseReport({ state: 'invalid', checks: [check('assertion.dataHash.mismatch', false)] });
+  assert.equal(hashFailed(failed), true);
+  // BMFF video takes the same path under a different row name.
+  assert.equal(hashFailed(baseReport({ checks: [check('assertion.bmffHash.mismatch', false)] })), true);
+  assert.equal(hasHashVerdict(baseReport({ checks: [check('assertion.bmffHash.match', true)] })), true);
+});
+
+test('a carrier problem is its own amber state, never "Credential broken"', () => {
+  // Not a crafted attack: a Markdown document ABOUT C2PA text bindings, quoting
+  // the armour delimiters twice, reaches this exact report — and M2 is what put
+  // three routes (.md in the picker, the paste handler, the text/plain drop) in
+  // front of it.
+  for (const code of [
+    'manifest.html.multipleManifests',
+    'manifest.structuredText.multipleReferences',
+    'manifest.structuredText.emptyReference',
+    'manifest.structuredText.malformedReference',
+    'manifest.text.corruptedWrapper',
+    'manifest.text.multipleWrappers',
+    'credential.unreadable',
+    'assertion.dataHash.malformed',
+  ]) {
+    const r = baseReport({ state: 'invalid', checks: [check(code, false), check('signingCredential.untrusted', false)] });
+    const { state, sub } = resolveState(r);
+    assert.equal(state, STATE_COPY.carrier, code);
+    assert.equal(stateTone(r), 'warn', `${code}: amber, not red`);
+    // The three claims the flat invalid hero used to make about a file where
+    // nothing was hashed.
+    assert.ok(!/\bmodified\b|no longer match|\bbroken\b/i.test(`${state.title} ${sub}`), `${code}: ${state.title} / ${sub}`);
+    assert.equal(hashFailed(r), false, `${code} must not reach the badge group`);
+  }
+});
+
+test('the carrier state is single-cause: real credential damage keeps the broken verdict', () => {
+  // isCarrierOnly is a rewording of one shape, never a softener. A failure that
+  // is not in the carrier set drags the whole report back to "broken".
+  for (const code of ['claimSignature.mismatch', 'assertion.hashedURI.mismatch', 'assertion.missing']) {
+    const r = baseReport({ state: 'invalid', checks: [check('manifest.inaccessible', false), check(code, false)] });
+    assert.equal(isCarrierOnly(r), false, code);
+    assert.equal(resolveState(r).state, STATE_COPY.invalid, code);
+    assert.equal(stateTone(r), 'bad', code);
+  }
+  // ...and an empty check list is not a carrier problem either.
+  assert.equal(isCarrierOnly(baseReport({ state: 'invalid' })), false);
+});
+
+test('an invalid state with no hash FAILURE never claims the bytes changed', () => {
+  // Two shapes, two honest sentences: a hash that ran and passed, and a hash
+  // that never ran at all. The default sub asserts both halves of an inference
+  // neither shape supports.
+  const ranAndPassed = baseReport({
+    state: 'invalid',
+    checks: [check('claimSignature.mismatch', false), check('assertion.dataHash.match', true)],
+  });
+  const a = resolveState(ranAndPassed);
+  assert.equal(a.state, STATE_COPY.invalid, 'a damaged credential is still broken');
+  assert.match(a.sub, /still match the hash that was signed/);
+  assert.ok(!/\bmodified after signing\b|no longer match its bytes/i.test(a.sub), a.sub);
+
+  const neverRan = baseReport({
+    state: 'invalid',
+    checks: [check('manifest.inaccessible', false), check('claimSignature.mismatch', false)],
+  });
+  const b = resolveState(neverRan);
+  assert.equal(b.state, STATE_COPY.invalid);
+  assert.match(b.sub, /never compared/);
+  assert.ok(!/\bmodified after signing\b/i.test(b.sub), b.sub);
+
+  // The real thing is untouched: a genuine mismatch keeps every word.
+  const real = baseReport({ state: 'invalid', checks: [check('assertion.dataHash.mismatch', false)] });
+  assert.equal(resolveState(real).sub, STATE_COPY.invalid.sub);
+  assert.equal(stateTone(real), 'bad');
+});
+
+test('the §A.7.1.3 carve-out reads as coverage, not as damage', () => {
+  // The forgery shape M1 §6.3 added the refusal for: the exclusion swallows a
+  // paragraph as well as the manifest block, so the hash over the remainder
+  // MATCHES. The old hero said "Bytes no longer match" on a page whose own
+  // check list printed "data hash valid" two panels below.
+  const r = baseReport({
+    state: 'invalid',
+    checks: [
+      check('claimSignature.validated', true),
+      check('assertion.dataHash.additionalExclusionsPresent', false),
+      check('assertion.dataHash.match', true),
+      check('signingCredential.untrusted', false),
+    ],
+    textBinding: { kind: 'html', exclusionsConform: 'other' },
+  });
+  assert.equal(isExclusionsOnly(r), true);
+  const { state, sub } = resolveState(r);
+  assert.equal(state, STATE_COPY.uncovered);
+  assert.equal(stateTone(r), 'warn');
+  assert.ok(!/\bmodified\b|no longer match/i.test(`${state.title} ${sub}`), sub);
+  // ...and it still says the dangerous part out loud.
+  assert.match(sub, /never covered by the signature/);
+  // A carve-out ALONGSIDE a real mismatch is a different report, and keeps the
+  // broken verdict.
+  const alsoMismatched = baseReport({
+    state: 'invalid',
+    checks: [check('assertion.dataHash.additionalExclusionsPresent', false), check('assertion.dataHash.mismatch', false)],
+  });
+  assert.equal(isExclusionsOnly(alsoMismatched), false);
+  assert.equal(resolveState(alsoMismatched).state, STATE_COPY.invalid);
+});
+
+test('a file whose text was never searched is not reported as clean', () => {
+  // The mirror of the never-accuse rule: never exonerate either. The engine
+  // declines to read past 16 MiB and says so; the shell used to answer with a
+  // flat "This file carries no C2PA manifest".
+  const r = baseReport({
+    found: false, state: 'none', format: 'html',
+    textBinding: { kind: 'html', status: 'lolly.text.tooLarge' },
+  });
+  const { state, sub } = resolveState(r);
+  assert.equal(state, STATE_COPY.notInspected);
+  assert.equal(stateTone(r), 'none');
+  assert.ok(!/carries no C2PA manifest/i.test(sub), sub);
+  assert.match(sub, /never searched/);
+  // The second half of the old sub is still true and must survive: the other
+  // on-device inspections DID run.
+  assert.match(sub, /Lolly Imprint/);
+  // An ordinary no-credential file is untouched.
+  assert.equal(resolveState(baseReport({ found: false, state: 'none' })).sub, STATE_COPY.none.sub);
+});
+
+test('the external hero does not promise an address it has none of', () => {
+  // §A.7.1.2 with a `javascript:` href: the engine refuses to hand the
+  // reference up at all (M1 §3, "manifestUrl is deliberately absent"), so the
+  // stock sub's closing "The address is shown below." pointed at nothing.
+  const noUrl = baseReport({
+    state: 'invalid',
+    checks: [check('manifest.inaccessible', false)],
+    textBinding: { kind: 'html', status: 'lolly.manifest.unsupportedReference' },
+  });
+  const { state, sub } = resolveState(noUrl);
+  assert.equal(state, STATE_COPY.external, 'still not "broken"');
+  assert.equal(stateTone(noUrl), 'none');
+  assert.ok(!/shown below/i.test(sub), sub);
+  assert.match(sub, /no address is shown/);
+  // With a real address, the original sentence stands.
+  const withUrl = baseReport({
+    state: 'invalid',
+    checks: [check('manifest.inaccessible', false)],
+    textBinding: { kind: 'html', manifestUrl: '/creds/doc.c2pa' },
+  });
+  assert.equal(resolveState(withUrl).sub, STATE_COPY.external.sub);
 });

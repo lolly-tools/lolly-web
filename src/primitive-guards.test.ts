@@ -669,6 +669,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'components/featured-row.ts': 2,
   'components/fonts-manager.ts': 3,
   'components/headshot-cropper.ts': 1,
+  // homeFabEl()'s single icon-injection sink — the argument is a constant
+  // lib/icons 'home' glyph, never user input (same shape as theme-toggle.ts /
+  // sound-toggle.ts). The string form homeFabHtml() rides its host view's own
+  // template sink and adds nothing here.
+  'components/home-fab.ts': 1,
   'components/instance-sheet.ts': 1,
   'components/lang-menu.ts': 2,
   'components/modal.ts': 1,
@@ -1060,7 +1065,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/template-chooser.ts': 1,
   // 5 as of 2026-07-31: every sink here writes icon() markup from lib/icons.ts
   // (own SVG bodies, guarded by R9) — no interpolated data at any of them.
-  'views/timeline-panel.ts': 5,
+  // 5 → 7 on 2026-08-11 (the clip inspector's grouped disclosure, plans/104 §8):
+  // the two new sinks are the group header's glyph and its caret, both
+  // `el.innerHTML = icon(<literal registry name>)` with no interpolation at all —
+  // the same class as the five above. Every VALUE the new headers show (the group
+  // label, the summary chips) goes through textContent, deliberately: the chips
+  // carry model-derived strings, and an authored `cubic-bezier(…)` curve is user
+  // text arriving from a share URL.
+  'views/timeline-panel.ts': 7,
   // 8 as of 2026-08-07: +1 for the badged/per-option-formats export-picker work
   // (schemas' badge/formats option fields); confirmed safe by the author.
   // 8 → 9 on 2026-08-11: the deterministic live-drive export path paints the exact
@@ -1243,4 +1255,37 @@ test('R12: the candidate tray is created once per surface, and the Logos room ta
   const editor = TS.find(f => f.rel === 'lib/brand-editor.ts')?.text ?? '';
   assert.match(editor, /if\s*\(opts\.tray\)\s*return opts\.tray;/,
     "lib/brand-editor.ts must prefer the host's tray (opts.tray) before creating one of its own");
+});
+
+// ── R13: no literal NUL byte anywhere in the source ──────────────────────────
+
+test('R13: no source file carries a literal NUL — one makes the whole file "binary" to grep', () => {
+  // A U+0000 written as a RAW BYTE (rather than the `\u0000` escape) makes grep/rg
+  // classify the ENTIRE file as binary: it prints nothing without `-a`. Every guard,
+  // audit, codemod and agent that shells out to grep then silently skips that file —
+  // and the one that hit this in practice was the largest in its milestone's diff.
+  //
+  // The sentinel pattern being protected is legitimate and used in several controllers
+  // ("a memo key no real key can equal"); it just has to be written as the ESCAPE. The
+  // string value is identical, so this is a spelling rule with no runtime effect.
+  const NUL = '\u0000';
+  // The surveyed state of 2026-08-11. Every entry is a place where the NUL is the
+  // DATUM rather than a spelling choice — a separator chosen because no name can
+  // contain it, a placeholder chosen because no input can contain it, or binary magic
+  // bytes under test. They predate this rule and are grandfathered, not endorsed: an
+  // entry may be deleted the day its file stops needing one. What the rule stops is a
+  // NEW file going grep-blind for want of six characters.
+  const NUL_ALLOWED = new Set([
+    'bridge/pdf-structure.ts',                  // compound Map key: name + NUL + bytes
+    'lib/beam-sink.test.ts',                    // ditto, in a test's dedupe key
+    'org/collab-protocol.ts',                   // the lock-key separator, throughout
+    'lib/markdown.ts',                          // CODE_MARK — a placeholder the input cannot contain
+    'lib/markdown.test.ts',                     // …and the test that feeds it one anyway
+    'lib/design-system/add-color.test.ts',      // binary fixture bytes
+    'lib/design-system/trim-offer.test.ts',     // RIFF / BMP / ftyp magic under test
+    'lib/drop-router.test.ts',                  // PK zip headers under test
+  ]);
+  const bad = ALL.filter((f) => !NUL_ALLOWED.has(f.rel) && f.text.includes(NUL))
+    .map((f) => `${f.rel}:${lineOf(f.text, f.text.indexOf(NUL))}`);
+  assert.deepEqual(bad, [], 'write \\u0000 instead of the byte, so the file stays greppable');
 });

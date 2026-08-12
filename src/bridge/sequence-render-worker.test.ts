@@ -36,6 +36,8 @@ import { fileURLToPath } from 'node:url';
 import {
   runSequenceJob,
   handleStart,
+  drawItem,
+  itemFx,
   toJobLayer,
   hydrateJobLayer,
   pcmSourceOf,
@@ -58,7 +60,13 @@ import {
   _setSequenceWorkerFactory,
   LIVE_RASTER_QUEUE,
 } from './sequence-render.ts';
-import { SequenceError, sequenceError } from './sequence-plan.ts';
+import {
+  EMPTY_KF_TRACK, SequenceError, kfTrackOf, sequenceDrawPlan, sequenceError,
+  type PlanItem,
+} from './sequence-plan.ts';
+import {
+  _resetBlurPool, _setBlurCanvasFactory, parseDropShadows, spillPad,
+} from '../lib/canvas-blur.ts';
 import type { EncodePick } from './video-encode-core.ts';
 
 const read = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
@@ -93,6 +101,7 @@ function layer(over: Partial<SeqJobLayer> = {}): SeqJobLayer {
     lane: 'seq', kind: 'static',
     rect: { x: 0, y: 0, w: 100, h: 100, rot: 0 },
     opacity: 1, blend: '', radius: '', clipPath: '', openEnded: false, frameScene: false,
+    z: 0, kf: EMPTY_KF_TRACK, blur: 0, shadowFilter: '',
   });
   return { ...base, ...over };
 }
@@ -182,6 +191,424 @@ test('hydrateJobLayer round-trips every field the planner reads', () => {
   }
   assert.deepEqual(h.rect, w.rect);
   assert.ok(h.el && typeof h.el === 'object', 'the element stand-in is an object, so a defensive read cannot throw');
+});
+
+test('a keyframed layer survives structuredClone — the wire is plain data, not a closure', () => {
+  // plans/104 §5.1. The evaluator caches a compiled bezier per ease token and a
+  // channel index per track; if either ever leaked into the CACHED FORM the track
+  // carries, `postMessage` would throw DataCloneError and worker offload would die
+  // silently. This is the assertion that keeps the wire boring.
+  const track = kfTrackOf('t0_x-120_z40_o0.4_b2*t1500_eb(0.32)(0)(0.67)(1)_x60_z220_o1_b0*t3000_eh_x0');
+  assert.equal(track.length, 3);
+  const w = layer({ z: 140, kf: track, blur: 2, shadowFilter: 'drop-shadow(0px 21px 46px #00000055)' });
+  const cloned = structuredClone(w);
+  assert.deepEqual(cloned.kf, w.kf as never, 'every keyframe crossed intact');
+  assert.equal(cloned.z, 140);
+  assert.equal(cloned.blur, 2);
+  assert.equal(cloned.shadowFilter, 'drop-shadow(0px 21px 46px #00000055)');
+  // …and the far side hydrates a usable layer out of it.
+  const h = hydrateJobLayer(cloned);
+  assert.equal(h.z, 140);
+  assert.equal(h.kf.length, 3);
+  assert.equal(h.kf[1]?.ease, 'eb(0.32)(0)(0.67)(1)');
+  assert.equal(h.kf[0]?.v.x, -120);
+  // A job built before the feature existed (or by hand) still hydrates.
+  const bare = { ...w } as Partial<SeqJobLayer>;
+  delete bare.z; delete bare.kf; delete bare.blur; delete bare.shadowFilter;
+  const legacy = hydrateJobLayer(bare as SeqJobLayer);
+  assert.equal(legacy.z, 0);
+  assert.equal(legacy.kf, EMPTY_KF_TRACK);
+  assert.equal(legacy.blur, 0);
+  assert.equal(legacy.shadowFilter, '');
+});
+
+test('a camera layer contributes zero draws (plans/104 §5.4)', async () => {
+  const ctx = stubCtx();
+  const cam = layer({ kind: 'camera', z: 200, kf: kfTrackOf('t0_x-100*t1000_x100') });
+  const plan = sequenceDrawPlan([hydrateJobLayer(cam)], 500, 1000, { stageW: 1920, stageH: 1080 });
+  assert.equal(plan.length, 1, 'it is still a timeline citizen — the camera IS the pose');
+  assert.equal(plan[0]!.dx, 0, 'and it is never posed itself');
+  // A real plate would still be a no-op here (`under` is null), so the guard is
+  // asserted against a layer that HAS one — the only way to tell the two apart.
+  const plate = { under: {} as CanvasImageSource, over: null, provider: null, objectFit: '', objectPosition: '', live: null, first: 0, last: 0, span: [], lastStats: null, srcClaimedSec: 0 };
+  for (const item of plan) await drawItem(ctx, item, plate as never, 1);
+  assert.deepEqual(ctx.draws, [], 'and it paints nothing at all');
+});
+
+// ── the compositor restructure (plans/104 §5.5) ─────────────────────────────
+//
+// THE BYTE-IDENTITY FLOOR IS THE FIRST TEST HERE, and it is asserted as a literal call
+// sequence rather than as a property, because the promise is literal: a document that
+// uses no depth feature must export the bytes it always exported. A clean layer never
+// asks for a scratch, never enters a blur lane, and issues save → translate →
+// drawImage → restore exactly as it did before any of this existed.
+
+interface CtxOp { op: string; args: number[] }
+
+/** A destination context that records the calls in order (no pixels, no decisions). */
+function opCtx(): AnyCtx & { ops: CtxOp[]; names(): string[] } {
+  const ops: CtxOp[] = [];
+  const rec = (op: string) => (...args: unknown[]): void => {
+    ops.push({ op, args: args.map((a) => (typeof a === 'number' ? a : Number.NaN)) });
+  };
+  return {
+    ops,
+    names: () => ops.map((o) => o.op),
+    globalAlpha: 1,
+    globalCompositeOperation: 'source-over',
+    save: rec('save'), restore: rec('restore'),
+    translate: rec('translate'), rotate: rec('rotate'), scale: rec('scale'),
+    clip: rec('clip'), clearRect: rec('clearRect'), setTransform: rec('setTransform'),
+    drawImage: (_src: unknown, ...rest: unknown[]) => {
+      ops.push({ op: 'drawImage', args: rest.map(Number) });
+    },
+    getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+  } as unknown as AnyCtx & { ops: CtxOp[]; names(): string[] };
+}
+
+/** A scratch canvas that records what was drawn on it. Enough for order, not pixels. */
+function scratchCanvas(w: number, h: number): { width: number; height: number; ops: CtxOp[]; getContext(): unknown } {
+  const ops: CtxOp[] = [];
+  const canvas = {
+    width: w,
+    height: h,
+    ops,
+    getContext(): unknown {
+      const rec = (op: string) => (...args: unknown[]): void => {
+        ops.push({ op, args: args.map((a) => (typeof a === 'number' ? a : Number.NaN)) });
+      };
+      return {
+        canvas,
+        filter: 'none', fillStyle: '', globalAlpha: 1, globalCompositeOperation: 'source-over',
+        imageSmoothingEnabled: false, imageSmoothingQuality: 'low',
+        save: rec('save'), restore: rec('restore'),
+        translate: rec('translate'), rotate: rec('rotate'), scale: rec('scale'),
+        clip: rec('clip'), setTransform: rec('setTransform'),
+        clearRect: rec('clearRect'), fillRect: rec('fillRect'), putImageData: rec('putImageData'),
+        drawImage: (_s: unknown, ...rest: unknown[]) => { ops.push({ op: 'drawImage', args: rest.map(Number) }); },
+        getImageData: (_x: number, _y: number, gw: number, gh: number) =>
+          ({ data: new Uint8ClampedArray(Math.max(4, gw * gh * 4)), width: gw, height: gh }),
+      };
+    },
+  };
+  return canvas;
+}
+
+/** Install the recording scratch factory for one test, and hand back what it made. */
+function useScratches(): { made: ReturnType<typeof scratchCanvas>[]; done: () => void } {
+  const made: ReturnType<typeof scratchCanvas>[] = [];
+  _setBlurCanvasFactory((w, h) => {
+    const c = scratchCanvas(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)));
+    made.push(c);
+    return c as never;
+  });
+  return { made, done: () => { _resetBlurPool(); _setBlurCanvasFactory(null); } };
+}
+
+/** The minimum `Path2D` the clip stage needs, for a realm that has none. */
+class StubPath2D {
+  calls: string[] = [];
+  arc(): void { this.calls.push('arc'); }
+  ellipse(): void { this.calls.push('ellipse'); }
+  rect(): void { this.calls.push('rect'); }
+  roundRect(): void { this.calls.push('roundRect'); }
+  moveTo(): void { this.calls.push('moveTo'); }
+  lineTo(): void { this.calls.push('lineTo'); }
+  closePath(): void { this.calls.push('closePath'); }
+}
+
+/** Awaits inside the try: a synchronous `finally` would take Path2D away mid-draw. */
+async function withPath2D<T>(fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as { Path2D?: unknown };
+  const had = 'Path2D' in g;
+  const prev = g.Path2D;
+  g.Path2D = StubPath2D;
+  try { return await fn(); } finally { if (had) g.Path2D = prev; else delete g.Path2D; }
+}
+
+/** One plan item for a single layer at `t`, with the stage the projection anchors on. */
+function planOne(w: SeqJobLayer, t = 0): PlanItem {
+  const plan = sequenceDrawPlan([hydrateJobLayer(w)], t, 1000, { stageW: 1920, stageH: 1080 });
+  assert.equal(plan.length, 1, 'the fixture layer is on screen');
+  return plan[0] as PlanItem;
+}
+
+const RES = (over: Record<string, unknown> = {}): never => ({
+  under: { tag: 'under' } as unknown as CanvasImageSource, over: null, provider: null,
+  objectFit: '', objectPosition: '', platePad: 0, live: null,
+  first: 0, last: 0, span: [], lastStats: null, srcClaimedSec: 0, ...over,
+}) as never;
+
+test('itemFx IS the gate: OWNERSHIP first, then blur × S', () => {
+  assert.equal(itemFx(planOne(layer()), 2), null);
+  assert.equal(itemFx(planOne(layer({ z: 300, kf: kfTrackOf('t0_o1*t1000_o0.4') })), 2), null,
+    'depth and keyframes alone change the numbers, never the gate');
+  // THE BYTE-IDENTITY FLOOR. `shadow: content` and an authored `blur` are pre-104
+  // vocabulary: on a box with no depth their plate keeps its filter, exactly as it
+  // always did, so the compositor must apply NOTHING or the effect lands twice.
+  assert.equal(itemFx(planOne(layer({ blur: 3 })), 2), null,
+    'a blurred box with no depth: the plate still carries it');
+  assert.equal(itemFx(planOne(layer({ shadowFilter: 'drop-shadow(0px 4px 10px #000)' })), 2), null,
+    'and so does a shadowed one');
+  // Ownership moves the moment the box authors depth — that is when the plate is shot
+  // clean, and the two decisions are the same predicate (`ownsLayerFx`).
+  const blurred = itemFx(planOne(layer({ blur: 3, z: 60 })), 2);
+  assert.equal(blurred?.sigma, 6, 'the blur is authored px × the export scale');
+  const shadowed = itemFx(planOne(layer({ shadowFilter: 'drop-shadow(0px 4px 10px #000)', z: 60 })), 2);
+  assert.equal(shadowed?.sigma, 0);
+  assert.deepEqual(shadowed?.shadows.map((s) => [s.dx, s.dy, s.blur]), [[0, 8, 20]],
+    'and the authored shadow is scaled with it — the plate used to scale it for free');
+});
+
+test('BYTE-IDENTITY FLOOR: a pre-104 shadow/blur document never enters the restructure', async () => {
+  const { made, done } = useScratches();
+  try {
+    for (const w of [layer({ blur: 4 }), layer({ shadowFilter: 'drop-shadow(0px 12px 24px #0008)' })]) {
+      made.length = 0;
+      _resetBlurPool();
+      const ctx = opCtx();
+      await drawItem(ctx, planOne(w), RES(), 1);
+      assert.deepEqual(ctx.names(), ['save', 'translate', 'drawImage', 'restore'],
+        'the pre-104 call list, for a document that authored no depth at all');
+      assert.equal(made.length, 0, 'and no scratch, no lane, no re-created effect');
+      assert.deepEqual(ctx.ops[2]?.args, [-50, -50, 100, 100], 'the plate at the box rect, unpadded');
+    }
+  } finally { done(); }
+});
+
+test('BYTE-IDENTITY FLOOR: a clean layer takes today\'s exact path, and asks for no scratch', async () => {
+  const { made, done } = useScratches();
+  try {
+    const ctx = opCtx();
+    await drawItem(ctx, planOne(layer()), RES(), 1);
+    assert.deepEqual(ctx.names(), ['save', 'translate', 'drawImage', 'restore'],
+      'no clip (no radius), no scratch, no composite — the pre-104 call list');
+    assert.deepEqual(ctx.ops[1]?.args, [50, 50], 'translate to the box centre');
+    assert.deepEqual(ctx.ops[2]?.args, [-50, -50, 100, 100], 'and the plate at the box rect');
+    assert.equal(made.length, 0, 'a clean layer never allocates anything');
+  } finally { done(); }
+});
+
+test('BYTE-IDENTITY FLOOR: the gate is blur + authored filter and NOTHING else', async () => {
+  const { made, done } = useScratches();
+  try {
+    // Everything else a depth document can carry — a z, a keyframe track that moves the
+    // box, a resolved depth — still leaves a layer CLEAN as far as the compositor is
+    // concerned: those change the numbers, not the pass structure.
+    const w = layer({ z: 120, kf: kfTrackOf('t0_x0*t1000_x60') });
+    const item = planOne(w, 500);
+    assert.notEqual(item.dx, 0, 'the fixture really is being moved');
+    assert.equal(item.blur, 0);
+    const ctx = opCtx();
+    await drawItem(ctx, item, RES(), 1);
+    // `scale` is there because a lifted box really is magnified by the projection —
+    // that is a NUMBER changing, which is the feature working. What must not change is
+    // the PASS STRUCTURE: still one unclipped draw straight at the destination.
+    assert.deepEqual(ctx.names(), ['save', 'translate', 'scale', 'drawImage', 'restore']);
+    assert.equal(made.length, 0);
+  } finally { done(); }
+});
+
+test('a BLURRED layer clips into a padded scratch and composites UNCLIPPED (§5.5)', async () => {
+  const { made, done } = useScratches();
+  try {
+    const ctx = opCtx();
+    // `z` is what moves ownership of the filter to the compositor (`ownsLayerFx`); it
+    // is deliberately small enough that eff rounds the layer's own geometry nowhere
+    // near a new plate bucket, so the pad arithmetic below is the plain one.
+    const item = planOne(layer({ blur: 4, radius: '12px', z: 60 }));
+    assert.equal(item.blur, 4, 'the planner owns the whole blur');
+    await withPath2D(async () => { await drawItem(ctx, item, RES(), 1); });
+    // The destination never clips. That is the whole point: the DOM clips the CONTENT
+    // and applies the filter after, so the blur spills softly OUTSIDE the radius.
+    assert.ok(!ctx.names().includes('clip'), 'the composite is unclipped');
+    // `scale` is the projection magnifying a lifted box — a number changing, not a
+    // pass appearing.
+    assert.deepEqual(ctx.names(), ['save', 'translate', 'scale', 'drawImage', 'restore']);
+    // The clip happened on the scratch instead, inside the pad translate.
+    const stage = made[0];
+    assert.ok(stage, 'a scratch was taken');
+    const kinds = stage.ops.map((o) => o.op);
+    assert.ok(kinds.includes('clip'), 'the radius clipped the CONTENT');
+    assert.equal(kinds.indexOf('translate') < kinds.indexOf('clip'), true, 'inside the pad offset');
+    // …and the scratch is the box plus three sigmas of spill on every side.
+    const pad = spillPad(4, []);
+    assert.equal(stage.width, 100 + pad * 2);
+    assert.equal(stage.height, 100 + pad * 2);
+    assert.deepEqual(ctx.ops.find((o) => o.op === 'drawImage')?.args,
+      [-50 - pad, -50 - pad, stage.width, stage.height],
+      'and it is composited back at its own padded origin, 1:1');
+  } finally { done(); }
+});
+
+test('clipPath + shadow: the clip shapes the content AND cuts the shadow (CSS order)', async () => {
+  const { made, done } = useScratches();
+  try {
+    const ctx = opCtx();
+    const shadow = 'drop-shadow(0px 12px 24px #00000055)';
+    const item = planOne(layer({ clipPath: 'circle(40%)', shadowFilter: shadow, z: 60 }));
+    await withPath2D(async () => { await drawItem(ctx, item, RES(), 1); });
+    // THE TWO CLIP KINDS ARE NOT THE SAME ORDER. `border-radius` clips the element's
+    // content and the filter applies after (spill escapes the radius — the test above).
+    // `clip-path` applies to the FILTER OUTPUT: Filter Effects renders, filters, THEN
+    // clips, so the browser cuts the drop-shadow off at the path. The DOM evaluator
+    // writes `filter` on the element and inherits that order for free, so the canvas
+    // has to clip at the DESTINATION or preview and export disagree on every
+    // clip-path'd blurred box.
+    assert.ok(ctx.names().includes('clip'), 'the destination IS clipped, by the clip-path');
+    const stage = made[0];
+    assert.ok(stage, 'a scratch was taken');
+    assert.ok(!stage.ops.some((o) => o.op === 'clip'),
+      'and the scratch is not clipped again — the plate already carries the shape');
+    const pad = spillPad(0, parseDropShadows(shadow));
+    assert.ok(pad > 0);
+    assert.equal(stage.width, 100 + pad * 2);
+    assert.deepEqual(ctx.ops.find((o) => o.op === 'drawImage')?.args,
+      [-50 - pad, -50 - pad, stage.width, stage.height]);
+  } finally { done(); }
+});
+
+test('a SHADOWED layer with no blur takes the same restructure', async () => {
+  const { made, done } = useScratches();
+  try {
+    const ctx = opCtx();
+    const item = planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 }));
+    assert.equal(item.blur, 0);
+    await drawItem(ctx, item, RES(), 1);
+    assert.equal(made.length > 0, true, 'an authored filter on a DEPTH layer restructures');
+    const pad = spillPad(0, parseDropShadows('drop-shadow(0px 21px 46px #00000055)'));
+    assert.equal(made[0]?.width, 100 + pad * 2, 'and the spill is the shadow\'s own reach');
+  } finally { done(); }
+});
+
+test('blur scales with the export scale S', async () => {
+  const { made, done } = useScratches();
+  try {
+    const item = planOne(layer({ blur: 4, z: 60 }));
+    for (const S of [1, 2, 3]) {
+      made.length = 0;
+      _resetBlurPool();
+      await drawItem(opCtx(), item, RES(), S);
+      const pad = spillPad(4 * S, []);
+      assert.equal(made[0]?.width, Math.ceil(100 * S) + pad * 2, `S=${S}`);
+    }
+  } finally { done(); }
+});
+
+test('a padded PLATE is drawn back at its own origin, on both paths', async () => {
+  const { done } = useScratches();
+  try {
+    // The plate was captured with a 12px margin, so its origin is (-12,-12) in box
+    // space and it is 24px bigger on each axis. Every draw of it has to say so.
+    const clean = opCtx();
+    await drawItem(clean, planOne(layer()), RES({ platePad: 12 }), 2);
+    assert.deepEqual(clean.ops[2]?.args, [-100 - 24, -100 - 24, 200 + 48, 200 + 48],
+      'the clean path subtracts the pad and adds twice it, at scale S');
+    // …and a blurred layer's scratch is never narrower than the plate it must hold.
+    const blurred = opCtx();
+    const { made, done: stop } = useScratches();
+    try {
+      await drawItem(blurred, planOne(layer({ blur: 1, z: 60 })), RES({ platePad: 40 }), 1);
+      assert.ok((made[0]?.width ?? 0) >= 100 + 80,
+        `scratch ${made[0]?.width} must hold a plate padded by 40 on each side`);
+    } finally { stop(); }
+  } finally { done(); }
+});
+
+test('a filtered layer blurs at the PLATE\'s resolution, not at S', async () => {
+  // The budget shoots a lifted layer's plate at `S·eff` precisely so a flown-past layer
+  // is not a blown-up S-resolution plate. The filtered path composites through a
+  // scratch — and a scratch sized in S px resampled the plate DOWN to S, blurred it
+  // there, and let `ctx.scale(item.scale)` blow the result back up, throwing away
+  // exactly the resolution that was paid for on exactly the layers (lifted,
+  // depth-shadowed) that asked for it.
+  const { made, done } = useScratches();
+  try {
+    // z 400 at P 1200: eff = 1.5, so the plate is bucketed to 1.5 and the layer lands
+    // 1.5× its own size.
+    const item = planOne(layer({ blur: 4, z: 400 }));
+    assert.ok(Math.abs(item.scale - 1.5) < 1e-9, `the fixture is magnified (${item.scale})`);
+    await drawItem(opCtx(), item, RES({ plateEff: 1.5 }), 1);
+    const pad = spillPad(4 * 1.5, []);
+    assert.equal(made[0]?.width, Math.ceil(100 * 1.5) + pad * 2,
+      'the scratch is the plate\'s own resolution, and the sigma scaled with it');
+
+    // …and it never asks for MORE than the plate actually holds: with a plate shot at
+    // S (no extra bought), the scratch stays at S and the upscale is the transform's.
+    made.length = 0;
+    _resetBlurPool();
+    await drawItem(opCtx(), item, RES(), 1);
+    assert.equal(made[0]?.width, 100 + spillPad(4, []) * 2,
+      'no plateEff, no extra pixels to keep — the byte-identity path');
+
+    // ONE SIZE PER LAYER PER RENDER. The scratch follows the PLATE, not the frame:
+    // sizing it to `min(item.scale, plateEff)` would be the tightest allocation and
+    // would resize the pooled canvas on every frame of a moving layer, which is the
+    // cost the pool exists to avoid.
+    const early = planOne(layer({ blur: 4, z: 400, kf: kfTrackOf('t0_s0.2*t1000_s1') }), 0);
+    assert.ok(early.scale < 1, `the fixture is small at t=0 (${early.scale})`);
+    made.length = 0;
+    _resetBlurPool();
+    await drawItem(opCtx(), early, RES({ plateEff: 1.5 }), 1);
+    assert.equal(made[0]?.width, Math.ceil(100 * 1.5) + spillPad(4 * 1.5, []) * 2,
+      'the same size the layer takes at its widest moment');
+  } finally { done(); }
+});
+
+test('a filtered layer is composited back at exactly its box rect, whatever the scratch resolution', async () => {
+  const { made, done } = useScratches();
+  try {
+    const ctx = opCtx();
+    const item = planOne(layer({ blur: 4, z: 400 }));
+    await drawItem(ctx, item, RES({ plateEff: 1.5 }), 1);
+    const k = 1.5;
+    const pad = spillPad(4 * k, []);
+    const stage = made[0];
+    assert.ok(stage);
+    // The draw happens inside `ctx.scale(item.scale)`, so dividing the scratch's own px
+    // by k puts one scratch px on one device px — the content lands at (ox, oy, w, h)
+    // with the spill around it, which is what the k = 1 form always did.
+    assert.deepEqual(ctx.ops.find((o) => o.op === 'drawImage')?.args,
+      [-50 - pad / k, -50 - pad / k, stage.width / k, stage.height / k]);
+  } finally { done(); }
+});
+
+test('an empty clip draws nothing — and costs no scratch', async () => {
+  const { made, done } = useScratches();
+  try {
+    const ctx = opCtx();
+    // `inset(50% 50%)` encloses nothing; parseClipShape reports 'empty'.
+    const item = planOne(layer({ blur: 4, clipPath: 'inset(50% 50%)', z: 60 }));
+    await withPath2D(async () => { await drawItem(ctx, item, RES(), 1); });
+    assert.ok(!ctx.names().includes('drawImage'), 'nothing reached the destination');
+    assert.equal(made.length, 0, 'and the empty clip was known before a scratch was taken');
+  } finally { done(); }
+});
+
+test('DETERMINISM: the executor draws the same job the same way, every run', async () => {
+  // Worker and in-thread are the SAME function (the source guard below proves there is
+  // only one), so what remains provable here is that the function itself is
+  // deterministic — including through the restructured path, which allocates, pools and
+  // recycles scratches. A pool that leaked state between runs would show up here.
+  const runOnce = async (): Promise<string> => {
+    const { done } = useScratches();
+    try {
+      const ctx = opCtx();
+      const j = job([
+        layer({ blur: 3, radius: '8px', z: 60 }),
+        layer({ shadowFilter: 'drop-shadow(2px 4px 10px #0008)', z: -80 }),
+        layer(),
+      ], 3, 3);
+      await withPath2D(async () => {
+        await runSequenceJob(j, {} as AnyCanvas, ctx, { frame: async () => {} });
+      });
+      return JSON.stringify(ctx.ops);
+    } finally { done(); }
+  };
+  const a = await runOnce();
+  const b = await runOnce();
+  assert.equal(a, b, 'two runs of one job produce one op stream');
+  assert.ok(a.includes('drawImage'), 'and it actually drew something');
 });
 
 // ── the message protocol ────────────────────────────────────────────────────

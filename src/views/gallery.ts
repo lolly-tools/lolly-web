@@ -21,7 +21,8 @@ import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { claimSearchBar, clearSearchBar, setSearchBarValue } from '../components/search-bar.ts';
 import { fold, tokenize, scoreHaystack, type SearchField } from '../lib/search/match.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
-import { hiddenCategories, flagEnabled, PRO_FLAG } from '../feature-flags.ts';
+import { hiddenCategories, flagEnabled, PRO_FLAG, isFlagOnSync, PRIVATE_COLLAB_FLAG } from '../feature-flags.ts';
+import { getCollabOpener, openCollabLaunch } from '../lib/collab-launch.ts';
 import { syncCatalog, prefetchAssetsById } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
 import { getInjectedTools } from '../lib/injected-tools.ts';
@@ -210,6 +211,10 @@ const HISTORY_ICON = icon('history');
 const OPEN_ICON = icon('externalLink');
 const LINK_ICON = icon('link');
 const EYE_ICON = icon('eye');
+// "Start a collab" row — a two-person glyph, matching the collab presence chrome's
+// avatar-cluster idiom (collab-pill / collab-tile-state) so the affordance reads as
+// live co-editing rather than a plain share.
+const USERS_ICON = icon('users');
 
 // Lucide "star" — the per-card favourite toggle. Filled via CSS when active (.is-fav).
 const STAR_ICON = icon('star');
@@ -1962,11 +1967,20 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (!tool) return '';
     const unavailable = unavailableIds.has(ref);
     const n = countByTool(ref);
+    // "Start a collab" — a private (P2P) collab pairs two devices on this tool from its
+    // current state; from a tile that state is the tool's defaults (a blank-slate co-edit),
+    // and the pairing's remount-on-connect brings the tool up on both ends. Gated exactly
+    // like the in-tool Share dialog's Private-collab row (lib/collab-share-private.ts): the
+    // `private-collab` flag (default on, may be user-/org-off) AND a registered opener,
+    // re-checked on every menu open. No per-tool capability — private collab works for any
+    // tool that can mount, so an unavailable tool (missing a host capability) is excluded.
+    const collabStart = !unavailable && isFlagOnSync(PRIVATE_COLLAB_FLAG) && !!getCollabOpener('private');
     return [
       unavailable ? '' : menuItemHtml('open', OPEN_ICON, t('Open')),
       menuItemHtml('fav', STAR_ICON, fav ? t('Remove from favourites') : t('Add to favourites')),
       unavailable ? '' : menuItemHtml('pin', DOWNLOAD_ICON, pinnedTools.has(ref) ? t('Remove from offline') : t('Available offline')),
       n > 0 ? menuItemHtml('history', HISTORY_ICON, n === 1 ? t('1 saved session') : t('{n} saved sessions', { n })) : '',
+      collabStart ? menuItemHtml('collab', USERS_ICON, t('Start a collab')) : '',
       menuItemHtml('copylink', LINK_ICON, t('Copy link')),
       menuItemHtml('info', INFO_ICON, t('About')),
       menuItemHtml('hide', EYE_ICON, hiddenNow ? t('Unhide tool') : t('Hide tool')),
@@ -2009,6 +2023,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     }
     if (act === 'pin') { await pinOne(ref); return; }
     if (act === 'history') { const tool = toolById.get(ref); if (tool) openHistoryFor(tool); return; }
+    if (act === 'collab') {
+      // A tile has no mounted runtime, so there is no live state to seed — pass empty
+      // baseParts (the collab starts at the tool's defaults, a blank-slate co-edit). The
+      // opener re-checks the flag itself and the ceremony overlay takes over; on connect
+      // its own remount ('lolly:remount') brings the tool up on the inviter's side. Uses
+      // the tolerant openCollabLaunch seam, which swallows a throwing/absent opener.
+      if (openCollabLaunch('private', { toolId: ref, baseParts: [] })) announce(t('Starting a collab'));
+      return;
+    }
     if (act === 'copylink') { await copyLink(ref); return; }
     if (act === 'info') {
       if (isViewRef(ref)) { const v = viewByRef(ref); if (v) showViewInfoDialog(v); }

@@ -152,6 +152,8 @@
 .history-fab,                                     /* utilities.css/topbar.css — saved-sessions FAB */
 .projects-back,                                   /* projects.css — folder breadcrumb back square */
 .me-back,                                         /* multi-edit.css — multi-edit header back square */
+.home-fab,                                         /* topbar.css — the always-home FAB (nav-less views) */
+.theme-fab,                                        /* topbar.css — the theme-cycle FAB (nav-less views) */
 .lang-fab {                                       /* topbar.css — language FAB */
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);

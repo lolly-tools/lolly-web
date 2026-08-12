@@ -35,6 +35,45 @@ export interface Claim {
   manifestLabel: string;
   actions: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; parameters?: unknown }>;
 }
+// ── C2PA 2.4 text bindings (engine 1.115.0) ──────────────────────────────────
+// Local mirrors of the engine's C2paTextBinding / C2paAiDisclosure, same rule as
+// VerifyReport itself: structural, so the awaited verifyC2pa() result stays
+// assignable without importing the engine's own types through a barrel that does
+// not re-export them yet. Every field is optional — the engine only sets what it
+// actually established, and a shell that guesses at an absent one would be
+// inventing a finding.
+export type TextBindingKind = 'html' | 'structuredText' | 'text';
+export interface TextBinding {
+  kind: TextBindingKind;
+  /** A C2PA_TEXT_STATUS code — the carrier is present but unusable. */
+  status?: string;
+  detail?: string;
+  /** §A.7.1.2 / §A.9.3 external reference. THE ENGINE NEVER FETCHES IT. */
+  manifestUrl?: string;
+  /** The verified store arrived via verifyC2pa's `externalManifest` option — the
+   *  shell fetched `manifestUrl` itself, so this report is about a credential
+   *  that is NOT inside the file. */
+  externalManifestUsed?: boolean;
+  wrappers?: number;
+  matchedWrappers?: number;
+  wrappersTruncated?: boolean;
+  selectedWrapper?: number;
+  exclusionsConform?: 'narrower' | 'other';
+  /** §15.12.1.3.4 — the machine-derivable "this is part of a longer signed
+   *  text" shapes only. Never set from a plain hash mismatch. */
+  fragment?: boolean;
+  exclusionsFrom?: 'wrapper' | 'selectors';
+}
+// §18.28 c2pa.ai-disclosure — claim CONTENT (what the signer declared), read for
+// every format and never a failure.
+export interface AiDisclosure {
+  modelType?: string;
+  modelName?: string;
+  modelIdentifier?: string;
+  oversight?: string;
+  scientificDomain?: string[];
+}
+
 export interface VerifyReport {
   found: boolean;
   state: 'valid' | 'invalid' | 'none';
@@ -53,6 +92,15 @@ export interface VerifyReport {
   signer?: Signer;
   aiGenerated?: { kind: 'generated' | 'composite'; sourceType: string };
   history?: Array<{ action: unknown; when: unknown; softwareAgent: unknown; digitalSourceType?: unknown; description?: unknown; parameters?: unknown; generator?: unknown }>;
+  // Present only for the three C2PA 2.4 text formats (html / code / text).
+  textBinding?: TextBinding;
+  // §18.28, any format. `aiDisclosures` appears only when a claim made more than
+  // one; `aiDisclosure` is always the first of them.
+  aiDisclosure?: AiDisclosure;
+  aiDisclosures?: AiDisclosure[];
+  // claim_generator_info.specVersion — informational per §10.2.3.1, so nothing
+  // here (or in the engine) branches on it.
+  specVersion?: string;
 }
 
 // The pixel-watermark detection result (engine detectWatermark), surfaced only
@@ -114,6 +162,58 @@ export const STATE_COPY = {
     title: 'Credential expired',
     sub: 'The file still matches exactly what its credential signed — nothing was modified — but the signing certificate (a short-lived on-device key; the lifetime is picked at export) has lapsed, so the credential no longer validates.',
   },
+  // state 'invalid' with ONE failure: manifest.inaccessible. C2PA 2.4 §A.7.1.2 /
+  // §A.9.3 let a text asset REFERENCE its credential instead of carrying it, and
+  // the engine reports `invalid` there because `state` is integrity-only and NO
+  // integrity check could run — 'valid' would be a lie and 'none' (no credential
+  // at all) would be a different one. Rendering that as the flat "Credential
+  // broken", with its "Bytes no longer match" and "Modified after signing"
+  // badges, would be the loudest lie of the three: nothing was compared. Same
+  // lesson as the expired-certificate state — a verdict word must describe what
+  // was actually established.
+  external: {
+    cls: 'is-none is-external',
+    title: 'Credential stored elsewhere',
+    sub: 'This file does not carry its Content Credential — it points at one kept somewhere else. Nothing is fetched on your behalf here, so these bytes have not been checked against it. The address is shown below.',
+  },
+  // state 'invalid' whose ONLY failures are carrier problems (see CARRIER_CODES):
+  // the credential could not be read out of the file at all, so NO hash was ever
+  // computed and nothing was compared. The flat "Credential broken" hero — with
+  // its "Bytes no longer match" and "Modified after signing" badges — states
+  // three things the engine never established, and it directly contradicts the
+  // note this page is about to print underneath ("nothing here says its content
+  // was changed"). Two markers quoted in a prose document about C2PA are enough
+  // to reach this state, and since M2 added .md/.txt/text-paste ingestion, that
+  // document now has three routes here. Amber, not red, and worded for the
+  // honest cause as well as the dishonest one.
+  carrier: {
+    cls: 'is-none is-carrier',
+    title: 'Credential could not be checked',
+    sub: 'This file declares a Content Credential that could not be read out of it, so nothing was hashed and nothing was compared. That is a problem with how the credential was written into the file, or with the copy that arrived here — nothing on this page says the content was changed. What went wrong is explained below.',
+  },
+  // state 'invalid' whose ONLY failure is assertion.dataHash.additionalExclusions
+  // Present: the credential's declared exclusion reaches OUTSIDE its own manifest
+  // block, so part of the file is deliberately not bound. The hash over the rest
+  // still ran and still PASSED, which is why the flat broken hero was false on
+  // its own page — the check list right below it prints "data hash valid". This
+  // is the §A.7.1.3 / §A.9.4 forged-carve-out shape, and the correct reading is
+  // "the bytes are intact, the coverage is not", never "the file was edited".
+  uncovered: {
+    cls: 'is-none is-uncovered',
+    title: 'Not all of this file is covered by its credential',
+    sub: 'The bytes this credential does cover match exactly what was signed. But its declared exclusion reaches beyond its own manifest block, so part of what you can see here was never covered by the signature — that part is not vouched for, and could have been changed without the credential noticing.',
+  },
+  // The text readers cap at 16 MiB (engine MAX_TEXT_BYTES) while this page accepts
+  // far larger files, so a big HTML document carrying a real credential lands
+  // here with found:false. "This file carries no C2PA manifest" would be a flat
+  // positive claim of absence about a file whose text was never searched — the
+  // mirror image of the never-accuse rule, and just as wrong. Never exonerate
+  // either.
+  notInspected: {
+    cls: 'is-none is-notinspected',
+    title: 'Not inspected as text',
+    sub: 'This file is past the size limit for on-device text inspection, so its text was never searched for a C2PA manifest — nothing is claimed about it either way. It was still inspected on-device for a Lolly Imprint, embedded metadata and hidden data.',
+  },
   // state 'invalid', but ONLY the hard binding (the file's own bytes) failed —
   // the claim signature and every hashed-URI-bound assertion (the actions and
   // export context this page shows as edit history / "made from") checked out,
@@ -132,6 +232,70 @@ export function isExpiredOnly(report: VerifyReport): boolean {
   const fails = report.checks.filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
   return fails.length === 1 && fails[0]!.code === 'signingCredential.expired';
 }
+
+// True when the ONLY failure is "the credential lives elsewhere" — the C2PA 2.4
+// external-reference case (§A.7.1.2 / §A.9.3). Same shape as isExpiredOnly, and
+// for the same reason: an `invalid` state whose single cause is not damage must
+// not be worded as damage. A report that ALSO carries a real failure keeps the
+// broken verdict — this is a rewording of one specific case, never a softener.
+export function isExternalOnly(report: VerifyReport): boolean {
+  const fails = report.checks.filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
+  return fails.length === 1 && fails[0]!.code === 'manifest.inaccessible';
+}
+
+// ── Did a hash comparison actually happen? ───────────────────────────────────
+//
+// The hard-binding rows are the ONLY checks that establish anything about
+// whether these bytes are the bytes that were hashed. Every hero sentence and
+// badge that says "bytes no longer match" / "modified after signing" is an
+// inference FROM one of them, so it may only be printed when one of them is
+// actually in the report. Nine of the C2PA 2.4 text statuses return before the
+// binding ever runs (M1 §3: "'your exclusions are wrong' and 'your bytes
+// changed' are different accusations"), and one of them — the §A.7.1.3 /
+// §A.9.4 carve-out — fails the report with the hash row PASSING beside it.
+const HASH_FAIL_CODES = ['assertion.dataHash.mismatch', 'assertion.bmffHash.mismatch'];
+const HASH_PASS_CODES = ['assertion.dataHash.match', 'assertion.bmffHash.match'];
+/** A hard-binding comparison ran and FAILED — the only evidence for "the bytes changed". */
+export const hashFailed = (report: VerifyReport): boolean =>
+  (report.checks ?? []).some((c) => !c.ok && HASH_FAIL_CODES.includes(c.code));
+/** A hard-binding comparison ran at all, either way. */
+export const hasHashVerdict = (report: VerifyReport): boolean =>
+  (report.checks ?? []).some((c) => HASH_FAIL_CODES.includes(c.code) || HASH_PASS_CODES.includes(c.code));
+
+// Failures that mean "the credential could not be got out of this file", as
+// opposed to "the credential itself did not check out" (claimSignature.mismatch,
+// assertion.hashedURI.mismatch, assertion.missing — those ARE damage and keep
+// the broken verdict). Deliberately NOT a catch-all: a code that is not listed
+// here falls through to the flat invalid state, which is the safe direction.
+const CARRIER_CODES = new Set([
+  'manifest.html.multipleManifests',
+  'manifest.structuredText.multipleReferences',
+  'manifest.structuredText.emptyReference',
+  'manifest.structuredText.malformedReference',
+  'manifest.text.corruptedWrapper',
+  'manifest.text.multipleWrappers',
+  'manifest.inaccessible',
+  'credential.unreadable',
+  // §15.12.1.3.1 step 3: the exclusions are wrong, which is a different
+  // accusation from "the bytes changed" — and the hash never ran.
+  'assertion.dataHash.malformed',
+]);
+/** Every failure is a carrier problem AND no hash was ever computed. */
+export function isCarrierOnly(report: VerifyReport): boolean {
+  const fails = (report.checks ?? []).filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
+  return fails.length > 0 && fails.every((c) => CARRIER_CODES.has(c.code)) && !hasHashVerdict(report);
+}
+
+/** The ONE failure is the §A.7.1.3 / §A.9.4 carve-out — the hash itself passed. */
+export function isExclusionsOnly(report: VerifyReport): boolean {
+  const fails = (report.checks ?? []).filter((c) => !c.ok && c.code !== 'signingCredential.untrusted');
+  return fails.length === 1 && fails[0]!.code === 'assertion.dataHash.additionalExclusionsPresent';
+}
+
+// The engine's C2PA_TEXT_STATUS value for "the text readers declined to look".
+// Kept as a literal here for the same reason valid-text.ts keeps its own copy:
+// this module must not import the engine to word one sentence.
+const STATUS_TOO_LARGE = 'lolly.text.tooLarge';
 
 // The untrusted marker is the designed posture, not damage — render it as an
 // informational row, never as a failure.
@@ -154,7 +318,13 @@ export function scorecardModel(report: VerifyReport, watermark?: Watermark, extr
   const found = !!report.found;
   const na = 'na';
 
-  const readable = present('credential.unreadable') ? 'fail' : found ? 'pass' : na;
+  // "Manifest readable" is about a manifest we actually read. With the credential
+  // stored elsewhere (§A.7.1.2 / §A.9.3) there was nothing in these bytes to
+  // read, so this is not-applicable — a green "readable: passed" would be the
+  // scorecard vouching for a file the page just said it could not check.
+  const readable = present('credential.unreadable') ? 'fail'
+    : present('manifest.inaccessible') ? na
+      : found ? 'pass' : na;
   const assertions = badRow('assertion.hashedURI.mismatch', 'assertion.missing') ? 'fail'
     : okRow('assertion.hashedURI.match') ? 'pass' : na;
   const signature = badRow('claimSignature.mismatch') ? 'fail' : okRow('claimSignature.validated') ? 'pass' : na;
@@ -219,8 +389,18 @@ export function resolveState(report: VerifyReport): ResolvedState {
   const state = report.madeWithLolly ? STATE_COPY.lolly
     : trusted && report.delivered ? STATE_COPY.delivered
     : trusted ? STATE_COPY.trusted
+    : report.state === 'invalid' && isExternalOnly(report) ? STATE_COPY.external
     : report.state === 'invalid' && report.likelyMadeWithLolly ? STATE_COPY.likelyLolly
     : report.state === 'invalid' && isExpiredOnly(report) ? STATE_COPY.expired
+    // "We declined to look" is not "we looked and it is clean" — the flat
+    // no-credential hero would be a positive claim of absence about text that
+    // was never read.
+    : report.textBinding?.status === STATUS_TOO_LARGE ? STATE_COPY.notInspected
+    // The two invalid states where NO hash mismatch was established. Both come
+    // before the flat invalid fall-through, and both are one predicate wide on
+    // purpose: an unlisted failure code keeps the broken verdict.
+    : report.state === 'invalid' && isExclusionsOnly(report) ? STATE_COPY.uncovered
+    : report.state === 'invalid' && isCarrierOnly(report) ? STATE_COPY.carrier
     : (STATE_COPY[report.state] ?? STATE_COPY.none);
   // Set only when the signing chain verified against the pinned root: a still-valid
   // cert (report.trusted true) or an anchored-but-expired one (identity CA-verified,
@@ -239,7 +419,15 @@ export function resolveState(report: VerifyReport): ResolvedState {
   // NB: `sub` is rendered as raw HTML (so the signer/anchor names can be <strong>).
   // The static STATE_COPY subs carry no HTML metacharacters; any cert-derived value
   // interpolated here (issuer, signerOrg) MUST be escape()'d — it is attacker-controlled.
-  const sub = state === STATE_COPY.lolly && report.trusted
+  // Every intact-state sub says "its EMBEDDED credential", which is exactly the
+  // word that stops being true once the shell fetched the credential from the
+  // address the file names (engine 1.116.0's externalManifest). The verdict is
+  // unchanged and earned — these bytes really do match that credential — but the
+  // sentence has to name which credential, because a reader who assumes it came
+  // with the file would be assuming the wrong thing.
+  const sub = report.state === 'valid' && report.textBinding?.externalManifestUsed
+    ? t('This file is exactly what the credential it points at signed. That credential is not inside the file — it was fetched from the address the file names, at your request, and checked against these bytes.')
+    : state === STATE_COPY.lolly && report.trusted
     ? t('The credential is intact and records a Lolly export — the file has not changed since it was made. (Integrity plus the maker’s claim, signed under a CA-verified identity.)')
     : state === STATE_COPY.expired && identity
       ? t('The file still matches exactly what its credential signed — nothing was modified — but the short-lived signing certificate has expired, so the credential no longer validates. Without a trusted timestamp the time of signing cannot be proven.')
@@ -248,7 +436,22 @@ export function resolveState(report: VerifyReport): ResolvedState {
             issuer: escape(identity!.issuer!),
             signer: signerOrg ? t(', identifying the signer as <strong>{org}</strong>', { org: signerOrg }) : '',
           })
-        : t(state.sub);
+        // The external hero's default sub ends "The address is shown below."
+        // One route here has no address to show: a reference the engine refused
+        // to hand up at all (a `javascript:` href — M1 §3, "manifestUrl is
+        // deliberately absent"). Promising an address that is never rendered
+        // sends the reader looking for something that is not on the page.
+        : state === STATE_COPY.external && !report.textBinding?.manifestUrl
+          ? t('This file does not carry its Content Credential — it points at one kept somewhere else, but not in a form this page can follow, so no address is shown and these bytes have not been checked against it.')
+        // An invalid state that no hash mismatch caused: the default sub's
+        // "they no longer match its bytes — it was modified after signing" is
+        // false either way, and which honest sentence applies depends on
+        // whether a hash comparison ran at all.
+          : state === STATE_COPY.invalid && !hashFailed(report)
+            ? (hasHashVerdict(report)
+              ? t('The file carries Content Credentials, and its bytes still match the hash that was signed — what failed is inside the credential itself. The checks below say which part.')
+              : t('The file carries Content Credentials, but the credential itself did not check out, so these bytes were never compared against it. Nothing here establishes that the content was changed — the checks below say what failed.'))
+            : t(state.sub);
   return { state, sub, identity };
 }
 
@@ -258,8 +461,16 @@ export function resolveState(report: VerifyReport): ResolvedState {
 export function stateTone(report: VerifyReport): 'good' | 'bad' | 'warn' | 'none' {
   const { state } = resolveState(report);
   if (state === STATE_COPY.invalid) return 'bad';
-  if (state === STATE_COPY.expired || state === STATE_COPY.likelyLolly) return 'warn';
-  if (state === STATE_COPY.none) return 'none';
+  // Amber, not red: something IS wrong with the carrier or the coverage, and
+  // neither is evidence that the content changed.
+  if (state === STATE_COPY.expired || state === STATE_COPY.likelyLolly
+    || state === STATE_COPY.carrier || state === STATE_COPY.uncovered) return 'warn';
+  // A credential kept elsewhere is neutral, never green and never red: nothing
+  // was checked. So is a file whose text was never searched. Listed explicitly —
+  // the fall-through below is 'good', and a new state silently inheriting that
+  // would be the worst possible default.
+  if (state === STATE_COPY.none || state === STATE_COPY.external
+    || state === STATE_COPY.notInspected) return 'none';
   return 'good';
 }
 

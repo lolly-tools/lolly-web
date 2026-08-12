@@ -43,6 +43,8 @@ body > svg:not([style]) {
 .filter-fab,
 .history-fab,
 .lang-fab:not(.lang-fab-sm),
+.home-fab,
+.theme-fab,
 .profile-link {
   border-color: transparent;
   box-shadow: inset 0 -.1em 1em 1px hsl(var(--primary) / 0.22), 0 .1em .3em #0002;
@@ -52,6 +54,10 @@ body > svg:not([style]) {
 .history-fab:hover,
 .lang-fab:not(.lang-fab-sm):hover,
 .lang-fab:not(.lang-fab-sm)[aria-expanded="true"],
+.home-fab:hover,
+.home-fab:focus-visible,
+.theme-fab:hover,
+.theme-fab:focus-visible,
 .profile-link:hover {
   background: hsl(var(--primary) / 0.16);
   box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.34);

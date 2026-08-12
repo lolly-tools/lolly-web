@@ -36,6 +36,8 @@ import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
+import { mountThemeFab } from '../components/theme-toggle.ts';
 import type { SpeechResult } from '@lolly-tools/core/host-v1';
 
 /**
@@ -84,6 +86,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   if (!speech?.isAvailable()) {
     viewEl.innerHTML = `
       ${backPillHtml()}
+      <div class="gallery-topright">${homeFabHtml()}</div>
       <div class="platform-layout scriptst-layout">
         <header class="plat-header">
           <h1 class="plat-title">${t('Script audio')}</h1>
@@ -93,12 +96,16 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
         </header>
       </div>`;
     mountBackPill(viewEl);
+    // A deep link onto an unsupported shell is still a dead end without this —
+    // the back pill needs somewhere to have come from; Home always answers.
+    mountHomeFab(viewEl);
+    mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
     return;
   }
 
   viewEl.innerHTML = `
     ${backPillHtml()}
-    <div class="gallery-topright">${langFabHtml()}</div>
+    <div class="gallery-topright">${homeFabHtml()}${langFabHtml()}</div>
     <div class="platform-layout scriptst-layout">
       <header class="plat-header">
         <h1 class="plat-title">${t('Script audio')}</h1>
@@ -144,6 +151,8 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
     </div>`;
   armViewEnter(viewEl, '.plat-header, .scriptst-sheet, .scriptst-rail');
   mountBackPill(viewEl);
+  mountHomeFab(viewEl);
+  mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const textarea    = viewEl.querySelector<HTMLTextAreaElement>('.scriptst-text')!;

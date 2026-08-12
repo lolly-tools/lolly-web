@@ -68,7 +68,10 @@ import {
   svgDataUrl,
   readBounded,
   nodeKey,
+  nodeShotStyle,
   nodeStill,
+  setAuthoredPoseSeam,
+  withBorrowedVisibility,
   nodeRastersSuspended,
   nodeRasterFailed,
   nodeRasterPending,
@@ -1075,4 +1078,131 @@ test('drainNodeRasters: an export waits the in-flight shot out, but is never hel
     await drainNodeRasters(30);
     assert.ok(Date.now() - t0 < NODE_RASTER_TIMEOUT_MS, 'bounded, not hostage');
   });
+});
+
+// ── the authored-pose seam (plans/104 §6.5) ────────────────────────────────
+//
+// A thumbnail is a picture of the CLIP, not of the frame the playhead is parked on.
+// The authored values live in the applier's AuthoredStore, which this module cannot
+// import (bridge/sequence-dom.ts drags sequence-plan → @lolly/engine behind it, and
+// picker.ts loads this chunk for `onIdle` alone) — so they arrive injected, and the
+// tests below wire the same two readers the timeline panel wires.
+
+/** The seam as the panel supplies it: the real readers, off the real applier. */
+const realPoseSeam = { read: seqDom.authoredStyleOf, borrow: seqDom.borrowAuthoredPose };
+
+/** A box the applier will pose: a keyframed lift over an authored blur + opacity. */
+function posable(box: HTMLElement): HTMLElement[] {
+  box.setAttribute('style', 'left:0px;top:0px;width:200px;height:100px;'
+    + 'opacity:0.8;filter:blur(3px) drop-shadow(0px 2px 10px #00000055);');
+  box.setAttribute('data-t-start', '0');
+  box.setAttribute('data-t-dur', '2000');
+  box.setAttribute('data-t-lane', 'seq');
+  box.setAttribute('data-t-z', '160');
+  box.setAttribute('data-t-kf', 't0_x-80_s0.7_o0.4_b0*t2000_el_x80_s1.3_o1_b9');
+  return [box];
+}
+
+test('nodeShotStyle: the same five declarations as ever when nobody is composing', () => {
+  const dom = new JSDOM('<!DOCTYPE html><div class="lolly-box" style="opacity:0.8;filter:blur(3px);"></div>');
+  const box = dom.window.document.querySelector('.lolly-box') as unknown as HTMLElement;
+  // No seam wired at all — a picker-only chunk, a test, a shell with no timeline.
+  assert.deepEqual(nodeShotStyle(box, 200, 100, 0.17), {
+    transform: 'scale(0.17)', transformOrigin: 'top left',
+    width: '200px', height: '100px', left: '0', top: '0', margin: '0',
+  });
+  // …and wired, but over a box no writer has touched: still nothing to neutralise.
+  const off = setAuthoredPoseSeam(realPoseSeam);
+  try {
+    assert.equal(Object.hasOwn(nodeShotStyle(box, 200, 100, 0.17), 'opacity'), false);
+    assert.equal(Object.hasOwn(nodeShotStyle(box, 200, 100, 0.17), 'filter'), false);
+  } finally { off(); }
+});
+
+test('nodeShotStyle: a shot mid-keyframe carries the SAME style as a shot at rest', () => {
+  const dom = new JSDOM('<!DOCTYPE html><body><div class="artboard" data-sequence data-seq-ms="2000"'
+    + ' style="width:1920px;height:1080px;"><div class="lolly-box"></div></div></body>');
+  const root = dom.window.document.querySelector('.artboard') as unknown as HTMLElement;
+  const box = dom.window.document.querySelector('.lolly-box') as unknown as HTMLElement;
+  posable(box);
+  const session = seqDom.createSequenceTime(root);
+  const off = setAuthoredPoseSeam(realPoseSeam);
+  try {
+    const styles: string[] = [];
+    let composedFilter = 0;
+    for (const t of [0, 400, 1000, 1600, 1999]) {
+      session.apply(t);
+      // The live box IS posed — lifted, faded and (past the first diamond) blurred.
+      assert.notEqual(box.style.transform, '', `the applier really did pose the box at ${t}`);
+      assert.notEqual(box.style.opacity, '0.8', `and compose its opacity at ${t}`);
+      if (box.style.filter !== 'blur(3px) drop-shadow(0px 2px 10px #00000055)') composedFilter++;
+      styles.push(JSON.stringify(nodeShotStyle(box, 200, 100, 0.17)));
+    }
+    assert.ok(composedFilter >= 3, 'and rewrote the filter across most of the move');
+    assert.equal(new Set(styles).size, 1, 'every playhead position photographs identically');
+    assert.deepEqual(JSON.parse(styles[0] as string), {
+      transform: 'scale(0.17)', transformOrigin: 'top left',
+      width: '200px', height: '100px', left: '0', top: '0', margin: '0',
+      opacity: '0.8', filter: 'blur(3px) drop-shadow(0px 2px 10px #00000055)',
+    }, 'the AUTHORED opacity and blur, not the composed ones');
+  } finally { off(); session.restore(); }
+});
+
+test('nodeShotStyle: an authored-less box is photographed at 1 / none, never blank', () => {
+  // `opacity: ''` on the clone REMOVES the declaration, dropping it back onto the
+  // composed value dom-to-image copied out of getComputedStyle — the opposite of the
+  // point. A box with nothing authored means 1 and none, spelled out.
+  const dom = new JSDOM('<!DOCTYPE html><body><div class="artboard" data-sequence data-seq-ms="2000"'
+    + ' style="width:1920px;height:1080px;"><div class="lolly-box"></div></div></body>');
+  const root = dom.window.document.querySelector('.artboard') as unknown as HTMLElement;
+  const box = dom.window.document.querySelector('.lolly-box') as unknown as HTMLElement;
+  box.setAttribute('style', 'left:0px;top:0px;width:200px;height:100px;');
+  box.setAttribute('data-t-start', '0');
+  box.setAttribute('data-t-dur', '2000');
+  box.setAttribute('data-t-kf', 't0_o0.2_b0*t2000_el_o1_b8');
+  const session = seqDom.createSequenceTime(root);
+  const off = setAuthoredPoseSeam(realPoseSeam);
+  try {
+    session.apply(1000);
+    const style = nodeShotStyle(box, 200, 100, 0.17);
+    assert.equal(style.opacity, '1');
+    assert.equal(style.filter, 'none');
+  } finally { off(); session.restore(); }
+});
+
+test('withBorrowedVisibility: the vector twin reads the authored pose, and gives it back', async () => {
+  // The twin walks the LIVE subtree — there is no clone to neutralise on — so the
+  // authored values go onto the element itself for the walk. The playhead's own frame
+  // is put straight back afterwards, at whatever time the clock has reached by then.
+  const dom = new JSDOM('<!DOCTYPE html><body><div class="artboard" data-sequence data-seq-ms="2000"'
+    + ' style="width:1920px;height:1080px;"><div class="lolly-box"></div></div></body>');
+  const root = dom.window.document.querySelector('.artboard') as unknown as HTMLElement;
+  const box = dom.window.document.querySelector('.lolly-box') as unknown as HTMLElement;
+  posable(box);
+  const session = seqDom.createSequenceTime(root);
+  const off = setAuthoredPoseSeam(realPoseSeam);
+  try {
+    session.apply(1200);
+    const posed = { filter: box.style.filter, opacity: box.style.opacity, transform: box.style.transform };
+    let seen: { filter: string; opacity: string; transform: string } | null = null;
+    await withBorrowedVisibility(box, async () => {
+      seen = { filter: box.style.filter, opacity: box.style.opacity, transform: box.style.transform };
+    });
+    assert.deepEqual(seen, {
+      filter: 'blur(3px) drop-shadow(0px 2px 10px #00000055)', opacity: '0.8', transform: '',
+    });
+    assert.deepEqual(
+      { filter: box.style.filter, opacity: box.style.opacity, transform: box.style.transform },
+      posed, 'the frame the user is looking at is back');
+  } finally { off(); session.restore(); }
+});
+
+test('withBorrowedVisibility: with no seam wired it is byte-for-byte the old scope', async () => {
+  const dom = new JSDOM('<!DOCTYPE html><body><div class="lolly-box" style="opacity:0.8;"></div></body>');
+  const box = dom.window.document.querySelector('.lolly-box') as unknown as HTMLElement;
+  const before = box.getAttribute('style');
+  await withBorrowedVisibility(box, async () => {
+    assert.equal(box.getAttribute('style'), before, 'untouched inside');
+  });
+  assert.equal(box.getAttribute('style'), before, 'and outside');
 });

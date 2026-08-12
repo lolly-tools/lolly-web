@@ -57,6 +57,9 @@
   align-self: flex-start;
   width: fit-content;
 }
+/* The always-home FAB that twins the language FAB in this view's top-right
+   cluster is shared chrome now — its box + glass live in topbar.css/.home-fab
+   (components/home-fab.ts), so nothing about it is styled here. */
 
 /* ── Header — .start-head/-eyebrow/-title/-sub compose .section-header
       (chips.css). ONE compact header for every tab — eyebrow, title and sub on
@@ -71,9 +74,10 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   margin-bottom: 12px;
-  /* Leave the fixed top-right cluster its room — the language FAB alone now
-     that the whole-system actions sit in the rail's foot. Capped against the
-     viewport so a narrow window doesn't reserve most of the line. */
+  /* Leave the fixed top-right cluster its room — the Home + language FABs now
+     that the whole-system actions sit in the rail's foot (two 2.6rem squares +
+     gap fit inside 8rem). Capped against the viewport so a narrow window doesn't
+     reserve most of the line. */
   padding-right: min(8rem, 24vw);
 }
 .start-eyebrow {

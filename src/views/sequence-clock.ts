@@ -292,15 +292,18 @@ async function defaultRenderModule(ctx: BaseAudioContext, bytes: Uint8Array): Pr
 export {
   readTiming, endOf, isActiveAt, transitionAt, composeTransform, composeOpacity,
   createAuthoredStore, applyTimeToElements, OFF_CLASS, SHOT_CLASS, BORROW_ATTR,
-  releaseShotBorrow,
+  releaseShotBorrow, stageNativeSize, sequenceStageOf,
+  registerSequenceWriter, withAuthoredDom, authoredStyleOf, borrowAuthoredPose,
   MIN_TRANSITION_MS, MAX_TRANSITION_MS,
 } from '../bridge/sequence-dom.ts';
-export type { Timing, TransitionAt, AuthoredStore, ApplyCtx } from '../bridge/sequence-dom.ts';
+export type {
+  Timing, TransitionAt, AuthoredStore, ApplyCtx, AuthoredStyle, SequenceWriter,
+} from '../bridge/sequence-dom.ts';
 
 import {
   readTiming, isActiveAt, endOf, createAuthoredStore, applyTimeToElements, OFF_CLASS,
-  releaseShotBorrow,
-  type Timing,
+  releaseShotBorrow, stageNativeSize, sequenceStageOf, registerSequenceWriter,
+  type Timing, type SequenceWriter,
 } from '../bridge/sequence-dom.ts';
 
 // ── per-video seek queue ────────────────────────────────────────────────────
@@ -516,6 +519,12 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       : (): number => Date.now());
 
   const store = createAuthoredStore();
+  /**
+   * True while the export-time read/restore seam is holding this stage at its AUTHORED
+   * pose (bridge/sequence-dom.ts's writer registry, plans/104 §6 point 0). Set only by
+   * the registry, and always balanced by it.
+   */
+  let paused = false;
   const videos = new Map<HTMLVideoElement, VideoRec>();
   const ticks = new Set<(tMs: number) => void>();
   /** Live preview-mix records, one per audio box currently placed. */
@@ -882,7 +891,27 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     // playing and mute flags unrestored. Log and carry on — the release pass and
     // the subscriber fan-out below MUST still run.
     try {
-      applyTimeToElements(els, tMs, { seqMs: seqMs(), store, media: driveMedia });
+      // PAUSED means an export (or another photographer) is holding this stage at its
+      // AUTHORED pose — plans/104 §6 point 0. The clock keeps its own time and keeps
+      // fanning out ticks; what it must not do is put a frame back on the DOM between
+      // two plate shots, because the exporter reads authored geometry off these very
+      // elements. `store` was handed back when the pause was taken, so there is
+      // nothing on them to re-assert until it lifts.
+      //
+      // The media drive rides inside the same call deliberately: an export owns the
+      // playback of every clip it is compositing, and a preview seek landing mid-shot
+      // is the same class of interference as a style write.
+      if (!paused) {
+        // `stage` is a lazy getter, not two numbers: measuring the artboard forces
+        // layout, and a composition that authors no depth must not pay for that once
+        // per frame. The applier calls it only when something actually projects.
+        applyTimeToElements(els, tMs, {
+          seqMs: seqMs(),
+          store,
+          media: driveMedia,
+          stage: () => stageNativeSize(sequenceStageOf(canvasEl) ?? canvasEl),
+        });
+      }
     } catch (err) {
       log('warn', `sequence-clock: frame failed — ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1067,10 +1096,27 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       for (const el of boxes()) { el.classList.remove(OFF_CLASS); releaseShotBorrow(el); }
       store.restoreAll();
       ticks.clear();
+      // Nothing composes on this canvas any more, so the read/restore seam must stop
+      // counting this clock — a registry entry outliving its clock would hold the
+      // canvas element alive and answer authored reads out of a dead store.
+      unregisterWriter();
       try { void ctx?.close?.(); } catch { /* already closed */ }
       ctx = null;
     },
   };
+
+  // The clock announces itself to the export-time read/restore seam (plans/104 §6
+  // point 0): it is the writer whose per-frame transform/opacity/filter/z-index sit on
+  // the very elements an export is about to read authored geometry off. `reapply` is
+  // the clock's own — re-asserting the CURRENT playhead, so an export that finishes
+  // hands the editor back the frame the user was looking at, not frame 0.
+  const writer: SequenceWriter = {
+    root: canvasEl,
+    store,
+    setPaused(v) { paused = v; },
+    reapply() { if (!paused) clock.reapply(); },
+  };
+  const unregisterWriter = registerSequenceWriter(writer);
 
   return clock;
 }

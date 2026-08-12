@@ -1046,13 +1046,20 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // canvas + export controls; the on-canvas overlay replaces the sidebar. The 'deck' layout
   // is intentionally excluded — it keeps the sidebar.
   const chromeless = editorLayout || documentLayout;
-  // A full-bleed utility that has NO declared inputs yet still EXPORTS — the
-  // template IS the whole interface and its canvas is a live preview (e.g. Run Web
-  // Code: a code editor + sandboxed preview that exports a snapshot). It drops the
-  // (empty) input aside like a canvas utility, but unlike a plain no-input+no-export
-  // tool it KEEPS the render/export pill. Without this such a tool regressed into an
-  // empty sidebar squashing the editor the moment its manifest turned export on.
-  const bareExport = !hasInputs && !noExport && !canvasLayout && !chromeless;
+  // A full-bleed utility whose template IS the whole interface and whose canvas is a
+  // live preview (e.g. Run Web Code: a code editor + sandboxed preview that exports a
+  // snapshot). It drops the input aside like a canvas utility, but unlike a plain
+  // no-input+no-export tool it KEEPS the render/export pill. Two ways to qualify:
+  //   • NO declared inputs (the original case — without this a no-input tool regressed
+  //     into an empty sidebar squashing the editor the moment its manifest turned export on);
+  //   • declared inputs with `render.sidebar:false` — the tool declares inputs so they
+  //     ride the synced model (URL / collab / saved sessions / CLI) but owns their editing
+  //     UI on the canvas itself, so the aside is suppressed. The declared inputs are a pure
+  //     DATA channel: the template must NOT reference them (byte-constant hydrated output →
+  //     paint() skips its innerHTML rebuild → the live editor DOM survives every commit),
+  //     and the tool reads/writes them through the per-canvas channel (attachCanvasCommit).
+  const sidebarOptOut = tool.manifest.render.sidebar === false;
+  const bareExport = (!hasInputs || sidebarOptOut) && !noExport && !canvasLayout && !chromeless;
   // Hide the sidebar for pure-canvas utilities: no inputs at all, an explicit canvas
   // layout — where the tool's single file input becomes a drag-and-drop / click-to-pick
   // zone on the canvas itself (setupCanvasFileDrop) — or a bareExport full-bleed tool.
