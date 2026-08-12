@@ -96,8 +96,8 @@ interface GalleryTool {
   openQuery?: string;
 }
 
-// Sort options for the gallery masonry. 'category' (the default) groups tools by
-// their catalog category (offline utilities last, see categoryRank); 'recent'
+// Sort options for the gallery masonry. 'category' groups tools by
+// their catalog category (offline utilities last, see categoryRank); 'recent' (the default)
 // surfaces the most recently-added tools first — the featured content the hero leads with.
 type SortKey = 'recent' | 'az' | 'za' | 'format' | 'category';
 const SORT_KEYS: readonly SortKey[] = ['recent', 'az', 'za', 'format', 'category'];
@@ -998,7 +998,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // The query folded + tokenized ONCE per change (mount + each debounced
   // keystroke), not per tile — matchesQuery runs over every tile per applyView.
   let queryTokens = tokenize(initialQuery);
-  let sortKey: SortKey = 'category';   // global sort default; persisted like the theme
+  let sortKey: SortKey = 'recent';   // global sort default; persisted like the theme
   try {
     const saved = localStorage.getItem(SORT_KEY_STORAGE);
     if (saved && (SORT_KEYS as readonly string[]).includes(saved)) sortKey = saved as SortKey;
@@ -1423,7 +1423,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     renderPills();
     // Dot on the filter trigger whenever a non-default category OR non-default sort
     // is in effect, so the collapsed control still signals "a view choice is active".
-    filterFab?.classList.toggle('has-active', activeCat !== 'all' || sortKey !== 'category' || sortDir !== 'desc');
+    filterFab?.classList.toggle('has-active', activeCat !== 'all' || sortKey !== 'recent' || sortDir !== 'desc');
     // Show the hero row only in the default landing state — a search or category
     // filter makes it noise above the results. Toggle the mount + pause its motion.
     updateFeaturedVisibility();
