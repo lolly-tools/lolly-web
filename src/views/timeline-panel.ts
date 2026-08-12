@@ -3649,6 +3649,26 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       b.addEventListener('click', () => applyCameraPreset(preset));
       moves.appendChild(b);
     }
+    // ORBIT — the sixth move, present and INERT (plans/104 §9's P3 line names it; §8's
+    // preset table says it "stays P2 (needs tilt)").
+    //
+    // Shown rather than omitted because the two are not the same promise: an absent
+    // entry says the move does not exist, and a dimmed one with a reason says it is
+    // coming and what it is waiting for — which is the truth, and the same posture
+    // `.tl-btn[aria-disabled]` already carries everywhere else in this panel. Shipping
+    // it ENABLED is the option that is actually wrong: an orbit is a `rx`/`ry` move,
+    // those channels parse but nothing consumes them until P2, so the button would
+    // author a track that every evaluator ignores — a keyframe that does nothing is
+    // worse than a button that says it cannot yet.
+    //
+    // `aria-disabled`, never the `disabled` property: the reason lives in the tooltip,
+    // and a `disabled` button is neither focusable nor `:focus-visible`, so a keyboard
+    // user would meet a silently missing control instead of an explained one.
+    const orbit = actionBtn('tl-cam-preset tl-cam-orbit', t('Orbit'), 'keyframe');
+    orbit.setAttribute('aria-disabled', 'true');
+    orbit.setAttribute('data-tip', t('Needs tilt (coming)'));
+    orbit.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+    moves.appendChild(orbit);
     g.body.appendChild(moves);
 
     const cam: KfPoseField[] = [];

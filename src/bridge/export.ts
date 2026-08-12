@@ -263,6 +263,19 @@ export interface ExportOpts {
    *  is a whole page: on Lolly's own gallery 99 elements carry a non-auto
    *  z-index, 22 of them negative, and DOM order paints them all wrong. */
   stackingOrder?: boolean;
+  /** Stamp `data-box-id` onto the per-element `<g>` in the SVG walker's output,
+   *  wherever the walked element already carries one (plans/104 §7 — the "Lift
+   *  layers" identity passthrough). Off by default and byte-identical when off:
+   *  the one guarded block at the g-creation site is the whole feature, so a
+   *  normal tool export cannot differ. On, a Lolly screenshot lifts along the
+   *  boundaries the CANVAS knows about (nav/hero/cards) rather than along
+   *  whatever the markup happened to group, because `enumerateSvgLayers` reports
+   *  the stamped id back as `layer.boxId`.
+   *
+   *  IDs only, never names: `data-box-id` is a generated index minted by the
+   *  canvas, so this does not undo the ingest-time strip of `data-name` /
+   *  `inkscape:label`. See engine/src/svg-layers.ts. */
+  layerIds?: boolean;
   noBoxShadow?: boolean;
   /** Resolution ceiling for INLINED raster assets (`<img>` bitmaps), in DPI, decoupled
    *  from `dpi` (which sets the vector/own-paint resolution). Opt-in: when set, an
@@ -2899,6 +2912,28 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     expand(ctx.bounds, x, y, w, h);
 
     const g = document.createElementNS(NS, 'g');
+    // ── Layer identity passthrough (opts.layerIds — plans/104 §7) ────────────
+    //
+    // The walker emits one <g> per element in ROOT coordinates and has always
+    // stamped ZERO identity on it, so a Lolly screenshot imported back in was one
+    // undifferentiated scene. This is the one point that changes: where the walked
+    // element already carries `data-box-id` (layout-studio's own boxes,
+    // template.html), the group carries it out, and `enumerateSvgLayers` reports it
+    // as `layer.boxId` — so a lift lands on real UI boundaries instead of on
+    // whatever the markup happened to group.
+    //
+    // What travels is an ID, never a NAME: `data-box-id` is a generated index the
+    // canvas mints (freshId), so the ingest-time PII strip that removes
+    // `data-name`/`inkscape:label` is not undone by an export.
+    //
+    // OPT-IN, and the default path must stay byte-identical: with the flag absent
+    // this block cannot run, so no attribute is added, no serialisation order
+    // moves, and every shipping tool export is the same bytes it was. Pinned by
+    // `export-layer-ids.test.ts`, which renders the same DOM both ways.
+    if (opts.layerIds) {
+      const boxId = el.getAttribute('data-box-id');
+      if (boxId) g.setAttribute('data-box-id', boxId);
+    }
     if (opacity < 0.999) g.setAttribute('opacity', opacity.toFixed(4));
     const placement = place(g, role, ctx, parentG, o?.placeDirect);
 

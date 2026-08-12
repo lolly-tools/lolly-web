@@ -32,9 +32,12 @@ import { num, type Box } from './free-canvas-math.ts';
 // over every importer, and this module is pure time math the panel loads eagerly.
 import {
   DEFAULT_PERSPECTIVE, KF_CAMERA_CHANNELS, KF_CHANNELS, KF_DEFAULT_EASE, KF_MAX_TIME_MS,
-  KF_QUANTA, evaluateKf, kfChannelsUsed, kfEaseToken, parseKf, serialiseKf, subdivideKfEase,
+  KF_QUANTA, evaluateKf, kfChannelsUsed, kfEaseToken, parseKf, projectLayer, resolveCamera,
+  serialiseKf, subdivideKfEase,
 } from '../../../../engine/src/keyframes.ts';
-import type { KfChannel, KfKey, KfPose, KfTrack } from '../../../../engine/src/keyframes.ts';
+import type {
+  KfCameraClip, KfCameraView, KfChannel, KfKey, KfPose, KfTrack,
+} from '../../../../engine/src/keyframes.ts';
 
 export type { Box };
 
@@ -922,6 +925,195 @@ export function kfSeekDiamond(
     }
   }
   return best;
+}
+
+// ── the motion path (plans/104 §8's overlay bullet, under §6.5's projection rule) ─
+//
+// §6.5 is the whole reason this is arithmetic and not a `<polyline>` drawn from the
+// raw kf offsets: "ghosts + motion-path samples are computed as
+// `pose(t) = kf-evaluate + projectLayer(cameraAt(t))` before `nativeToStage`". A path
+// drawn flat would be a LIE the moment a camera exists — the parallax it promises is
+// exactly what the export would not do. So every number below comes out of the engine
+// (`evaluateKf` → `resolveCamera` → `projectLayer`), and the overlay module gets a
+// list of native-px points to map through the same `nativeToStage` the selection
+// outline uses, and nothing else.
+
+/** One sampled position of a box's centre, in CANVAS-NATIVE px. */
+export interface MotionPathPoint {
+  /** TIMELINE ms — the instant this sample is the pose at. */
+  t: number;
+  /** Projected centre x, native px. */
+  x: number;
+  /** Projected centre y, native px. */
+  y: number;
+  /**
+   * The engine's behind-camera ramp at this instant (`projectDepth().alphaGuard`).
+   * 0 means the layer is not on screen at all there, so the overlay BREAKS the
+   * polyline rather than drawing a straight line across the gap.
+   */
+  a: number;
+}
+
+/** A box's whole path: the polyline, plus one mark per keyframe inside the window. */
+export interface MotionPathSamples {
+  pts: MotionPathPoint[];
+  keys: MotionPathPoint[];
+}
+
+/**
+ * The sampling cadence, ms. ~30 Hz: fine enough that an `ev` overshoot reads as a
+ * curve rather than a corner, coarse enough that a minute-long clip stays inside
+ * {@link MOTION_PATH_MAX_SAMPLES}.
+ */
+export const MOTION_PATH_STEP_MS = 33;
+/**
+ * The ceiling on samples per box. A path is a picture of a move, not a plot: past a
+ * couple of hundred points the extra vertices are sub-pixel and cost a repaint on
+ * every pan. A long clip simply samples coarser.
+ */
+export const MOTION_PATH_MAX_SAMPLES = 240;
+/**
+ * Below this much travel (native px, either axis) there is no path to draw — an
+ * opacity- or blur-only track would otherwise put a permanent dot on the canvas that
+ * says nothing. Half a pixel, i.e. under the smallest visible move.
+ */
+export const MOTION_PATH_MIN_TRAVEL = 0.5;
+
+const EMPTY_PATH: MotionPathSamples = Object.freeze({ pts: [], keys: [] }) as MotionPathSamples;
+
+/**
+ * The camera clips a MODEL carries (§5.4) — the model-side twin of `stageCameras`
+ * (bridge/sequence-plan.ts), which derives the identical list from parsed DOM layers.
+ *
+ * Two derivations rather than one shared function because the two sides hold
+ * different things: the render path has already parsed the artboard into `SeqLayer`s
+ * and must not re-query the DOM, while the editor has only the model and no artboard
+ * for a camera at all (a camera has no canvas footprint, §5.4). They agree by reading
+ * the same fields in the same order and handing the ENGINE the same shape — which is
+ * what `tests/timeline-math.test.ts` pins against `stageCameras`'s own output.
+ *
+ * Windows are butted and half-open, latest-in-array wins (cuts, not blends), and an
+ * untimed camera — the implicit scene camera's "Always on" chip — has no end at all.
+ * `base` carries the camera's own `z` FIELD as the scene-default dolly, exactly as
+ * `stageCameras` does; every other channel comes from the track, where a `t0` key IS
+ * the scene default because evaluation clamp-holds before the first key.
+ */
+export function kfCameraClips(boxes: Box[], cfg: TimeCfg): KfCameraClip[] {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const out: KfCameraClip[] = [];
+  for (const b of rows) {
+    if (!b || String(b.kind ?? '') !== 'camera') continue;
+    const timing = boxTiming(b, cfg);
+    const startMs = Math.round((timing.start ?? 0) * 1000);
+    const track = boxTrack(b, cfg);
+    const z = cfg.zField ? num(b[cfg.zField], 0) : 0;
+    out.push({
+      start: startMs,
+      end: timing.dur === null ? null : startMs + Math.round(timing.dur * 1000),
+      base: z !== 0 ? { z } : null,
+      track: track.length > 0 ? track : null,
+    });
+  }
+  return out;
+}
+
+/** What {@link kfMotionPath} needs to know about the world the box moves through. */
+export interface MotionPathEnv {
+  /** Stage-native width, px. The projection's principal point is the stage centre. */
+  stageW: number;
+  /** Stage-native height, px. */
+  stageH: number;
+  /**
+   * The camera clips to project through — {@link kfCameraClips}, resolved ONCE for a
+   * whole paint rather than per box. Absent/empty means the DEFAULT camera, which
+   * projects a z = 0 layer at eff = 1, i.e. exactly nothing.
+   */
+  cameras?: readonly KfCameraClip[] | null;
+  /**
+   * The sequence's derived length, ms ({@link deriveDuration}) — the window of an
+   * UNTIMED animated box, which has no duration of its own but is on screen for the
+   * whole run.
+   */
+  totalMs?: number;
+}
+
+/**
+ * One box's projected motion path, in CANVAS-NATIVE px.
+ *
+ * The window is the box's own: `[start, start + dur]` for a timed clip, `[0, total]`
+ * for an untimed one. Keys authored PAST the out-point (reachable by hand-editing a
+ * share URL, or by trimming a clip shorter afterwards — M2 decided they stay posed
+ * where authored) are outside the window and so get no mark: the path draws what the
+ * clip will actually play, and a mark on a diamond the playhead can never reach would
+ * point at nothing.
+ *
+ * Returns an EMPTY path — no points at all — in three cases, each of them "there is
+ * no move here to draw":
+ *   • the tool declares no `kf` field, or this box has no track;
+ *   • the track holds fewer than two keys (one key is a pose, not a move);
+ *   • every sample lands within {@link MOTION_PATH_MIN_TRAVEL} of every other, i.e.
+ *     the track animates opacity/blur/size and the box never goes anywhere.
+ */
+export function kfMotionPath(
+  boxes: Box[], cfg: TimeCfg, id: string,
+  centre: { x: number; y: number },
+  env: MotionPathEnv,
+): MotionPathSamples {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  if (!cfg.kfField) return EMPTY_PATH;
+  const i = indexOfId(rows, cfg, id);
+  if (i < 0) return EMPTY_PATH;
+  const box = rows[i]!;
+  const track = boxTrack(box, cfg);
+  if (track.length < 2) return EMPTY_PATH;
+
+  const timing = boxTiming(box, cfg);
+  const startMs = (timing.start ?? 0) * 1000;
+  const winMs = timing.dur !== null
+    ? timing.dur * 1000
+    : Math.max(num(env.totalMs, 0), track[track.length - 1]!.t);
+  if (!(winMs > 0)) return EMPTY_PATH;
+
+  const bx = num(centre.x, 0);
+  const by = num(centre.y, 0);
+  const baseZ = cfg.zField ? num(box[cfg.zField], 0) : 0;
+  const cams = env.cameras ?? null;
+  const view = { w: num(env.stageW, 0), h: num(env.stageH, 0) };
+
+  /** The §4.1 fold at one TIMELINE instant — the ONLY place this file makes a point. */
+  const at = (tMs: number): MotionPathPoint => {
+    const cam = resolveCamera(cams, tMs);
+    const pose = evaluateKf(track, tMs - startMs);
+    const z = typeof pose.z === 'number' ? pose.z : baseZ;
+    const p = projectLayer(
+      { ...cam, w: view.w, h: view.h } as KfCameraView,
+      { bx, by, dxK: pose.x ?? 0, dyK: pose.y ?? 0, z },
+    );
+    return { t: tMs, x: bx + p.dx, y: by + p.dy, a: p.alphaGuard };
+  };
+
+  const n = clamp(Math.round(winMs / MOTION_PATH_STEP_MS) + 1, 2, MOTION_PATH_MAX_SAMPLES);
+  const pts: MotionPathPoint[] = [];
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let k = 0; k < n; k++) {
+    // From the ENDS inwards (`k/(n-1)`), never by accumulating a step: the last sample
+    // must land exactly on the out-point or a path that ends on a keyframe would stop
+    // a pixel short of its own final diamond.
+    const p = at(startMs + (winMs * k) / (n - 1));
+    pts.push(p);
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (maxX - minX < MOTION_PATH_MIN_TRAVEL && maxY - minY < MOTION_PATH_MIN_TRAVEL) return EMPTY_PATH;
+
+  const keys: MotionPathPoint[] = [];
+  for (const k of track) {
+    if (k.t < 0 || k.t > winMs) continue;
+    keys.push(at(startMs + k.t));
+  }
+  return { pts, keys };
 }
 
 /**

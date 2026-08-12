@@ -969,7 +969,19 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //     string-valued field, `color`, is cAttr()'d here AND escAttr()'d again inside the
   //     engine; every other value is a number or one of the six whitelisted head keywords.
   //     No box text, id or user markup can reach it.
-  'views/free-canvas.ts': 44,
+  // 44 → 47 as of 2026-08-12 (plans/104 §7, "Lift layers"). Three writes to the ONE
+  // dialog panel this action opens — its reading state, its refusal state and its plan —
+  // reviewed together because they are three renders of the same node:
+  //   · every interpolated value is escape()d: the title, the enumerator's own warning
+  //     sentence, the per-layer label and shape count, and the two button words. The
+  //     counts are numbers formatted by t(); the warnings come from the engine's own
+  //     fixed vocabulary and are escaped anyway.
+  //   · the only non-escaped interpolation is icon(SVG.check) — a module constant, the
+  //     same provably-safe markup every other sink in this file already carries.
+  //   · NOTHING from the artwork reaches the dialog: the layer LABEL is an index this
+  //     file mints ("Layer 3"), never a name out of the SVG, which is exactly the
+  //     ingest-time PII strip §7 relies on and also what keeps this sink inert.
+  'views/free-canvas.ts': 47,
   // 6 → 8, 2026-08-09 (the lazy-chunk pass): two lazy-mount injections joined the
   // six standing sinks — the bulk bar now lands via insertAdjacentHTML of
   // lib/bulk-bar.ts's bulkBarHtml() (labels/titles/ids all escape()d inside the

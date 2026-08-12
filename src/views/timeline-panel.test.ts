@@ -5264,6 +5264,35 @@ test('a camera preset writes the whole track in ONE commit, at the §4.6 quanta'
   } finally { closeOverlays(); h.teardown(); }
 });
 
+test('Orbit is offered and INERT until tilt lands — it never authors a dead channel', async () => {
+  const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await frames(3);
+    setGroup(h.root, 'camera', true);
+    const orbit = presetBtn('Orbit');
+    assert.equal(orbit.getAttribute('aria-disabled'), 'true',
+      'shown rather than omitted: an absent entry says the move does not exist, a '
+      + 'dimmed one says it is coming — and only the second is true');
+    assert.equal(orbit.disabled, false,
+      '`aria-disabled`, never the property: the reason lives in the tooltip, and a '
+      + '`disabled` button is neither focusable nor :focus-visible');
+    assert.equal(orbit.getAttribute('data-tip'), 'Needs tilt (coming)',
+      'and the tooltip is where the reason lives');
+    // The load-bearing half: pressing it must do NOTHING. An orbit is an rx/ry move,
+    // those channels parse but nothing consumes them until P2, so an enabled button
+    // would write a track every evaluator ignores.
+    click(orbit);
+    await frames(2);
+    assert.equal(h.commits.length, 0, 'no commit, no track, no undo step');
+    assert.equal(String(h.boxes.find((b) => b.id === 'cam')!.kf ?? ''), '');
+    // …and it is not in the preset TABLE, so nothing downstream can resolve it either.
+    assert.equal(KF_CAMERA_PRESETS.some((p) => p.id === 'orbit'), false);
+    assert.equal(KF_CAMERA_PRESETS.length, 5, 'the five that exercise v1 channels only');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
 test('a preset applied with NO camera mints the scene camera and keys it in the same commit', async () => {
   const h = mount(kfScene({ ...clip('a', 0, 3), z: 80 } as Box), 40, CAM_KINDS, KF_CFG);
   try {

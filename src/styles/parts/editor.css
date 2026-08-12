@@ -583,6 +583,43 @@
 /* The lossy-switch confirmation reuses the one-number prompt's panel; only its row differs
    (two buttons rather than a field + a button). */
 .fc-confirm-row { justify-content: flex-end; }
+
+/* ── Lift layers (plans/104 §7) ────────────────────────────────────────────────
+   The confirm dialog is the same `fc-panel fc-num-panel` recipe as askConfirm; the
+   only new furniture is the plan LIST between the sentence and the buttons. It is a
+   preview, not a control: no checkboxes (an unticked layer would have nowhere to go —
+   see askLiftLayers) and no thumbnails, so the row is a tick, an index and a count. */
+.fc-lift-panel { min-width: 264px; max-width: 340px; }
+.fc-lift-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  /* Sixty-four layers is the engine's ceiling; scroll rather than run off the stage. */
+  max-height: min(42vh, 260px);
+  overflow-y: auto;
+}
+.fc-lift-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 2px;
+  font-size: calc(12px * var(--a11y-fs));
+}
+.fc-lift-tick { display: inline-flex; color: hsl(var(--primary)); }
+.fc-lift-tick svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); }
+.fc-lift-name { flex: 1 1 auto; }
+.fc-lift-n {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--muted-foreground));
+}
+/* The enumerator's own words about anything it refused, repaired or capped. */
+.fc-lift-warn { margin-top: 8px; }
+/* A worded ACTION inside the More panel, as opposed to the labelled controls around
+   it: full width, glyph then words, so it reads as a button rather than a row that
+   happens to be clickable. */
+.fc-row-act { display: block; }
+.fc-mp-lift { width: 100%; justify-content: flex-start; gap: 7px; }
 body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 
 /* Hide the editor chrome while the export shutter is closing (belt-and-braces —

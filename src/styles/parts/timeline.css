@@ -620,14 +620,21 @@
 }
 
 /* ─── The Camera group (plans/104 §8) ────────────────────────────────────────
-   Five preset moves that each write a whole track, then the pose channels. The
-   presets wrap rather than scroll: they are five short words, and a row that has to
-   be scrolled to reach "Reveal" hides the one that shows the feature off. */
+   Five preset moves that each write a whole track, then the pose channels — plus
+   Orbit, which is present and inert until tilt lands (P2). The presets wrap rather
+   than scroll: they are six short words, and a row that has to be scrolled to reach
+   "Reveal" hides the one that shows the feature off. */
 .tl-cam-presets {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
+/* Orbit's dimming is `.tl-btn[aria-disabled="true"]` above — the same numbers every
+   other inert control in this panel uses. What it adds is the CURSOR: a preset that
+   cannot be pressed must not offer a pointer, and the tooltip (`data-tip`) is where
+   the reason lives, reachable by hover AND by focus because the attribute keeps the
+   button in the tab order. */
+.tl-cam-preset[aria-disabled="true"] { cursor: default; }
 .tl-group-pop .tl-cam-row { gap: 8px; }
 .tl-cam-num { width: 7em; }
 /* The DRAG / SCROLL affordance chip — the reference tool's own vocabulary, telling

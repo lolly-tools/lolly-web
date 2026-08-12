@@ -62,6 +62,10 @@ import {
   gradientLine, gradientPosAt, gradientAngleAt, resolveFrame, renumberFrameOrder,
   sequenceFramesInOrder, framesAreSequenced, parseDashArray, formatDashArray,
   pathEndPoints, pathEndTangents,
+  // Lift layers (plans/104 §7): the pure box synthesis. The ENUMERATION is the
+  // engine's (`enumerateSvgLayers`) and is fetched lazily with the dialog, because a
+  // tag scanner has no business in the chunk of every editor that never lifts.
+  isSvgImageRef, liftRows, applyLift, LIFT_Z_STEP,
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
 // Phase-A spatial-index pick: grid-accelerated on large docs, identical result to the
@@ -97,6 +101,11 @@ import type { TimelinePanel } from './timeline-panel.ts';
 // Type-only: the ghost layer is a lazy chunk that only an editor with onion skin turned
 // ON ever fetches, so its runtime import lives inside onionFrom's dynamic `import()`.
 import type { OnionPaintState, OnionSkinHandle } from './onion-skin.ts';
+// Type-only, same terms: the motion-path layer (plans/104 §8) is a lazy chunk that only
+// an editor with a KEYFRAMED box selected ever fetches — and it pulls timeline-math (and
+// therefore the engine's keyframe module) with it, which is exactly why it must not be a
+// static import here.
+import type { MotionPathHandle } from './motion-path.ts';
 import type { MatteHost, MatteSource } from './matte-dialog.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
@@ -607,6 +616,11 @@ const SVG = {
   // Simplify — one smooth curve with only its two end nodes left on it.
   simplify: '<path d="M4 17c4-11 12-11 16 0"/><circle cx="4" cy="17" r="1.8" fill="currentColor" stroke="none"/><circle cx="20" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
   outlineText: '<path d="M5 7V4h14v3M12 4v12"/><path d="M9 20h6"/><rect x="10.2" y="14.2" width="3.6" height="3.6" fill="none"/>',
+  // Lift layers (plans/104 §7) — the three-plate stack, with the top plate standing
+  // OFF the other two: the glyph says "one drawing, several plates, one of them
+  // raised", which is exactly what the action does. The plates are the same isometric
+  // diamond the `group`/`ungroup` pair already uses, so the family reads as one set.
+  liftLayers: '<path d="m12 2 8 4.5-8 4.5-8-4.5z"/><path d="m4 13 8 4.5 8-4.5"/><path d="m4 17 8 4.5 8-4.5"/>',
   // Pointer — the arrow cursor itself, outlined to sit with the rest of the line-art rail.
   // The one glyph in here that names a TOOL by drawing the cursor it gives you.
   pointer: '<path d="M5 2.8l10.9 10.9h-4.8l2.8 6-2.5 1.1-2.8-6L5 18.3z"/>',
@@ -668,6 +682,10 @@ const SVG = {
   bulletList: '<circle cx="4.5" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.5" fill="currentColor" stroke="none"/><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/>',
   // Scissors — cut the subject out (host.matte "Remove background").
   scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
+  // A plain tick. Used ONLY as the decorative bullet of the Lift layers plan list,
+  // which is why it is aria-hidden there: the list is a preview of what will happen,
+  // not a set of controls, so the mark must not be announced as a checked state.
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
 };
 
 function icon(paths: string): string {
@@ -1606,6 +1624,67 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (onionSkin && onionState) onionSkin.paint(onionState);
   }
 
+  // ── motion path: where a keyframed box travels, never in an export ───────────
+  // plans/104 §8's overlay bullet, on onion skin's exact terms — a `.fc-overlay` child
+  // carrying [data-export-hide] that never writes to a `.lolly-box` (motion-path.ts's
+  // module doc restates the three guarantees, and its own test file pins them).
+  //
+  // Shown for SELECTED animated boxes only, and only while the timeline is OPEN. That
+  // second condition is M2's binding reading of §8 applied again: a closed panel
+  // disarms the latch because "the arm must be visible", and a path drawn with no
+  // playhead, no diamonds and no transport in sight is a picture of a move the user
+  // cannot currently reach. Opening the panel brings it back.
+  let motionPath: MotionPathHandle | null = null;
+  let motionLoading = false;
+
+  function motionOff(): void {
+    if (!motionPath) return;
+    try { motionPath.destroy(); } catch (e) { console.error(e); }
+    motionPath = null;
+  }
+
+  /** The ids whose paths should be on screen right now — possibly none. */
+  function motionIds(boxes: Box[]): string[] {
+    if (!timeCfg?.kfField || !selection.size || !timelinePanel?.isOpen()) return [];
+    const out: string[] = [];
+    for (const i of selIndices(boxes)) {
+      // The cheap half of the gate lives here so an ordinary selection of ordinary
+      // boxes never fetches the chunk at all: a box with no `kf` value cannot have a
+      // path, and asking costs one field read. Everything past this point (parse,
+      // sample, project) is the lazy module's job.
+      const raw = boxes[i]?.[timeCfg.kfField];
+      if (raw == null || raw === '') continue;
+      out.push(idOf(boxes[i], i));
+    }
+    return out;
+  }
+
+  /**
+   * Re-draw the paths. Called from `paintChrome` beside `paintOnion`, so a pan, a zoom,
+   * a selection change and every `tl-time` all keep the line under the box it describes.
+   */
+  function paintMotion(): void {
+    if (disposed || !timeCfg?.kfField) return;
+    const ids = motionIds(getBoxes());
+    if (motionPath) { motionPath.paint(ids); return; }
+    if (!ids.length || motionLoading) return;
+    motionLoading = true;
+    void (async () => {
+      try {
+        const mod = await import('./motion-path.ts');
+        // The selection may have changed (or the view gone) while the chunk was in
+        // flight, so the paint below asks the model again rather than reusing `ids`.
+        if (disposed || !timeCfg) return;
+        motionPath = mod.mountMotionPath({
+          overlayEl: overlay, geom: cfg, time: timeCfg,
+          getBoxes, metricsOf: metrics, canvasSize: canvasWH,
+        });
+        motionPath.paint(motionIds(getBoxes()));
+      } catch (e) { console.error(e); }
+      finally { motionLoading = false; }
+    })();
+  }
+
   /** Open the panel (used by the rail button and after creating a timed box). */
   function openTimeline(): void { void ensureTimeline(true); }
   function toggleTimeline(): void { void ensureTimeline(!timelinePanel?.isOpen()); }
@@ -1613,8 +1692,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function destroyTimeline(): void {
     try { stageEl.removeEventListener('tl-add', onTlAdd); } catch { /* stage detached */ }
     try { stageEl.removeEventListener('tl-time', onTlTime); } catch { /* stage detached */ }
-    // No panel means no playhead means nothing to be either side OF.
+    // No panel means no playhead means nothing to be either side OF — and no arm, so
+    // no motion path either (see motionIds).
     onionOff();
+    motionOff();
     try { timelinePanel?.destroy(); } catch (e) { console.error(e); }
     timelinePanel = null;
     // Unconditional, even if destroy() above threw: a leaked reserve permanently shrinks
@@ -2764,6 +2845,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         disabled: !(img?.id || img?.url),
       });
     }
+    // ── lift layers (plans/104 §7) ─────────────────────────────────────────────
+    // Present for any tool with an image field (somewhere to put the derived
+    // documents) — absent entirely otherwise, like the timeline/vector/matte
+    // sections. WITHIN the section it disables rather than hides, so the menu keeps
+    // the same height between right-clicks: the entry is what tells someone the
+    // action exists at all, and an entry that appears only once you have already
+    // selected the right kind of box teaches nobody anything.
+    if (canLift()) {
+      items.push({ sep: true });
+      items.push({
+        label: t('Lift layers'), icon: icon(SVG.liftLayers),
+        run: () => askLiftLayers(),
+        disabled: liftTargetIndex(getBoxes()) < 0,
+      });
+    }
     lastMenuAt = { x: clientX, y: clientY };
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
@@ -3650,6 +3746,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // selection, so no-frames documents and ordinary boxes are byte-identical. The hook
     // defaults an unset clipChildren to ON (boolVal(fb.clipChildren, true)), so reflect
     // that here. Writes through setField → one commit → the render honours overflow.
+    // "Lift layers" (plans/104 §7) — its SECOND home, beside the right-click menu. The
+    // More panel is where a box's own properties live, and "this picture is a stack of
+    // layers" is one of them; a user who never right-clicks would otherwise never meet
+    // the feature. Shown only when this exact selection can be lifted (unlike the menu,
+    // which disables to keep its height constant — a panel is rebuilt per open and has
+    // no such promise to keep, and a dead row among live controls reads as broken).
+    const showLift = liftTargetIndex(boxes) === idx[0]!;
     const isFrame = !!frameCfg && idx.length === 1 && String(b[cfg.kindField]) === frameCfg.frameKind;
     const showClip = isFrame && !!frameCfg!.clipChildrenField;
     const clipCur = showClip ? boolOf(b[frameCfg!.clipChildrenField!], true) : true;
@@ -3686,7 +3789,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         <label class="fc-row"><span class="fc-row-lbl">${t('Colour')}</span><span class="fc-cfield">${colorFieldHtml('fc-shadow', shColor, { float: true })}</span></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" class="field-range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" class="field-range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
-        <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}`;
+        <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}
+      ${showLift ? `<div class="fc-row fc-row-act"><button type="button" class="fc-cbtn fc-mp-lift" data-mp-lift>${icon(SVG.liftLayers)}<span>${escape(t('Lift layers'))}</span></button></div>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // Shape is special-cased: switching to "circle" also squares the box (w = h),
     // since a circle is only an ellipse the geometry keeps 1:1. Everything else writes
@@ -3701,6 +3805,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }));
     if (cfg.shadowColorField) wireColorField(p, { onChange: (id, val) => { if (id === 'fc-shadow') setField(cfg.shadowColorField, unwrapColor(val)); } });
     if (showClip) p.querySelector<HTMLInputElement>('input[data-mp-clip]')?.addEventListener('change', (e) => setField(frameCfg!.clipChildrenField, (e.currentTarget as HTMLInputElement).checked));
+    // The panel is anchored to the More button; the dialog it opens is anchored to
+    // `lastMenuAt`, so point that at this button first or the confirm would land
+    // wherever the last right-click happened to be.
+    p.querySelector<HTMLButtonElement>('[data-mp-lift]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      lastMenuAt = { x: r.left, y: r.bottom };
+      askLiftLayers();
+    });
     stageEl.appendChild(p);
     morePanel = p;
     const ar = anchor.getBoundingClientRect();
@@ -4083,6 +4196,249 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.style.left = Math.max(6, Math.min(ask.at.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
     p.style.top = Math.max(6, Math.min(ask.at.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
     p.querySelector<HTMLButtonElement>('[data-confirm-yes]')!.focus();
+  }
+
+  // ── Lift layers (plans/104 §7) ───────────────────────────────────────────────
+  //
+  // "The feature that makes this especially for vectors": one box holding a flat SVG
+  // becomes N stacked boxes, one per layer of the drawing, sharing a group, with their
+  // depth auto-staggered and `shadow: depth` pre-set — at which point every layer is an
+  // ordinary plate with its own z, keyframes and blur, and the rest of this plan works
+  // on it unchanged. Zero new machinery downstream; the whole feature is here plus the
+  // engine's enumerator.
+  //
+  // The division of labour, and why nothing below re-implements any of it:
+  //   • `enumerateSvgLayers` (engine, 1.119) reads the sanitised markup and derives one
+  //     STANDALONE `<svg>` per layer, in the source's own root coordinates — which is
+  //     what makes the geometry identity hold (N layers at z = 0 render as the original).
+  //   • `liftRows` + `applyLift` (free-canvas-math) synthesise the rows and splice them
+  //     in place, including the paint-order distribution (bg on the bottom row, text on
+  //     the top) that keeps a lift from compositing the background N times.
+  //   • `storeUserUpload` (picker) is the ONE ingest funnel: every derived document goes
+  //     through DOMPurify again on the way in, exactly like a file the user dragged.
+  //
+  // ONE commit for the whole thing, so one ⌘Z puts the original box back.
+
+  /** The single selected box that can be lifted, or -1. */
+  function liftTargetIndex(boxes: Box[]): number {
+    if (!cfg.imageField) return -1;
+    const idx = selIndices(boxes);
+    if (idx.length !== 1) return -1;
+    return isSvgImageRef(boxes[idx[0]!]?.[cfg.imageField]) ? idx[0]! : -1;
+  }
+
+  /** Is "Lift layers" available on this tool at all? (Somewhere to put the rows.) */
+  const canLift = (): boolean => !!cfg.imageField;
+
+  /** The stem of a source asset's name, for naming the derived documents. */
+  function liftBaseName(ref: unknown): string {
+    const r = (ref || {}) as { url?: unknown; meta?: { name?: unknown } | null };
+    const named = typeof r.meta?.name === 'string' ? r.meta.name : '';
+    const fromUrl = typeof r.url === 'string'
+      ? decodeURIComponent((r.url.split(/[?#]/)[0] || '').split('/').pop() || '')
+      : '';
+    const raw = (named || fromUrl || 'artwork').replace(/\.[a-z0-9]+$/i, '');
+    // The picker's own id sanitiser runs over the final filename anyway; keeping this
+    // conservative means the derived names stay readable in the asset library.
+    return raw.replace(/[^a-z0-9 _-]/gi, '').trim().slice(0, 40) || 'artwork';
+  }
+
+  /**
+   * The confirm dialog: what the lift WILL do, before it does it.
+   *
+   * The `fc-panel` recipe `askConfirm` established — a titled panel with a sentence and
+   * two buttons, riding `morePanel` so an outside click or Escape dismisses it and that
+   * dismissal means "no". It grows one thing: the list of layers.
+   *
+   * The list is READ-ONLY, deliberately, and this is a v1 decision worth stating. §7
+   * calls it a "checklist preview", and the obvious reading is checkboxes — but an
+   * unticked layer has nowhere to go: dropping it would silently delete artwork the
+   * user never asked to lose, and merging it into a neighbour is a semantic §7 does not
+   * define. So v1 SHOWS the plan and asks yes or no to all of it; per-layer control
+   * belongs with the Objects panel (plan 100), which is §7's own stated home for the
+   * list. No thumbnails either: rendering N derived documents to preview them costs a
+   * rasteriser and a frame each, and the label plus the element count already answers
+   * the only question the dialog is asked ("did it find my layers, or one big blob?").
+   *
+   * Two async stages, one panel: it opens IMMEDIATELY in a reading state (the fetch +
+   * sanitise + enumerate can take a moment on a large file, and a menu item that does
+   * nothing visible for half a second reads as broken), then re-renders in place with
+   * the plan, or with the enumerator's own refusal in its own words.
+   */
+  function askLiftLayers(): void {
+    if (!cfg.imageField) return;
+    const boxes0 = getBoxes();
+    const at = liftTargetIndex(boxes0);
+    if (at < 0) return;
+    const sourceId = idOf(boxes0[at], at);
+    const ref = boxes0[at]![cfg.imageField] as { url?: unknown } | undefined;
+    const url = typeof ref?.url === 'string' ? ref.url : '';
+    if (!url) return;
+
+    closePopover();
+    closeMorePanel();
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-num-panel fc-lift-panel';
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const head = `<div class="fc-panel-head">${escape(t('Lift layers'))}</div>`;
+    p.innerHTML = `${head}<p class="fc-num-hint" data-lift-msg>${escape(t('Reading the artwork…'))}</p>`;
+    stageEl.appendChild(p);
+    morePanel = p;
+    const sr = stageEl.getBoundingClientRect();
+    p.style.left = Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
+    p.style.top = Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+
+    /** Still the panel on screen? Every await below re-asks before touching the DOM. */
+    const live = (): boolean => !disposed && morePanel === p && p.isConnected;
+
+    void (async () => {
+      try {
+        // The sanitised markup, through the shell's ONE untrusted-SVG path (DOMPurify,
+        // serialised from the sanitised NODE). `fetchAnimSvg` is that path plus a
+        // per-URL cache — named for its first caller, but it is simply "give me this
+        // SVG's markup, safely", which is exactly what an enumeration needs.
+        const [{ fetchAnimSvg }, { enumerateSvgLayers }] = await Promise.all([
+          import('./anim-svg-mount.ts'),
+          import('../../../../engine/src/svg-layers.ts'),
+        ]);
+        const markup = await fetchAnimSvg(url);
+        if (!live()) return;
+        const { layers, warnings } = enumerateSvgLayers(markup);
+        if (!live()) return;
+        if (layers.length < 2) {
+          // ONE layer is not a stack, and lifting it would add a box and a group for no
+          // gain. The enumerator's own warning (if any) says why in plain words.
+          renderRefusal(warnings[0] || t('This artwork is a single layer, so there is nothing to lift apart.'));
+          return;
+        }
+        renderPlan(layers, warnings);
+      } catch (e) {
+        console.error(e);
+        if (live()) renderRefusal(t('That artwork could not be read.'));
+      }
+    })();
+
+    function renderRefusal(message: string): void {
+      p.innerHTML = `${head}<p class="fc-num-hint">${escape(message)}</p>`
+        + `<div class="fc-num-row fc-confirm-row"><button type="button" class="btn btn--sm" data-lift-close>${escape(t('Close'))}</button></div>`;
+      p.querySelector<HTMLButtonElement>('[data-lift-close]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMorePanel();
+      });
+      p.querySelector<HTMLButtonElement>('[data-lift-close]')?.focus();
+    }
+
+    function renderPlan(layers: SvgLayerPlan[], warnings: string[]): void {
+      // The count sentence is the headline §7 names verbatim ("6 layers found").
+      p.innerHTML = head
+        + `<p class="fc-num-hint">${escape(t('{n} layers found', { n: layers.length }))}</p>`
+        + `<ul class="fc-lift-list">${layers.map((L, i) => {
+          // The label is an INDEX, never a name out of the file: `data-name` and
+          // `inkscape:label` are stripped at ingest as PII (§2) and the engine never
+          // reads them, so "Layer 3" is the honest thing to print. The count beside it
+          // is what tells a stack of six real layers apart from six stray leaves the
+          // clusterer happened to group.
+          const label = t('Layer {n}', { n: i + 1 });
+          const nodes = L.nodes === 1 ? t('1 shape') : t('{n} shapes', { n: L.nodes });
+          return `<li class="fc-lift-row"><span class="fc-lift-tick" aria-hidden="true">${icon(SVG.check)}</span>`
+            + `<span class="fc-lift-name">${escape(label)}</span><span class="fc-lift-n">${escape(nodes)}</span></li>`;
+        }).join('')}</ul>`
+        + (warnings.length ? `<p class="fc-num-hint fc-lift-warn">${escape(warnings.join(' '))}</p>` : '')
+        + '<div class="fc-num-row fc-confirm-row">'
+          + `<button type="button" class="btn btn--sm" data-lift-no>${escape(t('Cancel'))}</button>`
+          + `<button type="button" class="btn btn--primary btn--sm" data-lift-yes>${escape(t('Lift layers'))}</button>`
+        + '</div>';
+      p.querySelector<HTMLButtonElement>('[data-lift-no]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMorePanel();
+      });
+      const yes = p.querySelector<HTMLButtonElement>('[data-lift-yes]');
+      yes?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        yes.disabled = true;
+        yes.textContent = t('Lifting…');
+        void runLift(sourceId, ref, layers, () => live());
+      });
+      yes?.focus();
+    }
+  }
+
+  /** What this file needs from an engine `SvgLayer` — structural, so no runtime import. */
+  interface SvgLayerPlan { markup: string; nodes: number }
+
+  /**
+   * Do the lift: store one asset per derived layer, then write the rows in ONE commit.
+   *
+   * The stores happen FIRST and the commit last, so a failure part-way through leaves
+   * the board exactly as it was — a half-lifted stack (some layers boxed, the original
+   * gone) is the one outcome worth engineering against, and "nothing changed, here is
+   * why" is recoverable where that is not.
+   *
+   * The model is re-read AFTER the awaits and the source box found by ID, never by the
+   * index the dialog opened with: a collaborator's edit, an undo, or the user's own
+   * click could have moved it while the assets were being written.
+   */
+  async function runLift(
+    sourceId: string, ref: unknown, layers: SvgLayerPlan[], stillOpen: () => boolean,
+  ): Promise<void> {
+    if (!cfg.imageField) return;
+    const base = liftBaseName(ref);
+    try {
+      const [{ storeUserUpload }, { KF_Z_FIELD_CLAMP }] = await Promise.all([
+        import('./picker.ts'),
+        import('../../../../engine/src/keyframes.ts'),
+      ]);
+      const refs = [] as InputValue[];
+      for (let i = 0; i < layers.length; i++) {
+        const file = new File([layers[i]!.markup], `${base}-layer-${i + 1}.svg`, { type: 'image/svg+xml' });
+        refs.push(await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file) as unknown as InputValue);
+      }
+      if (disposed) return;
+      if (stillOpen()) closeMorePanel();
+
+      const boxes = getBoxes();
+      const at = indexOfId(boxes, sourceId);
+      if (at < 0) { flash(t('That artwork is no longer on the canvas, so nothing was changed.')); return; }
+      const source = boxes[at]!;
+      // Ids are minted against a GROWING array, so two rows can never collide.
+      let scratch = boxes;
+      const ids: string[] = [];
+      for (let i = 0; i < layers.length; i++) {
+        const id = freshId(scratch);
+        ids.push(id);
+        scratch = [...scratch, { [cfg.idField]: id } as Box];
+      }
+      const rows = liftRows(
+        source,
+        layers.map((_, i) => ({ src: String((refs[i] as { url?: unknown } | null)?.url ?? ''), id: ids[i]! })),
+        // `zField` is the DEPTH field (plans/104 §5.3) and lives on the canvas block
+        // rather than in this module's geometry cfg — the only reader it has had until
+        // now is `timeCfg`, because a keyed `z` replaces it for its segment. A lift is
+        // its second reader, so it is named here rather than smuggled into FieldCfg,
+        // where thirty other call sites would then have to ignore it.
+        { ...cfg, zField: cv.zField || '' },
+        {
+          zStep: LIFT_Z_STEP,
+          zClamp: KF_Z_FIELD_CLAMP,
+          group: cfg.groupField ? freshGroupId(boxes) : '',
+        },
+      // `liftRows` types the image value as a URL STRING, but this canvas's image
+      // sub-field is a declared `asset`: the engine resolves block asset sub-fields by
+      // their `.id` (runtime.ts resolveAssetRefs) and the tool hook reads `image.url`,
+      // so a bare string would render nothing and would not survive a reload. The row
+      // therefore carries the whole ref, written in the same pass — one object per row,
+      // still one commit.
+      ).map((row, i) => ({ ...row, [cfg.imageField]: refs[i] }));
+
+      selection = new Set(ids);
+      commit(applyLift(boxes, at, rows));
+      flash(layers.length === 1
+        ? t('Lifted 1 layer.')
+        : t('Lifted {n} layers.', { n: layers.length }));
+    } catch (e) {
+      console.error(e);
+      if (!disposed) flash(t('Those layers could not be lifted, so nothing was changed.'));
+    }
   }
 
   // Clamp a floating panel below-and-left of its anchor, inside the stage.
@@ -8511,7 +8867,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // flight) unless the stage itself moved: a ghosted box is off-playhead by
     // definition and therefore never the one being dragged, so rebuilding its ghost
     // sixty times a second buys nothing.
-    if (!liveRects || movedStage) paintOnion();
+    if (!liveRects || movedStage) { paintOnion(); paintMotion(); }
     // ── THE ONE RULE, enforcement point 2 of 3: RETENTION (see the file header) ──
     // The chrome below is positioned from the MODEL, not from the DOM: a selected box
     // the sequence is hiding would otherwise get a full outline, 8 resize handles, a

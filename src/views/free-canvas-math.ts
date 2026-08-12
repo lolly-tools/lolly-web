@@ -430,6 +430,160 @@ export function reorderZ(boxes: Box[], indices: number[], op: ZOp): Box[] {
   return boxes;
 }
 
+// ── Lift layers (plans/104 §7 P3) ────────────────────────────────────────────
+//
+// The engine enumerates an SVG's layers (`enumerateSvgLayers`); this is the other
+// half — turning those layers into the rows that REPLACE the source box. It lives
+// here rather than in timeline-math.ts because its neighbours are `seedBox`,
+// `withRect` and `reorderZ`: it is box synthesis in the canvas's flat model, and
+// it touches no clock. The `z` it writes is the per-box DEPTH FIELD (§5.3, the
+// slider), not a keyframe track — a lifted stack is a static arrangement until
+// someone animates it.
+
+/** One enumerated layer, resolved to something a box can point at. */
+export interface LiftLayerSource {
+  /**
+   * What goes in the image field: the derived per-layer SVG as a `data:` URL, or
+   * any asset ref the shell has already stored. The caller owns getting here —
+   * the per-layer markup goes through the SAME sanitise path an upload does
+   * (picker.ts → DOMPurify → blob/data URL), because a derived document is still
+   * made of bytes that arrived from a stranger.
+   */
+  src: string;
+  /** Fresh box id for this row, minted by the caller (ids must stay unique). */
+  id: string | number;
+}
+
+/** The extra field ids a lift writes, beyond the geometry `BoxFieldConfig`. */
+export interface LiftFieldConfig {
+  imageField: string;
+  groupField?: string;
+  zField?: string;
+  shadowField?: string;
+  kindField?: string;
+  textField?: string;
+  fillField?: string;
+  gradField?: string;
+}
+
+export interface LiftOptions {
+  /** Depth step between consecutive layers, px. §7: 0 / 40 / 80 / … */
+  zStep?: number;
+  /** Clamp for the depth field — pass `KF_Z_FIELD_CLAMP` from the engine. */
+  zClamp?: readonly [number, number];
+  /** Group id shared by every lifted row, minted by the caller (freshGroupId). */
+  group?: string;
+  /** Shadow target pre-set on lifted rows. §7 says `depth`; '' writes none. */
+  shadow?: string;
+  /** Box kind for a row holding an image. Defaults to the source's own kind. */
+  kind?: string;
+}
+
+/** §7: 0 / 40 / 80 / … — enough separation to read as depth, small enough to stay tasteful. */
+export const LIFT_Z_STEP = 40;
+
+/**
+ * The rows that replace a lifted box: one per layer, same geometry, staggered depth.
+ *
+ * Pure. Everything with a source of truth elsewhere is an argument — ids and the
+ * group id are minted by the caller (they are the shell's counters), the derived
+ * markup arrives already sanitised, and the depth clamp is the engine's
+ * `KF_Z_FIELD_CLAMP` rather than a re-typed −300/900.
+ *
+ * **Paint order is preserved, including the parts that are not the artwork.** A
+ * box paints background → image → text, so splitting one box into N cannot just
+ * copy all three onto every row: the background would composite N times and the
+ * caption would be printed N times. Instead the source's own paint is
+ * distributed the way the stack rebuilds it —
+ *
+ *   • the BOTTOM row keeps the background (fill/gradient), which paints first;
+ *   • the TOP row keeps the text, which paints last;
+ *   • every row carries exactly one layer's artwork.
+ *
+ * …so bg → layer 1 … layer N → text comes out in the original order, and nothing
+ * the user authored is silently dropped. Everything else on the source row
+ * (rotation, opacity, fit, blend, clip, frame, timing) is inherited by every row,
+ * because those are properties of WHERE the artwork sits, and every layer sits
+ * in the same place.
+ *
+ * Note on `shadow: depth` at z = 0: the derivation is a pure function of z
+ * (§12.5), and at z = 0 it is still a 10 px ground shadow — the bottom layer is
+ * lifted off the surface too, which is the look §7 asks for. Pass `shadow: ''`
+ * for a lift that changes nothing but the layering.
+ */
+export function liftRows(
+  source: Box,
+  layers: LiftLayerSource[],
+  cfg: BoxFieldConfig & LiftFieldConfig,
+  opts: LiftOptions = {},
+): Box[] {
+  if (!Array.isArray(layers) || !layers.length) return [];
+  const step = Number.isFinite(opts.zStep as number) ? (opts.zStep as number) : LIFT_Z_STEP;
+  const [zMin, zMax] = opts.zClamp ?? [-Infinity, Infinity];
+  const shadow = opts.shadow === undefined ? 'depth' : opts.shadow;
+  const last = layers.length - 1;
+
+  return layers.map((layer, i) => {
+    const row: Box = { ...source };
+    if (cfg.idField) row[cfg.idField] = layer.id;
+    row[cfg.imageField] = layer.src;
+    if (cfg.kindField && opts.kind) row[cfg.kindField] = opts.kind;
+    if (cfg.groupField && opts.group) row[cfg.groupField] = opts.group;
+    if (cfg.zField) row[cfg.zField] = Math.min(zMax, Math.max(zMin, i * step));
+    if (cfg.shadowField && shadow) row[cfg.shadowField] = shadow;
+    // Paint order, restated as code: background on the bottom row, text on the top.
+    if (i > 0) {
+      if (cfg.fillField) row[cfg.fillField] = '';
+      if (cfg.gradField) row[cfg.gradField] = '';
+    }
+    if (i < last && cfg.textField) row[cfg.textField] = '';
+    return row;
+  });
+}
+
+/**
+ * Splice lifted rows in where the source box was — ONE commit, one undo step.
+ *
+ * In place, not appended: the stack has to keep the source's position in the
+ * array, because array order IS z-order on this canvas (`reorderZ`), and a lift
+ * that jumped its artwork to the front would re-stack the whole board.
+ */
+export function applyLift(boxes: Box[], index: number, rows: Box[]): Box[] {
+  if (!Array.isArray(boxes) || index < 0 || index >= boxes.length || !rows.length) return boxes;
+  return [...boxes.slice(0, index), ...rows, ...boxes.slice(index + 1)];
+}
+
+/**
+ * Does this image-field value hold an SVG — i.e. is "Lift layers" offered at all?
+ *
+ * The ref's own metadata first, on `precheckAnimatedRef`'s terms (lib/anim-detect.ts):
+ * a catalog vector and a `.svg` upload both come back with `type: 'vector'`, and the
+ * picker records `format: 'svg'`. The URL is the fallback for a ref assembled by
+ * something that recorded neither — a hook patch, a hand-written share link, an older
+ * saved session — because the file extension and the `data:` MIME are the only other
+ * honest signals available WITHOUT fetching. The markup sniff proper happens later and
+ * elsewhere: `enumerateSvgLayers` is the thing that decides whether bytes really are a
+ * liftable SVG, and it says so in words the dialog prints (§7). This predicate only
+ * decides whether the menu entry appears, so it errs towards offering: an entry that
+ * opens a dialog saying "this file has no <svg> root" teaches more than a missing one.
+ *
+ * A Lottie is deliberately excluded even though it is vector: its layers are a JSON
+ * animation, not SVG elements, and `enumerateSvgLayers` would refuse it anyway.
+ */
+export function isSvgImageRef(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false;
+  const ref = v as { type?: unknown; format?: unknown; url?: unknown };
+  const format = String(ref.format ?? '').toLowerCase();
+  if (format === 'lottie' || format === 'json' || ref.type === 'lottie') return false;
+  if (format === 'svg' || ref.type === 'vector') return true;
+  const url = typeof ref.url === 'string' ? ref.url : '';
+  if (!url) return false;
+  if (/^data:image\/svg\+xml[;,]/i.test(url)) return true;
+  // Extension test on the PATH only — a `?v=2` cache-buster or a `#frag` must not
+  // hide a `.svg`, and a `?x=.svg` query must not promote a PNG.
+  return /\.svg$/i.test(url.split(/[?#]/)[0] || '');
+}
+
 /**
  * Build a new box object from block-field defaults + a kind's seed + a rect + id.
  * Pure: the shell supplies `defaults` (declared field defaults) and `id`.
