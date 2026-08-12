@@ -551,6 +551,12 @@ export function kfTrackJoin(a: KfTrack, b: KfTrack, offsetMs: number): KfKey[] {
  */
 export const KF_NEUTRAL: Readonly<Record<KfChannel, number>> = Object.freeze({
   x: 0, y: 0, z: 0, s: 1, r: 0, rx: 0, ry: 0, o: 1, b: 0, f: 0, a: 0, p: DEFAULT_PERSPECTIVE,
+  // `w`/`h` are the `z` case again: their neutral is THE BOX'S OWN SIZE, which is not a
+  // number this table can hold, so 0 stands for "unauthored" and the fold reads it as
+  // "use `boxW`/`boxH`". Like `z` and `b`, they are deliberately absent from
+  // {@link KF_POSE_SEED} — seeding a size into every diamond would freeze a value the
+  // user never touched into the wire, and worse, would make every keyed box reflow.
+  w: 0, h: 0,
 });
 
 /**

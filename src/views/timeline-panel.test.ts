@@ -448,7 +448,10 @@ interface Harness {
     destroy(): void; setOpen(v: boolean): void; isOpen(): boolean;
     /** The playhead-contextual write seam free-canvas commits through (plans/104 §8). */
     kfPoseIds(ids: readonly string[]): string[];
-    kfPoseWrite(boxes: Box[], ids: readonly string[], delta: Record<string, number>): Box[];
+    kfPoseWrite(boxes: Box[], ids: readonly string[], delta: Record<string, number>, mode?: 'add' | 'set'): Box[];
+    /** Camera mode, entered by SELECTION (plans/104 §8) — the P1 half of the same seam. */
+    cameraModeId(): string;
+    cameraWrite(boxes: Box[], delta: Record<string, number>): Box[];
   };
   bar(id: string): HTMLElement;
   /** Drive the shared canvas selection, exactly as free-canvas would. */
@@ -4194,7 +4197,7 @@ test('a SOUND is offered no keyframe affordance anywhere — not a group, not a 
   } finally { closeOverlays(); live.teardown(); }
 });
 
-test('a curve editor opened from INSIDE the Keyframes card does not dismiss the card', async () => {
+test('a curve editor opened from INSIDE a group card does not dismiss the card', async () => {
   // The card is a body-mounted popover, and so is the curve editor it spawns — siblings
   // on <body>, so `menu.contains(target)` says false and the first press inside the editor
   // (a bezier handle, a preset) read as an outside click and closed the card mid-drag. It
@@ -4202,11 +4205,16 @@ test('a curve editor opened from INSIDE the Keyframes card does not dismiss the 
   // the <select> the editor restores focus to was inside a display:none subtree. That is
   // directive 3's own surface ("Ease selects get real width in the popover"): the flow the
   // revision exists to fix was the flow that broke.
+  //
+  // The ANIMATE group is the surface now: §8's M2.7 docked the KEYFRAME curve editor
+  // inside the Keyframes popup itself (one surface, no nested popover), so the
+  // transition curves are what still spawn a `.tl-ease-pop` from inside a card — and
+  // the `isInside` exemption that keeps the card up is the same one.
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
     h.select(['a']);
-    setGroup(h.root, 'keyframes', true);
-    const sel = inspAll<HTMLSelectElement>('.tl-kf-row .tl-kf-ease')[0]!;
+    setGroup(h.root, 'animate', true);
+    const sel = inspAll<HTMLSelectElement>('.tl-ease')[0]!;
     pick(sel, '__custom');
     const ed = openMenu('.tl-ease-pop');
     assert.ok(ed, 'the keyframe curve editor opened');
@@ -4500,8 +4508,12 @@ test('the latch header flips Scene pose ⇄ Keyframe @ …, and the pose fields 
 
     await seek(h, 2000);
     assert.equal(state(), 'Scene pose', 'parked between diamonds');
-    assert.deepEqual(poseDisabled(), [true, true, true, true],
-      'and there is no keyframe to pose, so the controls are inert (they still READ, see below)');
+    // DEPTH IS THE EXCEPTION, and it is the P1 depth slider that makes it one (§5.3):
+    // `z` is the one pose channel with a base field of its own, so off a diamond an
+    // edit there writes the BASE — §8's own rule — rather than inventing a keyframe.
+    // The other three have nothing to write and stay inert.
+    assert.deepEqual(poseDisabled(), [false, true, true, true],
+      'no keyframe to pose: everything but Depth is inert (they still READ, see below)');
     assert.deepEqual(dots(h, 'a').map((n) => n.classList.contains('is-selected')), [false, false]);
 
     await seek(h, 1500);
@@ -4620,7 +4632,8 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
     // is exactly why this number has to come from the engine and not from the panel.
     await seek(h, 750);
     const mid = values();
-    assert.equal(pose().every((n) => n.disabled), true, 'still inert: there is no keyframe here to pose');
+    assert.deepEqual(pose().map((n) => n.disabled), [false, true, true, true],
+      'still inert — except Depth, which has a base field to write (§5.3)');
     assert.notDeepEqual(mid, ['', '', '', ''], 'and no longer blank');
     const z = Number(mid[0]);
     assert.ok(z > 0 && z < 300, `depth reads between its two diamonds (got ${mid[0]})`);
@@ -4646,10 +4659,12 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('the "size is not keyframable" fact is a TOOLTIP now, never standing grey text', async () => {
-  // §8's M2.5 revision, point 3. It is a permanent property of the model (§5.2), and a
-  // sentence permanently on screen reads as a warning about something being wrong —
-  // especially in a popover the user opened to change four numbers.
+test('the "size is not keyframable" claim is GONE — w/h are channels now (§5.2 reversed)', async () => {
+  // P1 reversed it (Andy, 2026-08-12 hands-on: "I can't change width and height of
+  // elements and have them tween"). The wire carries `w`/`h`, a resize ON a diamond
+  // writes them, and a standing sentence — or a tooltip — saying otherwise is now a
+  // lie in the one place a user goes to check. Size is still authored on the CANVAS,
+  // which is why there is still no width field in here.
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
     h.select(['a']);
@@ -4657,9 +4672,16 @@ test('the "size is not keyframable" fact is a TOOLTIP now, never standing grey t
     assert.equal(inspEl('.tl-kf-note'), null, 'the standing paragraph is gone');
     const wrap = inspEl<HTMLElement>('.tl-kf-pose');
     assert.ok(wrap, 'the pose fields are one block');
-    assert.equal(wrap!.title, 'Size is not keyframable. Resizing changes the clip itself.',
-      'and the fact rides its tooltip');
+    assert.equal(wrap!.title, '', 'and the tooltip that claimed size could never tween went with it');
     assert.equal(inspAll('.tl-kf-pose .tl-kf-pose-num').length, 4, 'all four channels are inside it');
+    // The depth slider is the fifth control on that block — the §5.3 scrub band, beside
+    // the number that still takes the whole field range.
+    const slider = inspEl<HTMLInputElement>('.tl-kf-pose .tl-kf-slider');
+    assert.ok(slider, 'Depth has a slider');
+    assert.equal(slider!.type, 'range');
+    assert.deepEqual([slider!.min, slider!.max], ['0', '300'], 'the tasteful band, not the clamp');
+    const depth = inspAll<HTMLInputElement>('.tl-kf-pose-num')[0]!;
+    assert.deepEqual([depth.min, depth.max], ['-300', '900'], 'the number takes KF_Z_FIELD_CLAMP');
   } finally { closeOverlays(); h.teardown(); }
 });
 
@@ -5049,15 +5071,22 @@ test('free-canvas commits the redirection at its ONE pointerup, and never for a 
   assert.equal((moveBranch.match(/\bcommit\(/g) ?? []).length, 1,
     'ONE commit in the move branch, however the selection splits between posed and moved');
   assert.ok(/rotKf\s*=\s*g\.type === 'rotate'/.test(sizeBranch),
-    'ROTATE is a pose channel; RESIZE is not, and the branch says which is which (plans/104 §5.2)');
-  assert.equal((sizeBranch.match(/\bcommit\(/g) ?? []).length, 2,
-    'the two mutually exclusive endings of one gesture — the posed rotate, and the base write');
+    'ROTATE is a pose channel, and the branch says so (plans/104 §5.2)');
+  // …and so is RESIZE, since P1 (§5.2 REVERSED): on a diamond it writes `w`/`h`
+  // ABSOLUTELY ('set' — a dragged handle produces the new width, not a change to it),
+  // plus the origin shift an nw/n/w handle also makes, as a relative x/y delta.
+  assert.ok(/sizeKf\s*=\s*g\.type === 'resize'/.test(sizeBranch),
+    'RESIZE is one too, and the branch says which is which');
+  assert.ok(/kfPoseWrite\(boxes, \[rotId\], \{ w: live\.w, h: live\.h \}, 'set'\)/.test(sizeBranch),
+    "and it writes them with 'set', because w/h are absolute px (§5.2)");
+  assert.equal((sizeBranch.match(/\bcommit\(/g) ?? []).length, 3,
+    'the three mutually exclusive endings of one gesture — posed rotate, posed size, base write');
   // Bounded to the BRANCH, not "everything after it": onGestureEnd is not the last
   // redirected commit site in the file (the arrow nudge is, below), and an unbounded
   // slice would read that one as this branch's.
   const gs = end.slice(end.indexOf("if (g.type === 'gscale'"), end.indexOf('function applyLiveRect'));
   assert.equal(gs.includes('kfPoseWrite('), false,
-    'group scale ALWAYS writes the base: size is not keyframable (§5.2)');
+    'group scale ALWAYS writes the base — §5.2 keeps that rule even now that a single-box resize poses');
 });
 
 test('the KEYBOARD move is redirected exactly like the pointer one, and declines the SEEK chord only', () => {
@@ -5080,4 +5109,447 @@ test('the KEYBOARD move is redirected exactly like the pointer one, and declines
     'and asks the same two-call seam the pointer commit asks');
   assert.equal((nudge.match(/\bcommit\(/g) ?? []).length, 1,
     'ONE commit, however the selection splits — one undo step, like the drag');
+});
+
+// ── P1: the camera, the depth slider, and §8's M2.6/M2.7 polish ───────────────
+//
+// Everything below is the PRODUCT surface of plans/104 P1. The numbers it leans on
+// are the engine's (`resolveCamera`, `projectDepth`, `KF_Z_FIELD_CLAMP`) and the
+// arithmetic is timeline-math's; what is asserted here is the glue — which control
+// writes which field, how many commits a gesture costs, and what the UI says it is
+// doing while it does it.
+
+/** The `<button>`s of the Camera group's preset row, by their visible label. */
+const presetBtn = (label: string): HTMLButtonElement => {
+  const b = inspAll<HTMLButtonElement>('.tl-cam-preset').find((n) => n.textContent?.includes(label));
+  assert.ok(b, `the Camera group offers "${label}"`);
+  return b!;
+};
+
+/** The last thing the panel announced (the polite live region, after its rAF). */
+async function spoken(): Promise<string> {
+  await frames(2);
+  const el = dom.window.document.querySelector('[data-a11y-live]');
+  return el?.textContent ?? '';
+}
+
+/** The camera box of the last commit, if one was minted. */
+const cameraOf = (h: Harness): Box | undefined => h.boxes.find((b) => String(b.kind ?? '') === 'camera');
+
+const CAM_KINDS = [...ADD_KINDS, { id: 'camera', label: 'Camera', seed: { kind: 'camera' } }];
+
+test('the depth slider writes the BASE off a diamond, and mints the scene camera exactly once', async () => {
+  // §5.3 + §5.4. Depth is the one pose channel with a field of its own, so off a
+  // diamond an edit there is §8's "edits write the base" rather than an invented
+  // keyframe — and the FIRST such edit is what auto-creates the untimed scene camera,
+  // in the SAME array, so lifting a box is one commit and one undo step.
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    await seek(h, 2000);                                  // off every diamond
+    const slider = inspEl<HTMLInputElement>('.tl-kf-slider')!;
+    assert.equal(slider.disabled, false, 'the slider is live off a diamond — that is the point of it');
+
+    slider.value = '120';
+    slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    assert.equal(h.commits.length, 0, 'dragging writes nothing: one model write per gesture');
+    assert.equal(inspAll<HTMLInputElement>('.tl-kf-pose-num')[0]!.value, '120',
+      'the number beside it mirrors the drag, so the two controls never disagree');
+
+    slider.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.commits.length, 1, 'ONE commit on release');
+    assert.equal(h.boxes.find((b) => b.id === 'a')!.z, 120, 'the box\'s own depth field, not the track');
+    assert.equal(kfOf(h, 'a'), 't0_x0*t1500_x40', 'and the keyframes are untouched');
+
+    const cam = cameraOf(h);
+    assert.ok(cam, 'the first depth interaction minted the scene camera');
+    assert.equal(String(cam!.kind), 'camera');
+    assert.equal(cam!.start ?? '', '', 'UNTIMED — an "Always on" scenery chip, not a clip');
+
+    // …and only once. A second lift finds the camera that is already there.
+    h.notify();
+    await frames(3);
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    await seek(h, 2000);
+    const again = inspEl<HTMLInputElement>('.tl-kf-slider')!;
+    again.value = '200';
+    again.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.boxes.filter((b) => String(b.kind ?? '') === 'camera').length, 1,
+      'ONE camera, however many boxes are lifted afterwards');
+    assert.equal(h.boxes.find((b) => b.id === 'a')!.z, 200);
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('ON a diamond the same slider writes the KEYFRAME, and the field is left alone', async () => {
+  const h = mount(kfScene({ ...clip('a', 0, 3), z: 40, kf: 't0_z40*t1500_z40' } as Box), 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    await seek(h, 1500);
+    const slider = inspEl<HTMLInputElement>('.tl-kf-slider')!;
+    slider.value = '260';
+    slider.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.commits.length, 1);
+    assert.equal(kfOf(h, 'a'), 't0_z40*t1500_z260', 'the keyframe under the playhead');
+    assert.equal(h.boxes.find((b) => b.id === 'a')!.z, 40, 'the base depth is what a keyed z REPLACES, not what it edits');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the depth slider scrubs the tasteful band and the number takes the whole field clamp', async () => {
+  const { KF_Z_FIELD_CLAMP } = await import('../../../../engine/src/keyframes.ts');
+  const { KF_Z_SLIDER } = await import('./timeline-panel.ts');
+  assert.ok(KF_Z_SLIDER[0] >= KF_Z_FIELD_CLAMP[0] && KF_Z_SLIDER[1] <= KF_Z_FIELD_CLAMP[1],
+    'the scrub band lies INSIDE the engine\'s field clamp — the clamp is never re-typed, only narrowed');
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_z0*t1500_z0' } as Box), 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    await seek(h, 1500);
+    // A hand-driven value past the band still lands inside the FIELD clamp: `min`/`max`
+    // are the spinner's range, and the commit is what enforces (§5.1 names this site).
+    const depth = inspAll<HTMLInputElement>('.tl-kf-pose-num')[0]!;
+    depth.value = '-5000';
+    depth.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(kfOf(h, 'a'), 't0_z0*t1500_z-300', 'clamped to the field range, negative end');
+    assert.equal(inspAll<HTMLInputElement>('.tl-kf-pose-num')[0]!.value, '-300');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframes', async () => {
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await frames(3);
+    assert.deepEqual(
+      Array.from(h.root.querySelectorAll<HTMLElement>('.tl-inspector .tl-group')).map((g) => g.dataset.group),
+      ['camera', 'keyframes'],
+      'the camera panel and its poses — no Time (the switch below is its promotion route), no Animate (v1 ignores a camera\'s transitions)',
+    );
+    setGroup(h.root, 'camera', true);
+    const labels = inspAll<HTMLElement>('.tl-cam-row .field-label').map((n) => n.textContent);
+    assert.deepEqual(labels, ['Pan X', 'Pan Y', 'Dolly', 'Focus', 'Aperture', 'FOV strength'],
+      'the §4.3 vocabulary: perspective is FOV STRENGTH, and nothing here is called zoom');
+    assert.equal(labels.some((l) => /zoom/i.test(l ?? '')), false, 'never "zoom" — eff(z = camZ) = 1 for every p');
+    const chips = inspAll<HTMLElement>('.tl-cam-chip');
+    assert.deepEqual(chips.map((c) => c.textContent), ['Drag', 'Drag', 'Scroll'],
+      'the affordance chips name the canvas gesture that does the same job');
+    assert.equal(chips.every((c) => c.getAttribute('aria-hidden') === 'true'), true,
+      'decoration: the control beside them is the keyboard route');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('a camera preset writes the whole track in ONE commit, at the §4.6 quanta', async () => {
+  const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
+  const { serialiseKf } = await import('../../../../engine/src/keyframes.ts');
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await frames(3);
+    setGroup(h.root, 'camera', true);
+    click(presetBtn('Push in'));
+    assert.equal(h.commits.length, 1, 'ONE commit — one undo step takes the whole move back');
+    const wire = String(h.boxes.find((b) => b.id === 'cam')!.kf ?? '');
+    const push = KF_CAMERA_PRESETS.find((p) => p.id === 'push-in')!;
+    assert.equal(wire, serialiseKf(parse(push.track)),
+      'stored EXPANDED and canonicalised by the ENGINE — never the literal author string');
+    assert.equal(parse(wire).length, 2, 'two poses');
+    assert.equal(serialiseKf(parse(wire)), wire, 'and it round-trips: parse(serialise(parse(s))) === parse(s)');
+
+    // A PUSH IN gets closer, which under `eff = P/(P − (z − camZ))` means the camera's
+    // z goes DOWN. The preset that says "push in" has to push in.
+    const keys = parse(wire);
+    assert.ok((keys[1]!.v.z ?? 0) < (keys[0]!.v.z ?? 0), 'the dolly moves toward the scene');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('a preset applied with NO camera mints the scene camera and keys it in the same commit', async () => {
+  const h = mount(kfScene({ ...clip('a', 0, 3), z: 80 } as Box), 40, CAM_KINDS, KF_CFG);
+  try {
+    // No camera anywhere: the box's own depth interaction is what would normally mint
+    // one, but a preset must be able to be the first thing a user ever presses.
+    h.select(['a']);
+    await frames(3);
+    assert.equal(cameraOf(h), undefined, 'precondition: no camera');
+    // Reach the writer the way the Camera group does — the group only exists on a
+    // camera, so this is the "camera mode entered" door of §5.4's three.
+    const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
+    const cam = { id: 'cam', kind: 'camera', start: '', dur: '' } as Box;
+    const h2 = mount([...h.boxes, cam], 40, CAM_KINDS, KF_CFG);
+    try {
+      h2.select(['cam']);
+      await frames(3);
+      setGroup(h2.root, 'camera', true);
+      click(presetBtn('Reveal'));
+      assert.equal(h2.commits.length, 1);
+      const reveal = KF_CAMERA_PRESETS.find((p) => p.id === 'reveal')!;
+      assert.equal(parse(String(h2.boxes.find((b) => b.id === 'cam')!.kf)).length, parse(reveal.track).length);
+    } finally { closeOverlays(); h2.teardown(); }
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('camera mode is entered by SELECTION, and only while the camera is running', async () => {
+  const h = mount([
+    { id: 'cam', kind: 'camera', start: 1, dur: 2 } as Box,
+    clip('a', 0, 5),
+  ], 40, CAM_KINDS, KF_CFG);
+  try {
+    assert.equal(h.panel.cameraModeId(), '', 'nothing selected: no camera mode');
+    h.select(['a']);
+    await frames(3);
+    assert.equal(h.panel.cameraModeId(), '', 'a content box is not a camera');
+    h.select(['cam']);
+    await seek(h, 1500);
+    assert.equal(h.panel.cameraModeId(), 'cam', 'selected, and the playhead is inside its window');
+    await seek(h, 3500);
+    assert.equal(h.panel.cameraModeId(), '', 'outside the window: not the camera you are looking through');
+    await seek(h, 1500);
+    h.select(['cam', 'a']);
+    await frames(3);
+    assert.equal(h.panel.cameraModeId(), '', 'a mixed selection aims at nothing in particular');
+    h.select(['cam']);
+    await frames(3);
+    h.panel.setOpen(false);
+    assert.equal(h.panel.cameraModeId(), '', 'a CLOSED panel arms nothing — the same rule kfPoseIds obeys');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('cameraWrite folds a gesture into the SCENE DEFAULT, and refuses a moving camera off a diamond', async () => {
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('a', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await seek(h, 2000);
+    // NO track at all: the scene default lives at t = 0 and a pan writes it there, so
+    // the fresh implicit camera behaves as SCENE DEFAULTS with no keyframe UI in the way.
+    const next = h.panel.cameraWrite(h.boxes, { x: -40 });
+    const keys = parse(String(next.find((b) => b.id === 'cam')!.kf));
+    assert.equal(keys.length, 1, 'one key — the scene pose');
+    assert.equal(keys[0]!.t, 0, 'at t = 0, not under the playhead: no diamond was invented');
+    assert.equal(keys[0]!.v.x, -40);
+
+    // A single key is STILL the scene default (evaluation clamp-holds either side).
+    const two = h.panel.cameraWrite(next, { x: -10 });
+    const k2 = parse(String(two.find((b) => b.id === 'cam')!.kf));
+    assert.equal(k2.length, 1, 'still one key');
+    assert.equal(k2[0]!.v.x, -50, 'and the delta composed onto what it already held');
+
+    // A real MOVE, with the playhead off every diamond, has nowhere honest to land.
+    const moving = h.boxes.map((b) => (b.id === 'cam' ? { ...b, kf: 't0_x0*t1000_x100' } : b));
+    assert.equal(h.panel.cameraWrite(moving, { x: 25 }), moving, 'refused — by identity, so the caller commits nothing');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the camera gesture map: the canvas hands the WHEEL to the view unless a camera is armed', () => {
+  // §8: "plain wheel = dolly (camZ, preventDefault; Cmd/Ctrl-wheel stays VIEW zoom,
+  // Space+drag stays VIEW pan)". The separation is the whole reason camera mode can be
+  // a selection rather than a mode, so it is pinned at the source: free-canvas is the
+  // only listener that could claim the notch, and it must decline three ways.
+  const src = readFileSync(new URL('./free-canvas.ts', import.meta.url), 'utf8');
+  const wheel = src.slice(src.indexOf('function onCameraWheel'), src.indexOf('// Every box is ONE unified object'));
+  assert.ok(/if \(e\.ctrlKey \|\| e\.metaKey\) return;/.test(wheel), 'Cmd/Ctrl-wheel is the VIEW zoom, untouched');
+  assert.ok(/if \(!camModeId\(\)\) return;/.test(wheel), 'no camera armed: the view keeps its pan');
+  assert.ok(wheel.includes('e.preventDefault()') && wheel.includes('e.stopPropagation()'),
+    'and when it IS claimed, the stage never sees it');
+  assert.ok(/setTimeout\(flushDolly/.test(wheel), 'the notches coalesce to one commit per pause');
+  // Space+drag is stageNav's and free-canvas already yields to it by tracking `spacePan`;
+  // the camera must not have taken that back.
+  assert.ok(/if \(e\.pointerType !== 'mouse' \|\| spacePan\) return;/.test(src),
+    'Space+drag stays the view pan');
+  // The pan takes the gesture the MARQUEE would have had, on both empty surfaces.
+  assert.equal((src.match(/\{ type: 'campan',/g) ?? []).length, 2,
+    'the artboard and the backdrop — a camera pan with an invisible boundary is not one');
+  // Shift is RESERVED for P2's tilt, so it keeps the meaning it already had rather
+  // than being given a camera one now and having it taken away again.
+  assert.equal((src.match(/!e\.shiftKey && camModeId\(\)/g) ?? []).length, 2,
+    'both entry points decline Shift');
+  const end = src.slice(src.indexOf('function onGestureEnd'));
+  const camBranch = end.slice(end.indexOf("if (g.type === 'campan')"), end.indexOf("if (g.type === 'marquee')"));
+  assert.ok(camBranch.includes('cameraWrite('), 'and it commits through the panel\'s own writer');
+  assert.equal((camBranch.match(/\bcommit\(/g) ?? []).length, 1, 'ONE commit, on release');
+  // …and the drag is accumulated in NATIVE px. `camX` is a MODEL number and the picture
+  // it displaces is on screen at the canvas zoom, so direct manipulation — the property
+  // the branch above says it is delivering — needs the client delta divided by that
+  // zoom. Client px written straight into the model moved the shot half as far as the
+  // hand at 50 % and twice as far at 200 %.
+  const move = src.slice(src.indexOf('function applyGestureMove'));
+  const panBranch = move.slice(move.indexOf("if (gesture.type === 'campan')"), move.indexOf("if (gesture.type === 'pendraw')"));
+  assert.ok(panBranch.includes('clientToNative('), 'the pan converts through the canvas zoom, like every other drag');
+  assert.ok(!/gesture\.dx \+= e\.clientX/.test(panBranch), 'never client px straight into the model');
+});
+
+test('clicking a diamond opens the Keyframes popup ON that keyframe', async () => {
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    await seek(h, 0);
+    assert.equal(groupPopEl(), null, 'precondition: nothing is open');
+    const dot = dots(h, 'a')[1]!;
+    dot.dispatchEvent(pointer('pointerdown', 60));
+    dot.dispatchEvent(pointer('pointerup', 60));
+    await frames(3);
+    const pop = groupPopEl();
+    assert.ok(pop, 'the Keyframes popup opened on the press (§8 M2.7 (a))');
+    assert.equal(pop!.getAttribute('aria-label'), 'Keyframes', 'and it is that group, not another');
+    assert.equal((inspEl('.tl-kf-state') as HTMLElement).textContent, 'Keyframe @ 0:01.5',
+      'ON the keyframe that was pressed: the playhead went with the selection');
+    assert.equal(h.commits.length, 0, 'looking at a keyframe is not editing one');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the curve editor is DOCKED in the Keyframes popup, and a drag switches the select to Custom', async () => {
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_eo_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    await seek(h, 2000);
+    assert.equal(inspEl('.tl-kf-dock .ease-ed'), null, 'off a diamond there is no curve to shape…');
+    assert.match((inspEl('.tl-kf-dock-note') as HTMLElement).textContent ?? '', /Move the playhead/,
+      '…and the dock says so in the same words the pose fields use');
+
+    await seek(h, 1500);
+    const plot = inspEl<HTMLElement>('.tl-kf-dock .ease-ed-plot');
+    assert.ok(plot, 'ON a diamond the plot is docked INSIDE the popup — never a second popover');
+    // …and ONLY while the popup shows it: the editor runs a rAF loop for its motion
+    // strip, and a group's body stays in the document when the group is shut.
+    setGroup(h.root, 'keyframes', false);
+    await frames(3);
+    assert.equal(dom.window.document.querySelector('.tl-kf-dock .ease-ed'), null,
+      'shutting the popup takes the editor down rather than leaving it painting unseen');
+    setGroup(h.root, 'keyframes', true);
+    await frames(3);
+    assert.ok(inspEl('.tl-kf-dock .ease-ed-plot'), 'and re-opening builds it again');
+    assert.equal(dom.window.document.querySelectorAll('.tl-ease-pop').length, 0,
+      'and nothing nested opened alongside it');
+    // The row's own select carries no "Custom…" route any more: the dock IS the editor.
+    const sel = inspAll<HTMLSelectElement>('.tl-kf-row .tl-kf-ease')[1]!;
+    assert.equal(Array.from(sel.options).some((o) => o.value === '__custom'), false,
+      'one surface: the route died with the nested popover it opened');
+    assert.equal(sel.value, 'eo', 'the docked plot and the select are showing the same curve');
+
+    // Drag a handle: one commit, and the select is now on a Custom option it did not
+    // have before — "they can use presets to learn" (§8's M2.7 (b)). Re-queried, because
+    // the close/open above minted a new editor.
+    const live = inspEl<HTMLElement>('.tl-kf-dock .ease-ed-plot')!;
+    const handle = inspEl<Element>('.tl-kf-dock .ease-ed-handle')!;
+    handle.dispatchEvent(pointer('pointerdown', 30));
+    live.dispatchEvent(pointer('pointermove', 44, { clientY: 10 }));
+    live.dispatchEvent(pointer('pointerup', 44, { clientY: 10 }));
+    await frames(3);
+    assert.equal(h.commits.length, 1, 'ONE commit for the drag');
+    const after = parse(kfOf(h, 'a'))[1]!;
+    assert.match(after.ease, /^eb\(/, 'a bezier token, written through the engine\'s own adapter');
+    // The repaint a real commit causes (free-canvas notifies the runtime), so the row
+    // this reads is the one the write rebuilt.
+    h.notify();
+    await frames(3);
+    const sel2 = inspAll<HTMLSelectElement>('.tl-kf-row .tl-kf-ease')[1]!;
+    assert.equal(sel2.value, after.ease, 'the select followed it');
+    assert.equal(sel2.selectedOptions[0]!.textContent, 'Custom', 'and says what it is');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('M2.6 lows: no focusable node in the aria-hidden strip, and the enlarged mark survives a rebuild', async () => {
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    await seek(h, 1500);
+    const strip = h.bar('a').querySelector('.tl-kf-strip') as HTMLElement;
+    assert.equal(strip.getAttribute('aria-hidden'), 'true');
+    assert.equal(strip.querySelectorAll('[tabindex], a[href], button, input, select, textarea').length, 0,
+      'nothing inside an aria-hidden subtree may be focusable — not even tabindex="-1"');
+    assert.deepEqual(dots(h, 'a').map((n) => n.classList.contains('is-selected')), [false, true],
+      'precondition: the playhead\'s diamond draws large');
+
+    // A ROW REBUILD mints new dots. The latch answer has not changed, so its memo would
+    // skip the re-mark and the enlarged diamond would silently vanish (§8's M2.6 low).
+    h.notify();
+    await frames(3);
+    assert.deepEqual(dots(h, 'a').map((n) => n.classList.contains('is-selected')), [false, true],
+      'the mark is re-applied to the dots that replaced the marked ones');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('M2.6 low: Alt+←/→ says what it actually found — nothing selected, nothing animated, or the end', async () => {
+  const h = mount(kfScene({ ...clip('a', 0, 3) } as Box), 40, ADD_KINDS, KF_CFG);
+  try {
+    const alt = (key: string): void => {
+      h.root.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, altKey: true, bubbles: true, cancelable: true }));
+    };
+    h.select([]);
+    await frames(3);
+    alt('ArrowRight');
+    assert.equal(await spoken(), 'Select something on the canvas to keyframe it',
+      'nothing selected is not "last keyframe"');
+
+    h.select(['a']);
+    await frames(3);
+    alt('ArrowRight');
+    assert.equal(await spoken(), 'No keyframes',
+      'a box with an empty track has no last keyframe to be at');
+
+    // …and with a track, the honest end-of-track message comes back.
+    const h2 = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, ADD_KINDS, KF_CFG);
+    try {
+      h2.select(['a']);
+      await seek(h2, 1500);
+      h2.root.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true, cancelable: true }));
+      assert.equal(await spoken(), 'Last keyframe');
+    } finally { closeOverlays(); h2.teardown(); }
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('M2.6 low: the Animate chip is never capped, so its second kind cannot be ellipsed away', () => {
+  const css = readFileSync(new URL('../styles/parts/timeline.css', import.meta.url), 'utf8');
+  const rule = css.slice(css.indexOf('.tl-group[data-group="animate"]'));
+  assert.ok(/\.tl-group\[data-group="animate"\][^{]*\.tl-group-chip \{ max-width: none; \}/.test(rule.slice(0, 400)),
+    'the pair chip is uncapped — the strip it sits in scrolls, so a longer segment is not a lost one');
+  assert.ok(/\.tl-group\[data-group="animate"\] > \.tl-group-head/.test(rule.slice(0, 400)),
+    'and the head\'s own cap goes with it, or the chip is capped by its container instead');
+});
+
+test('an untimed camera reads as "Camera" on its Always-on chip, never as "Clip"', async () => {
+  // The chip IS the affordance the implicit scene camera is discovered through (§5.4),
+  // and every media probe reads '' on a box that paints nothing — so without a model
+  // branch it wore the fallback label of the one thing it is not.
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('a', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    const chip = h.root.querySelector('.tl-scenery [data-id="cam"]') as HTMLElement;
+    assert.ok(chip, 'an untimed camera is a scenery chip, not a bar');
+    assert.match(chip.textContent ?? '', /Camera/);
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the camera add-kind is offered by the panel\'s + menu, with its own glyph', async () => {
+  const h = mount([clip('a', 0, 3)], 40, CAM_KINDS, KF_CFG);
+  try {
+    click(h.root.querySelector('.tl-add') as HTMLElement);
+    await frames(2);
+    const labels = Array.from(openMenu('.tl-menu')!.querySelectorAll('.tl-menu-label')).map((n) => n.textContent);
+    assert.ok(labels.includes('Camera'), 'the manifest\'s own label, read from addKinds');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY — the resize seam\'s half of §5.2', async () => {
+  // free-canvas hands the handle's resulting WIDTH, not a change to it, so the seam has
+  // to take a value rather than a delta. The mode is the caller's to choose because only
+  // the caller knows which reading its gesture produced: a drag is relative, a resize is
+  // not. (The commit site itself is pinned by the source test above — the panel cannot
+  // observe free-canvas's pointerup from in here.)
+  const h = mount(kfScene({ ...clip('a', 0, 3), w: 400, h: 300, kf: 't0_x0*t1500_x40' } as Box), 40, ADD_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    await seek(h, 1500);
+    const next = h.panel.kfPoseWrite(h.boxes, ['a'], { w: 640, h: 360 }, 'set');
+    const keys = parse(String(next.find((b) => b.id === 'a')!.kf));
+    assert.deepEqual({ ...keys[1]!.v }, { x: 40, w: 640, h: 360 },
+      'the size lands as the value it IS, beside the channel the track already animates');
+    assert.deepEqual({ ...keys[0]!.v }, { x: 0 }, 'and the other keyframe stays sparse');
+    // The same numbers under 'add' would be nonsense — 640px ADDED to a 400px box — which
+    // is exactly why the mode is a parameter and not a constant.
+    const wrong = h.panel.kfPoseWrite(h.boxes, ['a'], { w: 640, h: 360 });
+    assert.equal(parse(String(wrong.find((b) => b.id === 'a')!.kf))[1]!.v.w, 640,
+      'add over an unauthored size is the size itself (neutral 0), which is why the default is safe but not right');
+    assert.equal(h.commits.length, 0, 'the seam never commits — the caller owns the write');
+  } finally { closeOverlays(); h.teardown(); }
 });

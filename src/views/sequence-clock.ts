@@ -303,6 +303,7 @@ export type {
 import {
   readTiming, isActiveAt, endOf, createAuthoredStore, applyTimeToElements, OFF_CLASS,
   releaseShotBorrow, stageNativeSize, sequenceStageOf, registerSequenceWriter,
+  sequenceTimeElements,
   type Timing, type SequenceWriter,
 } from '../bridge/sequence-dom.ts';
 
@@ -554,7 +555,12 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   // ── DOM reads ─────────────────────────────────────────────────────────────
 
   function boxes(): HTMLElement[] {
-    return [...canvasEl.querySelectorAll<HTMLElement>('[data-t-start]')];
+    // THE APPLIER'S OWN ENUMERATION, imported rather than re-typed: this selector and
+    // `createSequenceTime`'s were two copies of the same rule and drifted apart from
+    // the planner's (plans/104 P1 review, HIGH 1 — an untimed "Always on" camera has no
+    // `data-t-start`, so the preview could not see the one box whose job is to move
+    // everything else). See `sequenceTimeElements` for what is in the set and why.
+    return sequenceTimeElements(sequenceStageOf(canvasEl) ?? canvasEl);
   }
 
   function seqMs(): number {

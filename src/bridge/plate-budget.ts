@@ -133,6 +133,18 @@ export interface PlateBudgetInput {
   worker: boolean;
   budgetBytes?: number;
   longSideCap?: number;
+  /**
+   * Bytes this render will hold that are NOT plates but come out of the same pocket —
+   * today, the blur lanes' pooled scratch canvases (plans/104 P1 obligation 3).
+   *
+   * The scratches are individually capped (`scratchPadCap`, `BLUR_SCRATCH_MAX_PIXELS`)
+   * but their POOL peak was never priced against the plate budget, so a job could sit
+   * inside its plate allowance and then allocate the same again in scratches while it
+   * ran. Subtracted from the budget before λ is computed, so the degradation knob is
+   * turned by the whole memory picture instead of by half of it. Absent — every caller
+   * that does not blur — leaves the arithmetic exactly as it was.
+   */
+  reserveBytes?: number;
 }
 
 export interface PlateBudgetPlan {
@@ -156,7 +168,10 @@ export interface PlateBudgetPlan {
   bytes: number;
   /** Bytes the unclamped demand would have spent. */
   wantedBytes: number;
+  /** The budget PLATES may spend: the machine's allowance less `reserveBytes`. */
   budgetBytes: number;
+  /** What was held back for the blur lanes' pooled scratches (`reserveBytes`, floored). */
+  reservedBytes: number;
   /** The single scale applied to every layer's extra resolution; 1 when nothing moved. */
   lambda: number;
   /** True when λ or the long-side cap actually reduced a layer's eff. */
@@ -210,8 +225,18 @@ function padUnderSideCap(layer: PlateLayerNeed, scale: number, eff: number, cap:
  */
 export function planPlateBudget(input: PlateBudgetInput): PlateBudgetPlan {
   const scale = Number.isFinite(input.scale) && input.scale > 0 ? input.scale : 1;
-  const budgetBytes = input.budgetBytes ?? plateBudgetBytes();
   const cap = input.longSideCap ?? plateLongSideCap();
+  const total = input.budgetBytes ?? plateBudgetBytes();
+  // The scratch reserve comes off the top, and is itself capped at HALF the allowance:
+  // a pathological blur could otherwise reserve the whole budget and drive λ toward
+  // zero, i.e. degrade every plate to rescue scratches that the per-scratch caps were
+  // always going to bound anyway. Half is the point at which "plates and scratches cost
+  // about the same" stops being a plausible reading of the render.
+  const reservedBytes = Math.min(
+    Math.max(0, Number.isFinite(input.reserveBytes) ? (input.reserveBytes as number) : 0),
+    Math.floor(total / 2),
+  );
+  const budgetBytes = Math.max(0, total - reservedBytes);
   const factor = input.worker ? PLATE_WORKER_FACTOR : 1;
 
   const counted = input.layers.map((L) => ({
@@ -273,6 +298,7 @@ export function planPlateBudget(input: PlateBudgetInput): PlateBudgetPlan {
   let warning = '';
   if (budgetClamped) {
     warning = `sequence: depth plates wanted ${mb(wantedBytes)} against a ${mb(budgetBytes)} plate budget`
+      + (reservedBytes > 0 ? ` (${mb(reservedBytes)} of it reserved for blur scratches)` : '')
       + ` — every layer's extra resolution scaled by ${lambda.toFixed(2)} (now ${mb(bytes)}).`
       + ' Flown-past layers will look softer; nothing else changes.';
   } else if (sideClamped) {
@@ -284,5 +310,59 @@ export function planPlateBudget(input: PlateBudgetInput): PlateBudgetPlan {
       + ' rather than losing the whole layer to a refused canvas.';
   }
 
-  return { effOf, padOf, bytes, wantedBytes, budgetBytes, lambda, clamped, warning };
+  return { effOf, padOf, bytes, wantedBytes, budgetBytes, reservedBytes, lambda, clamped, warning };
+}
+
+// ── the blur lanes' pooled scratches (plans/104 P1 obligation 3) ─────────────
+
+/**
+ * Scratches held at once while ONE layer is composited through a blur lane.
+ *
+ * `drawItem` takes the padded stage, `renderFx` takes its output, and the mip lane
+ * holds one level down and one level up beside them. Four is the peak the pool sees at
+ * full size; the mip chain's own levels fall away geometrically (¼, 1/16, …) and sum to
+ * under a third of one more, so four is the honest bound rather than a round number.
+ */
+export const BLUR_SCRATCH_PEAK_PER_LAYER = 4;
+
+/** One layer as the scratch reserve sees it: its widest box, its pad, and who owns its fx. */
+export interface BlurScratchNeed {
+  /** Stage-native box size, px, BEFORE the export scale. */
+  w: number;
+  h: number;
+  /** Capture margin on all four sides, stage-native px. */
+  pad?: number;
+  /** True when the COMPOSITOR owns this layer's filter — the only layers that blur here. */
+  owned?: boolean;
+}
+
+/**
+ * Peak bytes the pooled blur scratches will hold, for `planPlateBudget`'s `reserveBytes`.
+ *
+ * The pool is shared across layers and across frames (that is the whole reason it
+ * exists), and `takeStage` RESIZES rather than reallocating — so the peak is set by the
+ * single LARGEST filtered layer, not by their sum. A render with no compositor-owned
+ * filter reserves nothing at all, which is every export written before plans/104.
+ *
+ * Deliberately an estimate of the scratch at PLATE resolution (`w + 2·pad`, ×S), not of
+ * the exact `spillPad`-derived stage `drawItem` will ask for: the pad already carries
+ * the spill the sigma implies (that is what `spillPad` computed it from), and the extra
+ * `plateEff` factor is exactly the thing the budget is about to decide. Under-reserving
+ * by the eff factor is the safe direction — λ only ever takes resolution away, so a
+ * scratch sized off a degraded plate is smaller than this, never larger.
+ */
+export function blurScratchNeedBytes(
+  layers: readonly BlurScratchNeed[], scale: number,
+): number {
+  const s = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  let peak = 0;
+  for (const L of layers) {
+    if (!L?.owned) continue;
+    const pad = Math.max(0, L.pad ?? 0);
+    const w = Math.max(1, (Math.max(0, L.w) + pad * 2) * s);
+    const h = Math.max(1, (Math.max(0, L.h) + pad * 2) * s);
+    const bytes = Math.ceil(w) * Math.ceil(h) * PLATE_BYTES_PER_PIXEL;
+    if (bytes > peak) peak = bytes;
+  }
+  return peak * BLUR_SCRATCH_PEAK_PER_LAYER;
 }

@@ -340,6 +340,14 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
 
     // Effects the shape/text walkers can't express → bake the subtree to a picture.
     // (background-image:url() is handled specially below — it's an extractable asset.)
+    // NO vectorCaps at all, including the `cssFilter` one the SVG walker declares: a
+    // .pptx shape carries no CSS filter, so a blurred or drop-shadowed box bakes to a
+    // picture here rather than shipping as a flat shape with the effect quietly gone.
+    // (It used to ship flat — detectUnsupportedCss declared any parseable filter
+    // supported for every caller. Same silent drop the PDF walker had; plan 104 P1d.)
+    // The picture is captured at the element's own rect with no spill padding, so an
+    // effect that paints outside the box is clipped at its edge — visible degradation,
+    // which is the point, and better than the effect not being there at all.
     const reason = detectUnsupportedCss(el, style);
     if (reason && reason !== 'background-image:url()') { await rasterPic(el as HTMLElement, rect, reason); return; }
 

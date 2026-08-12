@@ -49,6 +49,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import type { Box } from './free-canvas-math.ts';
 
@@ -452,4 +453,18 @@ test('an untimed tool never mounts the ghost layer, whatever lands on the stage'
   assert.equal(f.stageEl.querySelector('.onion-layer'), null,
     'no time model means no playhead means nothing to be either side of');
   f.destroy();
+});
+
+test('a CAMERA is never acquired from the canvas — no click, no marquee (plans/104 §5.4)', () => {
+  // A camera paints nothing and is minted with no geometry, so a zero-size marker at
+  // the origin would be caught by any marquee crossing it and dragged about as if it
+  // were artwork. The exclusion rides the SAME acquisition gate the seq-hidden rule
+  // does, which is what keeps it to one expression instead of five call sites.
+  const src = readFileSync(new URL('./free-canvas.ts', import.meta.url), 'utf8');
+  const gate = src.slice(src.indexOf('function seqHiddenSkip'), src.indexOf('function selectionLive'));
+  assert.match(gate, /=== 'camera'/, 'the gate excludes a camera by kind');
+  assert.ok(gate.includes('seqHiddenId('), 'and still excludes what the playhead is hiding');
+  // Every pointer pick goes through it, so the exclusion cannot be half-applied.
+  const picks = (src.match(/seqHiddenSkip\(/g) ?? []).length;
+  assert.ok(picks >= 5, `every pick passes the gate (found ${picks})`);
 });

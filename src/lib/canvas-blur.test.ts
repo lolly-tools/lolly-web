@@ -27,6 +27,7 @@ import {
   blurLadder,
   boxBlurRgba,
   boxSizesForGauss,
+  BOX_MIN_SIGMA,
   fxFilterString,
   isFxEmpty,
   parseDropShadows,
@@ -251,14 +252,77 @@ test('blurLadder: below the visible threshold there is no lane to take', () => {
   assert.equal(blurLadder(BLUR_MIN_SIGMA, 512, 512), null);
   assert.equal(blurLadder(0, 512, 512), null);
   assert.equal(blurLadder(4, 0, 512), null);
-  // …and neither is there one for a sigma the three-box construction degenerates on:
-  // between the threshold and ~0.87 the ladder cannot shrink (any level would
-  // over-blur) and every box width comes back at 1, i.e. the identity. Null says so —
-  // where it used to allocate a full-size scratch and copy the source into it to
-  // change nothing. The lane divergence it states (the filter lane DOES apply a
-  // sub-pixel blur there) is bounded by that same 0.87.
-  assert.equal(blurLadder(0.5, 512, 512), null);
+  // …and neither is there one for a sigma BELOW the quantiser's own crossover: the
+  // ladder cannot shrink there (any level would over-blur) and the nearer of the two
+  // answers three integer boxes can give is the identity. Null says so — where it used
+  // to allocate a full-size scratch and copy the source into it to change nothing.
+  assert.equal(blurLadder(BOX_MIN_SIGMA / 2 - 0.01, 512, 512), null);
+  // ABOVE the crossover the band is expressed, not stranded (plans/104 P1 obligation
+  // 5a). It used to run all the way to ~0.87, so a residual under 0.577 was silently
+  // dropped and the resamples became the whole blur.
+  const band = blurLadder(0.5, 512, 512);
+  assert.deepEqual(band, { shrink: 1, sigma: 0.5, sizes: [1, 1, 3] });
   assert.ok(blurLadder(1, 512, 512), 'and a sigma the lane can express still gets a ladder');
+});
+
+test('the degenerate band delivers the NEAREST expressible blur, never a stranded residual', () => {
+  // THE MEASURED CASE (plans/104 §9.2 M1 browser verify): a 3840×2160 layer at sigma 3
+  // takes shrink 4, which leaves a residual of 0.559 — and 0.559 landed in the band
+  // where the Wells construction collapses to all-width-1 boxes. `[]` there meant the
+  // two resamples WERE the whole blur, delivered at 0.72×/0.82× of the request.
+  const L = blurLadder(3, 3840, 2160);
+  assert.ok(L);
+  assert.equal(L.shrink, 4);
+  assert.ok(Math.abs(L.sigma - 0.559) < 0.01, `residual ${L.sigma}`);
+  assert.deepEqual(L.sizes, [1, 1, 3], 'the residual is expressed, not dropped');
+
+  // The crossover is the MIDPOINT IN SIGMA between 0 and the smallest expressible box
+  // blur — the metric that matters, because the quantiser's step here is enormous
+  // relative to the values in the band and variance-matching would keep choosing zero.
+  assert.deepEqual(boxSizesForGauss(BOX_MIN_SIGMA / 2 + 1e-6), [1, 1, 3]);
+  assert.deepEqual(boxSizesForGauss(BOX_MIN_SIGMA / 2 - 1e-6), []);
+  assert.ok(Math.abs(BOX_MIN_SIGMA - Math.sqrt(2 / 3)) < 1e-12, 'one width-3 box: variance (9-1)/12');
+
+  // …but INSIDE A LADDER the comparison is between two DELIVERED blurs, because the
+  // resample already carries 0.5 in quadrature whichever answer is picked (P1 review,
+  // MEDIUM 6). That moves the crossover from 0.408 to ≈0.530, and the difference is not
+  // cosmetic: at a residual of 0.42 the promotion delivers 1.48× the request where doing
+  // nothing delivers 0.78×, so the band's low half was being made WORSE, not better.
+  const deliver = (residual: number): number => {
+    const sizes = boxSizesForGauss(residual, 3, MIP_RESAMPLE_SIGMA_PER_SHRINK);
+    const box = Math.sqrt(sizes.reduce((a, v) => a + (v * v - 1) / 12, 0));
+    return Math.hypot(MIP_RESAMPLE_SIGMA_PER_SHRINK, box);
+  };
+  for (const residual of [0.42, 0.45, 0.5, 0.53]) {
+    assert.deepEqual(boxSizesForGauss(residual, 3, MIP_RESAMPLE_SIGMA_PER_SHRINK), [],
+      `residual ${residual}: nothing is the NEARER delivered answer here`);
+  }
+  for (const residual of [0.55, 0.559, 0.57]) {
+    assert.deepEqual(boxSizesForGauss(residual, 3, MIP_RESAMPLE_SIGMA_PER_SHRINK), [1, 1, 3],
+      `residual ${residual}: one width-3 box is the nearer one`);
+  }
+  // …and "nearer" is verified as such, not asserted as a threshold: on both sides of the
+  // crossover the answer taken is the one closer to what was asked for.
+  for (const residual of [0.42, 0.5, 0.55, 0.57]) {
+    const want = Math.hypot(MIP_RESAMPLE_SIGMA_PER_SHRINK, residual);
+    const other = deliver(residual) === MIP_RESAMPLE_SIGMA_PER_SHRINK
+      ? Math.hypot(MIP_RESAMPLE_SIGMA_PER_SHRINK, BOX_MIN_SIGMA)
+      : MIP_RESAMPLE_SIGMA_PER_SHRINK;
+    assert.ok(Math.abs(deliver(residual) - want) <= Math.abs(other - want),
+      `residual ${residual}: the OTHER answer was nearer`);
+  }
+
+  // The far edge: 0.577 is where the construction used to jump from "nothing" to [1,1,3]
+  // in one step. With nothing carried, that jump has moved down to 0.408 — it has not
+  // disappeared, and it cannot: 0.8165 is the smallest blur three integer boxes can say.
+  assert.deepEqual(boxSizesForGauss(0.58), [1, 1, 3]);
+  assert.deepEqual(boxSizesForGauss(0.56), [1, 1, 3]);
+
+  // …and NOTHING that was already expressible moved.
+  for (const sigma of [0.7, 1, 1.5, 2, 3, 4, 8, 12, 30]) {
+    const sizes = boxSizesForGauss(sigma);
+    assert.ok(sizes.length === 3 && sizes.some((v) => v > 1), `sigma ${sigma}: ${sizes}`);
+  }
 });
 
 test('blurLadder: a big surface drops an extra level rather than blur 2 Mpx in JS', () => {

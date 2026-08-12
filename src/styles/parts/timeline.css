@@ -578,6 +578,73 @@
 .tl-kf-time { width: 5.5em; }
 .tl-kf-ease { max-width: 11ch; }
 
+/* The ANIMATE segment's chip is a PAIR — "Rise · Fade" — and the generic 22ch cap
+   ellipsed it mid-first-kind in languages whose transition names are longer than
+   English's (§8's M2.6 low: "Animate chip never ellipses before the second kind").
+   Capping is the wrong tool on a chip that carries two facts: the strip it sits in is
+   a horizontal scroller (`.tl-inspector`), so an uncapped segment makes the row a
+   little wider and scrolls, while a capped one silently deletes the second half of
+   its own reading. The head's own cap goes with it, for the same reason. */
+.tl-group[data-group="animate"] > .tl-group-head,
+.tl-group[data-group="animate"] .tl-group-chip { max-width: none; }
+
+/* ─── The depth slider (plans/104 §5.3) ──────────────────────────────────────
+   Slider AND number on one row: the slider scrubs the tasteful 0–300 band, the
+   number takes the whole field range (−300…900). The row is the popover's own
+   `.tl-field` (label, then controls), so only the slider's flex behaviour is new. */
+.tl-group-pop .tl-kf-pose-row { gap: 8px; }
+.tl-kf-slider {
+  flex: 1 1 90px;
+  min-width: 72px;
+  accent-color: var(--brand-primary, hsl(var(--primary)));
+}
+.tl-kf-slider:disabled { opacity: 0.5; }
+.tl-group-pop .tl-kf-pose-row .tl-kf-pose-num { flex: 0 0 auto; }
+
+/* ─── The docked curve editor (plans/104 §8, M2.7) ───────────────────────────
+   ONE surface: the plot lives at the bottom of the Keyframes popup instead of in a
+   nested popover of its own. It carries no transform/filter of its own — the
+   containing-block trap this whole file is written around — and the editor's own
+   sheet (easing-editor.css) owns everything inside it. */
+.tl-kf-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid hsl(var(--border));
+}
+.tl-kf-dock-note {
+  margin: 0;
+  font-size: calc(11.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+
+/* ─── The Camera group (plans/104 §8) ────────────────────────────────────────
+   Five preset moves that each write a whole track, then the pose channels. The
+   presets wrap rather than scroll: they are five short words, and a row that has to
+   be scrolled to reach "Reveal" hides the one that shows the feature off. */
+.tl-cam-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tl-group-pop .tl-cam-row { gap: 8px; }
+.tl-cam-num { width: 7em; }
+/* The DRAG / SCROLL affordance chip — the reference tool's own vocabulary, telling
+   you the canvas gesture that does the same thing. Decorative (aria-hidden): the
+   control beside it is the keyboard route, and describing a mouse to someone who is
+   not using one is noise. */
+.tl-cam-chip {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 5px;
+  font-size: calc(9.5px * var(--a11y-fs));
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
 /* ─── Diamonds on the bars (plans/104 §8) ────────────────────────────────────
    POINTER SUGAR. The strip is aria-hidden and its dots are non-interactive
    `<span>`s, because a `role="option"` bar may not own interactive children — the

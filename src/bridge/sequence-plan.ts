@@ -44,7 +44,7 @@ import { recTransition, isTransitionKind, type TransitionKind } from '../lib/tra
 // an oversight in two.
 import {
   parseKf, evaluateKf, projectLayer, dofBlur, resolveCamera,
-  KF_MAX_BLUR, KF_Z_FIELD_CLAMP,
+  DEFAULT_PERSPECTIVE, KF_CLAMPS, KF_MAX_BLUR, KF_Z_FIELD_CLAMP,
   type KfTrack, type KfPose, type KfCameraClip, type KfCameraView,
 } from '@lolly/engine';
 
@@ -487,6 +487,70 @@ export interface SeqPlanEnv {
   cameras?: readonly KfCameraClip[] | null;
 }
 
+/**
+ * The camera clips a parsed stage carries (§5.4), derived from its own layers.
+ *
+ * DERIVED, not re-queried: a `camera` layer is an ordinary `.lolly-box` with a
+ * `[data-cam]` marker inside it, already parsed into `SeqLayer` by `readLayer` — so
+ * building the clips from the LAYERS rather than from the DOM is what lets the worker
+ * have them too. `SeqJobLayer` carries `kind`, `z` and `kf` across `postMessage`, so
+ * the executor reconstructs the identical camera track from the identical numbers
+ * instead of being sent a second, separately-serialised copy that could disagree.
+ *
+ * Windows are BUTTED, half-open `[start, end)` — cuts, not blends (§5.4) — and an
+ * open-ended camera (no authored `data-t-dur`: the "Always on" scenery chip, or a
+ * clip that simply runs to the end) has no end at all. Latest-in-array wins, and DOM
+ * order is array order, so two overlapping cameras cut to the later one.
+ *
+ * `base` carries the camera's own `z` FIELD as the scene-default dolly. Every other
+ * channel comes from the track, where a `t0` key IS the scene default (evaluation
+ * clamp-holds before the first key), which is why there is no second wire for it.
+ */
+export function stageCameras(layers: readonly SeqLayer[] | null | undefined): KfCameraClip[] {
+  if (!Array.isArray(layers)) return [];
+  const out: KfCameraClip[] = [];
+  for (const L of layers) {
+    if (!L || L.kind !== 'camera') continue;
+    out.push({
+      start: L.startMs,
+      end: L.openEnded ? null : L.startMs + L.durMs,
+      base: L.z !== 0 ? { z: L.z } : null,
+      track: L.kf.length > 0 ? L.kf : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Does a camera exist that MOVES — i.e. that makes a layer's effects vary from frame
+ * to frame, so its plate cannot carry them (§5.5, P1 obligation 1)?
+ *
+ * Asked ONCE per render, over the whole camera set, because a plate is shot once for
+ * the whole render while `projecting` is a per-frame question. A camera that is
+ * anywhere other than the default at any instant changes eff (hence the magnification
+ * a plate is shot for) or the depth-of-field radius, and a filter baked into a plate
+ * cannot follow either — so `ownsLayerFx` has to hear about it.
+ *
+ * Deliberately COARSE: any track at all counts, and so does any base that is not the
+ * documented default pose. A false positive costs a compositor-owned filter on a
+ * document that has a camera; a false negative bakes a blur that was supposed to
+ * change. Only the first is recoverable, and only documents authored after this
+ * feature can have a camera at all, so the byte-identity floor is untouched.
+ */
+export function camerasMove(cameras: readonly KfCameraClip[] | null | undefined): boolean {
+  if (!Array.isArray(cameras)) return false;
+  for (const c of cameras) {
+    if (!c || typeof c !== 'object') continue;
+    if (Array.isArray(c.track) && c.track.length > 0) return true;
+    const b = c.base;
+    if (!b || typeof b !== 'object') continue;
+    if ((b.x ?? 0) !== 0 || (b.y ?? 0) !== 0 || (b.z ?? 0) !== 0) return true;
+    if ((b.a ?? 0) !== 0 || (b.f ?? 0) !== 0) return true;
+    if (b.p != null && b.p !== DEFAULT_PERSPECTIVE) return true;
+  }
+  return false;
+}
+
 /** The camera + stage `t` is projected through. One resolution per frame, shared by every layer. */
 export function planCameraView(env: SeqPlanEnv | null | undefined, tMs: number): KfCameraView {
   const w = Number(env?.stageW);
@@ -525,6 +589,13 @@ export interface KfFoldInput {
   zField: number;
   /** The box's authored blur radius, px. */
   authoredBlur: number;
+  /**
+   * The box's AUTHORED size, stage-native px — the base a `w`/`h` token replaces
+   * (§5.2, P1). Optional so every pre-w/h caller keeps its exact behaviour: absent
+   * means "no size to tween", and the fold hands back the same numbers it always did.
+   */
+  boxW?: number;
+  boxH?: number;
 }
 
 /** What the fold hands back. Every consumer applies these numbers; none re-derives them. */
@@ -542,6 +613,16 @@ export interface KfFold {
   blur: number;
   /** The depth this layer resolved to — the projection input AND the §4.2 paint-order key. */
   z: number;
+  /**
+   * The layer's RESOLVED size at this instant, stage-native px: its authored size
+   * unless a `w`/`h` token replaced it (§5.2, P1). Equal to the authored size on
+   * every layer that keyframes no size, which is the byte-identity floor — the DOM
+   * writes no `width`/`height` and the compositor draws the same rect it always did.
+   */
+  w: number;
+  h: number;
+  /** True when `w`/`h` are a keyed size rather than the box's own — the reflow flag. */
+  sized: boolean;
 }
 
 /**
@@ -568,8 +649,26 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
   const z = typeof pose.z === 'number' ? pose.z : inp.zField;
   const dxK = pose.x ?? 0;
   const dyK = pose.y ?? 0;
+  // SIZE, and it moves the anchor (§5.2, P1). `w`/`h` are ABSOLUTE px that replace the
+  // box's own size for their segment, and a box grows from its top-left in both
+  // evaluators — the DOM because `left`/`top` are what is authored and `width`/`height`
+  // are what is written, the canvas because `rect.x/y` is the draw origin. So the
+  // CENTRE the projection anchors on moves by half the growth, and it has to move here,
+  // in the one function both evaluators call, or the preview and the export disagree
+  // about where a stretched box's middle is. `sized` is false on every layer that
+  // keyframes no size, and then every expression below is the one that shipped.
+  const boxW = Number.isFinite(inp.boxW) ? (inp.boxW as number) : 0;
+  const boxH = Number.isFinite(inp.boxH) ? (inp.boxH as number) : 0;
+  const keyedW = typeof pose.w === 'number' && boxW > 0;
+  const keyedH = typeof pose.h === 'number' && boxH > 0;
+  // `parseKf` already held the token to `KF_CLAMPS`; re-held here because a pose can
+  // also be built by hand (a rebase, a test) and a NaN width would size a plate to NaN.
+  const w = keyedW ? clamp(pose.w as number, KF_CLAMPS.w[0], KF_CLAMPS.w[1]) : boxW;
+  const h = keyedH ? clamp(pose.h as number, KF_CLAMPS.h[0], KF_CLAMPS.h[1]) : boxH;
   const proj = projectLayer(view, {
-    bx: inp.cx, by: inp.cy, dxT: tr.dx, dyT: tr.dy, dxK, dyK, z,
+    bx: inp.cx + (w - boxW) / 2,
+    by: inp.cy + (h - boxH) / 2,
+    dxT: tr.dx, dyT: tr.dy, dxK, dyK, z,
   });
   const flat = proj.scale === 1 && view.x === 0 && view.y === 0;
   // DOF IS A SCREEN-SPACE NUMBER; THE OTHER TWO ARE LAYER-SPACE ONES. `dofBlur`
@@ -592,6 +691,9 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
     alpha: (typeof pose.o === 'number' ? tr.alpha * pose.o : tr.alpha) * proj.alphaGuard,
     blur: clamp(inp.authoredBlur + (pose.b ?? 0) + dof, 0, KF_MAX_BLUR),
     z,
+    w,
+    h,
+    sized: keyedW || keyedH,
   };
 }
 
@@ -668,6 +770,21 @@ export interface PlanItem {
    * keeps a clean document's plates and draws identical to today.
    */
   blur: number;
+  /**
+   * The layer's DRAW size at this instant, stage-native px — its authored
+   * `rect.w`/`rect.h` unless the track keyed `w`/`h` (§5.2, P1). An executor sizes
+   * and anchors from THESE, not from the rect, so a stretched box occupies
+   * `[rect.x, rect.x + w)` exactly as it does in the reflowed DOM.
+   */
+  w: number;
+  h: number;
+  /**
+   * True when `w`/`h` came from the track. The compositor's reflow flag: a sized
+   * layer's plate must be re-captured per frame (the live-raster path), because a
+   * stretched plate is a stretched picture and the preview REFLOWS — text rewraps,
+   * a border stays one pixel. Parity beats speed (§5.2).
+   */
+  sized: boolean;
   /**
    * The depth this layer resolved to at this instant — the `z` field unless a `z`
    * token in the track overrode it. This is the §4.2 paint-order key: the plan comes
@@ -842,8 +959,13 @@ export function sequenceDrawPlan(
         pose: evaluateKf(layer.kf, t - layer.startMs),
         zField: layer.z,
         authoredBlur: layer.blur,
+        boxW: layer.rect.w,
+        boxH: layer.rect.h,
       })
-      : { dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha, blur: layer.blur, z: 0 };
+      : {
+        dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha,
+        blur: layer.blur, z: 0, w: layer.rect.w, h: layer.rect.h, sized: false,
+      };
     // A layer the behind-camera guard has ramped to 0 stays IN the plan carrying
     // alpha 0, rather than being dropped from it: `alpha <= 0` is already the
     // executor's own skip, and the truncation reconciliation counts REQUESTS against
@@ -859,6 +981,9 @@ export function sequenceDrawPlan(
       rot: layer.rect.rot + fold.rot,
       blur: fold.blur,
       resolvedZ: fold.z,
+      w: fold.w,
+      h: fold.h,
+      sized: fold.sized,
     });
   }
   // §4.2: paint order IS depth order once anything is lifted. `Array.prototype.sort`

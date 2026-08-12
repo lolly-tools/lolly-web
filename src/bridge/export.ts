@@ -2029,22 +2029,32 @@ export function parseBackdropBlurPx(bf: string): number | null {
   return Number.isFinite(v) && v >= 0 ? v : null;
 }
 
-export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vectorCaps?: { blend?: boolean; clipBasicShapes?: boolean; dropShadow?: boolean; backdropBlur?: boolean; conic?: boolean }): string | null {
+export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vectorCaps?: { blend?: boolean; clipBasicShapes?: boolean; dropShadow?: boolean; cssFilter?: boolean; backdropBlur?: boolean; conic?: boolean }): string | null {
   const tag = el.tagName.toLowerCase();
   // <img> filters are already baked (bakeImageFilter); <svg> subtrees have their own
   // faithful/raster paths. Never rasterise those here.
   if (tag === 'img' || tag === 'svg') return null;
 
-  // filter: a drop-shadow-only filter is kept vector by the SVG walker (feDropShadow),
-  // so the caller declares that via vectorCaps.dropShadow; any other filter function has
-  // no vector equivalent → rasterise.
-  // Two vector routes for `filter`: drop-shadow(s) become real geometry, and every
-  // other CSS filter function is spec-defined AS an SVG filter, so the chain is
-  // emitted. Only a chain containing something with no SVG equivalent — a url()
-  // reference, an unknown function — still rasterises.
+  // filter: TWO vector routes, and BOTH are caller-declared, because only one walker
+  // can drive them. drop-shadow(s) become real geometry (vectorCaps.dropShadow →
+  // <feDropShadow>), and every other CSS filter function is spec-defined AS an SVG
+  // filter, so the chain can be emitted verbatim (vectorCaps.cssFilter). A chain
+  // containing something with no SVG equivalent — a url() reference, an unknown
+  // function — rasterises for everyone.
+  //
+  // `cssFilter` is a cap and not a bare `parseCssFilter(...)` test because "this value
+  // is expressible as an SVG filter" is NOT the same claim as "the caller will emit
+  // one". It was written as the bare test, so `filter: blur(6px)` was declared
+  // supported for EVERY caller while only the SVG walker fulfilled it: the PDF walker
+  // has no filter branch at all, so DOF blur and the layout-studio `shadow: content` /
+  // `shadow: depth` silhouettes were dropped from PDF in silence — no raster, no
+  // warning, no shadow. (Coloured drop-shadows escaped by accident: their computed
+  // value nests an rgba(), which parseCssFilter's flat tokeniser refuses, so they fell
+  // through to the hatch. A parser limitation is not a policy.) Declaring it makes the
+  // PDF walker take the per-element raster escape hatch instead — plan 104 §2, P1d.
   if (s.filter && s.filter !== 'none'
       && !(vectorCaps?.dropShadow && parseDropShadowFilter(s.filter))
-      && !parseCssFilter(s.filter)) return `filter:${s.filter}`;
+      && !(vectorCaps?.cssFilter && parseCssFilter(s.filter))) return `filter:${s.filter}`;
   const bf = s.backdropFilter || (s as { webkitBackdropFilter?: string }).webkitBackdropFilter;
   // A blur-only backdrop-filter IS expressible: duplicate the content already painted
   // behind the element, clip that duplicate to the element's own shape, and blur it.
@@ -2233,22 +2243,37 @@ function filterPrimitiveEl(NS: string, p: FilterPrimitive): Element {
   return e;
 }
 
+/** One top-level CSS filter function, allowing ONE level of nesting in its argument —
+ *  a colour function (`rgba(…)`) is the only thing that ever appears inside one. */
+const FILTER_FN_RE = /[a-z-]+\((?:[^()]|\([^()]*\))*\)/gi;
+
 /**
  * How far past its own box an element's `filter` paints, in CSS px.
  *
  * Only the filter: box-shadow is drawn separately by both walkers, and a transform is
  * neutralised before capture. A blur reaches ~3σ, and drop-shadow's σ IS its blur
  * value (unlike box-shadow's, which is half it — see buildDropShadowFilterEl).
+ *
+ * Measured PER TOP-LEVEL FUNCTION, not by handing the whole value to one parser, because
+ * a MIXED chain defeats both of them: parseDropShadowFilter refuses any chain containing
+ * a non-drop-shadow function, and parseCssFilter's flat tokeniser cannot see past the
+ * nested rgba() of a coloured drop-shadow. `filter: blur(10px) drop-shadow(rgba(0,0,0,
+ * 0.33) 0px 15px 30px)` — exactly what layout-studio emits for a blurred box carrying a
+ * depth shadow — therefore measured ZERO spill, so the raster hatch cropped the effect
+ * off at the box edge for the one case that spills furthest. Each function is still
+ * measured by the engine parsers; only the splitting is done here.
  */
-function effectSpillCss(style: CSSStyleDeclaration): number {
+export function effectSpillCss(style: CSSStyleDeclaration): number {
   const f = style.filter;
   if (!f || f === 'none') return 0;
   let reach = 0;
-  for (const sh of parseDropShadowFilter(f) ?? []) {
-    reach = Math.max(reach, sh.blur * 3 + Math.max(Math.abs(sh.dx), Math.abs(sh.dy)));
-  }
-  for (const p of parseCssFilter(f) ?? []) {
-    if (p.kind === 'blur') reach = Math.max(reach, p.stdDeviation * 3);
+  for (const [fn] of f.matchAll(FILTER_FN_RE)) {
+    for (const sh of parseDropShadowFilter(fn) ?? []) {
+      reach = Math.max(reach, sh.blur * 3 + Math.max(Math.abs(sh.dx), Math.abs(sh.dy)));
+    }
+    for (const p of parseCssFilter(fn) ?? []) {
+      if (p.kind === 'blur') reach = Math.max(reach, p.stdDeviation * 3);
+    }
   }
   return Math.min(200, reach);   // bounded: a pathological blur must not explode the capture
 }
@@ -3197,7 +3222,16 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
       _host?.log?.('warn', `svg: backdrop-filter not reconstructed on <${tag}> (${bfTransformed ? 'rotated' : bfPx === null ? 'not a plain blur()' : 'nothing behind it'}); the panel rasterises instead`);
     }
 
-    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), backdropBlur: bfHandled, conic: true }) : null;
+    // `cssFilter: true` — this walker emitted the whole chain as a <filter> a few
+    // blocks up, so a parseable filter stays vector here. It is stated rather than
+    // inferred so the PDF walker, which has no filter branch, can decline it and
+    // rasterise instead (see detectUnsupportedCss). KNOWN GAP, unchanged by that
+    // split: under `opts.noBoxShadow` (EMF/EPS/DXF) the chain is NOT emitted, so
+    // those three still lose a non-drop-shadow filter silently. Turning the cap off
+    // for them would rasterise instead — an improvement for EMF/EPS, but DXF is
+    // line-art only and drops raster regions outright, so it is a separate decision
+    // with its own measurements, not a rider on this one.
+    const rasterReason = opts.rasterFallback !== false ? detectUnsupportedCss(el, style, { blend: true, clipBasicShapes: clipHandled, dropShadow: Boolean(dropShadows), cssFilter: true, backdropBlur: bfHandled, conic: true }) : null;
     if (rasterReason) {
       const pxScale = scaleX * Math.max(1, d.dpi / CSS_DPI);
       const pxW = Math.max(2, Math.min(MAX_RASTER_PX, Math.round(w * pxScale)));
@@ -6665,6 +6699,26 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // Node uses CSS the walker can't express → embed it as an image at its rect
     // instead of dropping the effect. Returns on success so children/bg/text aren't
     // re-drawn. w,h are in points; RASTER_DPI sets the embedded bitmap resolution.
+    //
+    // NO `cssFilter` CAP, AND NO `dropShadow` CAP — deliberate, and the whole of plan
+    // 104's P1d work item. This walker has no `filter` branch: `filter: blur()` and
+    // `filter: drop-shadow()` have nothing to emit into a content stream, so every
+    // filtered box comes here. Declining the caps is what routes them here rather than
+    // letting detectUnsupportedCss call them "supported" on the SVG walker's behalf and
+    // drop them in silence, which is what happened until now (DOF blur and the
+    // layout-studio `shadow: content` / `shadow: depth` silhouettes simply were not in
+    // the PDF).
+    //
+    // WHY RASTER AND NOT A NATIVE BRANCH. The box-shadow block above proves a blur CAN
+    // be vectorised when the blurred thing is a KNOWN SHAPE: gaussianShadowBands paints
+    // the box's own rounded rect at a fan of outsets, because the blur of an edge is the
+    // Gaussian CDF. Neither of these is a known shape. `filter: drop-shadow()` follows
+    // the element's ALPHA SILHOUETTE — the transparent-PNG/icon cutout is the entire
+    // reason `shadow: content` exists — so a band fan of its bounding box would be a
+    // confidently wrong picture, worse than a bitmap. And `filter: blur()` blurs the
+    // element's own painted content, for which PDF has no operator at all. So the honest
+    // lane is the escape hatch: the effect is VISIBLE and correct, paid for in a bitmap
+    // for that one box. House style degrades visibly; it never refuses.
     const rasterReason = rasterFallback ? detectUnsupportedCss(el, style, { clipBasicShapes }) : null;
     if (rasterReason) {
       const dpr = RASTER_DPI / 72;
@@ -6682,7 +6736,21 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
       const spillCss = effectSpillCss(style);
       const padPt = spillCss * scaleX;
       const padPx = Math.round(padPt * dpr);
-      const png = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, imprint, false, padPx);
+      // The box-shadow is neutralised for the capture, because it has ALREADY been
+      // painted, as vector bands, a few blocks up. Without this the padded capture is
+      // the one place the two owners overlap: the pad exists to hold a filter's spill,
+      // and a box-shadow spills into exactly that ring, so it came out painted twice and
+      // twice as dark (measured 0.93% mean on a blurred box over a soft shadow, against
+      // 0.45% with the shadow left to the bands alone). Same neutralise-then-restore
+      // shape as the rotation branch's `transform` and the SVG hatch's `opacity`.
+      // The cost is that the bands are not themselves blurred by a layer blur, which is
+      // the smaller of the two errors and keeps the shadow editable vector.
+      const shadowed = Boolean(style.boxShadow && style.boxShadow !== 'none');
+      const prevShadow = shadowed ? el.style.boxShadow : '';
+      if (shadowed) el.style.boxShadow = 'none';
+      let png: string | null;
+      try { png = await rasterizeNodeToDataUrl(el as HTMLElement, pxW, pxH, undefined, imprint, false, padPx); }
+      finally { if (shadowed) el.style.boxShadow = prevShadow; }
       if (png) {
         _host?.log?.('info', `pdf: rasterised <${tag}> (unsupported ${rasterReason})`);
         pdf.addImage(png, 'PNG', x - padPt, y - padPt, w + 2 * padPt, h + 2 * padPt);
@@ -10153,11 +10221,31 @@ function addWatermarkOverlay(node: HTMLElement): () => void {
 // path (raster, SVG, PDF, …) can pick them up regardless of how it reads the DOM,
 // and the live editor is untouched afterwards. Mirrors the watermark overlay's
 // add/remove-in-finally discipline above.
+//
+// ⚑ ONE EXEMPTION: `[data-cam]` — the plans/104 §5.4 CAMERA MARKER. It wears
+// `data-export-hide` for the same reason everything else here does (nothing may draw
+// it), but it is not chrome: it is the MODEL element both evaluators key their camera
+// branch off. `layerKind` (sequence-plan) and `readTiming` (sequence-dom) ask the LIVE
+// tree for `[data-cam]` INSIDE the render — the compositor when it parses the stage,
+// and `renderSequenceCuts` when its session poses each cut — so detaching it deletes
+// the camera out from under them mid-export. Measured before this exemption existed,
+// on a 4 s push-in over four layers at z 0/80/160/240: through `renderSequence`
+// directly every layer parallaxed (40.2 / 47.1 / 55.7 / 66.4 px, matching the engine
+// to 0.4 px); through THIS funnel — the one every real export takes — all four moved
+// 0.0 px and the file fell from 230,632 B to 35,691 B, because a still picture
+// compresses to nothing. The contact sheet showed the second half of the same wound:
+// with no `[data-cam]` to find, the camera BOX stopped being `kind: 'camera'` and was
+// posed as an ordinary lifted layer, its dolly track read as depth.
+// Leaving it attached costs nothing: every walker skips `display: none` (both
+// layout-studio copies ship `.lolly-box-cam { display: none }` in styles.css), the
+// marker has no fill and no children, and the plates loop skips `camera` layers by
+// kind. Keyed on the ATTRIBUTE, not the class, because the attribute is what the
+// hooks promise and what both evaluators match on.
 function detachExportHidden(node: Element): () => void {
   if (!node?.querySelectorAll) return () => {};
-  const marked = [...node.querySelectorAll('[data-export-hide]')]
+  const marked = [...node.querySelectorAll('[data-export-hide]:not([data-cam])')]
     // Keep only the outermost when nested, so each re-insertion parent still exists.
-    .filter(el => !el.parentElement?.closest('[data-export-hide]'));
+    .filter(el => !el.parentElement?.closest('[data-export-hide]:not([data-cam])'));
   const slots = marked.map(el => ({ el, parent: el.parentNode, next: el.nextSibling }));
   slots.forEach(({ el }) => el.remove());
   // Restore in REVERSE document order: a marked node's saved `next` may be ANOTHER

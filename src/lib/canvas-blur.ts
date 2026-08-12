@@ -477,13 +477,67 @@ export interface BlurLadder {
 }
 
 /**
+ * The smallest blur an integer box pass can express: ONE width-3 box, variance
+ * (3² − 1)/12 = 2/3.
+ *
+ * Below it the construction has nothing between "identity" and this, which is what
+ * makes the band below load-bearing rather than a rounding detail.
+ */
+export const BOX_MIN_SIGMA = Math.sqrt(2 / 3);
+
+/**
  * Box widths whose n-fold convolution best approximates a Gaussian of `sigma`
  * (Wells 1986, in the integer form popularised by Ivan Kutskir).
  *
  * Three boxes is the standard trade — the error against a true Gaussian is a few
  * tenths of a percent, and a box blur is O(1) per pixel regardless of width.
+ *
+ * THE DEGENERATE BAND, and why it is not simply `[]` (plans/104 P1 obligation 5a,
+ * measured in M1's browser-verify run). The Wells construction collapses to all-width-1
+ * boxes — i.e. to the identity — for every sigma ≤ 0.577, and returning `[]` there means
+ * the caller's residual is DROPPED. That is invisible while the residual is tiny and
+ * very visible when the area rule put it there: a 3840×2160 layer asking for sigma 3
+ * takes shrink 4, leaving a residual of 0.559 that landed exactly in this band, so the
+ * two resamples became the whole blur and the layer was delivered at 0.72× / 0.82× the
+ * asked-for softness (Chromium / WebKit).
+ *
+ * So the band picks the NEAREST of the two answers the quantiser can give — nothing, or
+ * one width-3 box (sigma 0.8165) — and it measures nearness in SIGMA, the quantity the
+ * caller asked for and the quantity an eye compares, rather than in variance.
+ *
+ * `carried` is what makes that comparison honest, and it is the P1 review's correction
+ * (LENS 1, MEDIUM 6). The caller of this function inside a mip ladder is not starting
+ * from zero: the resample round trip has ALREADY supplied
+ * `MIP_RESAMPLE_SIGMA_PER_SHRINK` of blur, in quadrature, and it will be there whichever
+ * answer is picked. So the two candidates are `carried` and `hypot(carried, 0.8165)`,
+ * and the crossover between them sits where those two are equidistant from
+ * `hypot(carried, sigma)` — at `carried = 0.5` that is a residual of ≈ 0.530, not the
+ * bare `BOX_MIN_SIGMA / 2` ≈ 0.408. Comparing residuals alone made the promotion fire
+ * across the whole band, including the low end where it is far WORSE than doing nothing:
+ * at residual 0.41 it delivered 1.48× the request where the identity delivers 0.78×.
+ * With `carried` absent (0) the crossover is `BOX_MIN_SIGMA / 2` exactly as before, so
+ * a direct caller is unaffected.
+ *
+ * WHAT THIS IS NOT. It does not rescue the measured case, and the P1 review is right
+ * that the first version's comment claimed it did: at residual 0.559 the two candidates
+ * are 0.72× and 1.31× of the request on the MEASURED resample constant (0.541 at
+ * shrink 4), i.e. |error| 0.28 → 0.31. The quantiser has no third answer there. The one
+ * exact answer is to drop a mip level — at shrink 2 the same case leaves a residual of
+ * 1.41, which is expressible, and delivers 1.00× — and it is NOT taken on purpose: that
+ * level is where `BLUR_DIRECT_PIXELS` put the ladder in the first place, so going back
+ * up costs 4× the box-pass pixels (2.07 Mpx against a 1 Mpx budget) plus ~66 MB of
+ * transient Float32, per layer per frame, on the lane that IS the Safari mainline. Cost,
+ * not quality, is the reason — stated here rather than implied.
+ *
+ * Below the crossover the answer is still `[]`, and that is honest: it IS the closest
+ * expressible blur, and it costs nothing to deliver (no scratch, no readback). It is
+ * also the documented sub-`BLUR_MIN_SIGMA` divergence from the `ctx.filter` lane, which
+ * the same run measured as smaller than the comment used to claim — Chromium's own
+ * filter delivers nothing below sigma 0.7 either. What does NOT become continuous is the
+ * delivered blur: the step from nothing to one width-3 box is 0.8165 wide wherever the
+ * crossover is put, because that is the smallest thing three integer boxes can say.
  */
-export function boxSizesForGauss(sigma: number, n = 3): number[] {
+export function boxSizesForGauss(sigma: number, n = 3, carried = 0): number[] {
   if (!(sigma > 0) || n <= 0) return [];
   const wIdeal = Math.sqrt((12 * sigma * sigma) / n + 1);
   let wl = Math.floor(wIdeal);
@@ -494,7 +548,20 @@ export function boxSizesForGauss(sigma: number, n = 3): number[] {
   const m = Math.round(mIdeal);
   const out: number[] = [];
   for (let i = 0; i < n; i++) out.push(i < m ? wl : wu);
-  return out.every((v) => v <= 1) ? [] : out;
+  if (!out.every((v) => v <= 1)) return out;
+  // Degenerate: every box came out width 1, which convolves to nothing. Pick whichever
+  // of the two expressible DELIVERED blurs lands nearer the one that was asked for —
+  // which is the same `BOX_MIN_SIGMA / 2` midpoint when nothing is carried.
+  const c = Number.isFinite(carried) && carried > 0 ? carried : 0;
+  const want = Math.hypot(c, sigma);
+  if (Math.abs(want - c) < Math.abs(Math.hypot(c, BOX_MIN_SIGMA) - want)) return [];
+  // One width-3 box, the smallest thing this construction can actually say. Kept in the
+  // n-length shape the normal path returns (width-1 passes are identity, and the box
+  // blur already runs them in the ordinary `[1,1,3]` case), so a caller counting passes
+  // sees the same arity either way.
+  const promoted = out.slice(0, Math.max(0, n - 1));
+  promoted.push(3);
+  return promoted;
 }
 
 /**
@@ -508,13 +575,32 @@ export function boxSizesForGauss(sigma: number, n = 3): number[] {
  * round trip supplies for free.
  *
  * Null means "this lane cannot express that blur", and there are two ways to get it.
- * Below `BLUR_MIN_SIGMA` nothing moves an 8-bit level anywhere. Between it and roughly
- * 0.87 the ladder cannot shrink (any level would over-blur) and the three-box
- * construction degenerates to width-1 passes, i.e. to the identity — so the mip lane
- * applies NO blur where the filter lane applies a sub-pixel one. That is a stated,
- * bounded divergence between the lanes, not a hidden one: returning null makes it cost
- * nothing (no scratch, no copy) instead of allocating a full-size canvas to change
- * nothing.
+ * Below `BLUR_MIN_SIGMA` nothing moves an 8-bit level anywhere. Between it and
+ * `BOX_MIN_SIGMA / 2` (≈ 0.41) the ladder cannot shrink (any level would over-blur) and
+ * the three-box construction's nearest expressible answer IS the identity — so the mip
+ * lane applies no blur where a filter lane would apply a sub-pixel one. That is a
+ * stated, bounded divergence between the lanes, not a hidden one: returning null makes
+ * it cost nothing (no scratch, no copy) instead of allocating a full-size canvas to
+ * change nothing. It used to run all the way to ≈ 0.87; `boxSizesForGauss` now answers
+ * the band above 0.41 with one width-3 box, which is the nearer of the two answers the
+ * quantiser can give, so the divergence is half as wide as it was.
+ *
+ * THE RESIDUAL IS NEVER STRANDED (plans/104 P1 obligation 5a). `shrink` is chosen by
+ * the area rule up to `BLUR_AREA_SHRINK_PER_SIGMA · sigma`, and at that bound the
+ * residual is only exactly zero when `2·sigma` happens to be a power of two — otherwise
+ * a real residual is left over, and before the band fix a residual under 0.577 was
+ * silently dropped and the two resamples became the whole blur. That is the measured
+ * 0.72× / 0.82× under-delivery on a 3840×2160 layer at sigma 3. The fix is in the
+ * quantiser, not here: this function's choice of level is unchanged, so nothing that
+ * was already expressible moves.
+ *
+ * The quantiser is told what the resample already CARRIES (`resample`, in quadrature),
+ * because the choice it makes in the band is between two DELIVERED blurs, not between
+ * two residuals — see `boxSizesForGauss`. And the ladder deliberately does not climb
+ * back down a level to make the residual expressible: at sigma 3 on 3840×2160 that is
+ * exact (1.00×) and costs 4× the box-pass pixels against a budget this same function
+ * enforces two lines up. The trade is stated in the quantiser's docblock; the level
+ * chosen here is the area rule's, unchanged.
  */
 export function blurLadder(sigma: number, w: number, h: number): BlurLadder | null {
   if (!(sigma > BLUR_MIN_SIGMA) || !(w > 0) || !(h > 0)) return null;
@@ -529,7 +615,7 @@ export function blurLadder(sigma: number, w: number, h: number): BlurLadder | nu
   const inner = sigma / shrink;
   const resample = shrink > 1 ? MIP_RESAMPLE_SIGMA_PER_SHRINK : 0;
   const residual = Math.sqrt(Math.max(0, inner * inner - resample * resample));
-  const sizes = boxSizesForGauss(residual);
+  const sizes = boxSizesForGauss(residual, 3, resample);
   if (shrink === 1 && !sizes.length) return null;
   return { shrink, sigma: residual, sizes };
 }

@@ -189,6 +189,34 @@ const ROWS: Row[] = [
     maxMean: 0.006, maxWorst: 0.55 },                       // 0.62% → 0.16% / 36.1%
   { name: 'text-shadow, hard offset', markup: `<span style="color:#fff;text-shadow:2px 2px 0 #d33">Shadowed</span>`,
     maxMean: 0.005, maxWorst: 0.55 },                       // 0.50% → 0.10% / 37.0%
+
+  // ── plan 104 P1d: filter: blur() / drop-shadow() reaching PDF at all ─────────
+  // These are the pixel half of the P1d proof; export-pdf-filter.test.ts is the
+  // structural half (it counts the embedded image objects). Both are needed: an image
+  // object of the right size can still be the wrong picture, and a good pixel score
+  // says nothing about which of the two defects below produced it.
+  //
+  // The blur was not merely inaccurate, it was ABSENT — detectUnsupportedCss declared
+  // any parseable filter supported for every caller, so the PDF walker, which has no
+  // filter branch, dropped it in silence. Guards the vectorCaps.cssFilter split: with
+  // the cap wrongly declared here the box draws sharp and this row reads 1.62%.
+  { name: 'layer blur', markup: box('background:#4a90d9;filter:blur(6px)'),
+    maxMean: 0.005, maxWorst: 0.08 },                       // absent → 0.14% / 2.4%
+  // The mixed chain, which is what layout-studio emits for a blurred box carrying a
+  // depth shadow. This one ALWAYS rasterised (parseCssFilter cannot tokenise the nested
+  // rgba(), so it fell to the hatch by accident) — what it guards is the SPILL: measured
+  // whole-value it came out at zero padding, the capture was sized to the bare box, and
+  // the shadow sheared off at the edge for 3.12%. Per-function measurement is the fix.
+  { name: 'layer blur + drop-shadow', markup: box('background:#4a90d9;filter:blur(4px) drop-shadow(0 8px 16px rgba(0,0,0,0.5))'),
+    maxMean: 0.005, maxWorst: 0.08 },                       // 3.12% → 0.11% / 1.6%
+  // Two owners, one ring of pixels. The box-shadow is drawn as vector bands BEFORE the
+  // hatch fires, and the hatch's pad — which exists to hold the filter's spill — reaches
+  // into exactly the ring those bands occupy, so the shadow was painted twice and came
+  // out twice as dark. Neutralising box-shadow for the capture gives each pixel one
+  // owner: 0.93% doubled, 0.45% with the blur simply dropped (what shipped before P1d),
+  // 0.27% now — so the combination ends up MORE faithful than it was, not less.
+  { name: 'layer blur over a box-shadow', markup: box('background:#fff;box-shadow:0 6px 16px rgba(0,0,0,0.35);filter:blur(3px)'),
+    maxMean: 0.005, maxWorst: 0.14 },                       // 0.93% doubled → 0.27% / 7.1%
 ];
 
 for (const row of ROWS) {

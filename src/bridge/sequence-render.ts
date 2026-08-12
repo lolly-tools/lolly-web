@@ -69,12 +69,14 @@
 import {
   parseSequenceStage,
   applyDurationOverride,
+  camerasMove,
   frameTimestamps,
   activeFrameWindow,
   crossfadeJunctions,
   normalizeFrameScene,
   ownsLayerFx,
   sequenceDrawPlan,
+  stageCameras,
   sequenceError,
   toCodedError,
   SequenceError,
@@ -85,6 +87,7 @@ import {
 // The plate budget (plans/104 §5.5) and the spill geometry it prices. Both pure; the
 // budget is what turns "shoot the flown-past layer sharper" into a bounded promise.
 import {
+  blurScratchNeedBytes,
   planPlateBudget,
   type PlateLayerNeed,
 } from './plate-budget.ts';
@@ -129,6 +132,7 @@ import {
   embedMp4Meta,
   embedWebmMeta,
   iccProfileBytes,
+  parseClipShape,
   projectDepth,
   resolveCamera,
 } from '@lolly/engine';
@@ -441,6 +445,36 @@ interface RasterOpts {
    * it always was. The budget that chooses a non-zero pad is the planner's (§5.5).
    */
   pad?: number;
+  /**
+   * Shoot the element with its inline `clip-path` removed — the SHADOW rule, and the
+   * third member of the `opaque` / `neutralFilter` family (plans/104 P1 obligation 5b).
+   *
+   * Measured, not theorised (M1's browser-verify run, real Chromium and WebKit against
+   * real DOM output): `rasterBox` neutralises the inline `filter` but never the inline
+   * `clip-path`, and dom-to-image copies the latter onto its clone. So a
+   * compositor-owned layer's plate arrives ALREADY CLIPPED, and `drawItem` — which is
+   * correct, and was confirmed correct by the same run — then casts its drop-shadow
+   * from the clipped silhouette while the browser casts it from the UNCLIPPED element
+   * and clips the filter's OUTPUT afterwards (Filter Effects §5 / CSS Masking). Mean
+   * error 1.93 / 2.26, max 204, over 2–3 % of the frame; with an unclipped plate,
+   * 0.00 / 0.54. The fix belongs here, in the capture, and nowhere else.
+   *
+   * Only ever set when the compositor will reproduce the clip at the destination — i.e.
+   * when `parseClipShape` understands the value. An unparseable `clip-path`
+   * (`url(#mask)`, a shape nobody has taught the executor) is clipped by NOBODY once
+   * the plate stops carrying it, so those layers keep it baked in, exactly as today.
+   */
+  neutralClipPath?: boolean;
+  /**
+   * Shoot the element at a size other than its authored one, in ELEMENT px — the
+   * `w`/`h` channels' half of the capture (§5.2).
+   *
+   * A size tween REFLOWS: text rewraps, a border stays one pixel wide. A plate cannot
+   * be stretched to fake that, so a sized layer is re-photographed per frame with the
+   * element temporarily laid out at the tweened size. Absent — every layer that
+   * keyframes no size — is byte-for-byte today's shot.
+   */
+  size?: { w: number; h: number };
 }
 
 /**
@@ -487,6 +521,16 @@ export interface PlateWindowDemand {
    * plate. 1 on a flat scene, and 1 everywhere in P0, where there is no camera.
    */
   maxEff: number;
+  /**
+   * The largest DRAW size the layer reaches over the window, stage-native px — its
+   * authored box unless the track keys `w`/`h` (§5.2). The budget prices a size-tweened
+   * layer at its widest, because its plate is re-shot per frame and the peak is what
+   * has to fit.
+   */
+  maxW: number;
+  maxH: number;
+  /** True when the layer keys `w`/`h` at any frame: its plate is a per-frame re-capture. */
+  sized: boolean;
 }
 
 /**
@@ -504,15 +548,19 @@ export interface PlateWindowDemand {
  */
 export function plateWindowDemands(
   layers: SeqLayer[], grid: number[], totalMs: number, env?: SeqPlanEnv | null,
+  cameraMoves = false,
 ): Map<number, PlateWindowDemand> {
   const out = new Map<number, PlateWindowDemand>();
   const shadowsOf = new Map<number, ReturnType<typeof parseDropShadows>>();
   for (const L of layers) {
-    out.set(L.idx, { pad: 0, maxEff: 1 });
+    out.set(L.idx, { pad: 0, maxEff: 1, maxW: L.rect.w, maxH: L.rect.h, sized: false });
     // Only a layer whose fx the COMPOSITOR owns needs room for the spill: a layer that
     // keeps its filter on its plate has its effect baked in and clipped at the box
     // edge, exactly as every export before this feature did it (§5.5, `ownsLayerFx`).
-    shadowsOf.set(L.idx, L.shadowFilter && ownsLayerFx(L) ? parseDropShadows(L.shadowFilter) : []);
+    shadowsOf.set(
+      L.idx,
+      L.shadowFilter && ownsLayerFx(L, cameraMoves) ? parseDropShadows(L.shadowFilter) : [],
+    );
   }
   for (const t of grid) {
     const cam = resolveCamera(env?.cameras ?? null, t);
@@ -520,26 +568,85 @@ export function plateWindowDemands(
       const rec = out.get(item.layer.idx);
       if (!rec) continue;
       const shadows = shadowsOf.get(item.layer.idx) ?? [];
-      const blur = ownsLayerFx(item.layer) ? item.blur : 0;
+      const blur = ownsLayerFx(item.layer, cameraMoves) ? item.blur : 0;
       if (blur > 0 || shadows.length) {
         const pad = spillPad(blur, shadows);
         if (pad > rec.pad) rec.pad = pad;
       }
       const eff = projectDepth(cam, item.resolvedZ).eff;
       if (eff > rec.maxEff) rec.maxEff = eff;
+      if (item.sized) {
+        rec.sized = true;
+        if (item.w > rec.maxW) rec.maxW = item.w;
+        if (item.h > rec.maxH) rec.maxH = item.h;
+      }
     }
   }
   return out;
+}
+
+/**
+ * The OVERSCAN the stage background must be photographed with (plans/104 §5.5).
+ *
+ * THE BUG THIS EXISTS TO FIX: the bg plate is drawn full-canvas and untransformed,
+ * while every layer above it is projected — so a camera pan would slide the whole
+ * composition across frozen wallpaper, which is the exact opposite of a camera move.
+ * The bg is an implicit z = 0 LAYER and is projected like one; projecting it reveals
+ * what used to be off the edge, so it has to be shot bigger than the stage.
+ *
+ * The margin, derived rather than guessed. At z = 0 the plane maps to a rect of
+ * `W·eff × H·eff` centred at `(W/2 − camX·eff, H/2 − camY·eff)`, and a native-px margin
+ * of `pad` covers `pad·eff` of projected space, so covering the viewport on both sides
+ * of an axis needs
+ *
+ *     pad ≥ |camX| + (W/2)·(1/eff − 1)         (and likewise camY / H)
+ *
+ * — the pan term plus the pull-back term, since `eff < 1` (the camera moved AWAY) is
+ * what shrinks the plane inside the frame and opens a gap at every edge at once. Taken
+ * as the window maximum over the SAME grid the frame loop walks, exactly as `maxEff` is.
+ *
+ * 0 whenever there is no camera, which is every export written before this — and then
+ * the plate is the plate it always was and the executor takes its untransformed draw.
+ */
+export function bgOverscanPad(
+  stageW: number, stageH: number, grid: number[], env?: SeqPlanEnv | null,
+): number {
+  if (!env?.cameras || env.cameras.length === 0) return 0;
+  const w = Number.isFinite(stageW) && stageW > 0 ? stageW : 0;
+  const h = Number.isFinite(stageH) && stageH > 0 ? stageH : 0;
+  let pad = 0;
+  for (const t of grid) {
+    const cam = resolveCamera(env.cameras, t);
+    const eff = projectDepth(cam, 0).eff;
+    if (!(eff > 0)) continue;
+    const k = (1 / eff - 1) / 2;
+    pad = Math.max(pad, Math.abs(cam.x) + w * k, Math.abs(cam.y) + h * k);
+  }
+  return pad > 0 ? pad : 0;
 }
 
 async function rasterBox(
   el: HTMLElement, S: number, hide: Element[] = [], ropts: RasterOpts = {},
 ): Promise<HTMLCanvasElement | null> {
   const lib = await getDomToImage();
+  const restore: (() => void)[] = [];
+  // The SIZE OVERRIDE goes on FIRST, before anything is measured: a size tween's whole
+  // point is that the element re-lays-out, so the shot's own `bw`/`bh` have to be the
+  // tweened ones and the clone's `style.width/height` (below) have to agree with them.
+  if (ropts.size && ropts.size.w > 0 && ropts.size.h > 0) {
+    const s = el.style;
+    const pw = s.width;
+    const ph = s.height;
+    s.width = `${ropts.size.w}px`;
+    s.height = `${ropts.size.h}px`;
+    restore.push(() => {
+      if (pw) s.width = pw; else s.removeProperty('width');
+      if (ph) s.height = ph; else s.removeProperty('height');
+    });
+  }
   const bw = Math.max(1, parseFloat(el.style.width) || el.offsetWidth || 1);
   const bh = Math.max(1, parseFloat(el.style.height) || el.offsetHeight || 1);
   const frame = plateShotFrame(bw, bh, S, ropts.pad ?? 0);
-  const restore: (() => void)[] = [];
   // THE STAGE IS LIVE, AND THE CLOCK HAS BEEN ON IT. Every box outside the
   // playhead window carries `.seq-off`, which timeline.css turns into
   // `display:none !important`, and dom-to-image copies the computed cssText
@@ -584,6 +691,15 @@ async function rasterBox(
     const prev = el.style.filter;
     el.style.removeProperty('filter');
     restore.push(() => { if (prev) el.style.filter = prev; else el.style.removeProperty('filter'); });
+  }
+  if (ropts.neutralClipPath) {
+    // Same posture as `neutralFilter`, for the same reason: REMOVE the inline
+    // declaration, never write `clip-path:none`, which would also out-specify a
+    // stylesheet-authored clip the executor has no idea about and never reproduces.
+    // The inline one is the one `readLayer` reads and the one `drawItem` re-applies.
+    const prev = el.style.clipPath;
+    el.style.removeProperty('clip-path');
+    restore.push(() => { if (prev) el.style.clipPath = prev; else el.style.removeProperty('clip-path'); });
   }
   try {
     return await lib.toCanvas(el, {
@@ -954,23 +1070,49 @@ async function renderSequenceAuthored(
   //   eff  — how much EXTRA resolution the projection asked for, after the budget has
   //          had its say. 1 with no camera, which is every P0 export, and `S * 1` is
   //          exactly `S`.
-  const planEnv: SeqPlanEnv = { stageW: nativeW, stageH: nativeH };
-  const demands = plateWindowDemands(stage.layers, usedGrid, stage.totalMs, planEnv);
+  // The cameras (§5.4), derived from the stage's own `camera` layers — the same
+  // function the worker calls over the same layers, so the two evaluators can never be
+  // told different cameras. `camMoves` is asked ONCE for the whole render because a
+  // plate is shot once for the whole render (the P1 obligation): under a moving camera
+  // eff and the depth-of-field radius vary per frame, so the compositor owns every
+  // projectable layer's filter rather than letting a plate bake one instant of it.
+  const cameras = stageCameras(stage.layers);
+  const planEnv: SeqPlanEnv = { stageW: nativeW, stageH: nativeH, cameras };
+  const camMoves = camerasMove(cameras);
+  const demands = plateWindowDemands(stage.layers, usedGrid, stage.totalMs, planEnv, camMoves);
+  // The blur lanes pool their scratch canvases ACROSS frames (canvas-blur.ts's POOL),
+  // and those scratches are plate-sized — so they are part of what this render will
+  // actually hold, not an unpriced extra. Peak pool occupancy is what the budget has to
+  // see; `blurScratchNeedBytes` derives it from the same per-layer pads and effs.
   const budget = planPlateBudget({
-    layers: stage.layers.map((L): PlateLayerNeed => ({
-      idx: L.idx,
-      kind: L.kind,
-      w: L.rect.w,
-      h: L.rect.h,
-      pad: demands.get(L.idx)?.pad ?? 0,
-      maxEff: demands.get(L.idx)?.maxEff ?? 1,
-      // The lottie player is not consulted until the loop below, so a lottie layer is
-      // priced as if it WILL go live (two plates). Over-counting is the safe direction
-      // for a memory budget.
-      needsLiveRaster: L.kind === 'lottie',
-    })),
+    layers: stage.layers.map((L): PlateLayerNeed => {
+      const d = demands.get(L.idx);
+      return {
+        idx: L.idx,
+        kind: L.kind,
+        // A size-tweened layer is priced at its WIDEST: its plate is re-shot per frame,
+        // so the peak is the one that has to fit.
+        w: Math.max(L.rect.w, d?.maxW ?? 0),
+        h: Math.max(L.rect.h, d?.maxH ?? 0),
+        pad: d?.pad ?? 0,
+        maxEff: d?.maxEff ?? 1,
+        // The lottie player is not consulted until the loop below, so a lottie layer is
+        // priced as if it WILL go live (two plates). Over-counting is the safe direction
+        // for a memory budget — and a size-tweened layer goes live for certain.
+        needsLiveRaster: L.kind === 'lottie' || (d?.sized ?? false),
+      };
+    }),
     scale: S,
     worker: supportsWorkerSequenceRender(),
+    reserveBytes: blurScratchNeedBytes(
+      stage.layers.map((L) => ({
+        w: Math.max(L.rect.w, demands.get(L.idx)?.maxW ?? 0),
+        h: Math.max(L.rect.h, demands.get(L.idx)?.maxH ?? 0),
+        pad: demands.get(L.idx)?.pad ?? 0,
+        owned: ownsLayerFx(L, camMoves),
+      })),
+      S,
+    ),
   });
   // The no-silent-caps rule: exactly one line, naming what was clamped and why.
   if (budget.warning) log('warn', budget.warning);
@@ -979,14 +1121,51 @@ async function renderSequenceAuthored(
   // Whether this layer's plate is shot with its inline filter removed — the ONE
   // predicate the executor's `itemFx` asks too, so a plate and the draw that places it
   // can never disagree about who owns the effect.
-  const ownedFx = new Map(stage.layers.map((L) => [L.idx, ownsLayerFx(L)]));
+  const ownedFx = new Map(stage.layers.map((L) => [L.idx, ownsLayerFx(L, camMoves)]));
   const neutralOf = (idx: number): boolean => ownedFx.get(idx) ?? false;
+  // …and whether its plate is ALSO shot without the `clip-path` (P1 obligation 5b).
+  // Only when the compositor both owns the fx (so the shadow it casts is its own) and
+  // can actually reproduce the shape at the destination — `parseClipShape` returning
+  // null means nobody would clip it, and an unclipped plate would then leak.
+  const clipNeutral = new Map(stage.layers.map((L) => [
+    L.idx,
+    !!L.clipPath && ownsLayerFx(L, camMoves) && parseClipShape(L.clipPath, L.rect.w, L.rect.h) != null,
+  ]));
+  const clipNeutralOf = (idx: number): boolean => clipNeutral.get(idx) ?? false;
+  // The DRAW size a size-tweened layer's live plate is shot at, per frame.
+  const sizedLayers = new Set(stage.layers.filter((L) => demands.get(L.idx)?.sized).map((L) => L.idx));
+  // The stage background's own margin (§5.5). It joins the memory budget the same way
+  // every other plate does — as bytes on a layer the budget can see — rather than as an
+  // unpriced extra: a big pull-back can ask for a plate several times the artboard.
+  const bgPadWanted = transparent ? 0 : bgOverscanPad(nativeW, nativeH, usedGrid, planEnv);
+  const bgBudget = bgPadWanted > 0
+    ? planPlateBudget({
+      layers: [{ idx: -1, kind: 'static', w: nativeW, h: nativeH, pad: bgPadWanted, maxEff: 1 }],
+      scale: S,
+      worker: supportsWorkerSequenceRender(),
+    })
+    : null;
+  const bgPad = bgBudget ? (bgBudget.padOf.get(-1) ?? 0) : 0;
+  if (bgBudget?.warning) log('warn', `sequence: the camera's background overscan was trimmed — ${bgBudget.warning}`);
 
   const wire: SeqJobLayer[] = [];
   const plates: SeqJob['plates'] = [];
   const clips: SeqJob['clips'] = [];
-  /** Layers whose picture must be re-rastered off the LIVE player every frame. */
-  const liveBoxes = new Map<number, { marker: Element; box: HTMLElement }>();
+  /**
+   * Layers whose picture must be re-rastered off the LIVE DOM every frame.
+   *
+   * Two reasons a layer lands here, and they are independent: a Lottie box with a
+   * mounted player (`marker` set — the frame has to be scrubbed before the shot), and a
+   * layer whose `w`/`h` are tweened (§5.2 — the element has to be laid out at the size
+   * of the moment before the shot, because a stretched plate does not REFLOW).
+   *
+   * `hide` is the static plate's own hide list, carried so the live shot is the SAME
+   * photograph: a video layer's plates are taken with the `<video>` (and any frozen
+   * `[data-motion-still]` sibling) hidden, because the decoded frame is composited
+   * between them — a live shot that kept them would paint a stale poster under the
+   * frame it is about to draw.
+   */
+  const liveBoxes = new Map<number, { marker: Element | null; box: HTMLElement; hide: Element[] }>();
   let bgRaster: HTMLCanvasElement | null = null;
   // The timeline panel's frame thumbnails run through the SAME dom-to-image instance
   // this render is about to drive, and that library's options / url cache / sandbox
@@ -1014,10 +1193,13 @@ async function renderSequenceAuthored(
         // stacked, under every output frame — the "stuck on slide 1" bug. Each timed
         // frame is instead photographed as its own per-layer plate below, gated to its
         // window. Harmless in object-clip mode: the frame selector matches nothing there.
+        // …and with the camera's OVERSCAN, so a pan/pull-back reveals artboard rather
+        // than a hard edge (§5.5). `bgPad` is 0 on every camera-less export, and at 0
+        // `plateShotFrame` produces byte-for-byte the shot it always did.
         bgRaster = await rasterBox(stageEl, S, [
           ...stageEl.querySelectorAll('.lolly-box'),
           ...stageEl.querySelectorAll('[data-pdf-page][data-t-start]'),
-        ]);
+        ], bgPad > 0 ? { pad: bgPad } : {});
       }
       // Every PLANNED layer's plate is shot the same way: at full opacity, with no
       // filter, and with its own padding and resolution — the things the planner owns
@@ -1030,12 +1212,19 @@ async function renderSequenceAuthored(
         // layer with depth is shot clean and the compositor applies its whole filter;
         // a layer without keeps its filter baked into the plate, which is what every
         // pre-104 `shadow: content` / `blur` document has always exported.
-        const plateOpts: RasterOpts = { opaque: true, neutralFilter: neutralOf(L.idx), pad: padOf(L.idx) };
+        const plateOpts: RasterOpts = {
+          opaque: true,
+          neutralFilter: neutralOf(L.idx),
+          neutralClipPath: clipNeutralOf(L.idx),
+          pad: padOf(L.idx),
+        };
         const PS = plateScaleOf(L.idx);
         let under: HTMLCanvasElement | null = null;
         let over: HTMLCanvasElement | null = null;
         let media: HTMLElement | null = null;
         let needsLiveRaster = false;
+        /** What this layer's plates were shot WITHOUT — the live re-shot must match. */
+        let plateHide: Element[] = [];
         // A CAMERA is a pose over time, not a picture (plans/104 §5.4): no plate, the
         // same way an audio bed has none. `w.first >= 0` would otherwise photograph its
         // marker div — an empty, `data-export-hide` box — once per export.
@@ -1051,6 +1240,7 @@ async function renderSequenceAuthored(
               ...(media ? [media] : []),
               ...el.querySelectorAll('[data-motion-still]'),
             ];
+            plateHide = hide;
             under = await rasterBox(el, PS, hide, plateOpts);
             over = await rasterBox(el, PS, hide, { ...plateOpts, transparentBg: true });
           } else if (L.kind === 'lottie') {
@@ -1061,11 +1251,17 @@ async function renderSequenceAuthored(
             // the sequence still runs fully worker-side.
             const player = marker ? (lottiePlayerFor(marker) as LottieScrubber | null) : null;
             if (marker && player?.goToAndStop) {
-              liveBoxes.set(L.idx, { marker, box: el });
+              liveBoxes.set(L.idx, { marker, box: el, hide: [] });
               needsLiveRaster = true;
             }
           } else {
             under = await rasterBox(el, PS, [], plateOpts);
+          }
+          // A size tween re-photographs per frame whatever kind the layer is — the
+          // static plate above stays as the fallback for a frame whose shot fails.
+          if (sizedLayers.has(L.idx) && !liveBoxes.has(L.idx)) {
+            liveBoxes.set(L.idx, { marker: null, box: el, hide: plateHide });
+            needsLiveRaster = true;
           }
         }
         plates.push({ idx: L.idx, under, over });
@@ -1111,10 +1307,32 @@ async function renderSequenceAuthored(
       // the same number `S` was derived from, so the principal point stays the stage
       // centre at every export scale.
       stageW: nativeW, stageH: nativeH,
-      bg: bgRaster, plates, clips,
+      bg: bgRaster, bgPad, plates, clips,
       maxLiveProviders: MAX_LIVE_PROVIDERS, watchdogMs: WATCHDOG_MS,
     };
-    const liveRaster = makeLiveRaster(liveBoxes, plateScaleOf, padOf, neutralOf);
+    // The DRAW size of a size-tweened layer at one output frame. Answered by re-running
+    // the SAME planner the executor runs, over the same layers, grid, totalMs and env —
+    // never by a second evaluation of the track — so the plate is shot at exactly the
+    // size the draw will place it at. Memoised per frame index because a frame typically
+    // asks for at most one or two layers and the executor walks the grid in order.
+    let sizeCache: { i: number; byIdx: Map<number, { w: number; h: number }> } | null = null;
+    const sizeAt = (idx: number, frameIndex: number): { w: number; h: number } | null => {
+      if (!sizedLayers.has(idx)) return null;
+      if (!sizeCache || sizeCache.i !== frameIndex) {
+        const t = usedGrid[frameIndex];
+        const byIdx = new Map<number, { w: number; h: number }>();
+        if (t != null) {
+          for (const it of sequenceDrawPlan(stage.layers, t, stage.totalMs, planEnv)) {
+            if (it.sized) byIdx.set(it.layer.idx, { w: it.w, h: it.h });
+          }
+        }
+        sizeCache = { i: frameIndex, byIdx };
+      }
+      return sizeCache.byIdx.get(idx) ?? null;
+    };
+    const liveRaster = makeLiveRaster(
+      liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt,
+    );
     const hybrid = liveBoxes.size > 0;
 
     // ── which thread executes ─────────────────────────────────────────────
@@ -1222,31 +1440,60 @@ interface LottieScrubber { goToAndStop?(v: number, isFrame?: boolean): void; fra
  * touching lottie-web or dom-to-image at all.
  */
 function makeLiveRaster(
-  boxes: Map<number, { marker: Element; box: HTMLElement }>,
+  boxes: Map<number, { marker: Element | null; box: HTMLElement; hide: Element[] }>,
   scaleOf: (idx: number) => number,
   padOf: (idx: number) => number,
   neutralOf: (idx: number) => boolean,
+  clipNeutralOf: (idx: number) => boolean,
+  /** The layer's DRAW size at that output frame, or null when it keyframes no size. */
+  sizeAt: (idx: number, frameIndex: number) => { w: number; h: number } | null,
 ): SeqJobIO['lottieAt'] {
   if (!boxes.size) return undefined;
-  const memo = new Map<number, { key: number; shot: HTMLCanvasElement }>();
-  return async (layerIdx, _frame, sourceSec) => {
+  // Keyed by layer AND slot: a video layer's two plates are two different pictures of
+  // the same box (opaque with the media hidden, then transparent), so one memo slot per
+  // layer would answer the `over` request with the `under` shot.
+  const memo = new Map<string, { key: number; shot: HTMLCanvasElement }>();
+  return async (layerIdx, frameIndex, sourceSec, slot = 'under') => {
     const entry = boxes.get(layerIdx);
     if (!entry) return null;
-    const player = lottiePlayerFor(entry.marker) as LottieScrubber | null;
-    if (!player?.goToAndStop) return null;
-    const rate = Number.isFinite(player.frameRate) && (player.frameRate as number) > 0 ? (player.frameRate as number) : 30;
-    const key = Math.round(sourceSec * rate);
-    const prev = memo.get(layerIdx);
-    if (prev && prev.key === key) return prev.shot;
-    try { player.goToAndStop((key / rate) * 1000, false); } catch { return prev?.shot ?? null; }
-    // The SAME shot the static plates take — opaque, filter-neutral, identically
-    // padded and at the identical scale. A live plate is a drop-in replacement for the
-    // static one on the frames it covers, so any difference in how it is framed is a
-    // jump in the picture.
-    const shot = await rasterBox(entry.box, scaleOf(layerIdx), [], {
-      opaque: true, neutralFilter: neutralOf(layerIdx), pad: padOf(layerIdx),
+    const memoKey = `${layerIdx}:${slot}`;
+    const size = sizeAt(layerIdx, frameIndex);
+    let key: number;
+    if (entry.marker) {
+      const player = lottiePlayerFor(entry.marker) as LottieScrubber | null;
+      if (!player?.goToAndStop) return null;
+      const rate = Number.isFinite(player.frameRate) && (player.frameRate as number) > 0 ? (player.frameRate as number) : 30;
+      key = Math.round(sourceSec * rate);
+      // A size tween moves the picture on EVERY frame even when the animation itself
+      // does not, so the memo key has to carry the size too or a stretching Lottie
+      // would be answered from a plate shot at the previous width.
+      if (size) key = key * 4093 + Math.round(size.w * 100) + Math.round(size.h * 100) * 65537;
+      const prev = memo.get(memoKey);
+      if (prev && prev.key === key) return prev.shot;
+      try { player.goToAndStop((Math.round(sourceSec * rate) / rate) * 1000, false); } catch { return prev?.shot ?? null; }
+    } else {
+      // Size-only: the frame index IS the key, quantised through the size so a track
+      // that holds a value for a second is photographed once rather than thirty times.
+      if (!size) return null;
+      key = Math.round(size.w * 100) + Math.round(size.h * 100) * 65537;
+      const prev = memo.get(memoKey);
+      if (prev && prev.key === key) return prev.shot;
+    }
+    // The SAME shot the static plate for THIS SLOT takes — same hide list, same
+    // filter/clip neutralisation, identically padded, at the identical scale, and
+    // transparent for `over` exactly as the static pair is. A live plate is a drop-in
+    // replacement for the static one on the frames it covers, so any difference in how
+    // it is framed is a jump in the picture.
+    const shot = await rasterBox(entry.box, scaleOf(layerIdx), entry.hide, {
+      opaque: true,
+      neutralFilter: neutralOf(layerIdx),
+      neutralClipPath: clipNeutralOf(layerIdx),
+      pad: padOf(layerIdx),
+      ...(slot === 'over' ? { transparentBg: true } : {}),
+      ...(size ? { size } : {}),
     });
-    if (shot) { memo.set(layerIdx, { key, shot }); return shot; }
+    const prev = memo.get(memoKey);
+    if (shot) { memo.set(memoKey, { key, shot }); return shot; }
     return prev?.shot ?? null;
   };
 }
@@ -1359,7 +1606,7 @@ async function onSeqWorkerMessage(w: Worker, m: SeqWorkerOut): Promise<void> {
     // slows the render instead of growing worker memory.
     let bitmap: ImageBitmap | null = null;
     try {
-      const img = await run.live?.(m.layerIdx, m.frame, m.sourceSec);
+      const img = await run.live?.(m.layerIdx, m.frame, m.sourceSec, m.slot);
       if (img) bitmap = await createImageBitmap(img as ImageBitmapSource);
     } catch { bitmap = null; }
     const reply: SeqWorkerIn = { type: 'live', id: m.id, token: m.token, bitmap };

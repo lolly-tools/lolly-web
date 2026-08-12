@@ -61,7 +61,8 @@ import {
   LIVE_RASTER_QUEUE,
 } from './sequence-render.ts';
 import {
-  EMPTY_KF_TRACK, SequenceError, kfTrackOf, sequenceDrawPlan, sequenceError,
+  EMPTY_KF_TRACK, SequenceError, camerasMove, kfTrackOf, sequenceDrawPlan, sequenceError,
+  stageCameras,
   type PlanItem,
 } from './sequence-plan.ts';
 import {
@@ -995,4 +996,212 @@ test('contract: the executor is DOM-free, so it can actually load in worker scop
 test('contract: the offload is opt-in behind the same flag as the video-encode worker', () => {
   assert.match(strip(read('./sequence-render.ts')), /localStorage\.getItem\('lolly\.workerEncode'\)/);
   assert.match(strip(read('./video-encode.ts')), /localStorage\.getItem\('lolly\.workerEncode'\)/);
+});
+
+// ── P1a: cameras across the wire, and the w/h channels ──────────────────────
+
+test('the CAMERA crosses the wire as a layer, and both threads derive it the same way', () => {
+  // plans/104 §5.4. The cameras are NOT a second field on the job: the executor derives
+  // them from the very layers that crossed, using the same `stageCameras` the main
+  // thread used over the same `kind`/`z`/`kf`. A second serialisation is a second thing
+  // that can disagree, and worker-vs-in-thread sha identity is the property at stake.
+  const camWire = layer({
+    kind: 'camera', startMs: 0, durMs: 1000, z: -300,
+    kf: kfTrackOf('t0_x-100_z-400*t1000_el_x100'),
+  });
+  const cloned = structuredClone(camWire);
+  const cams = stageCameras([hydrateJobLayer(cloned)]);
+  assert.equal(cams.length, 1);
+  assert.deepEqual({ start: cams[0]!.start, end: cams[0]!.end }, { start: 0, end: 1000 });
+  assert.deepEqual(cams[0]!.base, { z: -300 }, 'the z FIELD is the scene-default dolly');
+  assert.equal(cams[0]!.track?.length, 2);
+  assert.equal(camerasMove(cams), true);
+
+  // …and a content layer under it really is projected by it: a flat box is magnified by
+  // a camera that has dollied in, which is the whole of "the camera reaches the plan".
+  const box = layer({ kind: 'static', rect: { x: 0, y: 0, w: 100, h: 100, rot: 0 } });
+  const layers = [hydrateJobLayer(cloned), hydrateJobLayer(box)];
+  const env = { stageW: 1920, stageH: 1080, cameras: stageCameras(layers) };
+  const item = sequenceDrawPlan(layers, 0, 1000, env).find((p) => p.layer.kind === 'static') as PlanItem;
+  assert.ok(item.scale > 1, `the camera magnifies a flat box (got ${item.scale})`);
+});
+
+test('drawItem: `cameraMoves` reaches itemFx, so a flat shadowed layer is compositor-owned', () => {
+  // P1 obligation 1, at the third obeying site. Without the parameter a camera-moved
+  // flat layer's filter is baked into its plate AND left un-owned by the executor —
+  // correct today only because no camera exists.
+  const shadowed = layer({ shadowFilter: 'drop-shadow(0px 12px 24px #00000055)' });
+  assert.equal(itemFx(planOne(shadowed), 1), null, 'still: the plate keeps it');
+  const fx = itemFx(planOne(shadowed), 1, true);
+  assert.ok(fx, 'moving: the compositor owns it');
+  assert.equal(fx.shadows.length, 1);
+});
+
+test('§5.2 w/h: the draw is sized by the RESOLVED box, growing from the top-left', async () => {
+  const ctx = opCtx();
+  const w = layer({
+    rect: { x: 40, y: 20, w: 100, h: 100, rot: 0 },
+    kf: kfTrackOf('t0_el_w100_h100*t1000_el_w300_h100'),
+  });
+  const item = planOne(w, 500);
+  assert.equal(item.sized, true);
+  assert.equal(item.w, 200, 'half way across the segment');
+  await drawItem(ctx, item, RES(), 1);
+  const translate = ctx.ops.find((o) => o.op === 'translate');
+  // The centre is `x + w/2` at the size of the moment: 40 + 100 = 140, not the
+  // authored 40 + 50 = 90. A box grows right/down in the reflowed DOM, so it must here.
+  assert.deepEqual(translate?.args, [140, 70]);
+  const draw = ctx.ops.find((o) => o.op === 'drawImage');
+  assert.deepEqual(draw?.args, [-100, -50, 200, 100], 'drawn at the resolved size');
+});
+
+test('§5.2 w/h: a size tween forces a per-frame live re-capture (a plate cannot REFLOW)', async () => {
+  // The Lottie machinery, reused: a stretched plate is a stretched picture, while the
+  // preview rewraps its text and keeps its border one pixel wide. Parity beats speed,
+  // so the layer is re-photographed at the size of the moment — even though it is a
+  // STATIC box with no source time at all, which is why `sourceSec` is no longer part
+  // of the gate.
+  const sized = layer({ kind: 'static', kf: kfTrackOf('t0_el_w100*t1000_el_w400') });
+  const asked: { idx: number; frame: number; sourceSec: number }[] = [];
+  const io = {
+    frame: async (): Promise<void> => {},
+    lottieAt: async (idx: number, frame: number, sourceSec: number) => {
+      asked.push({ idx, frame, sourceSec }); return null;
+    },
+  };
+  // The FRAME asks, not the wire flag. The main thread does set `needsLiveRaster` on a
+  // sized layer (it computed the demands that decided so), but the executor must not
+  // depend on that: a job built by hand — or by an older main thread — would otherwise
+  // quietly lose the reflow and stretch one plate across the whole tween.
+  await runSequenceJob(job([sized]), {} as AnyCanvas, stubCtx(), io);
+  assert.equal(asked.length, 4, 'once per active frame, on `item.sized` alone');
+  assert.ok(asked.every((a) => a.sourceSec === 0), 'a static box has no source time to offer');
+
+  // …and a layer that keys no size still never goes live, which is the floor.
+  asked.length = 0;
+  await runSequenceJob(job([layer({ kf: kfTrackOf('t0_x0*t1000_x40') })]), {} as AnyCanvas, stubCtx(), io);
+  assert.equal(asked.length, 0);
+});
+
+test('§5.2 w/h: the live re-capture is the picture that gets DRAWN, on every kind', async () => {
+  // The other half of the test above, and the half that was missing: asking for the
+  // shot, paying for it, and then drawing the authored-size PLATE stretched to the
+  // tweened rect is exactly the failure the channel exists to prevent (text scaled
+  // instead of rewrapped, a 1 px border four px wide at w×4). The old test's stub
+  // returned null, so it proved the request and never the draw.
+  const tagOf = (d: unknown): string | undefined => (d as { tag?: string })?.tag;
+  const PLATE = { tag: 'plate' } as unknown as CanvasImageSource;
+  const OVER = { tag: 'plate-over' } as unknown as CanvasImageSource;
+  const LIVE = { tag: 'live' } as unknown as CanvasImageSource;
+  const LIVE_OVER = { tag: 'live-over' } as unknown as CanvasImageSource;
+
+  // A STATIC box: a text box that rewraps is `kind: 'static'`, which is the kind the
+  // shipped executor read `res.live` for in no branch at all.
+  const sized = layer({ kind: 'static', kf: kfTrackOf('t0_el_w100*t1000_el_w400') });
+  const one = job([sized]);
+  one.plates = [{ idx: sized.idx, under: PLATE, over: null }];
+  const ctxA = stubCtx();
+  await runSequenceJob(one, {} as AnyCanvas, ctxA, {
+    frame: async (): Promise<void> => {},
+    lottieAt: async () => LIVE,
+  });
+  assert.deepEqual(ctxA.draws.map(tagOf), ['live', 'live', 'live', 'live']);
+
+  // …and the static plate is still the FALLBACK for a frame whose shot fails.
+  const two = job([layer({ kind: 'static', kf: kfTrackOf('t0_el_w100*t1000_el_w400') })]);
+  two.plates = [{ idx: two.layers[0]!.idx, under: PLATE, over: null }];
+  const ctxB = stubCtx();
+  await runSequenceJob(two, {} as AnyCanvas, ctxB, {
+    frame: async (): Promise<void> => {},
+    lottieAt: async () => null,
+  });
+  assert.deepEqual(ctxB.draws.map(tagOf), ['plate', 'plate', 'plate', 'plate']);
+
+  // A VIDEO layer is one box photographed TWICE — opaque with the media hidden, then
+  // transparent — because the decoded frame is composited between them. So a size tween
+  // has to re-shoot both slots, or the stale `over` ghosts its text over the reflowed
+  // copy in `under`.
+  const clip = layer({ kind: 'video', kf: kfTrackOf('t0_el_w100*t1000_el_w400') });
+  const three = job([clip]);
+  three.plates = [{ idx: clip.idx, under: PLATE, over: OVER }];
+  const slots: string[] = [];
+  const ctxC = stubCtx();
+  await runSequenceJob(three, {} as AnyCanvas, ctxC, {
+    frame: async (): Promise<void> => {},
+    lottieAt: async (_i: number, _f: number, _s: number, slot?: string) => {
+      slots.push(slot ?? 'under');
+      return slot === 'over' ? LIVE_OVER : LIVE;
+    },
+  } as never);
+  assert.deepEqual(slots.slice(0, 2), ['under', 'over'], 'both plates are re-shot');
+  assert.equal(slots.length, 8, 'two slots × four active frames');
+  assert.deepEqual(ctxC.draws.map(tagOf).slice(0, 2), ['live', 'live-over']);
+});
+
+test('§5.5 bg: the projected plate is placed by ITS OWN size and the STAGE centre', async () => {
+  // The encoder's dimensions are `Math.round(…) & ~1` — forced even for the codecs —
+  // while the plate is `Math.round((native + 2·bgPad)·S)` and every layer above is drawn
+  // in native·S space. Deriving the bg draw from `outW` therefore assumed
+  // `outW === nativeW·S`, which the even-rounding breaks by up to ~2 px: invisible as a
+  // static stretch, a sub-pixel drift of the background AGAINST the layers the moment
+  // the camera moves (P1 review, LOW 8).
+  const S = 2;
+  const nativeW = 101.5;
+  const nativeH = 51.5;
+  const bgPad = 20;
+  const plate = { width: Math.round((nativeW + bgPad * 2) * S), height: Math.round((nativeH + bgPad * 2) * S) };
+  assert.equal(plate.width, 283, 'the fixture really is a plate outW cannot express');
+  const cam = layer({ kind: 'camera', kf: kfTrackOf('t0_x0*t1000_x-40') });
+  const j = job([cam], 2, 2);
+  j.bg = plate as unknown as CanvasImageSource;
+  j.bgPad = bgPad;
+  j.scale = S;
+  j.stageW = nativeW;
+  j.stageH = nativeH;
+  j.outW = Math.round(nativeW * S) & ~1;   // 202, where nativeW·S is 203
+  j.outH = Math.round(nativeH * S) & ~1;
+  const ctx = opCtx();
+  await runSequenceJob(j, {} as AnyCanvas, ctx, { frame: async (): Promise<void> => {} });
+  const draw = ctx.ops.find((o) => o.op === 'drawImage');
+  assert.ok(draw, 'the background was drawn');
+  const cx = (nativeW * S) / 2;
+  const cy = (nativeH * S) / 2;
+  assert.deepEqual(draw!.args, [-(bgPad * S + cx), -(bgPad * S + cy), plate.width, plate.height]);
+  // …and the translate anchors on the STAGE centre, not the canvas's.
+  const tr = ctx.ops.find((o) => o.op === 'translate');
+  assert.equal(tr!.args[0], cx, 'x anchor is nativeW·S/2, not outW/2');
+  assert.equal(tr!.args[1], cy);
+});
+
+test('§5.2 w/h: a clip shape resolves against the TWEENED box, not the authored one', async () => {
+  // A `circle(50%)` stops being a circle exactly when the box stops being its authored
+  // size, so the percentage has to resolve against the box the browser laid out.
+  const ctx = opCtx();
+  const w = layer({
+    durMs: 2000,
+    rect: { x: 0, y: 0, w: 100, h: 100, rot: 0 },
+    clipPath: 'circle(50%)',
+    kf: kfTrackOf('t0_el_w100_h100*t1000_el_w200_h200'),
+  });
+  const arcs: number[][] = [];
+  class RecordingPath2D {
+    arc(...a: number[]): void { arcs.push(a); }
+    ellipse(): void {}
+    rect(): void {}
+    roundRect(): void {}
+    moveTo(): void {}
+    lineTo(): void {}
+    closePath(): void {}
+  }
+  const g = globalThis as { Path2D?: unknown };
+  const had = 'Path2D' in g;
+  const prev = g.Path2D;
+  g.Path2D = RecordingPath2D;
+  try {
+    await drawItem(ctx, planOne(w, 1000), RES(), 1);
+  } finally {
+    if (had) g.Path2D = prev; else delete g.Path2D;
+  }
+  assert.equal(arcs.length, 1, 'the clip was applied');
+  assert.equal(arcs[0]?.[2], 100, 'radius follows the tweened box (50% of 200), not 50');
 });

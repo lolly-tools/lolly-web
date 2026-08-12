@@ -29,14 +29,21 @@
  * so every `<video>` is already an `<img>` of the frame the preview was parked on.
  * We deliberately do NOT re-seek per cut: the poster contract is "the video is
  * where you left it", and it holds for cut 12 exactly as it does for cut 1. What
- * moves between cuts is the timeline's own visibility state and the four inline
+ * moves between cuts is the timeline's own visibility state and the six inline
  * properties the applier composes — `transform`, `opacity`, and, on a stage that
- * authors depth (plans/104), `filter` and `z-index`. That list is all
- * `applySequenceTime` writes, and `restoreSequenceTime` hands every one of them back.
+ * authors depth (plans/104), `filter`, `z-index`, and `width`/`height`. That list is
+ * all `applySequenceTime` writes, and `restoreSequenceTime` hands every one of them
+ * back.
+ *
+ * The last pair is the one deliberate LAYOUT write in the whole applier (plans/104
+ * §5.2, P1): the `w`/`h` keyframe channels exist so that a size tween REFLOWS — text
+ * rewraps, a border stays one pixel — which no composited property can fake. It costs
+ * a reflow per cut on a stage that keys a size, and nothing at all on one that does
+ * not: the write is gated on the track actually mentioning `w` or `h`.
  *
  * AND THE STAGE IT STARTS FROM IS THE AUTHORED ONE. The whole run sits inside
  * `withAuthoredDom` (plans/104 §6 point 0): the preview clock has been writing those
- * same four properties for whatever frame the playhead is parked on, and this module's
+ * same properties for whatever frame the playhead is parked on, and this module's
  * session would capture that composed pose as "authored" the first time it touched a
  * box — so every cut would carry the parked frame baked in, and by how much would
  * depend on where the user last scrubbed.

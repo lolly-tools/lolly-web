@@ -1290,6 +1290,16 @@ export interface AuthoredPose {
   opacity: string;
   filter: string;
   zIndex: string;
+  /**
+   * The AUTHORED inline `width`/`height` — '' when the box sizes itself.
+   *
+   * The applier writes these per frame for a `w`/`h` keyframe tween (plans/104 §5.2,
+   * P1 — the one deliberate layout write), so a shot taken mid-tween would otherwise be
+   * framed at the stretched size and re-wrap its text. Optional so a seam wired by an
+   * older caller still type-checks; absent falls back to the live inline value.
+   */
+  width?: string;
+  height?: string;
 }
 
 export interface AuthoredPoseSeam {
@@ -1355,8 +1365,14 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
   // LAYOUT size, not the rendered rect: the stage carries the editor's zoom
   // transform, and sizing off the rect would photograph the box at whatever
   // magnification the user happens to be at — re-wrapping its text every time.
-  const bw = Math.max(1, parseFloat(el.style.width) || el.offsetWidth || 1);
-  const bh = Math.max(1, parseFloat(el.style.height) || el.offsetHeight || 1);
+  // AUTHORED size first (plans/104 §5.2): the applier writes `width`/`height` per frame
+  // for a size tween, and a thumbnail must be the clip at rest. Falls back to the live
+  // inline value, then to layout — which is what it always was, and what a box with no
+  // inline size still resolves to. (A box with NO authored width that is mid-tween is
+  // the one case this cannot recover; layout-studio boxes always carry one.)
+  const authored = poseSeam?.read(el) ?? null;
+  const bw = Math.max(1, parseFloat(authored?.width ?? '') || parseFloat(el.style.width) || el.offsetWidth || 1);
+  const bh = Math.max(1, parseFloat(authored?.height ?? '') || parseFloat(el.style.height) || el.offsetHeight || 1);
   // FIT, don't crop. Height alone used to set the scale and the width was then clamped
   // to MAX_STILL_W independently — so a 1600×100 divider was photographed as its left
   // 84%, and the bar tiled that crop at an aspect the bitmap no longer had. Both limits

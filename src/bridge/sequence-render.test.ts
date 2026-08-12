@@ -16,7 +16,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { radiiOf, fitRect, plateShotFrame, plateWindowDemands } from './sequence-render.ts';
+import { bgOverscanPad, radiiOf, fitRect, plateShotFrame, plateWindowDemands } from './sequence-render.ts';
+import { blurScratchNeedBytes, planPlateBudget } from './plate-budget.ts';
 import { EMPTY_KF_TRACK, kfTrackOf, sequenceDrawPlan, type SeqLayer } from './sequence-plan.ts';
 import { parseDropShadows, spillPad } from '../lib/canvas-blur.ts';
 
@@ -180,8 +181,10 @@ test('plateWindowDemands: a document with no effects asks for nothing extra', ()
   // The byte-identity floor, expressed as geometry: pad 0 means `plateShotFrame` is
   // the shot it always was, and maxEff 1 means `S * 1` is exactly `S`.
   const d = plateWindowDemands([demandLayer(), demandLayer({ idx: 1, kind: 'video' })], GRID, 1000);
-  assert.deepEqual(d.get(0), { pad: 0, maxEff: 1 });
-  assert.deepEqual(d.get(1), { pad: 0, maxEff: 1 });
+  // `maxW`/`maxH` are the layer's own box until a `w`/`h` key stretches it (§5.2 P1),
+  // and `sized` false is what keeps its plate a ONE-SHOT static capture.
+  assert.deepEqual(d.get(0), { pad: 0, maxEff: 1, maxW: 200, maxH: 120, sized: false });
+  assert.deepEqual(d.get(1), { pad: 0, maxEff: 1, maxW: 200, maxH: 120, sized: false });
 });
 
 test('plateWindowDemands: the pad is the layer\'s own spill, in stage px', () => {
@@ -204,8 +207,18 @@ test('BYTE-IDENTITY FLOOR: a pre-104 blur/shadow asks for NO pad — its plate s
     demandLayer({ idx: 0, blur: 5 }),
     demandLayer({ idx: 1, shadowFilter: 'drop-shadow(0px 12px 24px #00000055)' }),
   ], GRID, 1000);
-  assert.deepEqual(d.get(0), { pad: 0, maxEff: 1 });
-  assert.deepEqual(d.get(1), { pad: 0, maxEff: 1 });
+  assert.deepEqual(d.get(0), { pad: 0, maxEff: 1, maxW: 200, maxH: 120, sized: false });
+  assert.deepEqual(d.get(1), { pad: 0, maxEff: 1, maxW: 200, maxH: 120, sized: false });
+});
+
+test('plateWindowDemands: a size tween is priced at its WIDEST, and marks the layer live', () => {
+  // A `w`/`h` tween REFLOWS, so its plate is re-shot per frame — the budget prices the
+  // peak, because the peak is the plate that has to fit.
+  const track = kfTrackOf('t0_w200_h120*t1000_w600_h400');
+  const d = plateWindowDemands([demandLayer({ kf: track })], GRID, 1000);
+  assert.equal(d.get(0)?.sized, true, 'the layer re-captures per frame');
+  assert.ok((d.get(0)?.maxW ?? 0) > 200, `widest width over the window (got ${d.get(0)?.maxW})`);
+  assert.ok((d.get(0)?.maxH ?? 0) > 120, `widest height over the window (got ${d.get(0)?.maxH})`);
 });
 
 test('plateWindowDemands: the pad is the WINDOW MAXIMUM, taken from the planner\'s own blur', () => {
@@ -248,16 +261,30 @@ test('contract: every PLANNED layer is photographed clean, and the stage backgro
     'and that is what it does — the INLINE declaration only, which is the one the planner read');
   assert.ok(!/el\.style\.filter = 'none'/.test(src),
     'never `filter: none`, which would out-specify (and lose) a stylesheet-authored filter');
-  assert.match(src, /const plateOpts: RasterOpts = \{ opaque: true, neutralFilter: neutralOf\(L\.idx\), pad: padOf\(L\.idx\) \};/,
-    'one plate recipe, shared by every planned layer; both of its numbers are per-layer (§5.5)');
+  assert.match(src, /const plateOpts: RasterOpts = \{\s*opaque: true,\s*neutralFilter: neutralOf\(L\.idx\),\s*neutralClipPath: clipNeutralOf\(L\.idx\),\s*pad: padOf\(L\.idx\),\s*\};/,
+    'one plate recipe, shared by every planned layer; all three of its numbers are per-layer (§5.5)');
+  // P1 obligation 5b: the plate must NOT carry the clip-path when the compositor owns
+  // the fx, or the shadow casts from the clipped silhouette instead of the real one.
+  // Same posture as the filter — remove the INLINE declaration, never write a value.
+  assert.match(src, /if \(ropts\.neutralClipPath\) \{[\s\S]{0,700}el\.style\.removeProperty\('clip-path'\)/,
+    'the clip is lifted for the shot, and only the inline declaration');
+  assert.ok(!/el\.style\.clipPath = 'none'/.test(src),
+    'never `clip-path: none` — it would out-specify a stylesheet clip nobody re-applies');
   const bgAt = src.indexOf('bgRaster = await rasterBox(stageEl');
   const optsAt = src.indexOf('const plateOpts');
   assert.ok(bgAt > 0 && optsAt > bgAt, 'the background shot is taken before, and without, the plate recipe');
   // The live (lottie) re-shot is a drop-in replacement for the static plate, so it has
   // to be framed identically — same opacity, same filter rule, same pad, same scale.
-  assert.match(src, /rasterBox\(entry\.box, scaleOf\(layerIdx\), \[\], \{[\s\S]{0,140}opaque: true, neutralFilter: neutralOf\(layerIdx\), pad: padOf\(layerIdx\),/,
-    'the per-frame lottie plate matches the static one it replaces');
-  assert.match(src, /makeLiveRaster\(liveBoxes, plateScaleOf, padOf, neutralOf\)/,
+  // …and the HIDE LIST is the static plate's own (`entry.hide`), not `[]`: a video
+  // layer's plates are shot with the `<video>` hidden because the decoded frame is
+  // composited between them, so a live re-shot that kept it would paint a stale poster
+  // under the frame it is about to draw.
+  assert.match(src, /rasterBox\(entry\.box, scaleOf\(layerIdx\), entry\.hide, \{[\s\S]{0,420}opaque: true,\s*neutralFilter: neutralOf\(layerIdx\),\s*neutralClipPath: clipNeutralOf\(layerIdx\),\s*pad: padOf\(layerIdx\),/,
+    'the per-frame live plate matches the static one it replaces');
+  // The `over` slot is the transparent half of that pair, framed identically.
+  assert.match(src, /slot === 'over' \? \{ transparentBg: true \} : \{\}/,
+    'a video layer\'s second live plate is the transparent one, as its static twin is');
+  assert.match(src, /makeLiveRaster\(\s*liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt,\s*\)/,
     'and is handed the same per-layer pad, scale and ownership the static plates were shot at');
   // §5.4: a camera is a pose over time. `drawItem` already refuses to draw one; the
   // plates loop must refuse to photograph its marker div in the first place.
@@ -281,4 +308,116 @@ test('contract: the whole render runs inside the authored-DOM scope (plans/104 �
     'and the parse is inside it');
   assert.match(read('./sequence-dom.ts'), /export async function withAuthoredDom/,
     'sequence-dom.ts owns the seam');
+});
+
+// ── P1a: the camera reaches the plates (plans/104 §5.5) ─────────────────────
+
+/** A camera clip, in the shape `stageCameras` derives from a `[data-cam]` box. */
+const cam = (over: Partial<{ start: number | null; end: number | null; base: Record<string, number>; track: ReturnType<typeof kfTrackOf> }> = {}) => ({
+  start: over.start ?? null, end: over.end ?? null,
+  base: over.base ?? null, track: over.track ?? null,
+});
+
+test('§5.5 the eff ladder is REAL once a camera exists: a dolly asks for sharper plates', () => {
+  // P0 could only reach eff > 1 through authored depth. The whole point of P1 is that
+  // the CAMERA gets there too — a flat board flown toward is magnified, and a plate
+  // shot at S and then blown up by eff is a soft plate.
+  const flat = plateWindowDemands([demandLayer()], GRID, 1000, { stageW: 1920, stageH: 1080 });
+  const dolly = plateWindowDemands([demandLayer()], GRID, 1000, {
+    stageW: 1920, stageH: 1080, cameras: [cam({ base: { z: -600 } })],
+  });
+  assert.equal(flat.get(0)?.maxEff, 1, 'no camera: nothing extra, and S × 1 is exactly S');
+  assert.ok((dolly.get(0)?.maxEff ?? 0) > 1,
+    `the camera alone lifts the demand (got ${dolly.get(0)?.maxEff})`);
+  // …and it is the WINDOW MAXIMUM, taken over the same grid the frame loop walks.
+  const ramp = plateWindowDemands([demandLayer()], GRID, 1000, {
+    stageW: 1920, stageH: 1080, cameras: [cam({ start: 0, track: kfTrackOf('t0_el_z0*t750_el_z-800') })],
+  });
+  assert.ok((ramp.get(0)?.maxEff ?? 0) > (dolly.get(0)?.maxEff ?? 0) * 0.5,
+    'a ramp is sized for its deepest frame, not for t=0');
+});
+
+test('§5.5 the camera also moves ownership: a flat shadowed layer needs a pad under a pan', () => {
+  // P1 obligation 1. A plate is shot ONCE for the whole render, so a camera that moves
+  // makes every projectable layer compositor-owned — and a compositor-owned shadow
+  // needs room to spill, which is exactly what a plate shot at the box edge does not
+  // have. Without threading `cameraMoves` the pad stays 0 and the shadow is clipped.
+  const shadow = 'drop-shadow(0px 12px 24px #00000055)';
+  const env = { stageW: 1920, stageH: 1080, cameras: [cam({ base: { x: 120 } })] };
+  const still = plateWindowDemands([demandLayer({ shadowFilter: shadow })], GRID, 1000, env, false);
+  const moving = plateWindowDemands([demandLayer({ shadowFilter: shadow })], GRID, 1000, env, true);
+  assert.equal(still.get(0)?.pad, 0, 'the pre-104 reading: the plate keeps the shadow');
+  assert.equal(moving.get(0)?.pad, spillPad(0, parseDropShadows(shadow)),
+    'under a moving camera the compositor owns it, so the plate must make room');
+});
+
+test('§5.5 bg-as-layer: the overscan is the camera\'s own reveal, derived not guessed', () => {
+  // No camera → 0, and at 0 the bg plate is the artboard-sized canvas it always was
+  // and the executor takes its untransformed full-canvas draw.
+  assert.equal(bgOverscanPad(1920, 1080, GRID, { stageW: 1920, stageH: 1080 }), 0);
+  assert.equal(bgOverscanPad(1920, 1080, GRID, { stageW: 1920, stageH: 1080, cameras: [] }), 0);
+
+  // A PURE PAN reveals exactly its own displacement: the plane is the same size, just
+  // somewhere else, so `pad = |camX|`.
+  const pan = bgOverscanPad(1920, 1080, GRID, {
+    stageW: 1920, stageH: 1080, cameras: [cam({ base: { x: 140 } })],
+  });
+  assert.ok(Math.abs(pan - 140) < 1e-9, `pure pan reveals |camX| (got ${pan})`);
+
+  // A PULL-BACK shrinks the plane inside the frame and opens a gap at every edge at
+  // once: `pad = (W/2)·(1/eff − 1)` on the wider axis. camZ = +1200 at P = 1200 is
+  // eff = 1/2, so the artboard covers half the frame and the margin is a full W/2.
+  const back = bgOverscanPad(1920, 1080, GRID, {
+    stageW: 1920, stageH: 1080, cameras: [cam({ base: { z: 1200 } })],
+  });
+  assert.ok(Math.abs(back - 960) < 1e-6, `pull-back to eff 1/2 needs W/2 (got ${back})`);
+
+  // …and a push-IN needs nothing: the plane is bigger than the frame, so there is no
+  // reveal to cover and the pad must not grow for nothing.
+  assert.equal(bgOverscanPad(1920, 1080, GRID, {
+    stageW: 1920, stageH: 1080, cameras: [cam({ base: { z: -600 } })],
+  }), 0);
+});
+
+test('contract: the executor PROJECTS the background rather than pinning it to the canvas', () => {
+  // The defect this pins: the bg plate drew full-canvas and untransformed while every
+  // layer above it was projected, so a pan slid the whole composition across frozen
+  // wallpaper — the opposite of a camera move (§5.5).
+  const src = strip(read('./sequence-render.worker.ts'));
+  assert.match(src, /if \(!camMoves && bgPad === 0\) \{\s*ctx\.drawImage\(job\.bg, 0, 0, job\.outW, job\.outH\);/,
+    'with no camera it is byte-for-byte the one-line draw it always was');
+  assert.match(src, /projectLayer\(view, \{ bx: view\.w \/ 2, by: view\.h \/ 2, z: 0 \}\)/,
+    'and otherwise it is an implicit z = 0 layer through the SAME projection as every other');
+  assert.match(strip(read('./sequence-render.ts')), /bgPad > 0 \? \{ pad: bgPad \} : \{\}/,
+    'the plate is captured with the overscan, and with nothing when there is none');
+});
+
+test('§5.5 the blur scratches are priced against the plate budget (P1 obligation 3)', () => {
+  // They are pooled ACROSS layers and frames and `takeStage` RESIZES rather than
+  // reallocating, so the peak is the single largest filtered layer — not their sum.
+  const owned = { w: 640, h: 360, pad: 30, owned: true };
+  const one = blurScratchNeedBytes([owned], 2);
+  assert.ok(one > 0);
+  assert.equal(blurScratchNeedBytes([owned, owned, owned], 2), one, 'pooled: the peak, not the sum');
+  assert.ok(blurScratchNeedBytes([{ ...owned, w: 1920, h: 1080 }, owned], 2) > one, 'the largest sets it');
+  // A render with no compositor-owned filter reserves nothing at all, which is every
+  // export written before plans/104.
+  assert.equal(blurScratchNeedBytes([{ w: 640, h: 360, pad: 30 }], 2), 0);
+  assert.equal(blurScratchNeedBytes([], 2), 0);
+  // …and the budget takes it off the top, so λ is turned by the whole memory picture.
+  const layers = [{ idx: 0, kind: 'static' as const, w: 1920, h: 1080, maxEff: 3 }];
+  const plain = planPlateBudget({ layers, scale: 2, worker: true, budgetBytes: 64 << 20 });
+  const reserved = planPlateBudget({
+    layers, scale: 2, worker: true, budgetBytes: 64 << 20, reserveBytes: 32 << 20,
+  });
+  assert.equal(plain.reservedBytes, 0);
+  assert.equal(reserved.reservedBytes, 32 << 20);
+  assert.ok(reserved.budgetBytes < plain.budgetBytes, 'the reserve comes off the plates\' allowance');
+  assert.ok(reserved.bytes <= plain.bytes, 'so the plates degrade at least as far');
+  // The reserve can never eat more than half, or a pathological blur would drive every
+  // plate to the floor to rescue scratches their own caps already bound.
+  const greedy = planPlateBudget({
+    layers, scale: 2, worker: true, budgetBytes: 64 << 20, reserveBytes: 1 << 30,
+  });
+  assert.equal(greedy.reservedBytes, 32 << 20);
 });

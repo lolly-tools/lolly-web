@@ -24,16 +24,27 @@
  * live elements. The two are pinned to each other by tests/sequence-plan.test.ts,
  * which asserts the numeric parity rather than trusting a comment.
  *
- * EVERY WRITE IS REVERSIBLE. One class and FOUR inline properties per box —
+ * EVERY WRITE IS REVERSIBLE. One class and SIX inline properties per box —
  * `transform`, `opacity`, and (only on a stage that authors depth, plans/104)
- * `filter` and `z-index` — with the authored values captured before the first write
- * and handed back verbatim on restore (declaration-identical, not byte-identical:
- * writing through CSSStyleDeclaration re-serialises the whole `style` attribute).
- * That list is the WHOLE per-frame surface; anything that photographs a live stage —
- * sequence-render's plate capture, clip-thumbs' borrow, sequence-cuts, and this
- * module's own `driveSequenceTime` — neutralises exactly these, through the
+ * `filter`, `z-index`, `width` and `height` — with the authored values captured before
+ * the first write and handed back verbatim on restore (declaration-identical, not
+ * byte-identical: writing through CSSStyleDeclaration re-serialises the whole `style`
+ * attribute). That list is the WHOLE per-frame surface; anything that photographs a
+ * live stage — sequence-render's plate capture, clip-thumbs' borrow, sequence-cuts, and
+ * this module's own `driveSequenceTime` — neutralises exactly these, through the
  * read/restore seam below, so a new one arriving here is a change to their contract
  * too.
+ *
+ * `width`/`height` are THE ONE DELIBERATE EXCEPTION to "the applier never writes
+ * layout" (plans/104 §5.2, the P1 reversal). Every other property here is composited:
+ * it changes what the box looks like without changing what the box IS, so a frame
+ * costs no reflow. A keyed `w`/`h` costs one, on purpose — text REWRAPS, a border stays
+ * one pixel wide, a flex row re-distributes. That is the entire reason the channel
+ * exists, and it is why the canvas compositor cannot fake it with a stretched plate and
+ * re-photographs a sized layer per frame instead (parity beats speed). The cost is
+ * bounded by the same gate as the rest of depth: with no `data-t-kf` mentioning `w`
+ * or `h`, `fold.sized` is false everywhere, the two slots stay null and no layout write
+ * is ever issued.
  *
  * Composition, not clobbering: a box carries authored inline styles from the tool
  * hook — `transform:rotate(-4deg)`, `opacity:0.8`. An entrance animation adds to
@@ -66,7 +77,7 @@ import {
   planCameraView, readDepthZ, splitFilterBlur, viewMoves,
   type SeqPlanEnv,
 } from './sequence-plan.ts';
-import { evaluateKf, type KfCameraView, type KfTrack } from '@lolly/engine';
+import { evaluateKf, type KfCameraClip, type KfCameraView, type KfTrack } from '@lolly/engine';
 
 export { MIN_SPEED, MAX_SPEED, MIN_TRANSITION_MS, MAX_TRANSITION_MS };
 
@@ -269,6 +280,14 @@ interface Authored {
   filterRest: string;
   /** The authored inline `z-index` ('' = auto, which is what every box ships with). */
   zIndex: string;
+  /**
+   * The authored inline `width`/`height` DECLARATIONS ('' = none, i.e. the box sizes
+   * itself). Kept as strings beside the measured numbers below because restoring has
+   * to hand back the declaration, not a re-spelling of the measurement: a box that
+   * shipped `width:auto` must end up with no inline width at all.
+   */
+  width: string;
+  height: string;
   /** Layout size, measured BEFORE any transform was written (rects lie afterwards). */
   w: number;
   h: number;
@@ -286,6 +305,8 @@ interface Authored {
   lastOpacity: string | null;
   lastFilter: string | null;
   lastZIndex: string | null;
+  lastWidth: string | null;
+  lastHeight: string | null;
   /** Audio boxes render nothing visible — never worth a transform. */
   audio: boolean;
   /**
@@ -295,6 +316,18 @@ interface Authored {
    * only ever worked because both evaluators actively detect it.
    */
   camera: boolean;
+  /**
+   * This element is part of the stage's BACKGROUND PLANE, not a layer of its own
+   * (plans/104 §5.5) — see `isBackgroundPlane`.
+   *
+   * It IS projected: the export draws the bg plate through the same `projectLayer`
+   * every layer goes through, so the preview has to move it too or a pan slides the
+   * composition across frozen wallpaper. What it must never do is take a RANK: the
+   * compositor draws the background before the first layer, unconditionally, so a
+   * sunken box (`z: -200`) belongs above it. Ranking the plane among the layers would
+   * put the connector artwork over that box in the preview and under it in the export.
+   */
+  plane: boolean;
 }
 
 /**
@@ -335,7 +368,15 @@ export interface AuthoredStyle {
   opacity: string;
   filter: string;
   zIndex: string;
-  /** True when the applier has actually written at least one of the four. */
+  /**
+   * The authored inline `width`/`height` declarations — '' when the box sizes itself.
+   * A photographer that neutralises on a CLONE has to know these, because a keyed
+   * `w`/`h` is a real layout write (see the header): without them a thumbnail taken
+   * mid-keyframe would be shot at the stretched size, re-wrapping its text.
+   */
+  width: string;
+  height: string;
+  /** True when the applier has actually written at least one of the six. */
   written: boolean;
 }
 
@@ -381,10 +422,22 @@ export function createAuthoredStore(): AuthoredStore {
     if (el.style.zIndex !== rec.zIndex) {
       if (rec.zIndex) el.style.zIndex = rec.zIndex; else el.style.removeProperty('z-index');
     }
+    // The layout pair, and the only two writes here that cost a reflow — so they are
+    // skipped unless this element actually carries one of ours. On every document that
+    // keyframes no size `lastWidth`/`lastHeight` stay null forever and these two
+    // branches are never entered at all.
+    if (rec.lastWidth !== null && el.style.width !== rec.width) {
+      if (rec.width) el.style.width = rec.width; else el.style.removeProperty('width');
+    }
+    if (rec.lastHeight !== null && el.style.height !== rec.height) {
+      if (rec.height) el.style.height = rec.height; else el.style.removeProperty('height');
+    }
     rec.lastTransform = null;
     rec.lastOpacity = null;
     rec.lastFilter = null;
     rec.lastZIndex = null;
+    rec.lastWidth = null;
+    rec.lastHeight = null;
   };
   return {
     get(el) {
@@ -401,6 +454,8 @@ export function createAuthoredStore(): AuthoredStore {
           filterBlur: fx.blur,
           filterRest: fx.rest,
           zIndex: el.style.zIndex || '',
+          width: el.style.width || '',
+          height: el.style.height || '',
           w: size.w,
           h: size.h,
           left: origin.left,
@@ -409,8 +464,11 @@ export function createAuthoredStore(): AuthoredStore {
           lastOpacity: null,
           lastFilter: null,
           lastZIndex: null,
+          lastWidth: null,
+          lastHeight: null,
           audio: !!el.querySelector('.lolly-box-audio'),
           camera: !!(el.matches?.('[data-cam]') || el.querySelector?.('[data-cam]')),
+          plane: isBackgroundPlane(el),
         };
         map.set(el, rec);
       } else {
@@ -429,8 +487,10 @@ export function createAuthoredStore(): AuthoredStore {
         if (!rec.w || !rec.h) {
           // First measurement happened before layout (a box measured during the same
           // frame it was painted). Re-measure until it answers, but only while we have
-          // written nothing — after that the rect would include our own transform.
-          if (rec.lastTransform == null) {
+          // written nothing — after that the rect would include our own transform, or
+          // (since the `w`/`h` channels landed) our own stretched layout box, which
+          // would then become the AUTHORED size every later frame tweens from.
+          if (rec.lastTransform == null && rec.lastWidth == null && rec.lastHeight == null) {
             const size = measure(el);
             if (size.w) rec.w = size.w;
             if (size.h) rec.h = size.h;
@@ -447,8 +507,11 @@ export function createAuthoredStore(): AuthoredStore {
         opacity: rec.opacity,
         filter: rec.filter,
         zIndex: rec.zIndex,
+        width: rec.width,
+        height: rec.height,
         written: rec.lastTransform !== null || rec.lastOpacity !== null
-          || rec.lastFilter !== null || rec.lastZIndex !== null,
+          || rec.lastFilter !== null || rec.lastZIndex !== null
+          || rec.lastWidth !== null || rec.lastHeight !== null,
       };
     },
     restore(el) {
@@ -692,7 +755,14 @@ export interface ApplyCtx {
   stage?(): { w: number; h: number };
   /**
    * The camera clips governing this stage (§5.4), latest-in-array covering `t` wins.
-   * P0 passes none, and "none" resolves to the DEFAULT camera — which projects a
+   *
+   * An OVERRIDE, and normally absent: the applier derives the cameras from the very
+   * elements it was handed, exactly as the planner derives them from its own layers
+   * (`stageCameras`), so the two evaluators cannot be told different cameras for the
+   * same stage. Supplying it replaces that derivation wholesale — a test seam, and the
+   * hook a caller that already knows the camera set can use to skip the walk.
+   *
+   * With no camera box at all the resolution is the DEFAULT camera — which projects a
    * z = 0 layer at eff = 1, i.e. leaves every existing document alone.
    */
   cameras?: SeqPlanEnv['cameras'];
@@ -776,24 +846,48 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
   // the same reason (the two evaluators are told different stage sizes there; see
   // `sequenceDrawPlan`), so the two agree by construction rather than by coincidence.
   let framesDoc = false;
+  // Cameras, derived from the SAME elements (§5.4). Built here, in the read-only pass,
+  // for the same reason the timings are: the camera governing frame `t` has to be known
+  // before the first box is posed, and a camera can appear anywhere in DOM order.
+  const derived: KfCameraClip[] = [];
   for (let i = 0; i < n; i++) {
-    const timing = readTiming(els[i] as HTMLElement);
+    const el = els[i] as HTMLElement;
+    const timing = readTiming(el);
     timings[i] = timing;
-    if (timing.z !== 0 || timing.kf.length > 0) anyBoxDepth = true;
+    // The camera marker, asked exactly as the AuthoredStore asks it. `layerKind` in the
+    // planner asks the same question of the same attribute — the audio precedent only
+    // works because BOTH evaluators actively detect it, and so does this one.
+    const cam = !!(el.matches?.('[data-cam]') || el.querySelector?.('[data-cam]'));
+    if (cam) {
+      derived.push({
+        // Butted, half-open windows — cuts, not blends. An open-ended camera (the
+        // "Always on" scenery chip) never ends.
+        start: timing.start,
+        end: timing.dur != null ? timing.start + timing.dur : null,
+        base: timing.z !== 0 ? { z: timing.z } : null,
+        track: timing.kf.length > 0 ? timing.kf : null,
+      });
+    } else if (timing.z !== 0 || timing.kf.length > 0) {
+      // A CAMERA's own z/kf are the camera pose, not a lifted layer — counting them
+      // here would make an otherwise flat stage measure itself and project every box
+      // through a camera that has not moved.
+      anyBoxDepth = true;
+    }
     if (timing.frame) framesDoc = true;
   }
+  const cameras = ctx.cameras ?? (derived.length > 0 ? derived : null);
   // The gate, and it is the byte-identity floor: with no box carrying depth and no
   // camera on the stage, `view` stays null, the stage is never measured, `foldKfPose`
   // is never called, and `filter`/`z-index` are never written. The condition is the
   // planner's own (`sequenceDrawPlan` projects when `viewMoves(view) || z || kf`), so
   // the moment P1 hands cameras in, both evaluators start projecting on the same
   // frame rather than one of them lagging.
-  const hasCamera = !!ctx.cameras && ctx.cameras.length > 0;
+  const hasCamera = !!cameras && cameras.length > 0;
   let view: KfCameraView | null = null;
   let moving = false;
   if (!framesDoc && (anyBoxDepth || hasCamera)) {
     const size = ctx.stage?.() ?? { w: 0, h: 0 };
-    view = planCameraView({ stageW: size.w, stageH: size.h, cameras: ctx.cameras ?? null }, tMs);
+    view = planCameraView({ stageW: size.w, stageH: size.h, cameras }, tMs);
     moving = viewMoves(view);
   }
   // Resolved depth per element, and which elements take part in the paint-order rank.
@@ -813,7 +907,11 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     const rec = ctx.store.get(el);
     recs[i] = rec;
     if (rec.lastZIndex !== null) anyStaleRank = true;
-    const active = isActiveAt(timing, tMs, ctx.seqMs);
+    // The BACKGROUND PLANE is not a clip: it has no window, and the compositor draws
+    // the bg plate on every frame unconditionally. Reading a window off it would blank
+    // the connector artwork — and stop projecting it — at exactly t = seqMs, where an
+    // open-ended box's half-open span has just closed.
+    const active = rec.plane || isActiveAt(timing, tMs, ctx.seqMs);
     // Class-only visibility. We deliberately do NOT also write `style.visibility`:
     // it is a property the tool's own boxCss is free to author, and a belt-and-braces
     // write there would be indistinguishable from the author's on restore. The class
@@ -844,6 +942,12 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
       kind: rec.camera ? 'camera' : rec.audio ? 'audio' : 'static',
       frameScene: timing.frame,
     });
+    // The BACKGROUND PLANE (§5.5) is projected on exactly the same terms as a layer —
+    // it is an implicit z = 0 one, and `rec.left/top/w/h` on a full-artboard child
+    // resolve to the stage's own rect, so the fold produces the very numbers the
+    // worker's bg draw uses (`projectLayer` at the stage centre, z = 0). It is only
+    // ever moved by a camera, never by timing, so it needs no transition and takes no
+    // rank (see `Authored.plane` and the rank pass below).
     const projecting = view !== null && active && projectable
       && (moving || timing.z !== 0 || timing.kf.length > 0);
     if (tr || projecting) {
@@ -859,8 +963,31 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
           pose: evaluateKf(timing.kf, tMs - timing.start),
           zField: timing.z,
           authoredBlur: rec.filterBlur,
+          boxW: rec.w,
+          boxH: rec.h,
         })
-        : { dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha, blur: rec.filterBlur, z: 0 };
+        : {
+          dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha,
+          blur: rec.filterBlur, z: 0, w: rec.w, h: rec.h, sized: false,
+        };
+      // THE LAYOUT WRITE (§5.2, and the header's stated exception). Gated on `sized`,
+      // which is only ever true when the track actually mentioned `w`/`h` — so a stage
+      // that keyframes position, scale, opacity, blur or depth still issues not one
+      // reflow. Written BEFORE the transform so the browser lays the box out once and
+      // composites once, rather than reflowing after it has already been transformed.
+      if (fold.sized) {
+        const wCss = `${n3(fold.w)}px`;
+        const hCss = `${n3(fold.h)}px`;
+        if (wCss !== rec.lastWidth) { el.style.width = wCss; rec.lastWidth = wCss; }
+        if (hCss !== rec.lastHeight) { el.style.height = hCss; rec.lastHeight = hCss; }
+      } else if (rec.lastWidth !== null || rec.lastHeight !== null) {
+        // The track's `w`/`h` segment ended (or the box left the projection): hand the
+        // authored declarations back rather than freezing the last tweened size on.
+        if (rec.width) el.style.width = rec.width; else el.style.removeProperty('width');
+        if (rec.height) el.style.height = rec.height; else el.style.removeProperty('height');
+        rec.lastWidth = null;
+        rec.lastHeight = null;
+      }
       const transform = composeTransform(rec.transform, { dx: fold.dx, dy: fold.dy, sc: fold.scale, rot: fold.rot });
       const opacity = composeOpacity(rec.opacity, fold.alpha);
       if (transform !== rec.lastTransform) {
@@ -886,16 +1013,19 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
         zs[i] = fold.z;
         // Ranked = "has a picture and is on screen", NOT "was projected". A flat box
         // resolves to z = 0 and still has to be IN the sort, or it floats above every
-        // lifted one (see the rank pass).
-        ranked[i] = projectable ? 1 : 0;
+        // lifted one (see the rank pass). The background plane is the one thing that
+        // is projected and never ranked: the compositor draws it before the first
+        // layer, so a sunken box belongs above it.
+        ranked[i] = projectable && !rec.plane ? 1 : 0;
         if (projecting && fold.z !== 0) anyLift = true;
       }
     } else {
       // No transition, no projection — but an ACTIVE box with a picture is still a
       // participant in the paint order at its authored depth (z = 0, the array's own
       // initial value). Only then does the restore below apply.
-      if (zs && ranked && active && projectable) ranked[i] = 1;
-      if (rec.lastTransform !== null || rec.lastOpacity !== null || rec.lastFilter !== null) {
+      if (zs && ranked && active && projectable && !rec.plane) ranked[i] = 1;
+      if (rec.lastTransform !== null || rec.lastOpacity !== null || rec.lastFilter !== null
+        || rec.lastWidth !== null || rec.lastHeight !== null) {
         // Left the window (or went off screen): hand the authored styles straight
         // back. `lastZIndex` is deliberately NOT in this test — the rank pass below
         // owns that slot for the whole stage and will restore it in the same frame if
@@ -905,7 +1035,9 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
       }
     }
 
-    if (ctx.media) {
+    // The background plane has no media to drive — the export photographs it as a
+    // STILL plate — so it is not offered to the caller's media hook either.
+    if (ctx.media && !rec.plane) {
       const local = Math.max(0, tMs - timing.start);
       ctx.media(el, timing, timing.clipIn + local * timing.speed, active);
     }
@@ -995,6 +1127,97 @@ export function sequenceDurationMs(root: HTMLElement | null): number {
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
+/**
+ * Everything on a stage that carries TIMING, DEPTH or a POSE.
+ *
+ * The applier's element set, and it is deliberately the union rather than
+ * `[data-t-start]` alone — which is what it was, and what made the two evaluators
+ * enumerate different scenes (plans/104 P1 review, HIGH 1):
+ *
+ *  • `[data-t-start]` — anything timed. NOT restricted to `.lolly-box`, so a sequenced
+ *    `[data-pdf-page]` frame page (frames-as-scenes) is gated by the exact same pass,
+ *    and its `.seq-off` is the same class sequence-render.ts strips before it
+ *    photographs a frame. A frames doc has no `[data-sequence]` stage, so
+ *    `sequenceStageOf` falls back to `root` and still finds the pages.
+ *  • `[data-t-z]` / `[data-t-kf]` — SCENERY that is lifted or animated. The hooks emit
+ *    these for a timed and an untimed box alike ("a scenery box on a sequence stage is
+ *    visible throughout and can still be lifted off the surface or animated"), while
+ *    the planner enumerates every `.lolly-box` regardless of timing. Without them a
+ *    scenery box's z and its whole keyframe track were live in the export and inert in
+ *    the preview.
+ *  • `[data-cam]` — the camera MARKER, mapped to the box that carries its pose. §5.4's
+ *    headline "Always on" scene camera is untimed by construction, so it has no
+ *    `data-t-start` and the applier could not see the one element whose whole job is to
+ *    move everything else: the camera-pan drag, the wheel dolly and all five presets
+ *    committed to the model and then did nothing visible in the editor. A camera at the
+ *    DEFAULT pose carries neither `data-t-z` nor `data-t-kf` and still has to be here,
+ *    because cuts resolve to the LATEST camera covering `t` — a default one later in
+ *    DOM order legitimately cuts an earlier moving one back to rest.
+ *
+ * Plus, once a camera exists at all, the stage's BACKGROUND PLANE: its own children
+ * that are not layers. That is exactly the residue `sequence-render.ts` photographs
+ * into the bg plate (it hides every `.lolly-box` and timed frame page and shoots what
+ * is left — the connector layer, for one), and §5.5 requires BOTH paths to project it,
+ * or a pan slides every layer across frozen wallpaper. Gated on a camera being present
+ * because without one nothing can move the plane, so a camera-less document — every
+ * document written before this — is not given one extra element to walk.
+ */
+export function sequenceTimeElements(stage: HTMLElement | null): HTMLElement[] {
+  if (!stage?.querySelectorAll) return [];
+  const out: HTMLElement[] = [];
+  const seen = new Set<HTMLElement>();
+  const push = (el: HTMLElement | null | undefined): void => {
+    if (el && !seen.has(el)) { seen.add(el); out.push(el); }
+  };
+  for (const el of stage.querySelectorAll<HTMLElement>(POSED_SEL)) {
+    // A camera's pose rides on the BOX (`data-t-kf`/`data-t-z` like every other box);
+    // `[data-cam]` is only the non-visual marker inside it, and the marker carries
+    // nothing. Both evaluators ask this same question — `layerKind` accepts the marker
+    // ON the element too, which is why the fallback is the element itself.
+    push(el.hasAttribute?.('data-cam') ? (el.closest?.('.lolly-box') as HTMLElement | null) ?? el : el);
+  }
+  if (stage.querySelector?.('[data-cam]')) {
+    for (const child of [...stage.children]) {
+      if (isBackgroundPlane(child as HTMLElement)) push(child as HTMLElement);
+    }
+  }
+  return out;
+}
+
+/** Elements carrying timing, depth, a keyframe track, or a camera marker. */
+const POSED_SEL = '[data-t-start], [data-t-z], [data-t-kf], [data-cam]';
+
+/** Tags that paint nothing, so photographing or projecting them means nothing. */
+const UNPAINTED = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'TITLE', 'NOSCRIPT']);
+
+/**
+ * Is this element part of the stage's BACKGROUND PLANE — the implicit z = 0 layer
+ * (plans/104 §5.5) rather than a layer of its own?
+ *
+ * The definition is the export's, restated as a predicate rather than re-derived: the
+ * bg plate is the stage shot with every `.lolly-box` and every timed `[data-pdf-page]`
+ * hidden, so anything else the stage paints IS the background — today the bound-path
+ * connector layer, tomorrow whatever a tool puts behind its boxes. `[data-export-hide]`
+ * is excluded for the same reason it is excluded from the plate: the export walk drops
+ * it, so it is not in the background the compositor projects.
+ *
+ * WHAT IS DELIBERATELY LEFT OUT: the stage element's OWN paint. It cannot be given a
+ * transform (that would move every child with it), and it does not need one — all three
+ * tools author the artboard as a flat colour (`safeColor(inp.background, …)` in each
+ * `hooks.js`), and a uniform plane is invariant under the translate + uniform scale a
+ * projection is. `bgOverscanPad` is derived so the projected plate still covers the
+ * frame, so there is no edge to reveal either. The one residue is the behind-camera
+ * guard: past `u = 0.8` the export fades the whole bg plate with `alphaGuard` while the
+ * artboard's own fill stays opaque in the preview. That is the extreme end of a
+ * fly-through, it is stated here, and it is the only part of §5.5's bg rule the DOM
+ * cannot express.
+ */
+export function isBackgroundPlane(el: HTMLElement | null): boolean {
+  if (!el || typeof el.matches !== 'function') return false;
+  if (UNPAINTED.has(el.tagName)) return false;
+  return !el.matches(`${POSED_SEL}, .lolly-box, [data-pdf-page], [data-export-hide]`);
+}
+
 /** A reversible run of applications against one root. Reuse it across frames. */
 export interface SequenceTimeSession {
   /** Put every timed box into the state it should be in at `tMs`. */
@@ -1018,15 +1241,7 @@ export function createSequenceTime(
   opts: { media?: ApplyCtx['media']; cameras?: ApplyCtx['cameras'] } = {},
 ): SequenceTimeSession {
   const store = createAuthoredStore();
-  // ANY element carrying `data-t-start` — deliberately NOT restricted to `.lolly-box`, so a
-  // sequenced `[data-pdf-page]` frame page (frames-as-scenes) is gated by the exact same
-  // pass, and its `.seq-off` is the same class sequence-render.ts strips before it
-  // photographs a frame. A frames doc has no `[data-sequence]` stage, so `sequenceStageOf`
-  // falls back to `root` and still finds the pages.
-  const boxes = (): HTMLElement[] => {
-    const stage = sequenceStageOf(root) ?? root;
-    return [...stage.querySelectorAll<HTMLElement>('[data-t-start]')];
-  };
+  const boxes = (): HTMLElement[] => sequenceTimeElements(sequenceStageOf(root) ?? root);
   // What the read/restore seam knows this session by. `lastT` is remembered so a
   // suspended session can be put back exactly where it was, rather than at 0 — an
   // export that finishes must hand the editor back the frame the user was looking at.

@@ -43,8 +43,11 @@
 
 import {
   EMPTY_KF_TRACK,
+  camerasMove,
   ownsLayerFx,
+  planCameraView,
   sequenceDrawPlan,
+  stageCameras,
   activeFrameWindow,
   crossfadeJunctions,
   reconcileDecoded,
@@ -67,7 +70,7 @@ import {
   type PcmSource,
   type StreamingMux,
 } from './video-encode-core.ts';
-import { parseClipShape } from '@lolly/engine';
+import { parseClipShape, projectLayer } from '@lolly/engine';
 // The two blur lanes (plans/104 §5.5, §11 S1). DOM-free at import, so the executor
 // keeps its own DOM-free contract; the probe inside decides which lane a context gets.
 import {
@@ -337,6 +340,16 @@ export interface SeqJob {
   stageH?: number;
   /** The artboard behind every layer, or null for a transparent export. */
   bg: CanvasImageSource | null;
+  /**
+   * The margin, stage-native px, the bg plate was captured with (plans/104 §5.5).
+   *
+   * The stage background is an implicit z = 0 LAYER and is projected like one, so a
+   * camera pan or pull-back reveals what used to be off the artboard — this is the
+   * overscan that has content in it. Absent / 0 (every camera-less export, and every job
+   * built before this existed) means the plate is exactly the artboard, and the executor
+   * takes the untransformed full-canvas draw it always took.
+   */
+  bgPad?: number;
   plates: SeqJobPlate[];
   clips: SeqJobClip[];
   /** Copied from the renderer's policy constants so the worker holds no second copy. */
@@ -363,6 +376,15 @@ export function closeJobBitmaps(job: SeqJob): void {
   }
 }
 
+/**
+ * Which of a layer's two plates a live re-capture is for (plans/104 §5.2).
+ *
+ * `under` is the only slot for every kind but `video` — and it is the DEFAULT, so an
+ * older caller (or a test stub) that ignores the argument answers the same shot it
+ * always did.
+ */
+export type SeqLiveSlot = 'under' | 'over';
+
 /** The host side of one run: where frames go, and how a live raster is fetched. */
 export interface SeqJobIO {
   log?(level: string, msg: string): void;
@@ -371,9 +393,16 @@ export interface SeqJobIO {
   /**
    * The live-DOM raster for a `needsLiveRaster` layer at this frame, or null to
    * fall back to the layer's static plate. Called at most once per layer per
-   * frame, and never concurrently — that IS the bounded queue.
+   * SLOT per frame, and never concurrently — that IS the bounded queue.
+   *
+   * `slot` names which of the layer's two plates is being re-shot. Everything but a
+   * video layer has one (`under`); a video layer is photographed twice — opaque with
+   * the media hidden, then transparent — because the decoded frame is composited
+   * BETWEEN them, and a size tween has to re-shoot both or the stale one ghosts.
    */
-  lottieAt?(layerIdx: number, frameIndex: number, sourceSec: number): Promise<CanvasImageSource | null>;
+  lottieAt?(
+    layerIdx: number, frameIndex: number, sourceSec: number, slot?: SeqLiveSlot,
+  ): Promise<CanvasImageSource | null>;
   /** Release what `lottieAt` handed over (the worker closes a transferred bitmap). */
   releaseLottie?(img: CanvasImageSource): void;
   progress?(done: number, total: number): void;
@@ -393,8 +422,10 @@ interface LayerRes {
   platePad: number;
   /** Resolution multiplier over S the plates were captured at (SeqJobLayer.plateEff). */
   plateEff: number;
-  /** The live raster for the frame being composed, when one was supplied. */
+  /** The live raster for the frame being composed, when one was supplied (the `under` slot). */
   live: CanvasImageSource | null;
+  /** The `over` slot's live raster — video only, where the media is composited between the two. */
+  liveOver: CanvasImageSource | null;
   /** Output-grid frame indices this layer is on screen for, inclusive. */
   first: number;
   last: number;
@@ -421,13 +452,20 @@ interface LayerRes {
  * drop-shadow) is scaled the same way, because the plate it used to be baked into was
  * photographed at S.
  */
-export function itemFx(item: PlanItem, S: number): FxSpec | null {
+export function itemFx(item: PlanItem, S: number, cameraMoves = false): FxSpec | null {
   // The plate KEEPS its own filter unless this layer authored depth (`ownsLayerFx`,
   // and the plate loop shoots to the same predicate). Re-applying it here would then
   // be the second application — a shadow drawn twice, a blur squared. This is also the
   // byte-identity floor: a pre-104 `shadow: content` document never reaches the
   // restructured path at all.
-  if (!ownsLayerFx(item.layer)) return null;
+  //
+  // `cameraMoves` is the P1 obligation (plans/104 §9.2): a camera that moves varies
+  // eff and the depth-of-field radius frame by frame, and a plate is shot ONCE for the
+  // whole render, so under a moving camera the compositor owns every projectable
+  // layer's filter — including a flat one that authored no depth of its own. The three
+  // obeying sites (plate pad, plate neutralisation, this) must be told the same thing
+  // or a plate is shot clean and then never re-filtered, or filtered twice.
+  if (!ownsLayerFx(item.layer, cameraMoves)) return null;
   const rest = item.layer.shadowFilter;
   const sigma = item.blur > 0 ? item.blur * S : 0;
   if (!(sigma > 0) && !rest) return null;
@@ -442,9 +480,17 @@ export function itemFx(item: PlanItem, S: number): FxSpec | null {
  * Clips are authored against the UNSCALED box, so they are parsed there and scaled — a
  * `12px` radius must grow with the export, a `50%` must not drift.
  */
-function clipLayer(ctx: AnyCtx, L: SeqLayer, ox: number, oy: number, w: number, h: number, S: number): boolean {
+function clipLayer(
+  ctx: AnyCtx, L: SeqLayer, ox: number, oy: number, w: number, h: number, S: number,
+  bw = L.rect.w, bh = L.rect.h,
+): boolean {
   if (L.clipPath) {
-    const shape = parseClipShape(L.clipPath, L.rect.w, L.rect.h);
+    // `bw`/`bh` are the layer's RESOLVED box, which is the authored rect unless the
+    // track keyed `w`/`h` (§5.2). Percentage clip shapes and percentage radii resolve
+    // against the box the browser laid out, so under a size tween they have to resolve
+    // against the tweened one — otherwise a `circle(50%)` stops being a circle exactly
+    // when the box stops being its authored size.
+    const shape = parseClipShape(L.clipPath, bw, bh);
     if (shape) {
       if (shape.kind === 'empty') return false;   // a well-formed clip enclosing nothing
       const p = new Path2D();
@@ -458,7 +504,7 @@ function clipLayer(ctx: AnyCtx, L: SeqLayer, ox: number, oy: number, w: number, 
       ctx.clip(p);
     }
   } else if (L.radius) {
-    const r = radiiOf(L.radius, L.rect.w, L.rect.h).map((v) => v * S) as [number, number, number, number];
+    const r = radiiOf(L.radius, bw, bh).map((v) => v * S) as [number, number, number, number];
     if (r.some((v) => v > 0)) {
       const p = new Path2D();
       p.roundRect(ox, oy, w, h, r);
@@ -475,6 +521,15 @@ function clipLayer(ctx: AnyCtx, L: SeqLayer, ox: number, oy: number, w: number, 
  * origin at `(-pad, -pad)` in box space and is `2·pad` bigger on each axis, so every
  * plate draw subtracts it and adds twice it. At pp = 0 — every P0 export — the four
  * expressions evaluate to the identical numbers the un-padded draws used.
+ *
+ * THE LIVE RASTER OUTRANKS THE PLATE ON EVERY KIND (plans/104 §5.2). It is asked for by
+ * a mounted Lottie player OR by a `w`/`h` tween, and a size tween is answered by a
+ * re-photograph of the box laid out at the tweened size — the whole point being that
+ * text REFLOWS. Reading it only in the `lottie` branch (which is what shipped) paid for
+ * that shot per frame and then drew the authored-size plate STRETCHED to the tweened
+ * rect: a rewrapped paragraph scaled instead, a 1 px border four px wide at w×4. The
+ * kinds the size channel exists for — `static` (a text box is one) and `video` — are
+ * exactly the ones that were dropping it.
  */
 async function paintLayer(
   ctx: AnyCtx, item: PlanItem, res: LayerRes | undefined,
@@ -494,17 +549,23 @@ async function paintLayer(
 
   if (L.kind === 'video') {
     // Background + anything painted UNDER the media, then the frame, then the
-    // box's own text back on top (the DOM order the preview paints in).
-    if (res?.under) ctx.drawImage(res.under, px, py, pw, ph);
+    // box's own text back on top (the DOM order the preview paints in). BOTH plates
+    // are re-shot live under a size tween — they are one box photographed twice
+    // (opaque with the media hidden, then transparent), so a stale `over` would ghost
+    // its text over the reflowed copy in `under`.
+    const under = res?.live ?? res?.under;
+    const over = res?.liveOver ?? res?.over;
+    if (under) ctx.drawImage(under, px, py, pw, ph);
     if (res?.provider && item.sourceSec != null) {
       const f = fitRect(res.objectFit || 'contain', res.objectPosition || '', res.provider.w, res.provider.h, w, h);
       await res.provider.drawAt(ctx, item.sourceSec, { dx: ox + f.x, dy: oy + f.y, dw: f.w, dh: f.h });
     }
-    if (res?.over) ctx.drawImage(res.over, px, py, pw, ph);
+    if (over) ctx.drawImage(over, px, py, pw, ph);
     return;
   }
 
-  if (res?.under) ctx.drawImage(res.under, px, py, pw, ph);
+  if (res?.live) ctx.drawImage(res.live, px, py, pw, ph);
+  else if (res?.under) ctx.drawImage(res.under, px, py, pw, ph);
 }
 
 /**
@@ -538,15 +599,28 @@ async function paintLayer(
  * answer on every engine — and it is CSS's answer, where `filter` applies in the
  * element's own box and `transform` magnifies what comes out.
  */
-export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | undefined, S: number): Promise<void> {
+export async function drawItem(
+  ctx: AnyCtx, item: PlanItem, res: LayerRes | undefined, S: number, cameraMoves = false,
+): Promise<void> {
   const L = item.layer;
   // Timeline citizens with no picture: an audio bed, and (plans/104 §5.4) a camera
   // marker, which carries a pose rather than pixels. Neither is given a plate, and
   // neither may leave one behind here either.
   if (L.kind === 'audio' || L.kind === 'camera') return;
   if (item.alpha <= 0) return;
-  const w = L.rect.w * S;
-  const h = L.rect.h * S;
+  // The RESOLVED box (§5.2): the authored rect unless the track keyed `w`/`h`. Equal
+  // to `L.rect.w/h` on every layer that keyframes no size, so every expression below is
+  // the one that shipped — and a sized layer grows from its top-left, exactly as the
+  // reflowed DOM does, because `rect.x/y` is still the origin and the centre moved by
+  // half the growth inside the fold.
+  // `item.sized` is the authority, not `item.w > 0`: a track may legitimately key a
+  // size to ZERO (a box that collapses away), and reading that as "absent" would draw
+  // it at its authored size instead of not at all. The fallback is for a PlanItem built
+  // before these fields existed, or by hand.
+  const bw = item.sized ? item.w : (Number.isFinite(item.w) && item.w > 0 ? item.w : L.rect.w);
+  const bh = item.sized ? item.h : (Number.isFinite(item.h) && item.h > 0 ? item.h : L.rect.h);
+  const w = bw * S;
+  const h = bh * S;
   if (w <= 0 || h <= 0) return;
   const pp = (res?.platePad ?? 0) * S;
 
@@ -554,7 +628,7 @@ export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | unde
   try {
     ctx.globalAlpha = clamp01(item.alpha);
     if (L.blend && BLEND_OPS.has(L.blend)) ctx.globalCompositeOperation = L.blend as GlobalCompositeOperation;
-    ctx.translate((L.rect.x + L.rect.w / 2) * S + item.dx * S, (L.rect.y + L.rect.h / 2) * S + item.dy * S);
+    ctx.translate((L.rect.x + bw / 2) * S + item.dx * S, (L.rect.y + bh / 2) * S + item.dy * S);
     if (item.rot) ctx.rotate((item.rot * Math.PI) / 180);
     if (item.scale !== 1) ctx.scale(item.scale, item.scale);
 
@@ -575,10 +649,10 @@ export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | unde
     // 1 on every flat layer, which is the byte-identity floor: at k = 1 every
     // expression below is the one that shipped.
     const k = Math.max(1, res?.plateEff ?? 1);
-    const fx = itemFx(item, S * k);
+    const fx = itemFx(item, S * k, cameraMoves);
 
     if (!fx) {
-      if (!clipLayer(ctx, L, ox, oy, w, h, S)) return;
+      if (!clipLayer(ctx, L, ox, oy, w, h, S, bw, bh)) return;
       await paintLayer(ctx, item, res, ox, oy, w, h, pp);
       return;
     }
@@ -593,7 +667,7 @@ export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | unde
     // dom-to-image copies `clip-path` onto its clone — so this is about the SPILL, not
     // about the picture.) Taken FIRST so an empty clip costs no scratch at all.
     const clipsAfter = !!L.clipPath;
-    if (clipsAfter && !clipLayer(ctx, L, ox, oy, w, h, S)) return;
+    if (clipsAfter && !clipLayer(ctx, L, ox, oy, w, h, S, bw, bh)) return;
 
     const sw = w * k;
     const sh = h * k;
@@ -613,7 +687,7 @@ export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | unde
     if (!stage) {
       // No canvas in this realm (bare Node, a refused allocation). Draw the picture
       // sharp rather than not at all: a visibly un-softened layer beats a missing one.
-      if (!clipsAfter && !clipLayer(ctx, L, ox, oy, w, h, S)) return;
+      if (!clipsAfter && !clipLayer(ctx, L, ox, oy, w, h, S, bw, bh)) return;
       await paintLayer(ctx, item, res, ox, oy, w, h, pp);
       return;
     }
@@ -622,7 +696,7 @@ export async function drawItem(ctx: AnyCtx, item: PlanItem, res: LayerRes | unde
     try {
       stage.ctx.save();
       stage.ctx.translate(pad, pad);
-      const visible = clipsAfter || clipLayer(stage.ctx, L, 0, 0, sw, sh, S * k);
+      const visible = clipsAfter || clipLayer(stage.ctx, L, 0, 0, sw, sh, S * k, bw, bh);
       if (visible) await paintLayer(stage.ctx, item, res, 0, 0, sw, sh, ppk);
       stage.ctx.restore();
       if (!visible) return;
@@ -659,10 +733,19 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
   const clipOf = new Map(job.clips.map((c) => [c.idx, c.src]));
   const plateOf = new Map(job.plates.map((p) => [p.idx, p]));
   const S = job.scale;
-  // The stage the planner projects through. P0 carries no cameras, so this resolves
-  // to the DEFAULT camera for every frame — which is not an identity: it is what
-  // makes a lifted layer read as lifted (plans/104 §5.4).
-  const env = { stageW: job.stageW ?? 0, stageH: job.stageH ?? 0 };
+  // The stage the planner projects through, and the cameras on it. The cameras are
+  // DERIVED from the very layers that just crossed the wire (`stageCameras`) rather
+  // than sent as a second field: the main thread derives them from the same function
+  // over the same `kind`/`z`/`kf`, so the two threads cannot be handed different
+  // cameras for the same stage — the property the worker-vs-in-thread sha identity
+  // test exists to protect. With no camera box this resolves to the DEFAULT camera for
+  // every frame, which is not an identity: it is what makes a lifted layer read as
+  // lifted (plans/104 §5.4).
+  const cameras = stageCameras(layers);
+  const env = { stageW: job.stageW ?? 0, stageH: job.stageH ?? 0, cameras };
+  // Asked ONCE for the whole render, because a plate is shot once for the whole render
+  // (§5.5 / the P1 obligation). See `itemFx`.
+  const camMoves = camerasMove(cameras);
 
   const ext = new Map(crossfadeJunctions(layers).map((j) => [j.aIdx, j.ms]));
   const res = new Map<number, LayerRes>();
@@ -679,6 +762,7 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
       platePad: Number.isFinite(w?.platePad) ? (w?.platePad as number) : 0,
       plateEff: Number.isFinite(w?.plateEff) && (w?.plateEff as number) > 0 ? (w?.plateEff as number) : 1,
       live: null,
+      liveOver: null,
       first: win.first, last: win.last, span: win.span,
       lastStats: null, srcClaimedSec: 0,
     });
@@ -748,26 +832,85 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.clearRect(0, 0, job.outW, job.outH);
-    if (job.bg) ctx.drawImage(job.bg, 0, 0, job.outW, job.outH);
+    // THE BACKGROUND IS AN IMPLICIT z = 0 LAYER (plans/104 §5.5). Untransformed it would
+    // be frozen wallpaper the whole composition slides across under a pan — the opposite
+    // of a camera move — so it goes through the same `projectLayer` every other layer
+    // does, anchored on the stage centre, and is drawn from a plate captured with
+    // `bgPad` of overscan so the reveal has artboard in it rather than a hard edge.
+    // With no camera the projection is an exact identity and this is the one-line draw
+    // it has always been, on the same plate it has always been.
+    if (job.bg) {
+      const bgPad = Number.isFinite(job.bgPad) && (job.bgPad as number) > 0 ? (job.bgPad as number) : 0;
+      if (!camMoves && bgPad === 0) {
+        ctx.drawImage(job.bg, 0, 0, job.outW, job.outH);
+      } else {
+        const view = planCameraView(env, t);
+        const proj = projectLayer(view, { bx: view.w / 2, by: view.h / 2, z: 0 });
+        // THE PLATE'S OWN SIZE, and the STAGE's own centre — never the canvas's.
+        // `outW/outH` are the ENCODER's dimensions (`Math.round(…) & ~1`, forced even for
+        // the video codecs) while the plate is `Math.round((native + 2·bgPad)·S)` and every
+        // layer above is placed in native·S space. Deriving the draw from `outW` therefore
+        // assumed `outW === nativeW·S`, which the even-rounding breaks by up to ~2 px — a
+        // static stretch nobody could see while the bg was untransformed, but a sub-pixel
+        // drift of the background AGAINST the layers the moment the camera moves.
+        const plate = job.bg as { width?: number; height?: number };
+        const cx = ((job.stageW as number) > 0 ? (job.stageW as number) * S : job.outW) / 2;
+        const cy = ((job.stageH as number) > 0 ? (job.stageH as number) * S : job.outH) / 2;
+        const dw = Number.isFinite(plate.width) && (plate.width as number) > 0
+          ? (plate.width as number) : cx * 2 + bgPad * 2 * S;
+        const dh = Number.isFinite(plate.height) && (plate.height as number) > 0
+          ? (plate.height as number) : cy * 2 + bgPad * 2 * S;
+        ctx.save();
+        try {
+          ctx.globalAlpha = clamp01(proj.alphaGuard);
+          ctx.translate(cx + proj.dx * S, cy + proj.dy * S);
+          if (proj.scale !== 1) ctx.scale(proj.scale, proj.scale);
+          // The plate's origin is `(-bgPad, -bgPad)` in stage px, so the stage centre sits
+          // `bgPad·S + cx` in from its left edge — the offset that puts it on the origin.
+          ctx.drawImage(job.bg, -(bgPad * S + cx), -(bgPad * S + cy), dw, dh);
+        } finally {
+          ctx.restore();
+        }
+      }
+    }
 
     const plan = sequenceDrawPlan(layers, t, job.totalMs, env);
     // The live-DOM rasters for this frame, fetched BEFORE any drawing so the
     // request/response hop overlaps nothing and stays strictly one-at-a-time.
-    const taken: { r: LayerRes; img: CanvasImageSource }[] = [];
+    const taken: { r: LayerRes; slot: SeqLiveSlot; img: CanvasImageSource }[] = [];
     try {
       if (io.lottieAt) {
         for (const item of plan) {
           const w = wireOf.get(item.layer.idx);
-          if (!w?.needsLiveRaster || item.sourceSec == null) continue;
+          // A LIVE re-capture is asked for by the wire flag (a mounted Lottie player)
+          // OR by the frame itself: a layer whose `w`/`h` are being tweened has to be
+          // re-photographed at the size it is at, because a stretched plate is a
+          // stretched picture and the preview REFLOWS (§5.2). `sourceSec` is no longer
+          // part of the gate — a static box has none, and needing a size is not needing
+          // a source time.
+          if (!w?.needsLiveRaster && !item.sized) continue;
           const r = res.get(item.layer.idx);
           if (!r) continue;
-          const img = await watchdog(io.lottieAt(item.layer.idx, i, item.sourceSec), `live raster ${i + 1}/${job.frameCount}`);
-          if (img) { r.live = img; taken.push({ r, img }); }
+          // A video layer's picture is TWO plates with the decoded frame between them,
+          // so a size tween re-shoots both; every other kind has only `under`.
+          const slots: SeqLiveSlot[] = item.layer.kind === 'video' && r.over ? ['under', 'over'] : ['under'];
+          for (const slot of slots) {
+            const img = await watchdog(
+              io.lottieAt(item.layer.idx, i, item.sourceSec ?? 0, slot),
+              `live raster ${i + 1}/${job.frameCount}`,
+            );
+            if (!img) continue;
+            if (slot === 'over') r.liveOver = img; else r.live = img;
+            taken.push({ r, slot, img });
+          }
         }
       }
-      for (const item of plan) await drawItem(ctx, item, res.get(item.layer.idx), S);
+      for (const item of plan) await drawItem(ctx, item, res.get(item.layer.idx), S, camMoves);
     } finally {
-      for (const { r, img } of taken) { r.live = null; io.releaseLottie?.(img); }
+      for (const { r, slot, img } of taken) {
+        if (slot === 'over') r.liveOver = null; else r.live = null;
+        io.releaseLottie?.(img);
+      }
     }
 
     for (const L of layers) {
@@ -873,6 +1016,8 @@ export type SeqWorkerIn = SeqWorkerStart | SeqWorkerLive | SeqWorkerAbortMsg;
 
 export interface SeqWorkerNeedLive {
   type: 'need-live'; id: number; token: number; layerIdx: number; frame: number; sourceSec: number;
+  /** Which plate is being re-shot; absent means `under`, the only slot a non-video layer has. */
+  slot?: SeqLiveSlot;
 }
 export interface SeqWorkerProgress { type: 'progress'; id: number; done: number; total: number }
 export interface SeqWorkerLog { type: 'log'; id: number; level: string; msg: string }
@@ -953,9 +1098,9 @@ export async function handleStart(
       aborted: () => ctl.aborted(),
       progress: (done, total) => port.post({ type: 'progress', id, done, total }),
       frame: (c, _ctx2, _i, tsUs) => mux.addFrame(c as CanvasImageSource, tsUs),
-      lottieAt: async (layerIdx, frame, sourceSec) => {
+      lottieAt: async (layerIdx, frame, sourceSec, slot) => {
         const tk = ++token;
-        port.post({ type: 'need-live', id, token: tk, layerIdx, frame, sourceSec });
+        port.post({ type: 'need-live', id, token: tk, layerIdx, frame, sourceSec, ...(slot ? { slot } : {}) });
         return await ctl.awaitLive(tk);
       },
       releaseLottie: (img) => { try { (img as ImageBitmap).close?.(); } catch { /* not a bitmap */ } },

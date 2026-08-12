@@ -432,6 +432,21 @@ type PopItem = PopSep | PopGrid | PopAction;
 interface GestureBase { pointerId: number; startClient: Point; origin?: Point }
 interface TapGesture extends GestureBase { type: 'tap' }
 interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; additive: boolean }
+/**
+ * CAMERA PAN (plans/104 §8) — a drag on the EMPTY stage while a camera is selected and
+ * running. It takes the gesture the marquee would otherwise have had, which is the
+ * whole shape of "camera mode is entered by selection": there is no mode to turn on,
+ * and clicking any box leaves it by ordinary selection semantics.
+ *
+ * `client` is the last pointer position in CLIENT px (what a pointer event carries);
+ * `dx`/`dy` are the accumulated displacement in NATIVE px, converted through
+ * `clientToNative` on every move exactly as every other drag in this canvas does. The
+ * invariant is direct manipulation: the picture keeps up with the hand at any canvas
+ * zoom, which needs a fixed MODEL displacement per SCREEN px — i.e. the client delta
+ * divided by the zoom. Writing client px straight into the model instead made the same
+ * drag move the shot half as far at 50 % and twice as far at 200 %.
+ */
+interface CamPanGesture extends GestureBase { type: 'campan'; client: Point; dx: number; dy: number }
 interface CreateGesture extends GestureBase { type: 'create'; origin: Point; seed: Box; others: AABB[]; corner?: Point }
 // Line tool — one drag draws a TWO-NODE authored path (plan 96 P2; it made a connector
 // edge under plan 90). Both ends are plain canvas points: a line is a path box like any
@@ -458,12 +473,13 @@ interface PenMarqueeGesture extends GestureBase { type: 'penmarquee'; origin: Po
 /** One contour's slice of the combined node-edit path: how many nodes it owns, and the
  *  kind + closed flag to restore when the flat run is split back into real contours. */
 interface PenPart { count: number; kind: SplineKind; closed: boolean }
-type Gesture = TapGesture | MarqueeGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture
+type Gesture = TapGesture | MarqueeGesture | CamPanGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture
   | GScaleGesture | GRotateGesture | PenDrawGesture | PenNodeGesture | PenHandleGesture | PenMarqueeGesture | LineGesture;
 type FilledBaseFields = 'pointerId' | 'startClient';
 type GestureInit =
   | Omit<TapGesture, FilledBaseFields>
   | Omit<MarqueeGesture, FilledBaseFields>
+  | Omit<CamPanGesture, FilledBaseFields>
   | Omit<CreateGesture, FilledBaseFields>
   | Omit<MoveGesture, FilledBaseFields>
   | Omit<ResizeGesture, FilledBaseFields>
@@ -499,6 +515,9 @@ const SVG = {
   // same action wearing the same glyph in its other home (the timeline transport).
   // plans/104 §8's M2.5 revision: TWO homes, ONE action.
   keyframe: '<path d="M12 3 21 12 12 21 3 12Z"/>',
+  // The camera add-kind (plans/104 §5.4) — the same body-and-lens the icon registry's
+  // `camera` draws, so the rail, the timeline menu and the inspector group agree.
+  camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
   more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
@@ -1392,9 +1411,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const el = canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
     return el != null && el.classList.contains(SEQ_OFF_CLASS);
   }
+  /**
+   * The single ACQUISITION gate (see the file header): every pointer pick — click,
+   * marquee, hover, drop — runs through this, so a box that must not be grabbed off the
+   * canvas is excluded in ONE expression rather than at five call sites.
+   *
+   * Two exclusions:
+   *   • SEQ-HIDDEN — the box is not on screen at the playhead, so a click falls through
+   *     it to whatever is (the rule this function was written for).
+   *   • CAMERA — a camera has NO canvas footprint at all (plans/104 §5.4: "excluded
+   *     from hit-testing, marquee…; selected via its bar/chip only"). It paints nothing
+   *     and is minted with no geometry, so without this a zero-size marker at the origin
+   *     is caught by any marquee crossing it and dragged around as if it were artwork.
+   */
   function seqHiddenSkip(boxes: Box[]): ((i: number) => boolean) | undefined {
     if (!timeCfg) return undefined;
-    return (i: number) => seqHiddenId(idOf(boxes[i], i));
+    return (i: number) => String(boxes[i]?.[cfg.kindField] ?? '') === 'camera' || seqHiddenId(idOf(boxes[i], i));
   }
   /**
    * RETENTION, the half `seqHiddenSkip` cannot cover: a selection acquired while its
@@ -2772,6 +2804,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     clip: SVG.clipKind, card: SVG.boxKind, audio: SVG.audioKind, tool: SVG.toolKind,
     // The frame primitive (plan 93) — the artboard "#" rather than a bare "+".
     frame: SVG.frame,
+    // The scene camera (plans/104 §5.4). Same glyph the timeline's add menu and the
+    // Camera inspector group wear, so one thing looks like one thing.
+    camera: SVG.camera,
   };
   function openAddMenu(anchor: HTMLElement): void {
     spawnPopover(anchor, addKinds.map((k) => ({
@@ -2914,6 +2949,78 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function addKeyframeFromCanvas(): void {
     void ensureTimeline(true).then(() => { timelinePanel?.addKeyframe(); });
+  }
+
+  // ── camera mode (plans/104 §8) ───────────────────────────────────────────────
+  //
+  // "Camera mode is entered by SELECTION, never a global toggle": with a camera
+  // selected and the playhead inside its window, an empty-stage drag pans the shot and
+  // a plain wheel dollies it. There is nothing to switch on and nothing to switch off —
+  // clicking any box hands both gestures straight back.
+  //
+  // The PANEL owns the answer (it owns the clock, and "inside its window" is a question
+  // about the playhead), so this is one call and no local copy of the rule. Before the
+  // lazy panel chunk exists there is no camera and no clock, hence ''.
+
+  /** The camera a canvas gesture is aimed at right now, or ''. */
+  function camModeId(): string {
+    return timelinePanel?.cameraModeId() ?? '';
+  }
+
+  /**
+   * The DOLLY, coalesced (§8: "wheel coalesces one commit per pause").
+   *
+   * A wheel is a stream of small deltas with no end event, so a commit per notch would
+   * be a hundred undo steps for one gesture. The deltas accumulate here and one write
+   * lands when the stream stops — the same "one commit per gesture" law the drags obey,
+   * with a timer standing in for pointerup.
+   */
+  let dollyPending = 0;
+  let dollyTimer: ReturnType<typeof setTimeout> | null = null;
+  const DOLLY_PAUSE_MS = 180;
+  /** Wheel notches → dolly px. A notch is ~100 deltaY on a mouse; ~24px of camera is a
+   *  visible but recoverable step at P = 1200. */
+  const DOLLY_PX_PER_DELTA = 0.24;
+  /**
+   * `deltaY` is only in PIXELS when `deltaMode` says so. Firefox reports LINES (mode 1,
+   * ~3 per notch) and a page-scroll device reports PAGES (mode 2) — read raw, a notch
+   * there would dolly two thirds of a pixel and the wheel would feel dead. The two
+   * factors are the conventional line height and viewport page the browsers themselves
+   * use when they normalise.
+   */
+  const wheelPx = (e: WheelEvent): number =>
+    e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (window.innerHeight || 800) : 1);
+
+  function flushDolly(): void {
+    dollyTimer = null;
+    const d = dollyPending;
+    dollyPending = 0;
+    if (!d || !timelinePanel) return;
+    const boxes = getBoxes();
+    const next = timelinePanel.cameraWrite(boxes, { z: d });
+    if (next !== boxes) commit(next);
+  }
+
+  /**
+   * Plain wheel = DOLLY; Cmd/Ctrl-wheel stays the VIEW's zoom and Space+drag stays the
+   * view's pan (§8: "move the shot" and "move my view" have to stay separable, which
+   * the reference tool never had to solve).
+   *
+   * Bound on the canvas with `passive: false` so the notch can be claimed, and it stops
+   * propagating only when it IS claimed — otherwise `tool-stage-nav`'s own listener on
+   * the stage keeps the wheel it has always had.
+   */
+  function onCameraWheel(e: WheelEvent): void {
+    if (e.ctrlKey || e.metaKey) return;          // the view's zoom, untouched
+    if (!camModeId()) return;                    // no camera armed: the view's pan
+    e.preventDefault();
+    e.stopPropagation();
+    // AWAY FROM THE VIEWER ON A SCROLL DOWN. `eff = P/(P − (z − camZ))`, so a camera
+    // whose z grows is a camera moving back — and a wheel pushed forward (deltaY < 0)
+    // is the universal "closer", so the sign here is deltaY's own.
+    dollyPending += wheelPx(e) * DOLLY_PX_PER_DELTA;
+    if (dollyTimer) clearTimeout(dollyTimer);
+    dollyTimer = setTimeout(flushDolly, DOLLY_PAUSE_MS);
   }
 
   // Every box is ONE unified object (fill + shape + image + text), so the bar
@@ -7114,7 +7221,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     deselectEdge();   // clicked empty → drop any connector selection
 
-    // Empty canvas.
+    // Empty canvas — or the CAMERA's, when one is selected and running (plans/104 §8).
+    // The camera takes the drag the marquee would have had: there is nothing on the
+    // empty stage for a marquee to catch that a camera user is reaching for, and
+    // clicking any box hands the gesture straight back by ordinary selection.
+    // SHIFT IS RESERVED (§8: "shift-drag reserved for tilt (P2)"), so it keeps the
+    // meaning it already had — the additive marquee — rather than being given a second
+    // one now and taken away again at P2.
+    if (e.pointerType === 'mouse' && !e.shiftKey && camModeId()) {
+      beginGesture(e, { type: 'campan', client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0 });
+      e.stopPropagation();
+      return;
+    }
     if (e.pointerType === 'mouse') {
       beginGesture(e, { type: 'marquee', origin: nat, additive: e.shiftKey || e.metaKey });
       rubber.hidden = false;
@@ -7159,6 +7277,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // what made the whole area outside the artboard feel inert.
     // Touch is left alone: stageNav owns one-finger pan there, as it does inside.
     if (e.pointerType !== 'mouse' || spacePan) return;
+    // …and the CAMERA takes it first when one is armed (plans/104 §8), exactly as it
+    // does over the artboard: the backdrop is empty stage too, and a camera pan that
+    // stopped at the artboard's edge would be a gesture with an invisible boundary.
+    if (!e.shiftKey && camModeId()) { beginGesture(e, { type: 'campan', client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0 }); return; }
     beginGesture(e, { type: 'marquee', origin: clientToNative(e.clientX, e.clientY), additive });
     rubber.hidden = false;
     // The gesture captures the pointer on canvasEl, so the move/up handlers bound there
@@ -7203,6 +7325,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
     if (gesture.type === 'marquee' || gesture.type === 'penmarquee') {
       drawRubber(gesture.origin, nat);
+      return;
+    }
+    // CAMERA PAN (plans/104 §8). Accumulate in NATIVE px and write nothing: the
+    // projection is applied by the sequence DOM applier off the model, so the one
+    // honest preview is the commit itself — which is why §8's gesture law for the
+    // camera is "drags commit on release", not "on move".
+    //
+    // Native, not client, because the model is native: `camX` is stage px, and the
+    // picture it displaces is on screen at the canvas zoom. Accumulating client px and
+    // writing them as model px made a 200 px drag move the shot 100 screen px at 50 %
+    // zoom and 400 at 200 % — the picture sliding out from under the cursor, which is
+    // the opposite of the direct manipulation the release handler promises and every
+    // other drag here performs (`marquee`, `move`, `resize`, `pen` all convert first).
+    if (gesture.type === 'campan') {
+      const prev = clientToNative(gesture.client.x, gesture.client.y);
+      gesture.dx += nat.x - prev.x;
+      gesture.dy += nat.y - prev.y;
+      gesture.client = { x: e.clientX, y: e.clientY };
       return;
     }
     // Pen: pull the just-placed node's handles out, the universal click-and-drag idiom.
@@ -7542,6 +7682,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       else if (wasText && cfg.textField) editAfterPaint(id, { selectAll: true });
       return;
     }
+    if (g.type === 'campan') {
+      const { dx, dy } = g;
+      endGesture();
+      // ONE commit on release, and only when the shot actually moved. `cameraWrite`
+      // resolves WHICH keyframe it lands on (the latch, §8) and returns the array
+      // unchanged when there is nowhere honest to put it.
+      //
+      // NEGATED, because the content follows the hand: the projection subtracts camX
+      // (`cx' = W/2 + (cx − camX − W/2)·eff`), so a camera moving right slides the
+      // scene left. Dragging right has to move the picture right, which is the direct
+      // manipulation every other drag in this canvas performs — and `dx`/`dy` arrive in
+      // NATIVE px for the same reason (see CamPanGesture), so the shot keeps up with the
+      // hand at every canvas zoom instead of only at 100 %.
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        const next = timelinePanel?.cameraWrite(boxes, { x: -dx, y: -dy });
+        if (next && next !== boxes) commit(next);
+      }
+      return;
+    }
     if (g.type === 'marquee') {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
       if (moved < 6) { selection = new Set<string>(); deselectEdge(); }
@@ -7596,12 +7755,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const live = g.liveRect || g.startRect;
       const idx = g.index;
       const rotId = idOf(boxes[idx], idx);
-      // ROTATE is a pose channel (`r`); RESIZE is not, and never will be — w/h are not
-      // keyframable (§5.2), so a resize always writes the box itself. That asymmetry
-      // is stated in the inspector too ("Size is not keyframable"), because it is the
-      // one place this model asks the user to hold two rules at once.
+      // BOTH gestures are pose channels now. Rotate always was (`r`); RESIZE became one
+      // at P1 (plans/104 §5.2, REVERSED — Andy, 2026-08-12 hands-on: "I can't change
+      // width and height of elements and have them tween"), so a resize ON a diamond
+      // writes `w`/`h` and a resize anywhere else still writes the box itself.
+      //
+      // The two channels compose differently and the difference is not cosmetic: `w`/`h`
+      // are ABSOLUTE px that replace the box's own size for their segment, so they are
+      // written with 'set' — a dragged handle produces the new WIDTH, not a change to it
+      // — while the origin shift an nw/n/w handle also produces is a `x`/`y` DELTA and
+      // is written with 'add', because those channels are offsets from the authored
+      // position. Two folds over one array, one commit, one undo step.
+      //
       // ZERO DELTA IS NOT A POSE. `liveRect` is only ever assigned in pointermove, so a
-      // press-and-release on the rotate handle leaves `live === g.startRect` and `dr`
+      // press-and-release on a handle leaves `live === g.startRect` and every delta
       // exactly 0 — and a redirected write of `{ r: 0 }` is not a no-op: `kfActiveChannels`
       // ADDS `r` to the box's channel set, so on a track that does not already animate
       // rotation (a URL-authored `t0_x0*t1000_x40`, or one built from the inspector's
@@ -7610,11 +7777,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // (0.5px there); below the tolerance this falls through to the base write, which is
       // the identical no-op an unkeyframed box already gets — the two stay in step.
       const dr = g.type === 'rotate' ? num(live.rot, 0) - num(g.startRect.rot, 0) : 0;
-      const rotKf = g.type === 'rotate' && Math.abs(dr) > 0.01
-        && (timelinePanel?.kfPoseIds([rotId]).length ?? 0) > 0;
+      const dw = num(live.w, 0) - num(g.startRect.w, 0);
+      const dh = num(live.h, 0) - num(g.startRect.h, 0);
+      const onDiamond = (timelinePanel?.kfPoseIds([rotId]).length ?? 0) > 0;
+      const rotKf = g.type === 'rotate' && Math.abs(dr) > 0.01 && onDiamond;
+      const sizeKf = g.type === 'resize' && (Math.abs(dw) > 0.5 || Math.abs(dh) > 0.5) && onDiamond;
       endGesture();
       if (rotKf && timelinePanel) {
         commit(timelinePanel.kfPoseWrite(boxes, [rotId], { r: dr }));
+        return;
+      }
+      if (sizeKf && timelinePanel) {
+        let next = timelinePanel.kfPoseWrite(boxes, [rotId], { w: live.w, h: live.h }, 'set');
+        // An nw/n/w handle moves the ORIGIN as well as the size. Without this the box
+        // would grow from its top-left in the preview (which is what the fold does with
+        // `w`/`h` alone) while the handle the user is holding says it grew from the
+        // opposite corner.
+        const dx = num(live.x, 0) - num(g.startRect.x, 0);
+        const dy = num(live.y, 0) - num(g.startRect.y, 0);
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          next = timelinePanel.kfPoseWrite(next, [rotId], { x: dx, y: dy });
+        }
+        commit(next);
         return;
       }
       // Containment-on-resize: a resize/rotate can move the box's centre across a frame
@@ -8974,6 +9158,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   };
   stageEl.addEventListener('pointermove', onStagePointerMove, { passive: true });
   stageEl.addEventListener('wheel', onStageMove, { passive: true });
+  // The camera's wheel (plans/104 §8) — on the CANVAS, not the stage, and non-passive
+  // so a claimed notch can be preventDefault()ed. It runs BEFORE `tool-stage-nav`'s
+  // stage-level listener (a canvas-level handler on the way up), and only claims the
+  // event when a camera is actually armed.
+  canvasEl.addEventListener('wheel', onCameraWheel as EventListener, { passive: false });
   window.addEventListener('resize', onStageMove);
   const ro = new ResizeObserver(onStageMove);
   ro.observe(stageEl);
@@ -9097,6 +9286,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       document.removeEventListener('copy', onCopy);
       stageEl.removeEventListener('pointermove', onStagePointerMove);
       stageEl.removeEventListener('wheel', onStageMove);
+      canvasEl.removeEventListener('wheel', onCameraWheel as EventListener);
+      if (dollyTimer) { clearTimeout(dollyTimer); dollyTimer = null; }
       window.removeEventListener('resize', onStageMove);
       document.removeEventListener('pointerdown', onDocDown, true);
       ro.disconnect();
