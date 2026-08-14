@@ -109,6 +109,11 @@ function toggleSlotPreview(btn: HTMLElement): void {
   }).catch(() => { /* autoplay blocked or an undecodable container — leave the label */ });
 }
 
+/** Row copy/paste buffer for blocks with `rowActions`. Module-scoped so it survives the
+ *  per-keystroke re-renders and lets a copy in one card paste into another. Paste filters
+ *  to the target input's own field ids, so it never injects stray keys across tools. */
+let blockRowClipboard: Record<string, InputValue> | null = null;
+
 /** The two-step block-remove button arms itself with these expandos. */
 interface ConfirmButton extends HTMLElement { _armed?: boolean; _disarm?: (() => void) | null; }
 /** A block drag handle flags the click that trails a drag. */
@@ -471,10 +476,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // collapse chevron (the reported "clicking the 2nd scene expands the 1st"), and a
     // `vector` input forwards to its first number field. Wrap these in a <div role=group>
     // instead: the caption still names them (aria-labelledby), but it never proxies clicks.
-    // A badged select renders as a radiogroup of buttons (see controlHtml). Treat it
-    // like other composites: a wrapping <label> would proxy dead-space clicks to the
-    // first option button, and the caption must be aria-labelledby, not a <label for>.
-    const isBadgedSelect = input.control === 'select' && (input.options ?? []).some(o => (o as { badge?: string }).badge);
+    // A badged OR segmented select renders as a radiogroup of buttons (see controlHtml).
+    // Treat it like other composites: a wrapping <label> would proxy dead-space clicks to
+    // the first option button, and the caption must be aria-labelledby, not a <label for>.
+    const isBadgedSelect = input.control === 'select'
+      && ((input.options ?? []).some(o => (o as { badge?: string }).badge) || input.display === 'segmented');
     const isComposite = isBadgedSelect || ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker', 'table'].includes(input.control);
     const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isPill ? ' input-row--pill' : ''}${isStaticLabel ? ' input-row--static-label' : ''}${isSubControl(input, prev) ? ' input-row--sub' : ''}`;
     const valueTag = input.control === 'slider'
@@ -1698,6 +1704,56 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
+  // Per-row copy / paste / clear (blocks with `rowActions`). All three commit through the
+  // same setInput path as remove, so undo / URL / determinism are unaffected.
+  const rowOf = (btn: HTMLElement): { blockId: string; idx: number; inp: InputModelItem | undefined } => {
+    const blockId = btn.dataset.blockInput!;
+    const idx = parseInt(btn.dataset.blockIndex ?? '', 10);
+    return { blockId, idx, inp: panelModel.find(i => i.id === blockId) };
+  };
+  el.querySelectorAll<HTMLButtonElement>('[data-block-copy]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const { idx, inp } = rowOf(btn);
+      const row = Array.isArray(inp?.value) ? inp!.value[idx] : null;
+      if (!row || typeof row !== 'object') return;
+      blockRowClipboard = { ...(row as Record<string, InputValue>) };
+      btn.classList.add('is-done');
+      setTimeout(() => btn.classList.remove('is-done'), 700);   // brief "copied" tick
+    });
+  });
+  el.querySelectorAll<HTMLButtonElement>('[data-block-paste]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!blockRowClipboard) return;                          // nothing copied yet → no-op
+      const { blockId, idx, inp } = rowOf(btn);
+      if (!inp || !Array.isArray(inp.value)) return;
+      const arr = [...inp.value];
+      const cur = (arr[idx] && typeof arr[idx] === 'object') ? { ...(arr[idx] as Record<string, InputValue>) } : {};
+      // Only paste values for fields THIS input declares — never inject a key from a copy
+      // taken in a differently-shaped block.
+      for (const f of inp.fields ?? []) {
+        if (f.id in blockRowClipboard) cur[f.id] = blockRowClipboard[f.id]!;
+      }
+      arr[idx] = cur;
+      runtime.setInput(blockId, arr);
+      onDirty?.(blockId);
+    });
+  });
+  el.querySelectorAll<HTMLButtonElement>('[data-block-clear]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const { blockId, idx, inp } = rowOf(btn);
+      if (!inp || !Array.isArray(inp.value)) return;
+      const arr = [...inp.value];
+      // Clearing a row replaces it with a fresh default row — minted through
+      // newBlockRow so it is born with its stable id (never a hand-rolled, id-less row).
+      arr[idx] = newBlockRow(inp);
+      runtime.setInput(blockId, arr);
+      onDirty?.(blockId);
+    });
+  });
+
   // Drag a block's header to reorder. Native HTML5 DnD — the header is the handle.
   // For a plain blocks input the array is spliced into the new order. For a TREE
   // input (input.nesting active) the drop zone splits into before / after / inside,
@@ -2047,7 +2103,12 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // panel's by-id focus restore lands back on it after the rebuild a change triggers.
       // A radiogroup selects on arrow, so each move re-renders — the reveal of an
       // effect's inputs (showIf) is exactly why that rebuild is wanted.
-      if (selOpts.some(o => o.badge)) {
+      // `display:'segmented'` uses the SAME radiogroup (and wiring) laid out as a row
+      // of side-by-side tabs, minus the badge pills — for a small mode switch
+      // (Hue/Saturation/Luminance). The badge pill is already per-option-conditional,
+      // so a badge-less segmented select renders as plain labelled tabs.
+      const segmented = input.display === 'segmented';
+      if (segmented || selOpts.some(o => o.badge)) {
         const cur = String(input.value ?? '');
         const btns = selOpts.map(o => {
           const on = o.value === cur;
@@ -2058,7 +2119,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
             + (o.badge ? `<span class="badge-select-pill" data-badge="${escape(o.badge)}">${escape(o.badge)}</span>` : '')
             + `</button>`;
         }).join('');
-        return `<div class="badge-select" role="radiogroup" data-badge-select="${id}" aria-label="${escape(input.label ?? id)}">${btns}</div>`;
+        return `<div class="badge-select${segmented ? ' badge-select--segmented' : ''}" role="radiogroup" data-badge-select="${id}" aria-label="${escape(input.label ?? id)}">${btns}</div>`;
       }
       return `<select data-input-id="${id}">${selOpts.map(o =>
         `<option value="${escape(o.value)}" ${o.value === String(input.value ?? '') ? 'selected' : ''}>${escape(o.label)}</option>`
@@ -2248,8 +2309,24 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const labelEach = !!(addMenu || input.labelledFields);
       const labelled = (f: BlockFieldSpec, inner: string, cls = ''): string => {
         if (!labelEach) return inner;
+        const name = escape(f.label ?? f.id);
+        // A field with an `icon` renders it INLINE to the left of the control instead of a
+        // stacked text label — so a dense grid of sliders (e.g. flythrough poses) stays
+        // identifiable. When the field has help, the ICON itself is the tooltip trigger (no
+        // separate "i" button): hover / tap / focus reveals the wrapping pop, which leads
+        // with the field name (an icon alone can be ambiguous) then the help.
+        if (f.icon && hasIcon(f.icon)) {
+          const glyph = icon(f.icon, { size: 15, strokeWidth: 2 });
+          if (f.help) {
+            const ht = helpTip(`${f.label ?? f.id} — ${f.help}`);
+            return `<div class="block-control block-control--ico${cls}">`
+              + `<button type="button" class="help-tip-btn block-control-ico" aria-label="${name}" aria-expanded="false" aria-controls="${ht.id}">${glyph}</button>`
+              + `${inner}${ht.pop}</div>`;
+          }
+          return `<div class="block-control block-control--ico${cls}"><span class="block-control-ico" title="${name}" aria-hidden="true">${glyph}</span>${inner}</div>`;
+        }
         const ht = f.help ? helpTip(f.help) : null;
-        return `<div class="block-control${cls}"><span class="block-control-label">${escape(f.label ?? f.id)}${ht ? ht.button : ''}</span>${inner}${ht ? ht.pop : ''}</div>`;
+        return `<div class="block-control${cls}"><span class="block-control-label">${name}${ht ? ht.button : ''}</span>${inner}${ht ? ht.pop : ''}</div>`;
       };
 
       // A sub-field's `showIf` is matched first against sibling fields of the same
@@ -2418,6 +2495,17 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6.5 8 10l4-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>`;
 
+      // Opt-in per-row copy / paste / clear (schema `rowActions`) — sits next to collapse +
+      // remove. Copy buffers this row's values; Paste writes the buffer onto another row (so
+      // two rows can be made identical); Clear resets the row to its field defaults.
+      const COPY_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+      const PASTE_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="2" width="4" height="3" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+      const CLEAR_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M12 8a4 4 0 1 1-1.17-2.83M12 3.5V6H9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      const rowActs = (idx: number): string => !input.rowActions ? '' :
+        `<button type="button" class="block-act" data-block-copy data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Copy values" title="Copy values">${COPY_SVG}</button>`
+        + `<button type="button" class="block-act" data-block-paste data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Paste values" title="Paste values">${PASTE_SVG}</button>`
+        + `<button type="button" class="block-act" data-block-clear data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Clear to defaults" title="Clear (reset to defaults)">${CLEAR_SVG}</button>`;
+
       // Collapsed-pill summary: the first non-empty text field, plus the first
       // valid colour field as a dot — so a folded block stays identifiable.
       // Both respect the active type's showFor visibility.
@@ -2482,7 +2570,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         return `<div class="block-item is-typed${rowCls}${nestCls}" data-block-type="${escape(typeVal ?? '')}" data-block-index="${idx}"${nestAttrs}>
           <div class="block-head" data-block-handle draggable="true"
                data-block-input="${id}" data-block-index="${idx}" title="${title}">
-            ${grip}<span class="block-type-label">${escape(label)}</span>${swatch}${preview}${collapseBtn}${removeBtn(idx, label || 'block')}
+            ${grip}<span class="block-type-label">${escape(label)}</span>${swatch}${preview}${rowActs(idx)}${collapseBtn}${removeBtn(idx, label || 'block')}
           </div>
           <div class="block-fields">${inner}</div>
         </div>`;
@@ -2890,6 +2978,10 @@ function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirt
       runtime.setInput(id, v);
     },
     onCommit(v) {
+      // Keep the readout fresh here too, not just in onInput: a keyboard step
+      // commits WITHOUT an onInput, and the panel rebuild that used to refresh the
+      // label is now skipped (domReflectsValue reads aria-valuenow) — so update it.
+      if (valueOut) valueOut.textContent = String(v);
       onDirty?.(id);
       runtime.setInput(id, v);
     },

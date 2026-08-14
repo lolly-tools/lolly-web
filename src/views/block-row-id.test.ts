@@ -67,8 +67,15 @@ test('neither migration records an undo step (setInputNoHistory / applyPatch)', 
   // through it would arm ↶ before the user has made a single edit — and on a canvas
   // tool, undoing it restores an id-less array where every row answers to ''.
   assert.match(TOOL_SRC, /runtime\.setInputNoHistory = baseSetInput;/, 'the quiet setter still exists');
-  const migration = CANVAS_SRC.slice(CANVAS_SRC.indexOf('const withIdsNow = withIds(loaded);'));
-  assert.match(migration.slice(0, 400), /setInputNoHistory/,
+  // The migration id-stamps AND (plan 112) assigns spatial frame membership before the
+  // commit — `let next = withIds(loaded)`, then `if (frameCfg) next = assignFrames(...)`,
+  // then commits through `quiet` (the setInputNoHistory alias). Bound the block at the
+  // trailing renderChrome() so the assertions don't depend on a fixed char window.
+  const mStart = CANVAS_SRC.indexOf('let next = withIds(loaded);');
+  const migration = CANVAS_SRC.slice(mStart, CANVAS_SRC.indexOf('renderChrome();', mStart));
+  assert.match(migration, /setInputNoHistory/,
     'free-canvas\'s load-time migration uses the history-free setter');
-  assert.equal(/runtime\.setInput\(blockId, withIdsNow\)/.test(CANVAS_SRC), false);
+  assert.match(migration, /\bquiet\(blockId, next\)/,
+    'free-canvas\'s migration commits through the quiet setter, never runtime.setInput');
+  assert.equal(/runtime\.setInput\(blockId, next\)/.test(CANVAS_SRC), false);
 });

@@ -6,7 +6,7 @@
  * has no `filter` branch, but `detectUnsupportedCss` declared any parseable filter
  * "supported" for every caller, so the raster escape hatch never fired and the effect
  * was simply absent from the file. No warning, no degraded version, nothing. That made
- * layout-studio's DOF blur and its `shadow: content` / `shadow: depth` silhouettes
+ * design's DOF blur and its `shadow: content` / `shadow: depth` silhouettes
  * PDF-invisible — the two effects plan 104's depth work is built out of.
  *
  * The oracle is the PDF's object structure, not pixels. "Did the effect survive into the
@@ -69,7 +69,7 @@ async function bundle(): Promise<string> {
 }
 
 /**
- * The exact CSS layout-studio's `shadowCss`/`blurCss` emit, so this tests the shipping
+ * The exact CSS design's `shadowCss`/`blurCss` emit, so this tests the shipping
  * declarations rather than a plausible-looking imitation:
  *   blur          → `filter: blur(Npx)`                       (blurCss)
  *   shadow:content→ `filter: drop-shadow(x y b <colour>)`     (shadowCss, manual tier)

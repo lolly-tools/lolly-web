@@ -106,10 +106,13 @@
   gap: 6px;
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid hsl(var(--destructive) / 0.5);
+  /* A caution, not an error — the same amber the unsaved-changes / Save warning
+     uses (var(--brand-warn), #b28727), NOT the destructive red. --brand-warn is a
+     full colour (hex), so tint/border go through color-mix rather than hsl(). */
+  border: 1px solid color-mix(in srgb, var(--brand-warn, #b28727) 50%, transparent);
   border-radius: var(--radius);
-  background: hsl(var(--destructive) / 0.08);
-  color: hsl(var(--destructive));
+  background: color-mix(in srgb, var(--brand-warn, #b28727) 10%, transparent);
+  color: var(--brand-warn, #b28727);
   font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
 }
@@ -125,7 +128,7 @@
 .upscale-check .upscale-checkbox { flex: 0 0 auto; margin: 0; }
 .upscale-check .upscale-field-label { font-weight: 600; }
 /* An informational note (e.g. "Illustration uses the general model for now") — muted,
-   NOT the destructive styling of .upscale-warning. */
+   NOT the amber caution styling of .upscale-warning. */
 .upscale-note {
   margin: 0;
   padding: 8px 10px;

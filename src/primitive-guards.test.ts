@@ -637,6 +637,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // (escape()d), and provider hit titles/subtitles (escape()d) + their
   // lib/icons icon() markup per the SearchHit contract. No raw docs/user text
   // reaches a sink unescaped.
+  // The reusable animation transport bar (window.__lollyAnim). Two sinks, both
+  // provably static: the bar scaffold (fixed class markup plus icon() registry
+  // glyphs from lib/icons.ts — no interpolated value) and the play/pause icon
+  // swap (an icon() constant). No user or dynamic data reaches either sink.
+  'views/anim-transport.ts': 2,
   'views/ask.ts': 2,
   // The #/convert view's 3 innerHTML writes interpolate only t() strings, escape()d
   // file names (utils.ts escape), and static in-code format labels/ids — no user
@@ -687,6 +692,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // placeholder/aria-label/value from the view's claim — are escape()d inside
   // gallerySearchBox (footer-nav.ts); the nav links are literal routes + t() labels.
   'components/search-bar.ts': 1,
+  // The .lolly share dialog's licensed-content choice panel. Its one sink writes a
+  // warning + two buttons whose only interpolations are a NUMBER (the licensed-asset
+  // count, Math.max-clamped) and fixed literal fragments ('it'/'them', 'asset'/'assets')
+  // chosen by ternaries on that number — no user text reaches the sink.
+  'components/share-dialog.ts': 1,
   // The row list's innerHTML replace, modelled on profiles-manager.ts. Reviewed —
   // every interpolated value (digest, name, fact line, reported-speech claim,
   // priced-summary) goes through escape() in rowHtml.
@@ -711,6 +721,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'folder-overlay.ts': 3,
   'lib/audio-coaching.ts': 1,
   'lib/audio-transport.ts': 2,
+  // The Custom CSS editor (plan 112 M4): the highlight overlay writes highlightCss(text),
+  // whose one job is to HTML-escape the source (& < >) before wrapping tokens in spans, and
+  // the autocomplete menu writes rows from the curated CSS_PROPERTIES list — never a raw user
+  // value. Two provably-safe sinks.
+  'lib/css-code-editor.ts': 2,
   // The shared tile context menu's one sink: the popover body — moved here from
   // views/projects.ts (10 → 9) when the mechanism was extracted. It writes only
   // what the consuming view's singleHtml/bulkHtml callbacks return, which is
@@ -917,6 +932,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // div — and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
   'views/catalog.ts': 10,
+  // The authenticated-capture sign-in panel (url-shot, desktop only). Four sinks —
+  // the head, the sign-in button, the clear button, and the active-session status —
+  // each interpolating only icon() registry glyphs (lib/icons.ts) and t() literal
+  // labels. No user or page-supplied text reaches any sink (the URL is only ever
+  // passed to the native invoke, never rendered).
+  'views/capture-signin.ts': 4,
   // 21 as of 2026-08-08: +2 for the Colour Lab's vector (SVG) stills (feature #7).
   // renderSolidSvg writes ONE engine-produced gamutSolidToSvg string (numeric
   // <polygon>s only, no user text) into the snapshot panel; renderCompare writes
@@ -981,7 +1002,15 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //   · NOTHING from the artwork reaches the dialog: the layer LABEL is an index this
   //     file mints ("Layer 3"), never a name out of the SVG, which is exactly the
   //     ingest-time PII strip §7 relies on and also what keeps this sink inert.
-  'views/free-canvas.ts': 47,
+  // 47 → 50, 2026-08-14 (plan 112 M4/M5): the Custom CSS, Frame state, and Speaker notes
+  //   panels each render one `p.innerHTML` of escape()d values + t() strings + static icon()
+  //   markup — the same provably-safe shape the other panel sinks in this file carry.
+  'views/free-canvas.ts': 50,
+  // present-mode.ts (plan 112): the presenter's three chrome sinks — the pause button and
+  //   the two nav-button builders — are each `el.innerHTML = icon(name, opts)`, a static
+  //   glyph string from lib/icons' PATHS registry with NO interpolated value. Nothing from a
+  //   document or user reaches them.
+  'views/present-mode.ts': 3,
   // 6 → 8, 2026-08-09 (the lazy-chunk pass): two lazy-mount injections joined the
   // six standing sinks — the bulk bar now lands via insertAdjacentHTML of
   // lib/bulk-bar.ts's bulkBarHtml() (labels/titles/ids all escape()d inside the
@@ -1102,7 +1131,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 17 → 15 on 2026-08-10: both live-toggle sinks LEFT this file — the Go live/Play
   // buttons moved into views/live-controls.ts, which builds them with
   // createElement/textContent and has no raw-HTML sink at all.
-  'views/tool.ts': 15,
+  // 15 → 16, 2026-08-14 (plan 112): openPresenter mounts a detached `presentSource` whose
+  // innerHTML is `runtime.getHydrated()` — the tool's OWN rendered template output (the same
+  // engine render the canvas shows), escaped by Handlebars, never a raw external value.
+  'views/tool.ts': 16,
   // 21 as of 2026-07-31: +2 deep-scan watermark notes (trustmarkNoteHtml,
   // contentSealNoteHtml). Reviewed — every attacker-controlled value on this
   // page (decoded payload/message hex, schema, filenames, hex dumps of file

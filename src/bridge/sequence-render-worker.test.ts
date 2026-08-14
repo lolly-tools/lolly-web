@@ -38,6 +38,8 @@ import {
   handleStart,
   drawItem,
   itemFx,
+  createFxPlateBudget,
+  releaseFxPlates,
   toJobLayer,
   hydrateJobLayer,
   pcmSourceOf,
@@ -479,6 +481,183 @@ test('a SHADOWED layer with no blur takes the same restructure', async () => {
     assert.equal(made.length > 0, true, 'an authored filter on a DEPTH layer restructures');
     const pad = spillPad(0, parseDropShadows('drop-shadow(0px 21px 46px #00000055)'));
     assert.equal(made[0]?.width, 100 + pad * 2, 'and the spill is the shadow\'s own reach');
+  } finally { done(); }
+});
+
+// ── the fx-plate cache (plans/104 P3.1, measured failure 1) ─────────────────
+//
+// The claim is PIXEL IDENTITY, not a cheaper approximation: the filtered picture is
+// rendered once and the per-frame `ctx.drawImage` that places it is the identical call
+// the uncached path makes. So every assertion below is about the CALL, and the browser
+// tier (`tests/lift-flythrough.browser.test.ts`) decodes the two renders and compares
+// the pixels themselves.
+
+/**
+ * Work done ON scratches, not scratches ALLOCATED — the pool re-uses a canvas across
+ * frames (that is what it is for), so a second allocation is not what "the filter ran
+ * again" looks like. A recorded op on a scratch is.
+ */
+const scratchWork = (made: ReturnType<typeof scratchCanvas>[]): number =>
+  made.reduce((n, c) => n + c.ops.length, 0);
+
+test('fx cache: without an allowance nothing is retained — the pre-P3.1 path, unchanged', async () => {
+  const { made, done } = useScratches();
+  try {
+    const item = planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 }));
+    const res = RES();                                 // no fxBudget: the cache is absent
+    await drawItem(opCtx(), item, res, 1);
+    const first = scratchWork(made);
+    assert.ok(first > 0, 'the filtered path ran');
+    await drawItem(opCtx(), item, res, 1);
+    assert.equal((res as { fx?: unknown }).fx ?? null, null, 'nothing was kept');
+    assert.ok(scratchWork(made) > first, 'and the second frame re-rendered the filter');
+  } finally { done(); }
+});
+
+test('fx cache: the second frame re-composites the SAME canvas with the SAME draw', async () => {
+  const { made, done } = useScratches();
+  try {
+    const item = planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 }));
+    const res = RES({ fxBudget: createFxPlateBudget(64 << 20) });
+    const a = opCtx();
+    await drawItem(a, item, res, 1);
+    const rendered = scratchWork(made);
+    assert.ok(rendered > 0, 'the first frame rendered the filter');
+    const kept = (res as { fx?: { stage: { canvas: unknown }; bytes: number } }).fx;
+    assert.ok(kept, 'and kept the result');
+
+    const b = opCtx();
+    await drawItem(b, item, res, 1);
+    assert.equal(scratchWork(made), rendered, 'the second frame touched no scratch at all');
+    // THE WHOLE CLAIM, as a call: same picture, same four numbers, same place.
+    const drawA = a.ops.filter((o) => o.op === 'drawImage');
+    const drawB = b.ops.filter((o) => o.op === 'drawImage');
+    assert.equal(drawB.length, 1, 'one composite, exactly as the uncached frame issued');
+    assert.deepEqual(drawB[0]?.args, drawA[drawA.length - 1]?.args);
+    assert.deepEqual(b.names(), a.names(), 'and the same call list around it');
+    // The transform is written on the DESTINATION, so the cached canvas is free to be
+    // drawn under a different one — which is what makes a moving camera cheap.
+    const moved = planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 }));
+    const c = opCtx();
+    await drawItem(c, moved, res, 1);
+    assert.equal(scratchWork(made), rendered, 'still no scratch work');
+  } finally { done(); }
+});
+
+test('fx cache: the key is the EFFECT — a changed sigma misses, and gives its bytes back', async () => {
+  const { made, done } = useScratches();
+  try {
+    const budget = createFxPlateBudget(64 << 20);
+    const res = RES({ fxBudget: budget });
+    // A DOF blur under an animated aperture is exactly this: the same layer, a
+    // different sigma each frame. It must re-render, and it must not leak.
+    await drawItem(opCtx(), planOne(layer({ blur: 4, z: 60 })), res, 1);
+    const afterFirst = budget.remaining;
+    assert.ok(afterFirst < (64 << 20), 'the first plate was accounted for');
+    const madeFirst = scratchWork(made);
+    await drawItem(opCtx(), planOne(layer({ blur: 9, z: 60 })), res, 1);
+    assert.ok(scratchWork(made) > madeFirst, 'a different blur re-rendered');
+    assert.equal(budget.refused, 0, 'and it fitted');
+    // One layer, one plate: the old one was released before the new one was taken.
+    assert.ok(budget.remaining < (64 << 20), 'the new plate is accounted for');
+    assert.ok(budget.remaining <= afterFirst + 1024 * 1024,
+      `one layer holds ONE plate (remaining ${budget.remaining} vs ${afterFirst})`);
+  } finally { done(); }
+});
+
+test('fx cache: a picture that is this frame\'s picture is never cached', async () => {
+  const { made, done } = useScratches();
+  try {
+    const shadow = 'drop-shadow(0px 21px 46px #00000055)';
+    const cases: [string, SeqJobLayer, Record<string, unknown>][] = [
+      // A decoded frame is composited between a video layer's two plates.
+      ['video', layer({ kind: 'video', shadowFilter: shadow, z: 60 }), {}],
+      // A lottie layer is re-rasterised off the live player.
+      ['lottie', layer({ kind: 'lottie', shadowFilter: shadow, z: 60 }), {}],
+      // …and any layer holding a live raster for this frame, whatever its kind.
+      ['live raster', layer({ shadowFilter: shadow, z: 60 }), { live: { tag: 'live' } }],
+    ];
+    for (const [name, w, over] of cases) {
+      const res = RES({ fxBudget: createFxPlateBudget(64 << 20), ...over });
+      made.length = 0;
+      _resetBlurPool();
+      await drawItem(opCtx(), planOne(w), res, 1);
+      await drawItem(opCtx(), planOne(w), res, 1);
+      assert.equal((res as { fx?: unknown }).fx ?? null, null, `${name} must not cache`);
+    }
+  } finally { done(); }
+});
+
+test('fx cache: over the allowance a layer simply pays the filter again, and says so', async () => {
+  const { made, done } = useScratches();
+  try {
+    const budget = createFxPlateBudget(1024);            // one KB: nothing fits
+    const item = planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 }));
+    const res = RES({ fxBudget: budget });
+    await drawItem(opCtx(), item, res, 1);
+    const first = scratchWork(made);
+    await drawItem(opCtx(), item, res, 1);
+    assert.equal((res as { fx?: unknown }).fx ?? null, null, 'nothing retained');
+    assert.ok(scratchWork(made) > first, 'so the filter ran again — correct, just slower');
+    assert.equal(budget.refused, 1, 'and the refusal was COUNTED, for the one warn line');
+  } finally { done(); }
+});
+
+test('fx cache: an allowance that RUNS OUT is counted; one that is OFF is not', async () => {
+  const { done } = useScratches();
+  try {
+    const shadow = 'drop-shadow(0px 21px 46px #00000055)';
+    // Room for one plate of this size and not two: the second layer is a CAP, and a cap
+    // that nothing counted would be a silent one.
+    const probe = createFxPlateBudget(64 << 20);
+    const first = RES({ fxBudget: probe });
+    await drawItem(opCtx(), planOne(layer({ shadowFilter: shadow, z: 60 })), first, 1);
+    const one = (64 << 20) - probe.remaining;
+    assert.ok(one > 0);
+
+    const budget = createFxPlateBudget(one);
+    const a = RES({ fxBudget: budget });
+    const b = RES({ fxBudget: budget });
+    await drawItem(opCtx(), planOne(layer({ shadowFilter: shadow, z: 60 })), a, 1);
+    assert.equal(budget.remaining, 0, 'the first layer took all of it');
+    await drawItem(opCtx(), planOne(layer({ shadowFilter: shadow, z: 60 })), b, 1);
+    assert.equal((b as { fx?: unknown }).fx ?? null, null, 'and the second got none');
+    assert.equal(budget.refused, 1, 'which is a CAP, and caps are never silent');
+
+    // Turned off is a different thing, and must say nothing at all.
+    const offBudget = createFxPlateBudget(0);
+    const off = RES({ fxBudget: offBudget });
+    await drawItem(opCtx(), planOne(layer({ shadowFilter: shadow, z: 60 })), off, 1);
+    assert.equal((off as { fx?: unknown }).fx ?? null, null);
+    assert.equal(offBudget.refused, 0, 'an off cache refuses nothing — there is nothing to warn about');
+  } finally { done(); }
+});
+
+test('fx cache: a render hands every plate back when it ends', async () => {
+  const { done } = useScratches();
+  try {
+    const budget = createFxPlateBudget(64 << 20);
+    const res = RES({ fxBudget: budget });
+    await drawItem(opCtx(), planOne(layer({ shadowFilter: 'drop-shadow(0px 21px 46px #00000055)', z: 60 })), res, 1);
+    assert.ok(budget.remaining < (64 << 20));
+    releaseFxPlates([res as never]);
+    assert.equal(budget.remaining, 64 << 20, 'the allowance is whole again');
+    assert.equal((res as { fx?: unknown }).fx ?? null, null);
+  } finally { done(); }
+});
+
+test('BYTE-IDENTITY FLOOR: a clean layer never reaches the cache at all', async () => {
+  const { made, done } = useScratches();
+  try {
+    const budget = createFxPlateBudget(64 << 20);
+    const res = RES({ fxBudget: budget });
+    const ctx = opCtx();
+    await drawItem(ctx, planOne(layer()), res, 1);
+    assert.deepEqual(ctx.names(), ['save', 'translate', 'drawImage', 'restore']);
+    assert.equal(made.length, 0);
+    assert.equal((res as { fx?: unknown }).fx ?? null, null);
+    assert.equal(budget.remaining, 64 << 20, 'and spent nothing');
+    assert.equal(budget.refused, 0, 'and had nothing to warn about');
   } finally { done(); }
 });
 
@@ -974,11 +1153,17 @@ test('contract: there is exactly ONE compositor, so the two paths cannot drift',
   const render = strip(read('./sequence-render.ts'));
   assert.match(worker, /export async function drawItem\(/, 'drawItem lives in the executor');
   assert.ok(!/function drawItem\(/.test(render), 'and nowhere else');
-  // The one drawImage left in sequence-render.ts is the MediaRecorder fallback's
-  // replay of ALREADY-COMPOSED frames — a playback pump, not a compositor.
+  // The two drawImage calls left in sequence-render.ts both move ALREADY-COMPOSED
+  // frames about; neither composes one. The first is the MediaRecorder fallback's
+  // replay (a playback pump); the second is P2a's tilt capture blitting one
+  // dom-to-image photograph of the live artboard onto the output canvas — the browser
+  // did the compositing there, which is the whole point of that tier (a homography has
+  // no affine spelling, so `drawItem` could not have drawn it).
   const paints = render.match(/ctx\.drawImage\(/g) ?? [];
-  assert.equal(paints.length, 1, 'sequence-render.ts composites nothing; the executor draws');
-  assert.match(render, /drawImage\(bitmaps\[i\+\+\]/, 'and that one is the recorder replay');
+  assert.equal(paints.length, 2, 'sequence-render.ts composites nothing; the executor draws');
+  assert.match(render, /drawImage\(bitmaps\[i\+\+\]/, 'and the first is the recorder replay');
+  assert.match(render, /drawImage\(shot as unknown as CanvasImageSource, 0, 0\)/,
+    'and the second is one whole captured frame, placed at the origin — not a layer');
   assert.match(render, /await runSequenceJob\(job, canvas, ctx,/, 'the in-thread path drives the shared executor');
   assert.match(worker, /await runSequenceJob\(job, canvas, ctx,/, 'and so does the worker');
 });

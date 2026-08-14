@@ -126,6 +126,18 @@ const NEW_COUNT = 5;
 // Keeps the carousel DOM + the number of live renders per tile bounded.
 const EXAMPLE_MAX = 6;
 
+// Fit a page of aspect `ar` (width / height) inside the square deck box (hydratePaged),
+// as width/height percentages of that square. A landscape page keeps full width and loses
+// height; a portrait page keeps full height and loses width; a square page fills it. Extreme
+// aspects (a 5:1 banner → h 20%, a 1:5 vertical banner → w 20%) stay true to shape — the fan
+// offset is applied by the outer layer in box units, so the deck still reads as a stack even
+// when each sheet is a thin strip. The card element is then sized to the page's TRUE shape,
+// so its shadow + hairline rim wrap the real page rather than a letterboxed square.
+function deckPageFit(ar: number): { w: number; h: number } {
+  if (!(ar > 0) || !Number.isFinite(ar)) return { w: 100, h: 100 };
+  return ar >= 1 ? { w: 100, h: 100 / ar } : { w: 100 * ar, h: 100 };
+}
+
 /** A saved-session entry as returned by host.state.list(). */
 type SavedEntry = StateEntry & { filename: string | null; thumb: string | null };
 
@@ -1107,13 +1119,32 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // slightly-rotated deck (front page on top, the rest peeking behind). Cap at 3: enough
     // to say "multiple pages" without clutter; the real page-by-page view is the tool.
     const shown = urls.slice(0, 3);
+    // Two layers per page: an OUTER square layer (.gcar-deck-page) carries the fan offset +
+    // rotation — expressed as % of the square box, so the spread stays constant no matter the
+    // page shape (a razor-thin 5:1 banner fans by the same amount as a portrait sheet). The
+    // INNER image (.gcar-deck-card) is sized to the page's real aspect (deckPageFit) so its
+    // shadow + rim wrap the true sheet. Seed the size from the manifest render size (no load
+    // flash for the common case); the image's own dimensions correct it below.
+    const seed = deckPageFit((tool.width && tool.height) ? tool.width / tool.height : 1);
     const pages = shown.map((u, k) =>
       // --d = depth: 0 = front (on top), higher = further back. Positioned + z-ordered in CSS.
-      `<img class="gcar-deck-page" style="--d:${k}" src="${u}" alt="" aria-hidden="true" decoding="async">`,
+      `<span class="gcar-deck-page" style="--d:${k}"><img class="gcar-deck-card" style="width:${seed.w.toFixed(2)}%;height:${seed.h.toFixed(2)}%" src="${u}" alt="" aria-hidden="true" decoding="async"></span>`,
     ).join('');
     track.outerHTML =
       `<a class="gcar-open gcar-deck" href="${openHref}" data-new-tool="${escape(toolId)}" tabindex="-1" aria-hidden="true">${pages}</a>`;
     gcar.classList.add('has-art', 'gcar--deck');   // pages rendered → stop the waiting tracer
+    // Correct each card to the decoded image's true aspect (authoritative — covers tools
+    // whose rendered page differs from, or omits, its manifest size, incl. wide banners).
+    gcar.querySelectorAll<HTMLImageElement>('.gcar-deck-card').forEach(img => {
+      const fit = (): void => {
+        if (!img.naturalWidth || !img.naturalHeight) return;
+        const f = deckPageFit(img.naturalWidth / img.naturalHeight);
+        img.style.width = `${f.w.toFixed(2)}%`;
+        img.style.height = `${f.h.toFixed(2)}%`;
+      };
+      if (img.complete) fit();
+      else img.addEventListener('load', fit, { once: true });
+    });
     // The deck is a static preview — it has no per-page nav/dots (unlike the old carousel).
     gcar.querySelectorAll('.gcar-nav, .gcar-dots').forEach(el => el.remove());
   }
@@ -2367,10 +2398,11 @@ function cardMarkup(
   if (unavailable) {
     visual = `<span class="gtile-tile gtile-tile--static"><span class="gtile-tile-txt">${t('Desktop&nbsp;app only')}</span></span>`;
   } else if (paged) {
-    // Multi-page document: the strip scrolls through each PAGE. Page count is unknown
-    // until the doc renders, so start with one skeleton slide; hydratePaged (mountGallery)
-    // renders the pages and rebuilds the slides + dots. Box is a fixed square (gallery.css);
-    // each page is object-fit:contain, so a portrait/landscape page fits without cropping.
+    // Multi-page document: rendered as a stacked DECK. Page count is unknown until the
+    // doc renders, so start with one skeleton slide; hydratePaged (mountGallery) renders
+    // the pages and rebuilds the deck. Box is a fixed square (gallery.css); each card is
+    // sized to its page's aspect (deckPageFit), so landscape and portrait pages both read
+    // as correctly-shaped sheets rather than letterboxed squares.
     visual = `
       <div class="gcar" data-tool="${escape(tool.id)}" data-paged="1">
         ${iconBackdrop(tool.icon)}

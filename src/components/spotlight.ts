@@ -24,10 +24,12 @@
  *    handler's modifier convention. Rows carry data-sfx="navigate" so the
  *    app-wide delegated cue layer (lib/sfx.ts) sounds a click activation like
  *    any footer link.
- *  - Own-domain split (§2a): the current route's group is OMITTED on live-adapt
- *    views (the view behind is its results), HOISTED first with the larger cap
- *    on overlay-only views, and everything shows with the standard cap on
- *    routes with no domain.
+ *  - Own-domain lead (§2a): the current route's group is HOISTED to the top of
+ *    the panel with the larger cap and BRAND-HIGHLIGHTED, so the view you're on
+ *    is always discoverable in the overlay even when the panel overlaps the
+ *    live-filtered cards behind it; routes with no domain show every group at
+ *    the standard cap. (Was: live-adapt views omitted their own group and leaned
+ *    on the cards behind — which the panel can occlude.)
  *  - Providers load LAZILY (a dynamic import in initSpotlight): the provider
  *    modules pull in per-view haystack code that has no business in the boot
  *    chunk main.ts pays for — same reason the views themselves lazy-load.
@@ -232,9 +234,9 @@ function activate(row: HTMLElement, newTab: boolean): void {
  *  The href is scheme-gated by renderResults() (see navigableHits) — escape()
  *  neutralises quotes, not a `javascript:` scheme, and SearchProvider is an
  *  extension point, so the gate is at the paint boundary, not in the providers. */
-function rowHtml(hit: SearchHit, n: number, gid: SearchGroupId): string {
+function rowHtml(hit: SearchHit, n: number, gid: SearchGroupId, own: boolean): string {
   // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated in renderResults() before this runs; a hit that fails it is dropped, never painted
-  return `<div class="spotlight-opt" role="option" id="spotlight-opt-${n}" aria-selected="false" data-group="${gid}" data-href="${escape(hit.href)}" data-sfx="navigate">
+  return `<div class="spotlight-opt${own ? ' spotlight-opt--own' : ''}" role="option" id="spotlight-opt-${n}" aria-selected="false" data-group="${gid}" data-href="${escape(hit.href)}" data-sfx="navigate">
     <span class="spotlight-opt-icon" aria-hidden="true">${hit.icon}</span>
     <span class="spotlight-opt-text">
       <span class="spotlight-opt-title">${escape(hit.title)}</span>${hit.subtitle ? `
@@ -263,7 +265,7 @@ function navigableHits(hits: readonly SearchHit[]): SearchHit[] {
 }
 
 /** Paint one settled query's results and open the panel. */
-function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap<SearchGroupId, SearchHit[]>, trimmed: string): void {
+function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap<SearchGroupId, SearchHit[]>, trimmed: string, ownGroup?: SearchGroupId): void {
   ensurePanel();
   let html = '';
   let n = 0;
@@ -271,9 +273,10 @@ function renderResults(order: readonly SearchGroupId[], hitsByGroup: ReadonlyMap
   for (const gid of order) {
     const hits = navigableHits(hitsByGroup.get(gid) ?? []);
     if (!hits.length) continue;
+    const own = gid === ownGroup; // the current view's group — leads, brand-highlighted (§2a)
     total += hits.length;
-    html += `<div class="spotlight-group-label" role="presentation">${t(GROUP_LABELS[gid])}</div>`;
-    for (const hit of hits) html += rowHtml(hit, n++, gid);
+    html += `<div class="spotlight-group-label${own ? ' spotlight-group-label--own' : ''}" role="presentation">${t(GROUP_LABELS[gid])}</div>`;
+    for (const hit of hits) html += rowHtml(hit, n++, gid, own);
     const seeAll = GROUP_SEE_ALL[gid];
     const seeAllHref = seeAll ? seeAll(trimmed) : '';
     if (seeAllHref && safeHref(seeAllHref)) html += seeAllHtml(gid, seeAllHref, n++);
@@ -302,13 +305,15 @@ function onQueryChanged(raw: string): void {
   }
   const tokens = tokenize(trimmed);
   const own = ROUTE_DOMAIN[currentSearchRoute()];
-  // §2a: live tier — the view behind IS that group's results, omit it here;
-  // overlay tier — hoist the view's own group first with the larger cap.
+  // §2a: the current view's own group LEADS the panel — hoisted first with the
+  // larger cap and brand-highlighted (renderResults marks it) — so its results
+  // stay discoverable in the overlay even when the panel occludes the
+  // live-filtered cards behind it. Applies to both tiers now; a live view still
+  // filters its cards behind, an overlay one doesn't.
   let order: SearchGroupId[] = [...GROUP_ORDER];
-  if (own?.tier === 'live') order = order.filter((g) => g !== own.group);
-  else if (own?.tier === 'overlay') order = [own.group, ...order.filter((g) => g !== own.group)];
+  if (own) order = [own.group, ...order.filter((g) => g !== own.group)];
   const capFor = (gid: SearchGroupId): number =>
-    own?.tier === 'overlay' && gid === own.group ? OWN_GROUP_CAP : GROUP_CAP;
+    own && gid === own.group ? OWN_GROUP_CAP : GROUP_CAP;
   const id = ++queryId;
   const provs = searchProviders().filter((p) => order.includes(p.id));
   const settle = async (p: SearchProvider): Promise<[SearchGroupId, SearchHit[]]> => {
@@ -322,7 +327,7 @@ function onQueryChanged(raw: string): void {
   };
   void Promise.all(provs.map(settle)).then((pairs) => {
     if (id !== queryId) return; // superseded (or closed) — discard, never paint
-    renderResults(order, new Map(pairs), trimmed);
+    renderResults(order, new Map(pairs), trimmed, own?.group);
   });
 }
 

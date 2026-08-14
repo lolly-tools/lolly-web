@@ -119,6 +119,7 @@ import {
   fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging, asStr, stopSlotPreview,
 } from './tool-inputs.ts';
 import { createLiveControls, registerLiveControls, mountSidebarLiveControls } from './live-controls.ts';
+import { mountCaptureSignin } from './capture-signin.ts';
 import {
   renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt,
   printEnabled, marksToCsv, c2paDefaultOn, readBleed, readMarks, exportTargetNode,
@@ -3470,6 +3471,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (inputsEl && !canvasLayout && liveControls.sourceInputId) mountSidebarLiveControls(inputsEl, runtime);
     else if (stageEl) liveControls.mountStage(stageEl);
   }
+
+  // Authenticated capture (desktop only): a tool declaring the `capture` capability
+  // gets a "Sign in to a site" panel so a login/session set up once is ridden by every
+  // later screenshot. Self-gating — no-op on the web PWA and for non-capture tools —
+  // and mounted as a sidebar sibling so input rebuilds never drop it.
+  if (inputsEl && !canvasLayout) mountCaptureSignin({ inputsEl, runtime, t, announce });
 
   // Device recording (engine v1.17): a tool declaring render.capture gets a Record
   // affordance where this shell exposes host.recorder. Audio tools also surface a live

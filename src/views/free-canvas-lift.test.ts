@@ -291,6 +291,56 @@ async function openDialog(f: Fixture): Promise<HTMLElement> {
   return p!;
 }
 
+test('the reading state is a STATE: busy while it works, one live line, focus kept inside', async () => {
+  (globalThis as Record<string, unknown>).__liftSvg = ART;
+  uploads.length = 0;
+  const f = mount([box({ image: svgRef() })]);
+  try {
+    // Open it WITHOUT settling, so the reading stage is observed rather than inferred.
+    rightClick(f, 200, 200);
+    click(menuRows(f).get('Lift layers')!);
+    const p = f.stageEl.querySelector<HTMLElement>('.fc-lift-panel')!;
+    assert.ok(p, 'the panel is up immediately — the read is what takes time, not the panel');
+    assert.equal(p.getAttribute('aria-busy'), 'true', 'and it says it is working');
+    assert.equal(dom.window.document.activeElement, p,
+      'focus goes IN on the gesture that opened it, so the dialog’s name and its '
+      + 'reading sentence are what gets read — and every later move is within it');
+    const msg = p.querySelector<HTMLElement>('[data-lift-msg]')!;
+    assert.equal(msg.getAttribute('role'), 'status');
+    assert.equal(msg.getAttribute('aria-live'), 'polite');
+    assert.match(msg.textContent || '', /Reading/);
+
+    await settle();
+    assert.equal(p.getAttribute('aria-busy'), null, 'the work is over, so the state is too');
+    assert.equal(p.querySelector('[data-lift-msg]'), msg,
+      'the SAME node — the outcome is a change to a mounted live region, not a new '
+      + 'region announced to nobody');
+    assert.match(msg.textContent || '', /3 layers found/);
+    assert.equal(dom.window.document.activeElement, p.querySelector('[data-lift-yes]'),
+      'focus lands on the confirm button, which is inside the panel focus was already in');
+  } finally { f.destroy(); }
+});
+
+test('a user who walks away while it reads keeps their focus', async () => {
+  (globalThis as Record<string, unknown>).__liftSvg = ART;
+  uploads.length = 0;
+  const f = mount([box({ image: svgRef() })]);
+  const elsewhere = dom.window.document.createElement('button');
+  dom.window.document.body.appendChild(elsewhere);
+  try {
+    rightClick(f, 200, 200);
+    click(menuRows(f).get('Lift layers')!);
+    // Mid-read, the user goes somewhere else. A control that appears after an await has
+    // no claim on where they went while it loaded.
+    elsewhere.focus();
+    await settle();
+    const p = f.stageEl.querySelector<HTMLElement>('.fc-lift-panel')!;
+    assert.ok(p.querySelector('[data-lift-yes]'), 'the plan rendered as usual');
+    assert.equal(dom.window.document.activeElement, elsewhere,
+      'and it did not yank focus out of what they had moved to');
+  } finally { elsewhere.remove(); f.destroy(); }
+});
+
 test('the dialog states the count, lists every layer, and asks — it does not act', async () => {
   (globalThis as Record<string, unknown>).__liftSvg = ART;
   uploads.length = 0;
@@ -330,12 +380,19 @@ test('confirming writes the model exactly ONCE — the whole lift is one undo st
     assert.equal(rows[3]!.id, 'z', 'and the lift kept its place in the array — array order IS z-order');
 
     const lifted = rows.slice(0, 3);
-    assert.deepEqual(lifted.map((r) => r.z), [0, 40, 80], '§7’s auto-stagger, through liftRows');
+    // P3.2's eff-band ladder, not a fixed 40 px step: three layers get three full
+    // rungs of 2 % magnification each, which is z 0 / 23.53 / 46.15 at P = 1200.
+    assert.deepEqual(lifted.map((r) => r.z), [0, 23.53, 46.15], '§7’s auto-stagger, through liftRows');
     assert.deepEqual(lifted.map((r) => r.shadow), ['depth', 'depth', 'depth']);
     const groups = new Set(lifted.map((r) => r.group));
     assert.equal(groups.size, 1, 'one shared group, so the stack selects and moves as one');
     assert.ok([...groups][0], 'and it is a real id, not the empty string');
     assert.equal(new Set(lifted.map((r) => r.id)).size, 3, 'three distinct ids');
+    // P3.2 keeps THIS box full-stage on purpose: it has a background fill and a
+    // caption, which `liftRows` leaves on the bottom and top rows — and a
+    // background confined to one layer's ink is not a background. `liftCanCrop`
+    // says so before the documents are derived, so the documents are uncropped too
+    // (asserted below: every one still carries the source's own viewBox).
     for (const r of lifted) {
       assert.equal(r.x, 100, 'same geometry — the derived documents are in ROOT coordinates');
       assert.equal(r.y, 100);
@@ -362,6 +419,42 @@ test('confirming writes the model exactly ONCE — the whole lift is one undo st
       assert.match(u.text, /viewBox="0 0 100 100"/, 'in the source’s own root coordinates');
       assert.match(u.text, /<defs>/, 'carrying the whole defs, so cross-references still resolve');
     }
+  } finally { f.destroy(); }
+});
+
+test('a plain image box lifts into CONTENT-SIZED rows — the shadow follows the ink', async () => {
+  (globalThis as Record<string, unknown>).__liftSvg = ART;
+  uploads.length = 0;
+  // No background, no caption: nothing else rides on the bottom or top row, so the
+  // engine crops each document to its ink and every row is cut to match (plans/104
+  // P3.2 — a full-stage row makes `shadow: depth` a full-frame gaussian, which is
+  // what aborted the encoder watchdog at eleven layers).
+  const f = mount([box({ image: svgRef() })]);
+  try {
+    const p = await openDialog(f);
+    click(p.querySelector<HTMLButtonElement>('[data-lift-yes]')!);
+    await settle();
+    const lifted = (f.boxes() as Array<Record<string, unknown>>).slice(0, 3);
+
+    // viewBox 0 0 100 100 inside a 400×300 box at `contain` lands 300×300 at x=150,
+    // y=100. The circles group's ink is 15..80 × 60..80, padded by 1 → 14,59 67×22
+    // in user units → 192,277 201×66 on the canvas.
+    assert.deepEqual(
+      [lifted[1]!.x, lifted[1]!.y, lifted[1]!.w, lifted[1]!.h], [192, 277, 201, 66],
+      'the row is its own ink, mapped through the source box',
+    );
+    assert.equal(lifted[1]!.fit, 'fill', 'a cropped row stretches its crop over its rect — an identity');
+    for (const r of lifted) {
+      assert.ok(
+        Number(r.x) >= 100 && Number(r.y) >= 100
+        && Number(r.x) + Number(r.w) <= 500.001 && Number(r.y) + Number(r.h) <= 400.001,
+        'and every row stays inside the box it came out of',
+      );
+    }
+    // The document and the row are cut to the SAME rect — that is the whole
+    // correctness argument, and a mismatch renders the layer blown up.
+    assert.match(uploads[1]!.text, /viewBox="14 59 67 22"/, 'the document carries the crop');
+    assert.match(uploads[1]!.text, /width="67" height="22"/, 'and its intrinsic size matches it');
   } finally { f.destroy(); }
 });
 

@@ -78,6 +78,8 @@ import {
   spillPad, takeStage,
   type BlurStage, type FxSpec,
 } from '../lib/canvas-blur.ts';
+// Pure arithmetic (no DOM, no canvas), so the executor keeps its DOM-free contract.
+import { fxCacheBudgetBytes } from './plate-budget.ts';
 
 export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 export type AnyCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -355,6 +357,14 @@ export interface SeqJob {
   /** Copied from the renderer's policy constants so the worker holds no second copy. */
   maxLiveProviders: number;
   watchdogMs: number;
+  /**
+   * Bytes of cached fx plates this render may retain (plans/104 P3.1) — see
+   * `fxPlateKey`. Absent means `fxCacheBudgetBytes()`, this machine's own allowance;
+   * 0 turns the cache off entirely, which is how a test pins that a cached frame and
+   * an uncached one are the same pixels. Plain number, so it survives `postMessage`
+   * and both threads cache the same layers.
+   */
+  fxCacheBytes?: number;
 }
 
 const isBitmap = (v: unknown): v is ImageBitmap =>
@@ -435,6 +445,160 @@ interface LayerRes {
   lastStats: ProviderStats | null;
   /** The length this clip's source CLAIMS, copied off the provider. */
   srcClaimedSec: number;
+  /** This layer's cached filtered picture, or null (plans/104 P3.1) — see `fxPlateKey`. */
+  fx?: FxPlate | null;
+  /** The allowance every layer of this render shares. Absent = no caching at all. */
+  fxBudget?: FxPlateBudget | null;
+  /** True once the allowance refused this layer — asked ONCE, not once per frame. */
+  fxRefused?: boolean;
+}
+
+// ── the fx-plate cache (plans/104 P3.1, failure 1) ──────────────────────────
+
+/**
+ * One layer's filtered picture, held across frames.
+ *
+ * `pad` is the scratch's own margin in SCRATCH px, kept beside the canvas because the
+ * draw that places it back on the destination is expressed in terms of it.
+ */
+interface FxPlate {
+  key: string;
+  stage: BlurStage;
+  pad: number;
+  bytes: number;
+}
+
+/** The retained-bytes allowance one render's fx plates share, and what it refused. */
+export interface FxPlateBudget {
+  /**
+   * The whole allowance. 0 means the cache is TURNED OFF, which is a different thing
+   * from an allowance that ran out: an off cache refuses nothing and warns about
+   * nothing (it is what a golden asks for when it wants the uncached path), while an
+   * exhausted one is a cap and the no-silent-caps rule applies to it.
+   */
+  total: number;
+  /**
+   * Bytes still available to retain.
+   *
+   * Not a high-water mark: a layer whose key CHANGES (a DOF sigma that moved) hands its
+   * old plate back before taking a new one, so one layer holds one plate for the whole
+   * render.
+   */
+  remaining: number;
+  /**
+   * LAYERS that wanted a cached plate and could not have one — the number the single
+   * warn line reports. Counted once per layer, never once per frame: a refusal is a
+   * property of the render (this layer is too big for what is left), and re-asking on
+   * every frame would report 120 refusals for one layer and re-price the same canvas
+   * 120 times to reach the same answer.
+   */
+  refused: number;
+}
+
+/** A fresh allowance. `bytes` ≤ 0 disables the cache entirely (the tests' off switch). */
+export function createFxPlateBudget(bytes: number): FxPlateBudget {
+  const total = Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
+  return { total, remaining: total, refused: 0 };
+}
+
+/** Hand ONE layer's cached plate back to the pool, and its bytes back to the allowance. */
+function dropFxPlate(res: LayerRes): void {
+  if (!res.fx) return;
+  if (res.fxBudget) res.fxBudget.remaining += res.fx.bytes;
+  releaseStage(res.fx.stage);
+  res.fx = null;
+}
+
+/** Give back every cached plate this render is holding. */
+export function releaseFxPlates(all: Iterable<LayerRes>): void {
+  for (const r of all) if (r) dropFxPlate(r);
+}
+
+/**
+ * The cache key for one layer's filtered picture at this instant — or null when the
+ * picture is not the same picture every frame and must not be cached at all.
+ *
+ * WHY THIS EXISTS (plans/104 P3.1, measured failure 1). `drawItem`'s filtered path is
+ * per-frame by construction: take a padded scratch, paint the plate into it, run it
+ * through a blur lane, composite. That is right when the effect changes frame to
+ * frame — and a depth shadow does not. §5.3's shadow is derived from the box's `z`
+ * alone, so for a layer at a fixed depth it is one filter over one unchanging plate,
+ * re-computed for every frame of the export. A LIFTED layer makes that catastrophic
+ * rather than merely wasteful: every derived document keeps the source's root
+ * coordinates (§7), so a lifted layer is a FULL-STAGE box and its `shadow: depth` is a
+ * full-frame gaussian. Eleven of them at 960×540/30 measured 854 ms/frame against
+ * 51 ms/frame with the shadows off, and on a slower machine the encoder's stall
+ * watchdog fires first and the export ABORTS.
+ *
+ * So the filtered picture is rendered ONCE and re-composited per frame through the
+ * transform, which is exactly what the plate itself already does — a shadow under a
+ * uniform scale + translate scales WITH the layer, and the transform is applied to the
+ * cached canvas by the identical `ctx.drawImage` the uncached path uses. The pixels are
+ * therefore IDENTICAL, not approximated: this is a cache, not a lower-quality lane.
+ *
+ * WHAT THE KEY HAS TO COVER is everything that reaches the scratch, and nothing that
+ * does not. `item.alpha`, `item.dx/dy`, `item.rot`, `item.scale` and `L.blend` are
+ * written on the DESTINATION context outside the scratch, so a camera move changes none
+ * of them here. What does reach it:
+ *
+ *   • the resolved box `bw`/`bh` — the radius clip is scaled against it;
+ *   • the export scale `S` and the plate's own resolution multiplier `k`;
+ *   • `fx.sigma` and `fx.rest` — the whole effect. A DOF blur under an animated
+ *     APERTURE varies sigma per frame, which misses every frame and costs exactly what
+ *     it costs today. That is correct and stated: the blur genuinely changed;
+ *   • `pad`, which the two above already determine, keyed anyway because it is the
+ *     number the composite draw is expressed in;
+ *   • `clipsAfter` — whether the clip went on the destination or into the scratch.
+ *
+ * And the refusals, which are about the PICTURE rather than the effect. A `video`
+ * layer has a decoded frame composited between its two plates; a `lottie` layer is
+ * re-rasterised off a live player; a `w`/`h` tween is re-photographed at the size it is
+ * at. In all three the content of the scratch is this frame's content, so there is
+ * nothing to reuse. `res.live`/`res.liveOver` catch the same thing from the other side
+ * — the frame loop sets them immediately before `drawItem` and clears them after — and
+ * the plates a `static` layer draws from (`res.under`) are shot once, before the frame
+ * loop, and never replaced.
+ */
+function fxPlateKey(
+  item: PlanItem, res: LayerRes | undefined, S: number, k: number, fx: FxSpec,
+  bw: number, bh: number, pad: number, clipsAfter: boolean,
+): string | null {
+  // `total`, not `remaining`: an exhausted allowance still has to REACH `adoptFxPlate`,
+  // which is the one place a refusal is counted. Short-circuiting on the remaining
+  // bytes here would make every layer after the one that filled it a silent cap.
+  if (!res?.fxBudget || res.fxBudget.total <= 0 || res.fxRefused) return null;
+  const kind = item.layer.kind;
+  if (kind !== 'static') return null;                 // video / lottie: this frame's picture
+  if (item.sized) return null;                        // a size tween re-photographs per frame
+  if (res.live || res.liveOver || res.provider) return null;
+  return `${bw}|${bh}|${S}|${k}|${fx.sigma}|${fx.rest}|${pad}|${clipsAfter ? 1 : 0}`;
+}
+
+/**
+ * Retain `stage` as this layer's cached picture, or answer null when the render's
+ * allowance cannot hold it (and then the caller releases it as usual — the layer just
+ * pays the filter again next frame, at today's cost and today's pixels).
+ */
+function adoptFxPlate(
+  res: LayerRes, key: string, stage: BlurStage, pad: number,
+): BlurStage | null {
+  const budget = res.fxBudget;
+  if (!budget) return null;
+  const bytes = Math.max(1, stage.canvas.width) * Math.max(1, stage.canvas.height) * 4;
+  // The layer's PREVIOUS plate goes back first: a key change (a DOF sigma that moved,
+  // a size that settled) must not make one layer hold two.
+  dropFxPlate(res);
+  if (bytes > budget.remaining) {
+    // Once, and then never asked again for this layer (`fxRefused`): what is left of
+    // the allowance only ever shrinks, so re-pricing the same canvas every frame would
+    // reach the same answer 120 times and report it 120 times.
+    budget.refused++;
+    res.fxRefused = true;
+    return null;
+  }
+  budget.remaining -= bytes;
+  res.fx = { key, stage, pad, bytes };
+  return stage;
 }
 
 // ── the executor ────────────────────────────────────────────────────────────
@@ -683,6 +847,25 @@ export async function drawItem(
       Math.ceil(ppk),
       Math.min(spillPad(fx.sigma, fx.shadows), scratchPadCap(Math.ceil(sw), Math.ceil(sh))),
     );
+
+    // THE CACHED PICTURE (plans/104 P3.1) — see `fxPlateKey` for what the key covers
+    // and why a hit is pixel-identical rather than an approximation. A miss falls
+    // straight through to the path below, which is the path that always ran.
+    const cacheKey = fxPlateKey(item, res, S, k, fx, bw, bh, pad, clipsAfter);
+    // A layer that has STOPPED being cacheable (a `w`/`h` tween that started, a live
+    // raster that arrived) is holding a plate nothing will ask for again. Give it back
+    // now rather than at the end of the render — the allowance is shared.
+    if (!cacheKey && res?.fx) dropFxPlate(res);
+    const cached = cacheKey && res?.fx?.key === cacheKey ? res.fx : null;
+    if (cached) {
+      ctx.drawImage(
+        cached.stage.canvas as CanvasImageSource,
+        ox - cached.pad / k, oy - cached.pad / k,
+        cached.stage.canvas.width / k, cached.stage.canvas.height / k,
+      );
+      return;
+    }
+
     const stage = takeStage(Math.ceil(sw) + pad * 2, Math.ceil(sh) + pad * 2);
     if (!stage) {
       // No canvas in this realm (bare Node, a refused allocation). Draw the picture
@@ -693,6 +876,8 @@ export async function drawItem(
     }
 
     let out: BlurStage | null = null;
+    /** The one scratch the cache adopted, which must NOT go back to the pool. */
+    let kept: BlurStage | null = null;
     try {
       stage.ctx.save();
       stage.ctx.translate(pad, pad);
@@ -709,8 +894,17 @@ export async function drawItem(
         (out?.canvas ?? stage.canvas) as CanvasImageSource,
         ox - pad / k, oy - pad / k, stage.canvas.width / k, stage.canvas.height / k,
       );
+      // …and keep it, so the next frame re-composites this exact canvas instead of
+      // re-running the filter over it. `renderFx` hands back a canvas of the SAME
+      // dimensions as its source, so the draw above is the draw a hit repeats.
+      //
+      // ONLY when it actually produced one. `renderFx` answers null on a refused
+      // allocation, and the draw above then puts the UNFILTERED picture down — right for
+      // one frame (a visibly un-softened layer beats a missing one), wrong to latch for
+      // the whole render. Not caching it is what makes the next frame try again.
+      if (cacheKey && res && out) kept = adoptFxPlate(res, cacheKey, out, pad);
     } finally {
-      releaseStage(out);
+      if (out && out !== kept) releaseStage(out);
       releaseStage(stage);
     }
   } finally {
@@ -748,6 +942,12 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
   const camMoves = camerasMove(cameras);
 
   const ext = new Map(crossfadeJunctions(layers).map((j) => [j.aIdx, j.ms]));
+  // The fx-plate allowance every layer shares (plans/104 P3.1). A render with no
+  // compositor-owned filter never touches it, so nothing before this feature can
+  // notice it exists; `job.fxCacheBytes` is the seam the tests turn it off through.
+  const fxBudget = createFxPlateBudget(
+    Number.isFinite(job.fxCacheBytes) ? (job.fxCacheBytes as number) : fxCacheBudgetBytes(),
+  );
   const res = new Map<number, LayerRes>();
   for (const L of layers) {
     const win = activeFrameWindow(L, job.grid, ext.get(L.idx) ?? 0);
@@ -765,6 +965,8 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
       liveOver: null,
       first: win.first, last: win.last, span: win.span,
       lastStats: null, srcClaimedSec: 0,
+      fx: null,
+      fxBudget,
     });
   }
 
@@ -801,6 +1003,15 @@ export async function runSequenceJob(job: SeqJob, canvas: AnyCanvas, ctx: AnyCtx
     reconcileProviders(layers, res, job.fps, log);
   } finally {
     await disposeAll();
+    // The NO-SILENT-CAPS rule, applied to the fx-plate allowance: a layer that could
+    // not keep its filtered picture re-rendered it every frame, which is slower by a
+    // lot and identical to the pixel — worth one line, never more than one.
+    if (fxBudget.refused > 0) {
+      log('warn', `sequence: ${fxBudget.refused} depth layer(s) did not fit the ${Math.round(fxBudget.remaining / (1024 * 1024))}MB remaining of the cached-shadow allowance — those layers re-rendered their filter on every frame. Output is unchanged; the export was slower.`);
+    }
+    // Give the cached fx plates back BEFORE the pool is dropped — they came out of it,
+    // and a render that has finished has no next frame to hold them for.
+    releaseFxPlates(res.values());
     // The blur lanes pool their scratches across frames, which is the whole reason a
     // 300-frame export does not spend itself in the allocator — but a FINISHED export
     // has no next frame, and holding plate-sized canvases warm for one is just a leak

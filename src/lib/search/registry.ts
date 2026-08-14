@@ -11,9 +11,11 @@
  * Group presentation is fixed (GROUP_ORDER) — spotlight groups; ranking happens
  * within a group only, by SearchHit.score (lib/search/match.ts scoring). Which
  * group a view "owns", and whether that view live-filters behind the overlay or
- * sends everything to it, is declared in ROUTE_DOMAIN (§2a's live-adapt split):
- * a 'live' view's own group is OMITTED from the overlay (the view is its
- * results); an 'overlay' view's own group is HOISTED first with the larger cap.
+ * sends everything to it, is declared in ROUTE_DOMAIN (§2a). Either way the own
+ * group is HOISTED to the top of the overlay with the larger cap and
+ * brand-highlighted, so the current view's results lead the panel even when it
+ * occludes the cards behind. The `tier` still records whether the view
+ * live-filters its cards ('live') or leaves them untouched ('overlay').
  */
 import type { Lang } from '../../i18n.ts';
 

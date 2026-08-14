@@ -1369,7 +1369,7 @@ const defaultNodeRasterer: NodeRasterer = async (el, targetH, signal) => {
   // for a size tween, and a thumbnail must be the clip at rest. Falls back to the live
   // inline value, then to layout — which is what it always was, and what a box with no
   // inline size still resolves to. (A box with NO authored width that is mid-tween is
-  // the one case this cannot recover; layout-studio boxes always carry one.)
+  // the one case this cannot recover; design boxes always carry one.)
   const authored = poseSeam?.read(el) ?? null;
   const bw = Math.max(1, parseFloat(authored?.width ?? '') || parseFloat(el.style.width) || el.offsetWidth || 1);
   const bh = Math.max(1, parseFloat(authored?.height ?? '') || parseFloat(el.style.height) || el.offsetHeight || 1);

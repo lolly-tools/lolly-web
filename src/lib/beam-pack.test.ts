@@ -209,7 +209,7 @@ function ref(source: string, id: string, url = 'blob:sender/x'): Record<string, 
  *  since been deleted, and a baked ref that carries its own bytes. */
 function fixtureSession(): Record<string, unknown> {
   return {
-    __toolId: 'layout-studio',
+    __toolId: 'design',
     __toolVersion: '1.0.0',
     __label: 'Berlin poster',
     logo: ref('library', LOGO),
@@ -239,7 +239,7 @@ function senderHost(): FakeHost {
   });
   addAsset(host, MAP, pngOf(1500, 22), { meta: { name: 'map.png', tags: ['event-berlin', 'maps'] } });
   addAsset(host, 'user/upload/8-spare.png', pngOf(500, 33), { meta: { name: 'spare.png' } });
-  host.sessions.set('layout-studio:1000', { data: fixtureSession(), thumb: 'data:image/png;base64,QQ==' });
+  host.sessions.set('design:1000', { data: fixtureSession(), thumb: 'data:image/png;base64,QQ==' });
   return host;
 }
 
@@ -267,7 +267,7 @@ test('a baked ref is not in the closure — its bytes already ride in the sessio
 
 test('a session offer carries exactly its user-local assets, in manifest → assets → session order', async () => {
   const host = senderHost();
-  const built = await buildBeamOffer({ from: 'session', host, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host, slot: 'design:1000', ...NO_WORKER });
 
   assert.equal(built.offer.kind, 'session');
   assert.equal(built.offer.name, 'Berlin poster');
@@ -291,7 +291,7 @@ test('a session offer carries exactly its user-local assets, in manifest → ass
 
   const session = built.manifest.entries.at(-1) as BeamPackSessionEntry;
   assert.equal(session.kind, 'session');
-  assert.equal(session.toolId, 'layout-studio');
+  assert.equal(session.toolId, 'design');
   assert.equal(session.thumb, 'data:image/png;base64,QQ==');
   assert.deepEqual(session.uses.user, [PHOTO, MAP]);
   assert.deepEqual(session.uses.library, [LOGO]);
@@ -306,7 +306,7 @@ test('a session offer carries exactly its user-local assets, in manifest → ass
 
 test('the asset entry describes the file, and asserts nothing about its provenance', async () => {
   const host = senderHost();
-  const built = await buildBeamOffer({ from: 'session', host, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host, slot: 'design:1000', ...NO_WORKER });
   const photo = assetEntries(built.manifest.entries).find(a => a.sourceId === PHOTO)!;
   assert.equal(photo.mime, 'image/png');
   assert.equal(photo.width, 800);
@@ -377,7 +377,7 @@ test('a beam item checksum is byte-for-byte the catalog convention', async () =>
 
 test('the manifest item is checksummed over its own final bytes', async () => {
   const host = senderHost();
-  const built = await buildBeamOffer({ from: 'session', host, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host, slot: 'design:1000', ...NO_WORKER });
   const bytes = await built.source.read(0, 0, built.offer.items[0]!.bytes);
   assert.equal(bytes.length, built.offer.items[0]!.bytes);
   assert.equal(await sriSha256(bytes), built.offer.items[0]!.checksum);
@@ -452,10 +452,10 @@ test('a worker that never answers at all times out into the fallback', async () 
 
 test('a build with no Worker available produces the identical pack', async () => {
   const withWorker = await buildBeamOffer({
-    from: 'session', host: senderHost(), slot: 'layout-studio:1000',
+    from: 'session', host: senderHost(), slot: 'design:1000',
     workerFactory: () => fakeWorker(async () => ({})).worker,   // never answers a usable reply
   });
-  const without = await buildBeamOffer({ from: 'session', host: senderHost(), slot: 'layout-studio:1000', ...NO_WORKER });
+  const without = await buildBeamOffer({ from: 'session', host: senderHost(), slot: 'design:1000', ...NO_WORKER });
   assert.deepEqual(
     withWorker.offer.items.map(i => i.checksum),
     without.offer.items.map(i => i.checksum),
@@ -508,7 +508,7 @@ async function manifestOnly(
 test('assets land re-keyed and the session that follows opens pointing at them', async () => {
   const from = senderHost();
   const to = makeHost();
-  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
   const { ctx, results } = await deliver(built, to);
 
   assert.equal(results[0]!.kind, 'manifest');
@@ -540,7 +540,7 @@ test('assets land re-keyed and the session that follows opens pointing at them',
 test('a received asset is stored byte-exact, typed from its bytes, with attribution', async () => {
   const from = senderHost();
   const to = makeHost();
-  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
   const { results } = await deliver(built, to);
 
   const photoId = (results[1]! as { id: string }).id;
@@ -761,10 +761,10 @@ test('a session thumbnail must be a raster data-URL, or the slot arrives without
     ['data:image/svg+xml;base64,QQ==', false],
     [`data:image/png;base64,${'Q'.repeat(600 * 1024)}`, false],
   ] as const) {
-    const data = new TextEncoder().encode(JSON.stringify({ __toolId: 'layout-studio', __label: 'S' }));
+    const data = new TextEncoder().encode(JSON.stringify({ __toolId: 'design', __label: 'S' }));
     const ctx = await manifestOnly(to, [{
-      kind: 'session', itemId: '1/s', sourceId: 'layout-studio:1', label: 'S',
-      bytes: data.length, checksum: 'x', toolId: 'layout-studio', thumb,
+      kind: 'session', itemId: '1/s', sourceId: 'design:1', label: 'S',
+      bytes: data.length, checksum: 'x', toolId: 'design', thumb,
       uses: { user: [], library: [] },
     }] as unknown as BeamPackAssetEntry[]);
     const result = await ingestBeamItem(
@@ -801,7 +801,7 @@ test('a read-back that disagrees deletes the row it just wrote', async () => {
 test('a beam that fails partway can be rolled back whole', async () => {
   const from = senderHost();
   const to = makeHost();
-  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
   const ctx = createBeamIngest(to, { fromName: 'Priya' });
 
   // Manifest, photo, map, session — then the quota refusal a 38 MB pack routinely hits.
@@ -843,7 +843,7 @@ test('dedup never lands on a row the user’s library hides', async () => {
   // machinery — so a session re-keyed onto it would point at bytes that can vanish.
   addAsset(to, 'user/frozen/1700000000-map.png', pngOf(1500, 22), { meta: { name: 'map.png' } });
 
-  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
   const { ctx, results } = await deliver(built, to);
   const mapResult = results[2]! as { kind: 'asset'; id: string; deduped: boolean };
 
@@ -870,7 +870,7 @@ test('identical bytes already here are reused — no second row, and the refs fo
   // The receiver already owns the same map image, under an id of its own.
   const already = addAsset(to, 'user/upload/77-their-map.png', pngOf(1500, 22), { meta: { name: 'their-map.png' } });
 
-  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
   const { ctx, results } = await deliver(built, to);
 
   const mapResult = results[2]! as { kind: 'asset'; id: string; deduped: boolean };
@@ -888,20 +888,20 @@ test('identical bytes already here are reused — no second row, and the refs fo
 test('a received session is always a new slot — nothing on this device is overwritten', async () => {
   const from = senderHost();
   const to = makeHost();
-  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'layout-studio:1000', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', ...NO_WORKER });
 
   // Freeze the clock so the slot the minter WANTS is already taken, which is the
   // collision a real double-beam produces and the one a naive `save()` would clobber.
   const realNow = Date.now;
   Date.now = () => 4242;
   try {
-    await to.state.save('layout-studio:4242', { __toolId: 'layout-studio', __label: 'Mine' }, null);
+    await to.state.save('design:4242', { __toolId: 'design', __label: 'Mine' }, null);
     const first = (await deliver(built, to)).results[3]! as { slot: string };
     const second = (await deliver(built, to)).results[3]! as { slot: string };
 
-    assert.notEqual(first.slot, 'layout-studio:4242');
+    assert.notEqual(first.slot, 'design:4242');
     assert.notEqual(second.slot, first.slot);
-    assert.equal(to.sessions.get('layout-studio:4242')!.data.__label, 'Mine', 'the slot that was here is untouched');
+    assert.equal(to.sessions.get('design:4242')!.data.__label, 'Mine', 'the slot that was here is untouched');
     assert.equal(to.sessions.size, 3);
   } finally {
     Date.now = realNow;
@@ -970,7 +970,7 @@ test('rewriteSessionAssetRefs is pure — the input is never mutated', () => {
 test('a pack survives the real protocol and lands in the receiver’s library', async () => {
   const from = senderHost();
   const to = makeHost();
-  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'layout-studio:1000', fromName: 'Priya', ...NO_WORKER });
+  const built = await buildBeamOffer({ from: 'session', host: from, slot: 'design:1000', fromName: 'Priya', ...NO_WORKER });
 
   // A synchronous loopback: the sender writes, the receiver reads, no timers.
   const staged = new Map<number, Uint8Array[]>();

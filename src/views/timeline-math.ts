@@ -16,7 +16,7 @@
 // data-seq-ms. Getting those two to disagree is a real bug we have already hit once,
 // so the clamps below are written to mirror the hook's line for line:
 //
-//   layout-studio/hooks.js: num / clamp / isFiniteNum / startSeconds / seqDurationMs
+//   design/hooks.js: num / clamp / isFiniteNum / startSeconds / seqDurationMs
 //
 // Lanes: a box is on the SEQ lane (the magnetic, gapless row) when lane === 'seq'.
 // A box with a finite `start` but no lane is an OVERLAY (free-floating in time). A box
@@ -57,7 +57,7 @@ export interface TimeCfg {
   /**
    * OPTIONAL. The sub-field carrying an A/V link — the id of the box this one was
    * detached from (or detached into), written on BOTH sides so re-attach works from
-   * either. Absent (a tool that declares no such field, e.g. layout-studio) means the
+   * either. Absent (a tool that declares no such field, e.g. design) means the
    * whole detach/re-attach feature is simply not offered: every writer below returns
    * null rather than inventing a field the manifest never declared.
    */
@@ -126,7 +126,7 @@ export interface SnapTimeResult {
 /** A box's media length in seconds, when the caller knows it (probe/metadata). */
 export type MediaDurFn = (box: Box, index: number) => number | null | undefined;
 
-// ── constants (kept in lockstep with layout-studio/hooks.js) ───────────────────
+// ── constants (kept in lockstep with design/hooks.js) ───────────────────
 
 /** Ceiling for every authored time value, seconds. Mirrors the hook's MAX_TIME_S. */
 export const MAX_TIME_S = 3600;
@@ -841,6 +841,25 @@ export function kfTrackRetime(track: KfTrack, fromMs: number, toMs: number): KfK
   const to = Math.round(clamp(num(toMs, 0), 0, KF_MAX_TIME_MS));
   if (to === from) return track.map((k) => k);
   return [...track.filter((k) => k.t !== from && k.t !== to), { t: to, ease: moved.ease, v: moved.v }];
+}
+
+/**
+ * Stretch or compress a whole track along time so it spans `targetMs` instead of its
+ * authored length — the camera presets (`KF_CAMERA_PRESETS`) are authored at fixed
+ * absolute times (4–5.2 s), and applied to a scene of a different length they overran or
+ * left the camera parked past the end (audit A1#5). A LINEAR scale maps the last key to
+ * `targetMs` and every earlier key by the same factor, so mid-point ratios, the eases,
+ * and every pose value are preserved — only the tempo changes. The first key stays at 0.
+ *
+ * A degenerate input (empty, a single key, a zero/negative natural end, or a non-finite
+ * target) is returned unscaled — there is nothing to stretch, and the caller keeps the
+ * authored track. Values are untouched; `serialiseKf` re-quantises the scaled times.
+ */
+export function rescaleKfTrack(track: KfTrack, targetMs: number): KfKey[] {
+  const end = track.length ? track[track.length - 1]!.t : 0;
+  if (end <= 0 || !Number.isFinite(targetMs) || targetMs <= 0) return track.map((k) => k);
+  const scale = targetMs / end;
+  return track.map((k) => ({ t: Math.round(k.t * scale), ease: k.ease, v: k.v }));
 }
 
 /**

@@ -289,7 +289,7 @@ export function coerceBox(o: Record<string, unknown>): Box {
   if (typeof o.color === 'string' && o.color) b.color = o.color;
   if (o.fontSize != null && Number.isFinite(num(o.fontSize as never, NaN))) b.fontSize = num(o.fontSize as never, 0);
   // Accept both the compact 'l'/'c'/'r' the overlay writes AND the full words 'left'/
-  // 'center'/'right' (what layout-studio-style tools + hand-written JSON use). The hook's
+  // 'center'/'right' (what design-style tools + hand-written JSON use). The hook's
   // BOX_ALIGN map renders both, so normalise to the compact form for a stable stored value.
   const al = ALIGN_NORM[asText(o.align).toLowerCase()];
   if (al) b.align = al;
@@ -303,7 +303,7 @@ const ALIGN_NORM: Record<string, 'l' | 'c' | 'r'> = {
   l: 'l', left: 'l', c: 'c', center: 'c', centre: 'c', r: 'r', right: 'r',
 };
 /** Vertical text position inside the box. Mirrors the hook's BOX_VALIGN: compact codes are
- *  what we store, the full words are what hand-written / layout-studio-shaped JSON uses. */
+ *  what we store, the full words are what hand-written / design-shaped JSON uses. */
 const VALIGN_NORM: Record<string, 't' | 'm' | 'b'> = {
   t: 't', top: 't', m: 'm', middle: 'm', center: 'm', centre: 'm', b: 'b', bottom: 'b',
 };
@@ -1374,7 +1374,7 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
   }
 
   // ── per-slide free-canvas (step 6+) ────────────────────────────────────────────
-  // A layout-studio-grade editor over the ACTIVE freeform slide's boxes, reusing the shared,
+  // A design-grade editor over the ACTIVE freeform slide's boxes, reusing the shared,
   // tested geometry in free-canvas-math (move/resize/rotate/align/distribute/z-order/marquee/
   // snap). Multi-select (shift/⌘-click + marquee), a group bounding box with a rotate handle,
   // snap guides, arrow-nudge and copy/paste. All writes clone-and-commit deck[i].boxes.

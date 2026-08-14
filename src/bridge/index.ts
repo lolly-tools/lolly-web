@@ -207,7 +207,32 @@ export async function createBridge(): Promise<WebHost> {
   const loadCapture = memo(async () => extCapture
     ? (await import('./capture-extension.ts')).createExtensionCaptureAPI()
     : (await import('./capture.ts')).createCaptureAPI());
-  host.capture = { page: async (spec) => (await loadCapture()).page(spec) } as WebHost['capture'];
+  // A lazy facade must still mirror the impl's SURFACE synchronously, because tools
+  // feature-detect `typeof host.capture.vector === 'function'` (host-v1 CaptureAPI:
+  // "callers feature-detect host.capture.vector and fall back to page()"). vector() is
+  // native-desktop-only — the Chrome extension and the web stub both expose page()
+  // alone — so it is surfaced exactly where the resolved impl has it: the Tauri build,
+  // whose capture override IS the native page+vector impl. A page-only facade made the
+  // detect lie everywhere, so url-shot rasterised every SVG/PDF capture it could have
+  // kept true-vector (regression from c71a7de's lazy-facade conversion).
+  const captureFacade: NonNullable<WebHost['capture']> = {
+    page: async (spec) => (await loadCapture()).page(spec),
+  };
+  if (!extCapture && isTauriShell()) {
+    captureFacade.vector = async (spec) => {
+      const impl = await loadCapture();
+      if (!impl.vector) throw new Error('Vector capture is unavailable in this shell.');
+      return impl.vector(spec);
+    };
+  }
+  host.capture = captureFacade;
+  // Lift (v1.123) — enumerate an SVG's layers for a tool template that cannot import the
+  // engine (the Flythrough tool). A LAZY FACADE like capture/pdf: the module is cached by
+  // the bundler after the first import, and `svg` is stateless, so no `memo` is needed.
+  host.lift = { svg: async (source) => (await import('./lift.ts')).svg(source) } as WebHost['lift'];
+  // Keyframes (v1.124) — evaluate the engine's `kf` wire into pose samples for a template
+  // (the Flythrough tool's custom camera track). Lazy facade like lift, stateless.
+  host.keyframes = { sample: async (kf, count) => (await import('./keyframes.ts')).sample(kf, count) } as WebHost['keyframes'];
   // Live camera frames (v1.4) for motion-reactive tools. Progressive enhancement,
   // NOT a gated capability: a tool with an onFrame hook offers a "live" toggle only
   // where the camera is available, and runs as a still tool otherwise.
@@ -252,6 +277,13 @@ export async function createBridge(): Promise<WebHost> {
       if (src === null) { mediaImpl?.armAnimSource(null); return; }
       void loadMedia().then((m) => m.armAnimSource(src));
     },
+    // Web-only extra, same class as armAnimSource: deterministically render the armed
+    // anim source at tMs for the frame-accurate export path. MUST be forwarded — a
+    // caller feature-detects `host.media.renderFrameAt` (views/tool-actions.ts), and a
+    // facade that omitted it made that detect return undefined, so every export frame
+    // silently fell back to the frozen base instead of the true source frame. The impl's
+    // own guard returns null when nothing is armed, so an unconditional forward is safe.
+    renderFrameAt: async (tMs: number) => (await loadMedia()).renderFrameAt(tMs),
   } as WebHost['media'];
   // Device capture (v1.17) — mic (and optionally camera) recording + a live audio
   // level meter. Unlike media this IS capability-gated ('microphone'/'camera'),

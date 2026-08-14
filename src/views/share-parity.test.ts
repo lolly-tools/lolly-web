@@ -110,6 +110,33 @@ test('each toggle the Share link reads is guarded on the control existing', () =
     'the imprint opt-out must check the control EXISTS before treating it as unchecked');
 });
 
+// ─── fidelity: every content drop is RECORDED, never silent ────────────────────
+//
+// buildShareParams deliberately drops what a URL can't carry — device-local
+// (user/*) images, scalars past the 150-char cap, and blocks past the 8000-char
+// cap. Before Wave 1 those drops were SILENT: a design "after many edits" shared a
+// link that opened with its content missing and no warning. The Share dialog now
+// renders a verdict from a `ShareFidelity` report; these guard that the builder
+// actually fills that report at every drop site, so a future drop that forgets to
+// record it can't re-introduce the silent-loss bug.
+
+test('buildShareParams records every content drop into a fidelity report', () => {
+  const start = TOOL_TS.indexOf('function buildShareParams(');
+  const end = TOOL_TS.indexOf('\n}', start);
+  const body = TOOL_TS.slice(start, end);
+  assert.match(body, /excludedAssets\.push\(/, 'a device-local asset drop must be recorded in the fidelity report');
+  assert.match(body, /droppedScalars\.push\(/, 'an over-cap scalar drop must be recorded in the fidelity report');
+  assert.match(body, /droppedBlocks\.push\(/, 'an over-cap blocks drop must be recorded in the fidelity report');
+  assert.match(body, /faithful:\s*excludedAssets\.length === 0/, 'the fidelity verdict must be false when anything was dropped');
+});
+
+test('buildShareParams returns the parts array alongside the fidelity report', () => {
+  const start = TOOL_TS.indexOf('function buildShareParams(');
+  const end = TOOL_TS.indexOf('\n}', start);
+  const body = TOOL_TS.slice(start, end);
+  assert.match(body, /return \{ parts, fidelity \};/, 'buildShareParams must return { parts, fidelity }');
+});
+
 // ─── tool-input URL parity: color-palette Contrast mode (m/b/cc/lc) ────────────
 //
 // The share link writes a tool's inputs by their compact `urlKey` (buildShareParams:

@@ -105,7 +105,7 @@ function environment(): LiveMountEnvironment {
 function conn(over: Partial<CollabConnection> & { beam?: unknown } = {}): CollabConnection {
   return {
     role: 'inviter',
-    toolId: 'layout-studio',
+    toolId: 'design',
     ephemeral: false,
     handle: handle(),
     close: () => {},
@@ -115,7 +115,7 @@ function conn(over: Partial<CollabConnection> & { beam?: unknown } = {}): Collab
 
 /** Take the armed plan through the hand-off the tool view would perform, so the module
  *  is in the state `attachCollabBeam` is really called from (`adopted`, not `pending`). */
-function adopt(toolId = 'layout-studio'): void {
+function adopt(toolId = 'design'): void {
   acquireCollabSession(toolId, null);
 }
 
@@ -147,9 +147,9 @@ test('a WORK collab grows no send control — the server path has no beam', asyn
   adopt();
 
   const attached = await attachCollabBeam({
-    toolId: 'layout-studio',
+    toolId: 'design',
     host: HOST,
-    currentSession: () => ({ state: { __toolId: 'layout-studio' } }),
+    currentSession: () => ({ state: { __toolId: 'design' } }),
   });
   assert.equal(attached, null, 'a work collab must not be handed a beam it cannot carry');
 });
@@ -159,7 +159,7 @@ test('a malformed beam link is refused as firmly as a missing one', async () => 
   await mountLiveCollab(conn({ beam: { transport: { on: () => () => {} }, role: 'inviter' } }));
   adopt();
   assert.equal(
-    await attachCollabBeam({ toolId: 'layout-studio', host: HOST, currentSession: () => null }),
+    await attachCollabBeam({ toolId: 'design', host: HOST, currentSession: () => null }),
     null,
     'a transport with no bulk lane is not a beam',
   );
@@ -185,9 +185,9 @@ test('the action is present but UNAVAILABLE until the bulk lane opens, and again
   adopt();
 
   const attached = await attachCollabBeam({
-    toolId: 'layout-studio',
+    toolId: 'design',
     host: HOST,
-    currentSession: () => ({ state: { __toolId: 'layout-studio' } }),
+    currentSession: () => ({ state: { __toolId: 'design' } }),
     container: document.createElement('div'),
   });
   assert.ok(attached, 'a private collab with a lane must get the control');
@@ -213,9 +213,9 @@ test('a send with no open lane rejects, so the pill announces rather than failin
   adopt();
 
   const attached = (await attachCollabBeam({
-    toolId: 'layout-studio',
+    toolId: 'design',
     host: HOST,
-    currentSession: () => ({ state: { __toolId: 'layout-studio' } }),
+    currentSession: () => ({ state: { __toolId: 'design' } }),
     container: document.createElement('div'),
   }))!;
   // The refusal is a REJECTION on purpose: everything that fails before the offer frame
@@ -236,9 +236,9 @@ test('a second attach replaces the first, and close is the mount\'s to call', as
   adopt();
 
   const opts = {
-    toolId: 'layout-studio',
+    toolId: 'design',
     host: HOST,
-    currentSession: () => ({ state: { __toolId: 'layout-studio' } }),
+    currentSession: () => ({ state: { __toolId: 'design' } }),
   };
   const first = (await attachCollabBeam(opts))!;
   assert.equal(document.querySelectorAll('.beam-toast-host').length, 1, 'one toast container per collab');
@@ -261,9 +261,9 @@ test('a pair that dies takes its beam down with it, without the mount having to 
   await mountLiveCollab(conn({ beam: { transport: makeTransport(), role: 'inviter' } }));
   adopt();
   await attachCollabBeam({
-    toolId: 'layout-studio',
+    toolId: 'design',
     host: HOST,
-    currentSession: () => ({ state: { __toolId: 'layout-studio' } }),
+    currentSession: () => ({ state: { __toolId: 'design' } }),
   });
   assert.equal(document.querySelectorAll('.beam-toast-host').length, 1);
 

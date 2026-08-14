@@ -452,6 +452,7 @@ interface Harness {
     /** Camera mode, entered by SELECTION (plans/104 §8) — the P1 half of the same seam. */
     cameraModeId(): string;
     cameraWrite(boxes: Box[], delta: Record<string, number>): Box[];
+    cameraTiltPreview(boxes: Box[], dRx: number, dRy: number): { rx: number; ry: number } | null;
   };
   bar(id: string): HTMLElement;
   /** Drive the shared canvas selection, exactly as free-canvas would. */
@@ -4166,6 +4167,42 @@ test('a static box gets the DOOR and nothing else — nobody keyframes by accide
   } finally { noField.teardown(); }
 });
 
+test('a no-track box surfaces Depth directly — it writes the box z, not a keyframe (A5#1)', () => {
+  // Depth is a box PROPERTY, and standing a lifted layer off the board is parallax setup,
+  // not animation — so it should not cost a keyframe track to reach. On a box with no
+  // track the Depth control now sits beside the Animate door (KF_CFG declares `zField`),
+  // and setting it writes the box's `z` through the same base path the pose row uses off a
+  // diamond: it mints the scene camera (depth needs one to be seen) but NO track — §8's
+  // "nobody keyframes by accident" holds because a property write is not a keyframe.
+  const depthCfg = { cfgPatch: { kfField: 'kf', zField: 'z' } };
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, depthCfg);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    const num = inspEl('.tl-depth-num') as HTMLInputElement;
+    const slider = inspEl('.tl-depth-slider') as HTMLInputElement;
+    assert.ok(num && slider, 'Depth is surfaced on a box with no track — no need to press Animate first');
+    assert.ok(inspEl('.tl-kf-animate'), 'and the Animate door still stands beside it');
+    assert.equal(inspEl('.tl-kf-list'), null, 'but there is no keyframe list — Depth is not a track');
+
+    type(num, '120');
+    const a = h.boxes.find((b) => b.id === 'a')!;
+    assert.equal(Number(a.z), 120, 'the box gained a base depth from the property write');
+    assert.equal(String(a.kf ?? ''), '', 'and NO keyframe track was minted — nobody keyframes by accident');
+    assert.ok(h.boxes.some((b) => b.kind === 'camera'), 'the scene camera was minted so the depth can be seen');
+    assert.equal(h.commits.length, 1, 'one gesture, one commit, one undo step');
+  } finally { closeOverlays(); h.teardown(); }
+
+  // A tool that declares NO depth field gets no Depth control — the same progressive gate.
+  const noDepth = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { kfField: 'kf' } });
+  try {
+    noDepth.select(['a']);
+    setGroup(noDepth.root, 'keyframes', true);
+    assert.equal(inspEl('.tl-depth-slider'), null, 'no zField declared, no Depth control');
+    assert.ok(inspEl('.tl-kf-animate'), 'just the Animate door, as before');
+  } finally { closeOverlays(); noDepth.teardown(); }
+});
+
 test('a SOUND is offered no keyframe affordance anywhere — not a group, not a door, not a diamond', async () => {
   // §8's disclosure law, the other way round: "Every other box has no keyframe affordance
   // anywhere in the UI — not a disabled one, not an empty one." `kfActionIds` excludes
@@ -4498,7 +4535,7 @@ test('the latch: a scrub snaps onto a selected clip\'s diamond, and Alt walks pa
   } finally { h.teardown(); }
 });
 
-test('the latch header flips Scene pose ⇄ Keyframe @ …, and the pose fields follow it', async () => {
+test('the latch header flips No keyframe here ⇄ Keyframe @ …, and the pose fields follow it', async () => {
   const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
   try {
     h.select(['a']);
@@ -4507,7 +4544,7 @@ test('the latch header flips Scene pose ⇄ Keyframe @ …, and the pose fields 
     const poseDisabled = () => inspAll<HTMLInputElement>('.tl-kf-pose-num').map((n) => n.disabled);
 
     await seek(h, 2000);
-    assert.equal(state(), 'Scene pose', 'parked between diamonds');
+    assert.equal(state(), 'No keyframe here', 'parked between diamonds');
     // DEPTH IS THE EXCEPTION, and it is the P1 depth slider that makes it one (§5.3):
     // `z` is the one pose channel with a base field of its own, so off a diamond an
     // edit there writes the BASE — §8's own rule — rather than inventing a keyframe.
@@ -5217,6 +5254,104 @@ test('the depth slider scrubs the tasteful band and the number takes the whole f
   } finally { closeOverlays(); h.teardown(); }
 });
 
+test('the TILT fields take the control band, not the wire clamp — because κ > 0 is an invariant', async () => {
+  // ⚑ `buildPlan`'s depth sort is by resolved `z`, and that reproduces a perspective
+  // render only while `κ = cos(rx)·cos(ry) > 0`. Past a quarter turn the sign flips: at
+  // `rx = −120` three layers at z 0/100/200 have view-axis depths 1200/1250/1300, so the
+  // HIGHEST z is farthest, the sort paints it last, and the behind-camera guard never
+  // rescues it because `D = P − κζ` GROWS with ζ once κ < 0. P2 first wired the Tilt X /
+  // Tilt Y number fields straight to `KF_CLAMPS.rx/ry` = ±180, which is a WIRE clamp
+  // (untrusted share links have to be held to something) — so a reachable control sat on
+  // the other side of the invariant. `z` is the precedent this follows: KF_Z_SLIDER stops
+  // at 300 while its wire spans ±12000.
+  const { KF_CLAMPS } = await import('../../../../engine/src/keyframes.ts');
+  const { KF_TILT_CONTROL } = await import('./timeline-panel.ts');
+  const [lo, hi] = KF_TILT_CONTROL;
+  assert.ok(lo >= KF_CLAMPS.rx[0] && hi <= KF_CLAMPS.rx[1],
+    'the control band lies INSIDE the wire clamp — the clamp is never re-typed, only narrowed');
+  assert.ok(hi < 90 && lo > -90, 'and inside the quarter turn, or κ can reach 0');
+  // The invariant itself, at the worst corner of the band: both axes at the extreme.
+  const kappa = Math.cos((hi * Math.PI) / 180) * Math.cos((hi * Math.PI) / 180);
+  assert.ok(kappa > 0.05, `κ at the band's corner is ${kappa}, too close to the sign change`);
+
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await frames(3);
+    setGroup(h.root, 'camera', true);
+    const nums = inspAll<HTMLInputElement>('.tl-cam-num');
+    // Pan X, Pan Y, Tilt X, Tilt Y, Dolly, … — the order the labels test pins.
+    for (const i of [2, 3]) {
+      assert.equal(nums[i]!.min, String(lo), `field ${i} min`);
+      assert.equal(nums[i]!.max, String(hi), `field ${i} max`);
+    }
+    assert.equal(nums[4]!.max, String(KF_CLAMPS.z[1]), 'the dolly still takes its own wire range');
+    // …and the COMMIT holds it too: `min`/`max` are the spinner's range, not a guard.
+    nums[2]!.value = '-170';
+    nums[2]!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(kfOf(h, 'cam'), `t0_rx${lo}`, 'a hand-typed 170° lands at the band edge');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the shift-drag tilt gesture is held to the same band, composed rather than per-delta', async () => {
+  // A gesture supplies a DELTA, so clamping the delta would let three drags of +30° walk
+  // `rx` past the sign change one commit at a time. `cameraWrite` therefore holds the
+  // COMPOSED value: it re-reads the pose the write starts from and shrinks the delta to
+  // whatever the band still has room for.
+  const { KF_TILT_CONTROL } = await import('./timeline-panel.ts');
+  const [, hi] = KF_TILT_CONTROL;
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await seek(h, 0);
+    // Three drags of +40°, which un-held would reach 120 — the measured inversion angle.
+    // Chained purely, exactly as the existing cameraWrite test does it: the writer reads
+    // the pose it composes onto out of the array it is handed.
+    let boxes = h.boxes;
+    for (let i = 0; i < 3; i++) boxes = h.panel.cameraWrite(boxes, { rx: 40 });
+    const keys = parse(String(boxes.find((b) => b.id === 'cam')!.kf));
+    assert.equal(keys.length, 1, 'still the scene pose');
+    assert.equal(keys[0]!.v.rx, hi, `three +40° drags must stop at the band edge, got ${keys[0]!.v.rx}`);
+    // …and a drag the other way still MOVES: the hold is a clamp, not a freeze.
+    const back = h.panel.cameraWrite(boxes, { rx: -30 });
+    assert.equal(parse(String(back.find((b) => b.id === 'cam')!.kf))[0]!.v.rx, hi - 30);
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('cameraTiltPreview reports the ABSOLUTE tilt a shift-drag would land, clamped (A2/A4)', async () => {
+  // The canvas tilt HUD reads this. A camera drag previews nothing on the stage (§8
+  // commits on release), so the number the user sees during the drag IS this call — and
+  // it must equal what `cameraWrite` would commit: the current pose plus the delta, held
+  // to the band, never a raw unheld delta.
+  const { KF_TILT_CONTROL } = await import('./timeline-panel.ts');
+  const [lo, hi] = KF_TILT_CONTROL;
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await seek(h, 0);
+
+    // From the rest pose the preview IS the delta.
+    assert.deepEqual(h.panel.cameraTiltPreview(h.boxes, -40, 12), { rx: -40, ry: 12 },
+      'from rest the preview equals the delta');
+
+    // It COMPOSES onto the pose already held: tilt to −40, a further −20 reads −60.
+    const tilted = h.panel.cameraWrite(h.boxes, { rx: -40 });
+    assert.equal(h.panel.cameraTiltPreview(tilted, -20, 0)!.rx, -60, 'it adds to the pose already held');
+
+    // …and it is CLAMPED to the band, exactly as the write is — never a raw −200.
+    assert.equal(h.panel.cameraTiltPreview(h.boxes, -200, 200)!.rx, lo, 'clamped at the low edge');
+    assert.equal(h.panel.cameraTiltPreview(h.boxes, -200, 200)!.ry, hi, 'and at the high edge');
+
+    // Junk deltas are ignored, not propagated as NaN into a readout.
+    assert.deepEqual(h.panel.cameraTiltPreview(h.boxes, Number.NaN, Number.NaN), { rx: 0, ry: 0 },
+      'a non-finite delta reads as no change');
+
+    // No camera armed → null, and the HUD hides.
+    h.select([]);
+    assert.equal(h.panel.cameraTiltPreview(h.boxes, 10, 10), null, 'nothing armed, nothing to preview');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
 test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframes', async () => {
   const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
   try {
@@ -5229,11 +5364,13 @@ test('a camera box swaps Time + Animate for the Camera group, and keeps Keyframe
     );
     setGroup(h.root, 'camera', true);
     const labels = inspAll<HTMLElement>('.tl-cam-row .field-label').map((n) => n.textContent);
-    assert.deepEqual(labels, ['Pan X', 'Pan Y', 'Dolly', 'Focus', 'Aperture', 'FOV strength'],
+    // P2 added TILT X / TILT Y between the pans and the dolly — the order a shot is set
+    // up in (where the camera is, which way it is pointing, how far away it is).
+    assert.deepEqual(labels, ['Pan X', 'Pan Y', 'Tilt X', 'Tilt Y', 'Dolly', 'Focus', 'Aperture', 'FOV strength'],
       'the §4.3 vocabulary: perspective is FOV STRENGTH, and nothing here is called zoom');
     assert.equal(labels.some((l) => /zoom/i.test(l ?? '')), false, 'never "zoom" — eff(z = camZ) = 1 for every p');
     const chips = inspAll<HTMLElement>('.tl-cam-chip');
-    assert.deepEqual(chips.map((c) => c.textContent), ['Drag', 'Drag', 'Scroll'],
+    assert.deepEqual(chips.map((c) => c.textContent), ['Drag', 'Drag', 'Shift-drag', 'Shift-drag', 'Scroll'],
       'the affordance chips name the canvas gesture that does the same job');
     assert.equal(chips.every((c) => c.getAttribute('aria-hidden') === 'true'), true,
       'decoration: the control beside them is the keyboard route');
@@ -5251,9 +5388,13 @@ test('a camera preset writes the whole track in ONE commit, at the §4.6 quanta'
     click(presetBtn('Push in'));
     assert.equal(h.commits.length, 1, 'ONE commit — one undo step takes the whole move back');
     const wire = String(h.boxes.find((b) => b.id === 'cam')!.kf ?? '');
+    const { rescaleKfTrack } = await import('./timeline-math.ts');
     const push = KF_CAMERA_PRESETS.find((p) => p.id === 'push-in')!;
-    assert.equal(wire, serialiseKf(parse(push.track)),
-      'stored EXPANDED and canonicalised by the ENGINE — never the literal author string');
+    // The 5 s clip gives the scene a duration, so the 4 s preset is TIME-SCALED to fit it
+    // (A1#5) before it is stored — canonicalised by the engine, never the literal author
+    // string, and never the un-scaled authored times either.
+    assert.equal(wire, serialiseKf(rescaleKfTrack(parse(push.track), 5000)),
+      'stored EXPANDED, canonicalised by the ENGINE, and scaled to the 5 s scene');
     assert.equal(parse(wire).length, 2, 'two poses');
     assert.equal(serialiseKf(parse(wire)), wire, 'and it round-trips: parse(serialise(parse(s))) === parse(s)');
 
@@ -5264,7 +5405,43 @@ test('a camera preset writes the whole track in ONE commit, at the §4.6 quanta'
   } finally { closeOverlays(); h.teardown(); }
 });
 
-test('Orbit is offered and INERT until tilt lands — it never authors a dead channel', async () => {
+test('a camera preset scales its timing to the scene length (A1#5)', async () => {
+  // A preset is authored at a fixed length (push-in 4 s, surface-glide 5.2 s). Applied to
+  // a scene of another duration it used to keep its absolute times — overrunning a short
+  // scene or parking the camera for the tail of a long one. It now stretches to fill THIS
+  // scene, so the last keyframe lands on the scene end whatever the authored length was.
+  const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 8)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await frames(3);
+    setGroup(h.root, 'camera', true);
+
+    click(presetBtn('Push in'));
+    const push = parse(String(h.boxes.find((b) => b.id === 'cam')!.kf ?? ''));
+    assert.equal(push.length, 2, 'still two poses — scaling changes tempo, not shape');
+    assert.equal(push[0]!.t, 0, 'the move still opens at t0');
+    assert.equal(push[push.length - 1]!.t, 8000, 'and RESOLVES at the 8 s scene end, not the authored 4 s');
+    assert.ok((push[1]!.v.z ?? 0) < (push[0]!.v.z ?? 0), 'values are untouched — the push still pushes in');
+
+    // Every preset fills the scene, whatever its authored length — surface-glide (5.2 s)
+    // and its middle keyframe land on the same 8 s end, mid-point ratio preserved.
+    click(presetBtn('Surface glide'));
+    const glide = parse(String(h.boxes.find((b) => b.id === 'cam')!.kf ?? ''));
+    assert.equal(glide[0]!.t, 0, 'surface-glide also opens at t0');
+    assert.equal(glide[glide.length - 1]!.t, 8000, 'and also resolves on the scene end');
+    assert.ok(glide.length >= 3 && glide[1]!.t > 0 && glide[1]!.t < 8000, 'its middle keyframe is scaled between');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+// This test used to assert the OPPOSITE — that Orbit was offered, `aria-disabled`, and
+// carried the reason "Needs tilt (coming)" in both its tooltip and its accessible name.
+// P2 IS that tilt (plans/104 §6.4: `rx`/`ry` now project through a homography), so the
+// dimmed twin is gone and Orbit comes out of the same preset loop as every other move.
+// The inversion is the point of keeping the test at this name: a reason that has stopped
+// being true must not be left standing on a control, and the shape of the failure if
+// somebody re-disables it is "the button that says it cannot yet, when it can".
+test('Orbit is a real move now that tilt has landed — the dimmed twin is gone', async () => {
   const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
   const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
   try {
@@ -5272,25 +5449,56 @@ test('Orbit is offered and INERT until tilt lands — it never authors a dead ch
     await frames(3);
     setGroup(h.root, 'camera', true);
     const orbit = presetBtn('Orbit');
-    assert.equal(orbit.getAttribute('aria-disabled'), 'true',
-      'shown rather than omitted: an absent entry says the move does not exist, a '
-      + 'dimmed one says it is coming — and only the second is true');
-    assert.equal(orbit.disabled, false,
-      '`aria-disabled`, never the property: the reason lives in the tooltip, and a '
-      + '`disabled` button is neither focusable nor :focus-visible');
-    assert.equal(orbit.getAttribute('data-tip'), 'Needs tilt (coming)',
-      'and the tooltip is where the reason lives');
-    // The load-bearing half: pressing it must do NOTHING. An orbit is an rx/ry move,
-    // those channels parse but nothing consumes them until P2, so an enabled button
-    // would write a track every evaluator ignores.
+    assert.equal(orbit.getAttribute('aria-disabled'), null, 'no longer dimmed');
+    assert.equal(orbit.getAttribute('data-tip'), null, 'and no longer explaining itself');
     click(orbit);
     await frames(2);
-    assert.equal(h.commits.length, 0, 'no commit, no track, no undo step');
-    assert.equal(String(h.boxes.find((b) => b.id === 'cam')!.kf ?? ''), '');
-    // …and it is not in the preset TABLE, so nothing downstream can resolve it either.
-    assert.equal(KF_CAMERA_PRESETS.some((p) => p.id === 'orbit'), false);
-    assert.equal(KF_CAMERA_PRESETS.length, 5, 'the five that exercise v1 channels only');
+    assert.equal(h.commits.length, 1, 'one preset, one commit, one undo step');
+    const wire = String(h.boxes.find((b) => b.id === 'cam')!.kf ?? '');
+    assert.ok(wire.length > 0, 'it writes a real track');
+    assert.match(wire, /ry/, 'and the track is an ORBIT — it swings the camera about the aim point');
+    // It is in the TABLE, so every other consumer (the announcement, a future menu)
+    // resolves it exactly like its siblings.
+    assert.equal(KF_CAMERA_PRESETS.some((p) => p.id === 'orbit'), true);
   } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the two TILT presets end at the rest pose — THE RESOLUTION RULE, enforced', async () => {
+  // Andy, 2026-08-12, binding on every generated animation: "elements lift off and rest
+  // back down on the page; the animations showing them falling apart need to close out
+  // with it all coming together." So the last keyframe of anything WE generate is the
+  // authored composition — every channel the track touches back at its default. A
+  // deconstruction is a middle, never an ending.
+  //
+  // Scoped to the tilt pair because they are what P2 ships. The five P1 presets predate
+  // the rule and three of them do NOT obey it (push-in ends at z −220, pan-across at
+  // x 140, rise at y −120/z −80) — measured and reported at KF_CAMERA_PRESETS rather
+  // than changed in passing, because bringing them home would change what three shipped
+  // moves MEAN.
+  const { KF_CAMERA_PRESETS } = await import('./timeline-panel.ts');
+  const { parseKf, evaluateKf, kfChannelsUsed } = await import('../../../../engine/src/keyframes.ts');
+  // The camera's own neutral pose. `p` is absent on purpose: a track that keyframes the
+  // perspective strength has to come home to the DEFAULT (1200), not to zero, and
+  // neither shipped tilt move touches it.
+  const REST: Record<string, number> = { x: 0, y: 0, z: 0, rx: 0, ry: 0, f: 0, a: 0, s: 1, o: 1, b: 0 };
+  const tilted = KF_CAMERA_PRESETS.filter((p) => /_r[xy]-?\d/.test(p.track));
+  assert.equal(tilted.length, 2, 'P2 ships exactly two tilt moves: Surface glide and Orbit');
+  for (const preset of tilted) {
+    const track = parseKf(preset.track);
+    const end = track[track.length - 1]!.t;
+    const pose = evaluateKf(track, end);
+    for (const ch of kfChannelsUsed(track)) {
+      assert.equal(pose[ch], REST[ch] ?? 0,
+        `${preset.id}: channel ${ch} ends at ${pose[ch]}, not at rest (${REST[ch] ?? 0}) — `
+        + 'the glide is a departure that comes home');
+    }
+    // …and it actually WENT somewhere first, or "ends at rest" is vacuous.
+    const mid = evaluateKf(track, end / 2);
+    assert.ok(
+      kfChannelsUsed(track).some((ch) => Math.abs((mid[ch] ?? 0) - (REST[ch] ?? 0)) > 1),
+      `${preset.id}: the move never leaves the rest pose, so ending there proves nothing`,
+    );
+  }
 });
 
 test('a preset applied with NO camera mints the scene camera and keys it in the same commit', async () => {
@@ -5386,25 +5594,42 @@ test('the camera gesture map: the canvas hands the WHEEL to the view unless a ca
   assert.ok(/if \(e\.pointerType !== 'mouse' \|\| spacePan\) return;/.test(src),
     'Space+drag stays the view pan');
   // The pan takes the gesture the MARQUEE would have had, on both empty surfaces.
-  assert.equal((src.match(/\{ type: 'campan',/g) ?? []).length, 2,
+  assert.equal((src.match(/camModeId\(\)\) \{\n      beginGesture\(e, \{/g) ?? []).length, 2,
     'the artboard and the backdrop — a camera pan with an invisible boundary is not one');
-  // Shift is RESERVED for P2's tilt, so it keeps the meaning it already had rather
-  // than being given a camera one now and having it taken away again.
-  assert.equal((src.match(/!e\.shiftKey && camModeId\(\)/g) ?? []).length, 2,
-    'both entry points decline Shift');
+  // P2 SPENDS THE RESERVED CHORD. Shift-drag was held back at M2.5 ("shift-drag
+  // reserved for tilt (P2)") precisely so it could be given one meaning once rather
+  // than two in a row; both entry points now branch on it, and the additive marquee
+  // keeps Shift everywhere a camera is not armed.
+  assert.equal((src.match(/\{ type: 'camtilt',/g) ?? []).length, 0,
+    'the two entry points choose between the two gestures rather than open-coding either');
+  assert.equal((src.match(/type: e\.shiftKey \? 'camtilt' : 'campan',/g) ?? []).length, 2,
+    'both entry points read Shift');
   const end = src.slice(src.indexOf('function onGestureEnd'));
-  const camBranch = end.slice(end.indexOf("if (g.type === 'campan')"), end.indexOf("if (g.type === 'marquee')"));
+  const camBranch = end.slice(end.indexOf("if (g.type === 'campan')"), end.indexOf("if (g.type === 'camtilt')"));
   assert.ok(camBranch.includes('cameraWrite('), 'and it commits through the panel\'s own writer');
   assert.equal((camBranch.match(/\bcommit\(/g) ?? []).length, 1, 'ONE commit, on release');
+  // The TILT release obeys the same law — one gesture, one write, one undo step — and
+  // reaches the model through the same writer rather than a second path of its own.
+  const tiltBranch = end.slice(end.indexOf("if (g.type === 'camtilt')"), end.indexOf("if (g.type === 'marquee')"));
+  assert.ok(tiltBranch.includes('cameraWrite('), 'the tilt commits through the panel\'s writer too');
+  assert.equal((tiltBranch.match(/\bcommit\(/g) ?? []).length, 1, 'ONE commit, on release');
+  assert.ok(/rx: -dy \* CAM_TILT_DEG_PER_PX/.test(tiltBranch),
+    'drag DOWN pitches the camera nose-down over the artwork (rx negative), which is direct manipulation');
+  assert.ok(/ry: dx \* CAM_TILT_DEG_PER_PX/.test(tiltBranch), 'drag RIGHT brings the right-hand edge nearer');
   // …and the drag is accumulated in NATIVE px. `camX` is a MODEL number and the picture
   // it displaces is on screen at the canvas zoom, so direct manipulation — the property
   // the branch above says it is delivering — needs the client delta divided by that
   // zoom. Client px written straight into the model moved the shot half as far as the
   // hand at 50 % and twice as far at 200 %.
   const move = src.slice(src.indexOf('function applyGestureMove'));
-  const panBranch = move.slice(move.indexOf("if (gesture.type === 'campan')"), move.indexOf("if (gesture.type === 'pendraw')"));
+  const panBranch = move.slice(move.indexOf("if (gesture.type === 'campan')"), move.indexOf("if (gesture.type === 'camtilt')"));
   assert.ok(panBranch.includes('clientToNative('), 'the pan converts through the canvas zoom, like every other drag');
   assert.ok(!/gesture\.dx \+= e\.clientX/.test(panBranch), 'never client px straight into the model');
+  // …and the TILT is the deliberate opposite: an angle has no length in stage space, so
+  // converting would gear the dial by however far the user happens to be zoomed out.
+  const tiltMove = move.slice(move.indexOf("if (gesture.type === 'camtilt')"), move.indexOf("if (gesture.type === 'pendraw')"));
+  assert.ok(/gesture\.dx \+= e\.clientX/.test(tiltMove), 'the tilt accumulates CLIENT px');
+  assert.ok(!tiltMove.includes('clientToNative('), 'and never converts them');
 });
 
 test('clicking a diamond opens the Keyframes popup ON that keyframe', async () => {

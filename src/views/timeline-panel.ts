@@ -88,7 +88,7 @@ import {
   // intent and hands the intent over.
   clearKfTrack, kfBoxTrack, kfDiamondAt, kfDiamondTimes, kfDuplicateMs, kfFormatChannel,
   kfKeyAt, kfLocalMs, kfLocalSec, kfPoseAt, kfSeekDiamond, kfSlideMs, kfTimelineSec, kfWriteMs,
-  kfTrackDelete, kfTrackDuplicate, kfTrackRetime, kfTrackSetEase, setKfTrack, writeKfPose,
+  kfTrackDelete, kfTrackDuplicate, kfTrackRetime, kfTrackSetEase, rescaleKfTrack, setKfTrack, writeKfPose,
   type Box, type MediaDurFn, type TimeCfg,
 } from './timeline-math.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
@@ -268,6 +268,15 @@ export interface TimelinePanel {
    */
   cameraWrite(boxes: Box[], delta: KfPose): Box[];
   /**
+   * The tilt the camera WOULD hold if a shift-drag of `(dRx, dRy)` degrees committed now
+   * — the current pose plus the delta, clamped to the control band (`KF_TILT_CONTROL`),
+   * read at the latch. Pure; null when no camera is armed. Drives the canvas tilt HUD: a
+   * camera drag previews NOTHING on the stage (§8 commits on release), so this absolute
+   * readout is the only live feedback the gesture has, and the clamp lives here so the
+   * HUD can never show an angle the write would not actually reach.
+   */
+  cameraTiltPreview(boxes: Box[], dRx: number, dRy: number): { rx: number; ry: number } | null;
+  /**
    * "+Keyframe", the ACTION (plans/104 §8's M2.5 revision: "TWO homes, one action").
    *
    * The panel's own transport button, the canvas contextual bar's diamond and the `K`
@@ -372,6 +381,36 @@ export const TAKE_TIMING = { countInMs: 600, maxMs: 10 * 60 * 1000, warnMs: 5000
 export const KF_Z_SLIDER: readonly [number, number] = Object.freeze([0, 300] as const);
 
 /**
+ * The TILT controls' travel (P2) — the same shape of promise `KF_Z_SLIDER` makes, and
+ * made for a load-bearing reason rather than for taste alone.
+ *
+ * `KF_CLAMPS.rx/ry` is ±180 because it is a WIRE clamp: a hand-edited share link may
+ * say anything and the parser has to hold it to something. It is not a control range,
+ * and wiring the Tilt X / Tilt Y fields straight to it (which is what P2 first did)
+ * put a reachable value on the other side of an invariant the plan path depends on.
+ * `buildPlan`'s depth sort is by resolved `z`, and that reproduces a perspective render
+ * only while `κ = cos(rx)·cos(ry) > 0` — past a quarter turn the sign flips, the far
+ * layer becomes the one painted last, and a "lifted" layer SHRINKS. At `rx = −120`
+ * three layers at z 0/100/200 come out fully opaque, view-axis depths 1200/1250/1300,
+ * painted in exactly the wrong order, with the behind-camera guard never engaging
+ * because `D = P − κζ` GROWS with ζ once κ < 0.
+ *
+ * ±75 keeps `κ ≥ cos(75°)² = 0.067 > 0` for every combination of the two, so the sort
+ * is correct by construction everywhere a control or a gesture can reach — and it is
+ * generous for the pictures the presets are built from (Surface glide's −40°, Orbit's
+ * ±25°, Depthfield's own −38°). Past ~75° a screen-parallel plane is nearly edge-on
+ * and there is no artwork left to look at, so nothing is being withheld.
+ *
+ * The wire stays ±180 (a link that says 120 still parses and still renders — it is
+ * simply not something the UI will author), exactly as `z`'s wire stays ±12000 while
+ * its slider stops at 300. `timeline-panel.test.ts` pins the containment.
+ */
+export const KF_TILT_CONTROL: readonly [number, number] = Object.freeze([-75, 75] as const);
+
+/** The two channels `KF_TILT_CONTROL` governs, for `kfPoseAt`'s channel list. */
+const TILT_CHANNELS: readonly KfChannel[] = Object.freeze(['rx', 'ry'] as const);
+
+/**
  * The camera moves that write keyframes (plans/104 §8, §12 Q8) — stored EXPANDED.
  *
  * Each `track` is the plan's own literal wire sketch, parsed by the ENGINE's `parseKf`
@@ -380,7 +419,21 @@ export const KF_Z_SLIDER: readonly [number, number] = Object.freeze([0, 300] as 
  * downstream has to resolve one, and every key is editable, retimeable and deletable
  * like any other (plan 101's rule, which this plan inherits).
  *
- * All five exercise v1 channels only — Orbit needs tilt and waits for P2.
+ * The first five exercise v1 channels only. **Surface glide and Orbit are P2's** and
+ * are the first two that author `rx`/`ry`; both obey THE RESOLUTION RULE (Andy,
+ * 2026-08-12, binding on every generated animation): *"elements lift off and rest back
+ * down on the page; the animations showing them falling apart need to close out with it
+ * all coming together."* Their last keyframe IS the rest pose — every channel the track
+ * touches returns to its default — so the move is a departure that comes home rather
+ * than a shot that ends stranded at an angle. `tests/keyframes-tilt.test.ts` asserts it
+ * by evaluating each tilt track at its own end.
+ *
+ * ⚑ MEASURED, NOT FIXED HERE: the five P1 presets above predate that rule and do NOT
+ * obey it — `push-in` ends at `z −220`, `pull-back` at `z 0` (it does), `pan-across` at
+ * `x 140`, `rise` at `y −120, z −80`, `reveal` at rest. Bringing `push-in`, `pan-across`
+ * and `rise` home would change what three shipped moves MEAN (a push-in that pushes back
+ * out is a different shot), which is a product call and not a P2 one. Flagged for Andy
+ * with the numbers rather than changed in passing.
  *
  * ⚑ THE DOLLY SIGN IS INVERTED FROM §8's SKETCHES, and deliberately. The engine's own
  * projection is `eff = P / (P − (z − camZ))` (`projectDepth`), so a camera whose `z`
@@ -398,13 +451,58 @@ export const KF_Z_SLIDER: readonly [number, number] = Object.freeze([0, 300] as 
  * states: literal `t('…')` call sites are what scripts/translate.ts's corpus scan
  * extracts, and a `t(preset.label)` at render time would need every name hand-listed
  * in extra-keys.spa.json instead.
+ *
+ * The `track` times are AUTHORED absolutes (4–5.2 s); `applyCameraPreset` rescales them
+ * to the scene's own duration (`rescaleKfTrack`, audit A1#5) so a move fits any clip.
  */
-export const KF_CAMERA_PRESETS: ReadonlyArray<{ id: string; label: string; track: string }> = [
-  { id: 'push-in', label: t('Push in'), track: 't0_z0*t4000_eo_z-220' },
-  { id: 'pull-back', label: t('Pull back'), track: 't0_z-220*t4000_eio_z0' },
-  { id: 'pan-across', label: t('Pan across'), track: 't0_x-140*t4000_el_x140' },
-  { id: 'rise', label: t('Rise'), track: 't0_y120_z-40*t4000_eo_y-120_z-80' },
-  { id: 'reveal', label: t('Reveal'), track: 't0_z-260_a0.5_f200*t3500_eo_z0_a0' },
+/**
+ * The shortest a rescaled preset may become — a floor under `applyCameraPreset`'s scene
+ * scale so a pathologically brief scene compresses the move to a fast glide rather than a
+ * single-frame strobe. Only bites below 0.8 s, which no real flythrough scene reaches.
+ */
+const PRESET_MIN_MS = 800;
+
+export const KF_CAMERA_PRESETS: ReadonlyArray<{ id: string; label: string; track: string; icon: IconName }> = [
+  { id: 'push-in', label: t('Push in'), track: 't0_z0*t4000_eo_z-220', icon: 'zoomIn' },
+  { id: 'pull-back', label: t('Pull back'), track: 't0_z-220*t4000_eio_z0', icon: 'zoomOut' },
+  { id: 'pan-across', label: t('Pan across'), track: 't0_x-140*t4000_el_x140', icon: 'move' },
+  { id: 'rise', label: t('Rise'), track: 't0_y120_z-40*t4000_eo_y-120_z-80', icon: 'arrowsV' },
+  { id: 'reveal', label: t('Reveal'), track: 't0_z-260_a0.5_f200*t3500_eo_z0_a0', icon: 'eye' },
+  // ── P2: the two tilt moves ────────────────────────────────────────────────
+  //
+  // SURFACE GLIDE is the signature (§9's re-sequencing verdict: "what I'm seeing show
+  // up are all top-down views, not angled glides along the surface of the image, POV
+  // style" — and the acceptance phrase, "to feel INSIDE the landscape of the image").
+  // It opens down among the lifted surfaces — `rx −40` pitches the camera so the near
+  // edge sits at the bottom of frame and the far edge recedes to a horizon — with the
+  // focus plane out at z 160 and the aperture open, so the flat board is soft and only
+  // the lifted layers are sharp. Then it drifts laterally (the P4 study's "the camera
+  // NEVER sits still") and RESOLVES: pitch, both pans, focus and aperture all land on 0
+  // at 5.2s, the same instant the shipped Screenshot-flythrough template settles on.
+  // Linear out of the first key because a drift that eases is a drift that wobbles;
+  // ease-out into the second so the shot lands rather than stops.
+  //
+  // ⚑ NO DOLLY, and that is a MEASURED decision rather than an omission. A `camZ` push
+  // was tried and taken out: on the affine tier camZ is a pure magnification, but under
+  // a pitch it also DISPLACES, because it moves the aim point along the world z axis
+  // rather than along the camera's own view axis. Measured on the P1 demo scene, adding
+  // `z −180` to the opening key lifted every layer ~130 px up the frame on top of the
+  // magnification, and pushed two of the four lifted cards clean off the top edge
+  // (card B to y −110 on a 540-tall stage). A signature preset must not open with half
+  // the artwork out of frame. Dollying ALONG the view axis under tilt is the right fix
+  // and it is a projection change, not a preset one — noted for P2b.
+  //
+  // ORBIT is no longer inert. It shipped disabled at P1 with the reason "Needs tilt
+  // (coming)" — that reason expired with this milestone, and the engine's camera model
+  // ORBITS its aim point rather than swivelling in place (see `surfaceMatrix`), so a
+  // keyframed `ry` IS an orbit: the camera swings around the artwork while the centre
+  // of frame stays put. Leaving a control dimmed behind a sentence that has stopped
+  // being true is the thing this codebase writes down not to do. It swings right, past
+  // the front, to the left and settles square — a departure that comes home, like its
+  // sibling, with a shallow `rx` through the arc so it reads as an orbit rather than a
+  // horizontal wipe.
+  { id: 'surface-glide', label: t('Surface glide'), track: 't0_el_x-120_y60_rx-40_f160_a0.8*t2600_eo_x-40_y36_rx-24_f90_a0.4*t5200_x0_y0_rx0_f0_a0', icon: 'plane' },
+  { id: 'orbit', label: t('Orbit'), track: 't0_el_rx-14_ry34*t2600_es_rx-14_ry-34*t5200_rx0_ry0', icon: 'refresh' },
 ];
 
 /** One row of the shortcuts sheet — and one branch of `onKey`. */
@@ -2738,15 +2836,63 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * channels are absolute on a camera (a keyed channel REPLACES the base), but a
    * gesture's number is a change, and `writeKfPose` composes the two by evaluating the
    * pose at that instant first.
+   *
+   * WHICH IS ALSO WHY THE TILT BAND IS HELD HERE and not in the caller. `KF_TILT_CONTROL`
+   * bounds the RESULT, and a shift-drag only ever supplies a delta — clamping the delta
+   * would let three drags of +30° walk `rx` to 90 and past the sign change in `κ` that
+   * the depth sort depends on. So the composed value is what gets held: re-evaluate the
+   * pose the write is about to start from (the same `kfWriteMs` + `kfPoseAt` reading
+   * `writeKfPose` itself takes, so the two cannot disagree about which key that is) and
+   * shrink the delta to whatever the band still has room for. A drag that runs into the
+   * end of the band simply stops turning, which is what every clamped control does.
    */
   function cameraWrite(boxes: Box[], delta: KfPose): Box[] {
     const id = cameraModeId();
     if (!id) return boxes;
     const i = indexOfId(boxes, cfg, id);
     if (i < 0) return boxes;
-    const at = cameraPoseAtSec(boxes[i]!, playheadSec());
+    const box = boxes[i]!;
+    const at = cameraPoseAtSec(box, playheadSec());
     if (at === null) return boxes;
-    return writeKfPose(boxes, cfg, id, at, delta, 'add');
+    return writeKfPose(boxes, cfg, id, at, holdTilt(box, at, delta), 'add');
+  }
+
+  /**
+   * The tilt half of `cameraWrite`'s clamp — pure, and a no-op by identity on every
+   * delta that carries no `rx`/`ry`, so the pan and dolly gestures are byte-unchanged.
+   */
+  function holdTilt(box: Box, atSec: number, delta: KfPose): KfPose {
+    const drx = typeof delta.rx === 'number' ? delta.rx : 0;
+    const dry = typeof delta.ry === 'number' ? delta.ry : 0;
+    if (!drx && !dry) return delta;
+    const from = kfPoseAt(box, cfg, kfWriteMs(box, cfg, atSec), TILT_CHANNELS);
+    const held: KfPose = { ...delta };
+    const [lo, hi] = KF_TILT_CONTROL;
+    if (drx) held.rx = clamp(finite(from.rx, 0) + drx, lo, hi) - finite(from.rx, 0);
+    if (dry) held.ry = clamp(finite(from.ry, 0) + dry, lo, hi) - finite(from.ry, 0);
+    return held;
+  }
+
+  /**
+   * The ABSOLUTE tilt a shift-drag of `(dRx, dRy)` degrees would produce — current pose
+   * plus the delta, clamped to the same band `holdTilt` enforces, so the HUD and the
+   * write can never disagree. Reads at the latch when the playhead is on/near a key, and
+   * falls back to the playhead itself for an authored move parked off every diamond (the
+   * gesture still previews an angle even where the commit will be refused). Pure.
+   */
+  function cameraTiltPreview(boxes: Box[], dRx: number, dRy: number): { rx: number; ry: number } | null {
+    const id = cameraModeId();
+    if (!id) return null;
+    const i = indexOfId(boxes, cfg, id);
+    if (i < 0) return null;
+    const box = boxes[i]!;
+    const at = cameraPoseAtSec(box, playheadSec());
+    const from = kfPoseAt(box, cfg, kfWriteMs(box, cfg, at ?? playheadSec()), TILT_CHANNELS);
+    const [lo, hi] = KF_TILT_CONTROL;
+    return {
+      rx: clamp(finite(from.rx, 0) + (Number.isFinite(dRx) ? dRx : 0), lo, hi),
+      ry: clamp(finite(from.ry, 0) + (Number.isFinite(dRy) ? dRy : 0), lo, hi),
+    };
   }
 
   /**
@@ -2761,7 +2907,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function applyCameraPreset(preset: { label: string; track: string }): void {
     if (!cfg.kfField) return;
     const seeded = ensureSceneCameraRows(getBoxes());
-    const next = setKfTrack(seeded.rows, cfg, seeded.id, parseKf(preset.track));
+    // A1#5 — a preset is AUTHORED at a fixed length (4–5.2 s); stretch or compress it so
+    // the move fills THIS scene rather than overrunning it or parking the camera early.
+    // A scene with no derived duration (a still with no clip timing) keeps the authored
+    // length — `deriveDuration` returns 0, and `rescaleKfTrack` treats a 0 target as
+    // "leave it", so nothing regresses. The floor keeps a sub-second scene from strobing.
+    const sceneMs = deriveDuration(seeded.rows, cfg);
+    const track = sceneMs > 0
+      ? rescaleKfTrack(parseKf(preset.track), Math.max(PRESET_MIN_MS, sceneMs))
+      : parseKf(preset.track);
+    const next = setKfTrack(seeded.rows, cfg, seeded.id, track);
     write(next);
     selectAndReveal([seeded.id]);
     announce(t('Camera move: {name}', { name: preset.label }));
@@ -2844,7 +2999,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   ];
 
   /**
-   * The CAMERA's own channels, as the §8 camera panel offers them — pose, focus,
+   * The CAMERA's own channels, as the §8 camera panel offers them — pose, tilt, focus,
    * aperture and perspective, each with the affordance chip Depthfield puts on the
    * same row (§3's observed UI: DRAG for pan, SCROLL for the dolly).
    *
@@ -2853,13 +3008,32 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * what magnifies (§4.3). Calling this control "zoom" is the one naming mistake this
    * feature can make, and the plan names it twice.
    *
-   * Ranges come from the engine's own clamp table, never re-typed here.
+   * P2 PUT THE TILT ROWS HERE (this is the seam the M2.5 comment reserved). They sit
+   * between the pans and the dolly because that is the order a shot is set up in — where
+   * the camera is, which way it is pointing, how far away it is — and they carry the
+   * SHIFT-DRAG chip, the gesture §8 reserved for them at M2.5 and P2 finally spends.
+   *
+   * The labels are TILT X / TILT Y, the reference tool's own words, and not "pitch"/
+   * "yaw": those are the correct terms and nobody outside a flight sim uses them. Signs
+   * are the engine's (`surfaceMatrix`): **negative Tilt X pitches the camera down over
+   * the artwork** — the near edge to the bottom of frame, the far edge receding to a
+   * horizon — which is the POV shot the Surface glide preset is built from. Positive
+   * Tilt Y brings the right-hand edge nearer.
+   *
+   * Ranges come from the engine's own clamp table, never re-typed here — with the two
+   * tilt rows the deliberate exception, held to `KF_TILT_CONTROL` (±75) rather than to
+   * the ±180 WIRE clamp. That is not taste trimming: past a quarter turn `κ` changes
+   * sign and `buildPlan`'s depth sort inverts, so ±180 on a control is a reachable
+   * wrong picture. See `KF_TILT_CONTROL` for the derivation; `cameraWrite` holds the
+   * shift-drag to the same band so the two doors onto tilt cannot disagree.
    */
   const KF_CAMERA_FIELDS: ReadonlyArray<{
     ch: KfChannel; label: string; step: number; range: readonly [number, number]; hint?: string;
   }> = [
     { ch: 'x', label: t('Pan X'), step: 10, range: KF_CLAMPS.x, hint: t('Drag') },
     { ch: 'y', label: t('Pan Y'), step: 10, range: KF_CLAMPS.y, hint: t('Drag') },
+    { ch: 'rx', label: t('Tilt X'), step: 5, range: KF_TILT_CONTROL, hint: t('Shift-drag') },
+    { ch: 'ry', label: t('Tilt Y'), step: 5, range: KF_TILT_CONTROL, hint: t('Shift-drag') },
     { ch: 'z', label: t('Dolly'), step: 10, range: KF_CLAMPS.z, hint: t('Scroll') },
     { ch: 'f', label: t('Focus'), step: 10, range: KF_CLAMPS.f },
     { ch: 'a', label: t('Aperture'), step: 0.05, range: KF_CLAMPS.a },
@@ -2875,6 +3049,78 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * buttons with real labels — which is what lets the diamonds themselves stay
    * aria-hidden pointer sugar on a `role="option"` bar.
    */
+  /**
+   * The Depth control, surfaced DIRECTLY on a box that has no track yet (audit A5#1).
+   *
+   * Depth is a box PROPERTY (`cfg.zField`), not a keyframe: it is the one pose channel
+   * with a base field of its own, so writing it off a diamond sets the box's own depth
+   * (§5.2 / §8's "edits write the BASE") rather than minting a keyframe. It used to be
+   * reachable only through the Keyframes pose row — i.e. only AFTER pressing Animate,
+   * which a still, un-animated layer has no reason to do. Standing a lifted layer off the
+   * board is the whole point of a flythrough's parallax, so it should not cost a keyframe
+   * track to reach.
+   *
+   * This does NOT cross §8's disclosure law: it writes the box's `z` field through the
+   * SAME `ensureSceneCameraRows(patchBox(...))` path the pose row already uses off a
+   * diamond — no track is created, exactly as setting position or size creates none, and
+   * a box nobody touches keeps `zField` absent, so its export stays byte-identical. Only
+   * rendered in the no-track branch; once a box has keyframes the pose row owns Depth (and
+   * can key it), so there is never a second control disagreeing about where the value goes.
+   */
+  function buildDepthControl(group: InspectorGroup, id: string, box: Box): void {
+    if (!cfg.zField) return;
+    const field = cfg.zField;
+    const cur = clamp(finite(box[field], 0), KF_Z_FIELD_CLAMP[0], KF_Z_FIELD_CLAMP[1]);
+
+    const wrap = document.createElement('label');
+    wrap.className = 'field-row field-row--inline tl-field tl-depth-row';
+    const lab = document.createElement('span');
+    lab.className = 'field-label';
+    lab.textContent = t('Depth');
+
+    const num = document.createElement('input');
+    num.className = 'field-input tl-num tl-depth-num';
+    num.type = 'number';
+    num.step = '10';
+    num.min = String(KF_Z_FIELD_CLAMP[0]);
+    num.max = String(KF_Z_FIELD_CLAMP[1]);
+    num.value = kfFormatChannel('z', cur);
+
+    // The tasteful 0–300 travel of the pose row's own slider, while the number beside it
+    // still takes the whole field range (negatives included) — both held to the engine's
+    // `KF_Z_FIELD_CLAMP`, never re-typed here.
+    const slider = document.createElement('input');
+    slider.className = 'tl-kf-slider tl-depth-slider';
+    slider.type = 'range';
+    slider.min = String(KF_Z_SLIDER[0]);
+    slider.max = String(KF_Z_SLIDER[1]);
+    slider.step = '10';
+    slider.setAttribute('aria-label', t('Depth'));
+    slider.value = String(clamp(cur, KF_Z_SLIDER[0], KF_Z_SLIDER[1]));
+
+    // One model write per gesture: `input` mirrors into the number continuously, `change`
+    // fires once on release and is the one that commits — the pose row's own contract.
+    const commit = (raw: number): void => {
+      const v = clamp(raw, KF_Z_FIELD_CLAMP[0], KF_Z_FIELD_CLAMP[1]);
+      num.value = kfFormatChannel('z', v);
+      // The first depth interaction mints the scene camera in the SAME commit (§5.4), so
+      // one gesture stays one ⌘Z and the camera panel becomes reachable — identical to the
+      // pose row's off-diamond base write.
+      const seeded = ensureSceneCameraRows(patchBox(getBoxes(), id, { [field]: v }));
+      write(seeded.rows);
+    };
+    slider.addEventListener('input', () => { num.value = kfFormatChannel('z', finite(slider.value, 0)); });
+    slider.addEventListener('change', () => commit(finite(slider.value, 0)));
+    num.addEventListener('change', () => {
+      const raw = num.value.trim();
+      if (raw === '') return;
+      commit(finite(raw, 0));
+    });
+
+    wrap.append(lab, slider, num);
+    group.body.appendChild(wrap);
+  }
+
   function buildKeyframes(
     group: InspectorGroup, id: string, box: Box, track: KfTrack, isCam = false,
   ): void {
@@ -2893,7 +3139,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // No aria-live: this changes on every scrub, and narrating "Keyframe at 0:01.2,
     // scene pose, keyframe at 0:01.4…" through a drag is not information. The state
     // is spoken where it is ACTED on — the pose fields' own labels below carry it.
-    state.textContent = t('Scene pose');
+    state.textContent = t('No keyframe here');
     latch.append(state);
     body.appendChild(latch);
 
@@ -3246,7 +3492,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
       if (refs && box) {
         refs.state.textContent = on === null
-          ? t('Scene pose')
+          ? t('No keyframe here')
           : t('Keyframe @ {t}', { t: fmtTime(kfTimelineSec(box, cfg, on)) });
         refs.state.classList.toggle('is-on', on !== null);
         for (const row of Array.from(refs.list.children) as HTMLElement[]) {
@@ -3616,12 +3862,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The CAMERA group (plans/104 §8) — the scene-camera panel, and the only place a
    * camera's pose is typed rather than dragged.
    *
-   * Three parts, in the order a shot is set up: the five preset MOVES (each one commit,
-   * each expanded onto the track), the pose CHANNELS with their affordance chips, and
+   * Three parts, in the order a shot is set up: the preset MOVES (each one commit, each
+   * expanded onto the track), the pose CHANNELS with their affordance chips, and
    * nothing else. The chips are the reference tool's own vocabulary — DRAG on the pans,
-   * SCROLL on the dolly — and they are honest here because this group is only ever
-   * shown while the camera is selected, which is exactly the condition that arms those
-   * canvas gestures (`cameraModeId`).
+   * SHIFT-DRAG on the tilts, SCROLL on the dolly — and they are honest here because this
+   * group is only ever shown while the camera is selected, which is exactly the
+   * condition that arms those canvas gestures (`cameraModeId`).
    *
    * The presets are BUTTONS, not a nested menu: this body is already borrowed into a
    * body-mounted popover, and a menu opened from inside it would be a second popover
@@ -3636,7 +3882,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // with none is the scene default — one still shot — and says so.
     const n = kfBoxTrack(box, cfg).length;
     g.setSummary([
-      n === 0 ? t('Scene pose')
+      n === 0 ? t('Not animated')
         : n === 1 ? t('1 keyframe') : t('{n} keyframes', { n: String(n) }),
     ]);
 
@@ -3645,30 +3891,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     moves.setAttribute('role', 'group');
     moves.setAttribute('aria-label', t('Camera moves'));
     for (const preset of KF_CAMERA_PRESETS) {
-      const b = actionBtn(`tl-cam-preset tl-cam-${preset.id}`, preset.label, 'keyframe');
+      const b = actionBtn(`tl-cam-preset tl-cam-${preset.id}`, preset.label, preset.icon);
       b.addEventListener('click', () => applyCameraPreset(preset));
       moves.appendChild(b);
     }
-    // ORBIT — the sixth move, present and INERT (plans/104 §9's P3 line names it; §8's
-    // preset table says it "stays P2 (needs tilt)").
-    //
-    // Shown rather than omitted because the two are not the same promise: an absent
-    // entry says the move does not exist, and a dimmed one with a reason says it is
-    // coming and what it is waiting for — which is the truth, and the same posture
-    // `.tl-btn[aria-disabled]` already carries everywhere else in this panel. Shipping
-    // it ENABLED is the option that is actually wrong: an orbit is a `rx`/`ry` move,
-    // those channels parse but nothing consumes them until P2, so the button would
-    // author a track that every evaluator ignores — a keyframe that does nothing is
-    // worse than a button that says it cannot yet.
-    //
-    // `aria-disabled`, never the `disabled` property: the reason lives in the tooltip,
-    // and a `disabled` button is neither focusable nor `:focus-visible`, so a keyboard
-    // user would meet a silently missing control instead of an explained one.
-    const orbit = actionBtn('tl-cam-preset tl-cam-orbit', t('Orbit'), 'keyframe');
-    orbit.setAttribute('aria-disabled', 'true');
-    orbit.setAttribute('data-tip', t('Needs tilt (coming)'));
-    orbit.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
-    moves.appendChild(orbit);
+    // ORBIT USED TO LIVE HERE, hand-built and `aria-disabled` with the reason "Needs
+    // tilt (coming)". P2 is that tilt, so it has moved into `KF_CAMERA_PRESETS` above
+    // and comes out of the loop like every other move. The dimmed twin is GONE rather
+    // than kept: a control explaining what it is waiting for is only honest while it is
+    // still waiting, and this codebase's own rule about the raster allowlist applies
+    // word for word — "don't leave a reason standing once it stops being true".
     g.body.appendChild(moves);
 
     const cam: KfPoseField[] = [];
@@ -4044,7 +4276,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       ]);
 
       if (n === 0 && !isCamera) {
-        // ── the door ─────────────────────────────────────────────────────────
+        // ── Depth, then the door ─────────────────────────────────────────────
+        // Depth stands FIRST because it is what a lifted layer needs before it needs a
+        // keyframe: set the parallax, THEN (optionally) animate it. It writes the box's
+        // own `z` field, not a track (see `buildDepthControl`), so it is not a keyframe
+        // affordance and does not violate §8's disclosure law.
+        buildDepthControl(kfG, id, box);
         // One action, one commit, one undo step. Enabling is DERIVED, not stored
         // (§8): what it writes is a t = 0 pose, and the track's existence IS the
         // animated state from then on — there is no flag anywhere to drift.
@@ -5442,7 +5679,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   /**
    * May this clip's sound be pulled onto its own lane? Four gates, all of them "does
    * this even mean anything here" rather than policy:
-   *   • the TOOL declares a link sub-field (sequence-studio does; layout-studio does
+   *   • the TOOL declares a link sub-field (sequence-studio does; design does
    *     not, and gets no affordance at all rather than a broken one);
    *   • the tool has an `audio` add-kind — the vocabulary a detached sound is born into,
    *     exactly the check the microphone button already makes;
@@ -7062,7 +7299,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   return {
     destroy, setOpen, isOpen: () => open, promote, demote, kfPoseIds, kfPoseWrite,
-    cameraModeId, cameraWrite,
+    cameraModeId, cameraWrite, cameraTiltPreview,
     addKeyframe: () => addKeyframeAction({ speak: true }),
     keyframableIds: (ids) => {
       const rows = getBoxes();

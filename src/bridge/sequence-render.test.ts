@@ -298,8 +298,12 @@ test('contract: the whole render runs inside the authored-DOM scope (plans/104 Â
   // the parse AND the plates AND the frame loop (the hybrid lottie path re-photographs
   // its box from inside it), which is why the body is a second function.
   const src = strip(read('./sequence-render.ts'));
-  assert.match(src, /import \{ OFF_CLASS, withAuthoredDom \} from '\.\/sequence-dom\.ts'/,
+  assert.match(src, /import \{ OFF_CLASS, createSequenceTime, withAuthoredDom \} from '\.\/sequence-dom\.ts'/,
     'the scope comes from the applier that owns the writes, never a local restore');
+  // `createSequenceTime` joined that import at P2: the tilt capture tier poses the live
+  // artboard frame by frame through the SAME session the contact sheet uses, from
+  // INSIDE the scope above (which stood every other writer down first). A second,
+  // private applier would be exactly the drift this contract exists to prevent.
   assert.match(src, /export async function renderSequence\([\s\S]{0,400}return await withAuthoredDom\(node as HTMLElement, \(\) => renderSequenceAuthored\(/,
     'renderSequence is the scope and nothing else');
   const bodyAt = src.indexOf('async function renderSequenceAuthored(');

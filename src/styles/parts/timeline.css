@@ -142,6 +142,7 @@
 .tl-btn[hidden] { display: none; }
 .tl-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .tl-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: hsl(var(--muted)); }
+.tl-btn:active:not(:disabled):not([aria-disabled="true"]) { filter: brightness(0.92); }
 .tl-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 /* `aria-disabled` gets the same greying as the real property. The split blade uses the
    attribute rather than `disabled` precisely so it stays FOCUSABLE while inert — a
@@ -629,12 +630,12 @@
   flex-wrap: wrap;
   gap: 4px;
 }
-/* Orbit's dimming is `.tl-btn[aria-disabled="true"]` above — the same numbers every
-   other inert control in this panel uses. What it adds is the CURSOR: a preset that
-   cannot be pressed must not offer a pointer, and the tooltip (`data-tip`) is where
-   the reason lives, reachable by hover AND by focus because the attribute keeps the
-   button in the tab order. */
-.tl-cam-preset[aria-disabled="true"] { cursor: default; }
+/* Orbit needs no rule of its own: `.tl-btn[aria-disabled="true"]` above already carries
+   BOTH the dimming and `cursor: default`, and a preset is a `.tl-btn` (see `actionBtn`),
+   so the `.tl-cam-preset[aria-disabled="true"] { cursor: default }` that used to sit here
+   only restated it. The reason it is inert is not styling's job at all: `data-tip` draws
+   it for a pointer or a focus ring, and buildCameraGroup puts the same words in the
+   button's accessible NAME, which is the copy a screen reader reads. */
 .tl-group-pop .tl-cam-row { gap: 8px; }
 .tl-cam-num { width: 7em; }
 /* The DRAG / SCROLL affordance chip — the reference tool's own vocabulary, telling

@@ -366,3 +366,31 @@ export function blurScratchNeedBytes(
   }
   return peak * BLUR_SCRATCH_PEAK_PER_LAYER;
 }
+
+// ── the fx-plate cache (plans/104 P3.1, failure 1) ──────────────────────────
+
+/**
+ * Share of the machine's plate allowance the compositor may RETAIN as cached fx
+ * plates — a layer's filtered picture, rendered once and re-composited per frame
+ * (`fxPlateKey` in the executor).
+ *
+ * Half, and the reasoning is that this is the same trade the plates themselves are:
+ * a plate exists because rasterising a box per frame is unaffordable, and a cached fx
+ * plate exists because re-blurring one per frame is unaffordable for exactly the same
+ * reason. A lifted layer is a FULL-STAGE box, so its depth shadow is a full-frame
+ * gaussian; eleven of them under a moving camera is eleven full-frame gaussians per
+ * frame, measured at 854 ms/frame against 51 ms/frame with the shadows off.
+ *
+ * It is a CEILING, not a reservation: nothing is allocated until a layer actually
+ * caches, a layer that does not fit simply keeps re-rendering its filter (identical
+ * pixels, today's cost), and the executor logs ONE line naming what it refused. So it
+ * is deliberately NOT subtracted from `planPlateBudget`'s allowance the way
+ * `blurScratchNeedBytes` is — a reservation would degrade plate RESOLUTION, which is
+ * quality, to buy back time, which is not the trade §5.5 makes anywhere else.
+ */
+export const FX_CACHE_BUDGET_SHARE = 0.5;
+
+/** Bytes of cached fx plates one render may retain on a machine with `gb` of memory. */
+export function fxCacheBudgetBytes(gb: number | null = deviceMemoryGb()): number {
+  return Math.round(plateBudgetBytes(gb) * FX_CACHE_BUDGET_SHARE);
+}

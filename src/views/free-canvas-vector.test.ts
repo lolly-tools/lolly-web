@@ -145,7 +145,7 @@ function rightClick(f: Fixture, x: number, y: number): HTMLElement {
  *  trailing explanation). */
 function gridItem(menu: HTMLElement, prefix: string): HTMLButtonElement {
   const b = [...menu.querySelectorAll<HTMLButtonElement>('.fc-pop-gitem')]
-    .find((x) => (x.getAttribute('title') || '').startsWith(prefix));
+    .find((x) => (x.getAttribute('aria-label') || '').startsWith(prefix));
   assert.ok(b, `grid item "${prefix}" present`);
   return b!;
 }
@@ -221,7 +221,7 @@ test('vector section is absent entirely when the manifest declares no pathField'
   const m = rightClick(f, 60, 60);
   assert.equal(maybeRow(m, 'Simplify'), undefined, 'no Simplify row');
   assert.equal(maybeRow(m, 'Offset path…'), undefined, 'no Offset row');
-  assert.equal([...m.querySelectorAll('.fc-pop-gitem')].filter((b) => (b.getAttribute('title') || '').startsWith('Union')).length, 0);
+  assert.equal([...m.querySelectorAll('.fc-pop-gitem')].filter((b) => (b.getAttribute('aria-label') || '').startsWith('Union')).length, 0);
   // The pre-existing entries are untouched.
   assert.ok(maybeRow(m, 'Group'), 'Group survives');
   f.destroy();

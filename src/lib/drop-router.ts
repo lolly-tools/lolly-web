@@ -20,7 +20,7 @@
  *
  * Design files travel by the same one-shot in-memory handoff pattern
  * lib/verify-handoff.ts proves: the File is stashed here, we navigate to
- * #/tool/layout-studio, and free-canvas consumes it on mount
+ * #/tool/design, and free-canvas consumes it on mount
  * (takePendingDesignImport) through the exact code path of its Import panel.
  *
  * Deliberately light at module scope: the picker (storeUserUpload), pdf-import
@@ -47,6 +47,7 @@ import { choiceDialog, closeConfirmDialogs } from '../components/confirm-dialog.
 import type { DialogChoice } from '../components/confirm-dialog.ts';
 import { setPendingVerify } from './verify-handoff.ts';
 import type { PickerHost } from '../views/picker.ts';
+import type { BeamPackHost } from './beam-pack.ts';
 
 type PickerModule = typeof import('../views/picker.ts');
 
@@ -54,7 +55,7 @@ type PickerModule = typeof import('../views/picker.ts');
  *  picker's UPLOAD_ACCEPT (that list deliberately excludes design formats). */
 const UNIVERSAL_ACCEPT =
   '.fig,.penpot,.zip,.tar,.tgz,.gz,.svg,.idml,.indd,.pdf,.ai,.pptx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
-  '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac,.bmp,.ico,.cur,.svgz';
+  '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac,.bmp,.ico,.cur,.svgz,.lolly';
 
 // Extension fallbacks for files whose MIME type the OS didn't fill in.
 const DESIGN_EXT_RE = /\.(fig|penpot|idml|indd|svg|zip)$/i;
@@ -81,14 +82,16 @@ export const TOKENS_SNIFF_MAX_BYTES = 4 * 1024 * 1024;
 
 // ── one-shot handoff stashes (the verify-handoff pattern) ──────────────────────
 
-let pendingDesign: File | null = null;
+let pendingDesign: { file: File; scenes: boolean } | null = null;
 
-/** Consume the design file stashed by the "Edit in Layout Studio" route —
- *  single use, cleared on read. free-canvas checks this on mount. */
-export function takePendingDesignImport(): File | null {
-  const f = pendingDesign;
+/** Consume the design file stashed by a drop route into Design — single use,
+ *  cleared on read. free-canvas checks this on mount. `scenes` carries the
+ *  "as timed scenes vs replace the board" choice the drop door offered
+ *  (plans/104 §337): the "Make a video from its frames" door sets it true. */
+export function takePendingDesignImport(): { file: File; scenes: boolean } | null {
+  const d = pendingDesign;
   pendingDesign = null;
-  return f;
+  return d;
 }
 
 let pendingDesignSystemFile: File | null = null;
@@ -157,6 +160,10 @@ export interface Sniff {
    *  a Penpot project, or a zip whose parts say design-system pack. Additive —
    *  it never suppresses a route another flag already earned. */
   designSystem: boolean;
+  /** A `.lolly` share file (plans/114) — a saved session + its assets + provenance.
+   *  It IS a zip, so it must be recognised before the generic design/archive routes
+   *  claim it; it opens directly (no chooser), never "unpacks". */
+  lolly: boolean;
 }
 
 const isMediaFile = (f: File): boolean =>
@@ -254,6 +261,9 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
   const zipMagic = !!head && head.length >= 4
     && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
   const svgText = /<svg[\s>]/i.test(text.slice(0, 4096));
+  // A .lolly is a zip; recognise it by extension so the generic design/archive routes
+  // (which zip-magic would otherwise trigger) never claim it — it opens directly.
+  const lolly = /\.lolly$/i.test(file.name);
   // JUMBF box type / C2PA manifest label / PNG caBX chunk — a heuristic "this
   // carries Content Credentials" signal, not a verification (that's /verify's job).
   const c2pa = /jumb|c2pa|caBX/.test(text);
@@ -264,17 +274,17 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
     ? ((head[0] === 0x38 && head[1] === 0x42 && head[2] === 0x50 && head[3] === 0x53)
       || text.startsWith('gimp xcf '))
     : /\.(psd|psb|xcf)$/i.test(file.name);
-  const design = !pdf && !pptx && !layers && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
+  const design = !lolly && !pdf && !pptx && !layers && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
   // A plain archive: a zip/tar by name, or PK-magic bytes that aren't a design
   // bundle. Design bundles and office/OCF packages (zips too) are excluded so the
   // "unpack" route never competes for a .penpot or shreds a .xlsx.
-  const archive = !layers && !PURE_DESIGN_EXT_RE.test(file.name) && !CONTAINER_DOC_EXT_RE.test(file.name)
+  const archive = !lolly && !layers && !PURE_DESIGN_EXT_RE.test(file.name) && !CONTAINER_DOC_EXT_RE.test(file.name)
     && (ARCHIVE_EXT_RE.test(file.name) || (zipMagic && !DESIGN_EXT_RE.test(file.name)));
   // Design-system material (plan 97 §8), sniffed LAST and only on the deep
   // (single-file) path — the route is a single-file journey, and every flag
   // above is computed exactly as it was before this one existed. A .penpot is
   // one by extension; a zip needs its parts named; a .json has to parse.
-  const designSystem = deep && !pdf && !pptx && !layers
+  const designSystem = !lolly && deep && !pdf && !pptx && !layers
     && (PENPOT_EXT_RE.test(file.name)
       ? true
       : zipMagic || /\.zip$/i.test(file.name)
@@ -282,7 +292,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
         : await looksLikeTokensFile(file, text));
   // A PSD/XCF often carries an image/* MIME — the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
-  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem };
+  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly };
 }
 
 const toolExists = (id: string): boolean =>
@@ -322,8 +332,8 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   if (single && s.layers && has('layer-stack')) {
     choices.push({ id: 'layers', label: t('Open as layers'), primary: true });
   }
-  if (single && s.layers && has('layout-studio')) {
-    choices.push({ id: 'design', label: t('Edit in Layout Studio') });
+  if (single && s.layers && has('design')) {
+    choices.push({ id: 'design', label: t('Edit in Design') });
   }
   if (single && s.layers) {
     choices.push({ id: 'flatten', label: t('Add the flattened image to your library') });
@@ -337,8 +347,8 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   if (single && s.archive) {
     choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: !packZip });
   }
-  if (single && (s.design || s.pdf) && has('layout-studio')) {
-    choices.push({ id: 'design', label: t('Edit in Layout Studio'), primary: !s.archive });
+  if (single && (s.design || s.pdf) && has('design')) {
+    choices.push({ id: 'design', label: t('Edit in Design'), primary: !s.archive });
   }
   // The Design System studio door, next to the Layout Studio one so the two
   // .penpot destinations read as a pair (plan 97 §14.9). It leads only when no
@@ -350,16 +360,17 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
       primary: !choices.some((c) => c.primary),
     });
   }
-  // Frames → timed scenes: the same design/PDF sniff can open as a video sequence
-  // (free-canvas's scene-mode import consumes the stash on mount).
-  if (single && (s.design || s.pdf) && has('sequence-studio')) {
+  // Frames → timed scenes: the same design/PDF sniff can open in Design as a video
+  // sequence, each frame a timed scene (free-canvas's scene-mode import consumes the
+  // stash on mount). The other half of the §337 "as scenes vs replace the board" choice.
+  if (single && (s.design || s.pdf) && has('design')) {
     choices.push({ id: 'sequence', label: t('Make a video from its frames') });
   }
   // A .penpot can carry per-shape export marks; the ingest bakes them through an
   // offscreen Layout Studio render, so the route needs that tool. Whether the zip
   // really is a marked-up Penpot file resolves inside the ingest (it throws a
   // user-ready message otherwise).
-  if (single && s.design && has('layout-studio')) {
+  if (single && s.design && has('design')) {
     choices.push({ id: 'exports', label: t('Add its marked exports to your library') });
   }
   if (single && s.pdf) {
@@ -405,8 +416,8 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
   if (s.pptx) return tRaw('“{name}” is a PowerPoint deck.', { name });
   // Two doors, so the sentence names both destinations rather than leaving
   // "design file" to stand for either of them (plan 97 §14.9).
-  if (s.designSystem && s.design && ctx.has('layout-studio')) {
-    return tRaw('“{name}” can open in Layout Studio or install as the design system.', { name });
+  if (s.designSystem && s.design && ctx.has('design')) {
+    return tRaw('“{name}” can open in Design or install as the design system.', { name });
   }
   if (s.designSystem) return tRaw('“{name}” looks like a design system.', { name });
   if (s.archive) return tRaw('“{name}” is an archive.', { name });
@@ -423,6 +434,23 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
  * drops keep only the batch routes (library / verify) — the design and PDF routes
  * are single-file journeys.
  */
+/** Open a dropped/shared `.lolly`: land its assets + session (reusing the beam ingest
+ *  via lib/lolly-pack.ts), then navigate into the tool at the imported session. Lazy
+ *  import keeps the pack/ingest code off the drop cold path. */
+async function importLollyDrop(file: File, host: PickerHost): Promise<void> {
+  try {
+    const { ingestLollyFile } = await import('./lolly-pack.ts');
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const res = await ingestLollyFile(bytes, host as unknown as BeamPackHost);
+    playSfx('drop');
+    announce(tRaw('Opened {name}', { name: file.name }));
+    const hash = `#/tool/${res.toolId}?slot=${encodeURIComponent(res.slot)}`;
+    routeToConsumer(hash, window.location.hash === hash);
+  } catch (err) {
+    announce(tRaw('Could not open this .lolly file: {message}', { message: (err as Error).message }), { assertive: true });
+  }
+}
+
 export async function openDropChooser(
   files: File[],
   host: PickerHost,
@@ -436,6 +464,10 @@ export async function openDropChooser(
   // A newer share superseded this one while the picker chunk / head read was in
   // flight — don't mount a stale chooser next to (or after) the replacement's.
   if (opts.superseded?.()) return;
+
+  // A .lolly opens directly — it is unambiguous (a saved session + its assets), so it
+  // skips the chooser entirely and lands the user in the tool at the imported session.
+  if (s.lolly) { await importLollyDrop(first, host); return; }
   const allIngestable = files.every(
     (f) => isMediaFile(f) || picker.isPdfUpload(f) || picker.isPptxUpload(f),
   );
@@ -485,12 +517,15 @@ export async function openDropChooser(
       break;
     }
     case 'design':
-      pendingDesign = first;
-      routeToConsumer('#/tool/layout-studio', onToolRoute('layout-studio'));
+      pendingDesign = { file: first, scenes: false };
+      routeToConsumer('#/tool/design', onToolRoute('design'));
       break;
     case 'sequence':
-      pendingDesign = first;
-      routeToConsumer('#/tool/sequence-studio', onToolRoute('sequence-studio'));
+      // "Make a video from its frames" — the same design opens in Design, but each
+      // frame becomes a timed scene (plans/104 §337; Sequence Studio's old home for
+      // this route retired into Design).
+      pendingDesign = { file: first, scenes: true };
+      routeToConsumer('#/tool/design', onToolRoute('design'));
       break;
     case 'design-system':
       // The studio's own import flow owns the parsing — colours, fonts, logos,

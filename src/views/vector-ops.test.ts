@@ -947,7 +947,7 @@ test('a union commits as one box that lowers back to the same region', () => {
   assert.equal(sameRegion(back, r.path, pathBounds(r.path)!), 0);
 });
 
-test('DEFAULT_VECTOR_FIELDS matches the layout-studio manifest field names', () => {
+test('DEFAULT_VECTOR_FIELDS matches the design manifest field names', () => {
   assert.equal(DEFAULT_VECTOR_FIELDS.idField, 'id');
   assert.equal(DEFAULT_VECTOR_FIELDS.shapeField, 'shape');
   assert.equal(DEFAULT_VECTOR_FIELDS.radiusField, 'radius');

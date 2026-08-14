@@ -221,7 +221,7 @@ function pngOf(n: number, seed: number): Uint8Array {
  *  (`views/tool-collab.ts`'s `currentSession`). */
 function liveState(): Record<string, unknown> {
   return {
-    __toolId: 'layout-studio',
+    __toolId: 'design',
     __toolVersion: '1.0.0',
     headline: 'Unsaved, and going anyway',
     logo: { source: 'library', id: 'suse/logo/primary', type: 'raster', format: 'png', version: '1.0.0', url: 'blob:x' },
@@ -351,7 +351,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   assert.equal(landedSessions.length, 1, 'the live state did not land as a session');
   const data = landedSessions[0]!.data;
   assert.equal(data.headline, 'Unsaved, and going anyway');
-  assert.equal(data.__toolId, 'layout-studio');
+  assert.equal(data.__toolId, 'design');
   assert.equal((data.photo as { id: string }).id, landedIds[0], 'the user ref was re-keyed to the landed row');
   assert.equal(
     (data.logo as { id: string }).id,
@@ -387,7 +387,7 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
 
   const WORKING_COPY = 'lolly/beam-live-session-fixture';
   ephemeral.sessions.set(WORKING_COPY, {
-    data: { __toolId: 'layout-studio', __toolVersion: '1.0.0', __label: 'Ours', headline: 'Edited together' },
+    data: { __toolId: 'design', __toolVersion: '1.0.0', __label: 'Ours', headline: 'Edited together' },
     thumb: null,
   });
 
@@ -398,7 +398,7 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
     link: link(a, { role: 'inviter', selfName: 'Priya', peerName: 'Sam' }),
     host: inviterHost,
     currentSession: () => ({
-      state: { __toolId: 'layout-studio', __toolVersion: '1.0.0', headline: 'A gift' },
+      state: { __toolId: 'design', __toolVersion: '1.0.0', headline: 'A gift' },
       label: 'Layout Studio',
     }),
     container: document.createElement('div'),

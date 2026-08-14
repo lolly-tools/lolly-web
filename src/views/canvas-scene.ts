@@ -35,7 +35,7 @@ import { boxAABB, boxRect, rectCentre, rotateVec, num, hitTest, marqueeHit } fro
  * Field names that carry a box's STRUCTURE (paint order / frame membership /
  * grouping / kind) — the fields the manifest's `canvas` flag names beyond the
  * geometry set in {@link BoxFieldConfig}. Defaults match the shipped
- * layout-studio manifest (frame/order/group/kind).
+ * design manifest (frame/order/group/kind).
  */
 export interface StructuralFieldConfig {
   frameField?: string;
@@ -439,7 +439,7 @@ export function pickMarquee(
     : marqueeHit(boxes as Box[], rect, cfg, skip);
 }
 
-/** Shared field config for the shipped layout-studio canvas (id/x/y/w/h/rot). */
+/** Shared field config for the shipped design canvas (id/x/y/w/h/rot). */
 export const LAYOUT_STUDIO_CFG: BoxFieldConfig = {
   idField: 'id', xField: 'x', yField: 'y', wField: 'w', hField: 'h', rotationField: 'rot',
 };

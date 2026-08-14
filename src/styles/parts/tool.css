@@ -2704,7 +2704,9 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .anim-transport-btn:hover { background: hsl(var(--muted)); }
 .anim-transport-btn svg { width: 62%; height: 62%; fill: currentColor; }
-.anim-transport-play { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+/* .anim-transport-play fill (background + color) is declared once in buttons.css's
+   .btn--primary selector list; only its hover override lives here (to beat the
+   grey .anim-transport-btn:hover). */
 .anim-transport-play:hover { background: hsl(var(--primary)); filter: brightness(1.08); }
 .anim-transport-track {
   position: relative;

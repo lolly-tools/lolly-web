@@ -641,7 +641,7 @@ test('freeform "+ Image": adds an image box and opens the picker for it', async 
   assert.equal((boxes[0]!.src as { url?: string })?.url, 'https://x/new.png');
 });
 
-// ── Tier B: layout-studio-grade arrange (multi-select, align, distribute, z, rotate) ──
+// ── Tier B: design-grade arrange (multi-select, align, distribute, z, rotate) ──
 
 const FF2 = (): unknown[] => [{ mode: 'freeform', boxes: [
   { id: 'a', kind: 'text', text: 'A', x: 100, y: 100, w: 200, h: 200 },

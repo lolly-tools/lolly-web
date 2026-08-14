@@ -39,6 +39,14 @@ import './collab/private-opener.ts';
 // Platform-free on the boot path for the same reason as the opener above: everything
 // under it (the memory state bridge, the tool route itself) is a dynamic import.
 import { installLiveCollabMount } from './lib/collab-live-mount.ts';
+// Side-effect wire for LAN discovery (plans/110 §3): registers the 'lan' NearbyProvider
+// ONLY when the Tauri runtime is present (probed at call time). A no-op on the web — a
+// PWA cannot do mDNS/sockets — so the registry stays empty and every Nearby affordance
+// stays absent, keeping the web build byte-identical. The native side is Rust `nearby.rs`.
+import { installNearbyBoot } from './lib/nearby-boot.ts';
+// The acceptor side of a nearby pairing: opens the accept ceremony when a peer hands us an
+// invite over the nearby channel (plans/110 §3). Dormant off Tauri / with the flag off.
+import { installNearbyAccept } from './collab/nearby-accept.ts';
 import { initSearchBar, applySearchBarRoute } from './components/search-bar.ts';
 import { initSpotlight } from './components/spotlight.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
@@ -58,6 +66,10 @@ import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from '
 // is deliberate: the drain half must run AFTER the registration, and a drain hidden
 // inside `registerCollabMount` would fire re-entrantly during that module's own import.
 installLiveCollabMount();
+// Register the LAN discovery provider if we're on Tauri; dormant no-op on the web.
+installNearbyBoot();
+// …and listen for inbound nearby invites (after the provider is registered above).
+installNearbyAccept();
 
 /** The web capability bridge, as produced by createBridge. */
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
@@ -696,10 +708,10 @@ async function boot(): Promise<void> {
 
     // Sibling loopback hook, same gate: run the DIRECT HTML→SVG walker (the export
     // bridge's renderSvgFromHtml — the path every tool export takes) over an
-    // arbitrary page subtree, with NO print-to-PDF in between. Exists so the
-    // vector-render audit can measure walker-vs-print on the same fixtures; see
-    // plans/69-svg-snapshot-without-print.md. Measurement surface only — the docs
-    // pipeline still goes through __lollyVectorShot.
+    // arbitrary page subtree, with NO print-to-PDF in between. Built for the
+    // vector-render audit (plans/69-svg-snapshot-without-print.md), and since the
+    // walker migration it is ALSO how the docs pipeline captures a `walker=1`
+    // recipe — `scripts/build-docs-shots.ts` calls this, not __lollyVectorShot.
     (window as unknown as { __lollyWalkerShot?: (sel?: string) => Promise<unknown> }).__lollyWalkerShot =
       async (sel = 'body', o: Record<string, unknown> = {}) => {
         const node = document.querySelector(sel);
@@ -714,7 +726,16 @@ async function boot(): Promise<void> {
         // (Appendix E §E.2), not DOM order. Lolly's own gallery has 99 non-auto
         // z-indexes, 22 of them negative, so DOM order puts scrims over content
         // and cards in reverse. Off for tool exports — see ExportOpts.
-        const blob = await host.export.render(node, 'svg', { convertPaths: true, elementScopedRaster: true, stackingOrder: true, backdropBlur: true, ...o } as Parameters<typeof host.export.render>[2]);
+        // layerIds: this is the production caller plans/104 §7 was written for —
+        // "Lolly screenshots become semantically explodable … url-shot output then
+        // lifts along real UI boundaries (nav/hero/cards)". The passthrough is inert
+        // unless the walked element already carries `data-box-id`, so it changes
+        // nothing on a page without a canvas; where it does, the resulting SVG lifts
+        // along the boxes the canvas knows about instead of along whatever the markup
+        // happened to group, and `enumerateSvgLayers` hands each id back as
+        // `layer.boxId` for the lift dialog to name the row with. A caller that wants
+        // the old bytes passes `{ layerIds: false }` — `o` is spread last.
+        const blob = await host.export.render(node, 'svg', { convertPaths: true, elementScopedRaster: true, stackingOrder: true, backdropBlur: true, layerIds: true, ...o } as Parameters<typeof host.export.render>[2]);
         return { svg: await blob.text(), ms: Math.round(performance.now() - t0) };
       };
   }
@@ -1035,6 +1056,13 @@ function peekUrlLang(): string | null {
   return new URLSearchParams(hashQuery).get('lang') ?? new URLSearchParams(window.location.search).get('lang');
 }
 
+/** Tools renamed inside the id-break window. parseRoute is the single funnel for every
+ *  share link, bookmark, docs link, AND saved-session resume URL (`#/tool/<storedId>?slot=`),
+ *  so aliasing the old id here — and ONLY here — keeps all of them resolving instead of
+ *  404-ing on the retired id. `layout-studio` → `design` (the Design tool). */
+const RENAMED_TOOL_IDS: Record<string, string> = { 'layout-studio': 'design' };
+const canonToolId = (id: string): string => RENAMED_TOOL_IDS[id] ?? id;
+
 function parseRoute(): Route {
   const hash = window.location.hash.slice(1);
 
@@ -1042,7 +1070,7 @@ function parseRoute(): Route {
     const [path, query] = hash.split('?');
     const parts = (path ?? '').split('/').filter(Boolean);
     if (parts[0] === 'tool' && parts[1]) {
-      return { name: 'tool', toolId: parts[1], params: query || '' };
+      return { name: 'tool', toolId: canonToolId(parts[1]), params: query || '' };
     }
     if (parts[0] === 'profile') return { name: 'profile', params: query || '' };
     if (parts[0] === 'd' || parts[0] === 'dashboard') return { name: 'dashboard', params: query || '' };
@@ -1095,7 +1123,7 @@ function parseRoute(): Route {
   // bounces a human into #/tool/<id>, which mounts and then syncUrl rewrites the bar
   // back to /t/<id>; this branch is what re-mounts on client-side popstate to it.
   if (pathParts.length === 2 && pathParts[0] === 't') {
-    return { name: 'tool', toolId: pathParts[1]!, params: window.location.search.slice(1) };
+    return { name: 'tool', toolId: canonToolId(pathParts[1]!), params: window.location.search.slice(1) };
   }
   // /p (Projects root) and /p/<folderId> deep links → redirect into the canonical
   // hash form so all in-app projects navigation stays hash-based (folders are private
@@ -1107,6 +1135,13 @@ function parseRoute(): Route {
     return { name: 'projects', folderId: pathParts[1] || null };
   }
   if (pathParts.length === 1) {
+    // /design is the Design tool's canonical vanity path — the one tool with a bare
+    // top-level URL. Returned as a first-class tool route (NOT redirected), so the bar
+    // stays `/design` the way /t/<id> stays put; syncUrl keeps it there via tool.ts's
+    // TOOL_URL_BASE special-case, and vercel.json rewrites it to the tool's OG stub.
+    if (pathParts[0] === 'design') {
+      return { name: 'tool', toolId: 'design', params: window.location.search.slice(1) };
+    }
     // /pro and /d are real routes; everything else is a tool shortcut. /platform and
     // /capabilities are retired aliases that fold into the Dashboard.
     if (pathParts[0] === 'pro') { window.location.replace('/#/pro'); return { name: 'pro' }; }

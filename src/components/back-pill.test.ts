@@ -41,13 +41,17 @@ const withHistoryEntry = (): void => {
 };
 
 /** Stand in for one router navigation: leave `fromTitle` at `fromHref`, arrive
- *  somewhere else. Mirrors main.ts — noteMountedView() after the mount, then
- *  recordLeave() when that view is left. */
-function walkFrom(routeName: string, title: string, href: string): void {
+ *  somewhere ELSE (`arriveAt`, a distinct view — default a tool). Mirrors main.ts:
+ *  noteMountedView() at the outgoing view, recordLeave() when it's left, then the
+ *  URL moves to the arrival — so, like the real app, the back target (the prev)
+ *  is NOT the view we end up on. (Leaving the URL equal to the prev is the exact
+ *  self-loop resolveBackTarget now escapes to Home; see the loop test below.) */
+function walkFrom(routeName: string, title: string, href: string, arriveAt = '/t/qr-code'): void {
   document.title = title;
   dom.reconfigure({ url: `http://localhost${href}` });
   backNav.noteMountedView(routeName);
   backNav.recordLeave(href);
+  dom.reconfigure({ url: `http://localhost${arriveAt}` });
 }
 
 test('a direct visit — no previous view — falls back to Home → the gallery', () => {
@@ -64,7 +68,7 @@ test('a direct visit — no previous view — falls back to Home → the gallery
 // link inside the editor. Root-absolute or the pill isn't an exit.
 test('the fallback escapes a /t/<id> tool URL rather than resolving back into it', () => {
   clearStored();
-  dom.reconfigure({ url: 'http://localhost/t/layout-studio' });
+  dom.reconfigure({ url: 'http://localhost/t/design' });
   const { href } = resolveBackTarget();
   assert.equal(href, '/#/');
   assert.equal(new URL(href, dom.window.location.href).pathname, '/', 'must leave the tool path behind');
@@ -103,6 +107,38 @@ test('a pinned target (the tool view’s launch folder) keeps its href', () => {
   assert.equal(mismatched.href, '/#/p/other');
   assert.equal(mismatched.label, 'Back');
   assert.equal(mismatched.useHistory, false);
+});
+
+test('a back target that IS the current view escapes to Home instead of looping', () => {
+  clearStored();
+  withHistoryEntry();
+  // Arrive at /#/catalog with /#/catalog ALSO recorded as the previous view — the
+  // self-loop a direct entry can produce. Back to yourself is not a back.
+  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog', '/#/catalog');
+  const target = resolveBackTarget();
+  assert.equal(target.href, '/#/', 'escapes to Home rather than pointing at the current view');
+  assert.equal(target.label, 'Home');
+  assert.equal(target.isHome, true, 'the pill wears the house icon, not a back arrow');
+  assert.equal(target.useHistory, false);
+
+  // A PINNED target equal to the current view loops the same way → Home.
+  dom.reconfigure({ url: 'http://localhost/#/p/abc' });
+  const pinned = resolveBackTarget({ href: '/#/p/abc' });
+  assert.equal(pinned.href, '/#/');
+  assert.equal(pinned.isHome, true);
+});
+
+test('the home escape renders a house icon in the markup, not the back arrow', () => {
+  clearStored();
+  // Force the self-loop (arrive where the prev points) so the target is Home
+  // regardless of any prev left in memory by an earlier test.
+  walkFrom('catalog', 'Catalog — Lolly', '/#/catalog', '/#/catalog');
+  const html = backPillHtml();
+  assert.match(html, /href="\/#\/"/, 'points at Home');
+  // The Lucide "house" path (icons.ts "home") starts with this distinctive
+  // roofline move; the back arrow does not — a stable discriminator without
+  // snapshotting the whole SVG.
+  assert.match(html, /M15 21v-8/, 'wears the house icon, not the back arrow');
 });
 
 test('markup carries a real href and the resolved mode', () => {

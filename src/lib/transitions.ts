@@ -8,7 +8,7 @@
  * this module adds only the vocabulary around it (the kind union, the labelled registry,
  * and a prototype-safe membership test).
  *
- * The registry's keys are the wire values stored in a layout-studio box's enter/exit
+ * The registry's keys are the wire values stored in a design box's enter/exit
  * fields, so they are a permanent contract: add kinds, never rename or reuse one.
  */
 
@@ -39,7 +39,7 @@ export const TRANSITION_KINDS = Object.freeze(Object.keys(TRANSITIONS) as Transi
 
 /**
  * The kind a TIMELINE box animates with when its enter/exit field is empty — 'none',
- * matching the manifest default of those fields (layout-studio / sequence-studio).
+ * matching the manifest default of those fields (design / sequence-studio).
  *
  * Deliberately NOT the same as the video compositor's `el.dataset.transition || 'fade'`
  * fallback in bridge/export.ts: that one reads a top-tail record stage, where an

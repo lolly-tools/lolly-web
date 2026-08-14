@@ -27,7 +27,8 @@ async function irFromSvg(inner: string): Promise<{ minX: number; minY: number; m
   for (const p of ir.prims) {
     if (p.type !== 'path') continue;
     for (const sub of p.subpaths) for (const s of sub.segments) {
-      for (const [x, y] of [[s.x, s.y], [s.x1, s.y1], [s.x2, s.y2]] as [number | undefined, number | undefined][]) {
+      const c = s as { x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number };
+      for (const [x, y] of [[c.x, c.y], [c.x1, c.y1], [c.x2, c.y2]] as [number | undefined, number | undefined][]) {
         if (typeof x === 'number' && Number.isFinite(x)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
         if (typeof y === 'number' && Number.isFinite(y)) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
       }

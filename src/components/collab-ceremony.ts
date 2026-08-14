@@ -129,6 +129,11 @@ import { derivePlate } from '../collab/plate.ts';
 import type { PlateMaterial } from '../collab/plate.ts';
 import { mountModal } from './modal.ts';
 import { currentLang, loadNamespace, tRaw } from '../i18n.ts';
+// Nearby discovery (plans/110 §3): tap a discovered peer to hand over the invite, instead
+// of the peer scanning a QR. The provider is null on every plain web build (no LAN provider
+// registered), so the whole panel is absent unless a Tauri shell registered one.
+import { getNearbyProvider, timedWindow, type NearbyPeer } from '../lib/nearby.ts';
+import { isFlagOnSync, NEARBY_DISCOVERY_FLAG } from '../feature-flags.ts';
 
 // ── Copy ──────────────────────────────────────────────────────────────────────
 //
@@ -276,6 +281,14 @@ export const STRINGS = {
       action: 'Close',
     },
   },
+
+  // Nearby devices (plans/110 §3) — the tap-to-hand-over panel on the invite screen.
+  nearbyHeading: 'Nearby devices',
+  nearbyMakeVisible: 'Make this device visible',
+  nearbyHint: 'Make the other device visible too, and it will appear here to tap.',
+  nearbyEmpty: 'Looking for nearby devices. Nothing yet - make sure the other one is visible on the same network.',
+  nearbyHandingOver: 'Handing the invite over...',
+  nearbyFailed: 'That did not reach the device. Try again, or share the code instead.',
 } as const;
 
 /**
@@ -578,6 +591,10 @@ export interface CollabCeremonyOptions {
   readonly onConnected?: (handle: CeremonyConnectedHandle) => void;
   /** Fires once, when the dialog is gone. `state` is absent if none was ever started. */
   readonly onClose?: (state: CeremonyState | undefined) => void;
+  /** Fires once with the acceptor's minted REPLY signal, the moment it exists — so a nearby
+   *  pairing can hand the reply back over its own channel rather than showing a QR to scan.
+   *  Acceptor only; never fired for the inviter (plans/110 §3). */
+  readonly onAnswer?: (signal: string) => void;
   /** Base for the invite/reply links. Defaults to this page's origin + path. */
   readonly linkBase?: string;
   /** Clipboard write. Defaults to `navigator.clipboard`. */
@@ -707,6 +724,15 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   let notice = '';
   let copiedAct = '';
   let connectedFired = false;
+  // Nearby (plans/110 §3). The LAN provider, or null when discovery is off or unavailable —
+  // in which case none of the panel, the subscription or the handlers below do anything.
+  const nearbyProvider = isFlagOnSync(NEARBY_DISCOVERY_FLAG) ? getNearbyProvider('lan') ?? null : null;
+  let nearbyPeers: readonly NearbyPeer[] = [];
+  let nearbyUnsub: (() => void) | null = null;
+  let nearbyVisible = false;
+  let nearbyNote = '';
+  // One-shot: the acceptor hands its minted reply back over the nearby channel via onAnswer.
+  let answerFired = false;
   let lastStepKey = '';
   let lastPhase: CeremonyState['phase'] | '' = '';
 
@@ -748,6 +774,10 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
       machine?.dispose();
       unsubscribe?.();
       releaseEffects();
+      // Stop browsing and, if we made ourselves discoverable, hide again (plans/110 §3).
+      nearbyUnsub?.();
+      nearbyUnsub = null;
+      if (nearbyVisible) void nearbyProvider?.hide();
       opts.onClose?.(finalState);
     },
   });
@@ -849,6 +879,8 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     notice = '';
     pasted.clear();
     connectedFired = false;
+    answerFired = false;
+    nearbyNote = '';
     // A new ceremony's ten minutes are its own, even if the replacement invite happens
     // to look like the one it replaced.
     countdownKey = '';
@@ -1342,6 +1374,44 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     return [heading(headingText), status(bodyText), actions(cancelButton())];
   }
 
+  /** Subscribe to the LAN peer list once, repainting on change (plans/110 §3). */
+  function ensureNearbySub(): void {
+    if (!nearbyProvider || nearbyUnsub) return;
+    nearbyUnsub = nearbyProvider.subscribePeers((peers) => {
+      nearbyPeers = peers;
+      if (!closed) render();
+    });
+  }
+
+  /** The "tap a nearby device to hand over the invite" panel, or null when discovery is off
+   *  (no LAN provider — every plain web build). Peer names arrive over the wire, so they go
+   *  in as `textContent` via `node({text})`, never a markup sink. */
+  function buildNearby(): HTMLElement | null {
+    if (!nearbyProvider) return null;
+    ensureNearbySub();
+    const kids: (Node | null)[] = [node('p', { class: 'modal-label', text: tRaw(STRINGS.nearbyHeading) })];
+    if (!nearbyVisible) kids.push(button('nearby-visible', tRaw(STRINGS.nearbyMakeVisible)));
+    if (nearbyPeers.length) {
+      kids.push(
+        node(
+          'div',
+          { class: 'cer-nearby-peers', style: 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0' },
+          nearbyPeers.map((p) =>
+            node('button', {
+              class: 'btn',
+              text: p.name,
+              attrs: { type: 'button', 'data-act': 'nearby-pick', 'data-peer-id': p.id },
+            }),
+          ),
+        ),
+      );
+    } else {
+      kids.push(node('p', { class: 'modal-msg', text: tRaw(nearbyVisible ? STRINGS.nearbyEmpty : STRINGS.nearbyHint) }));
+    }
+    if (nearbyNote) kids.push(node('p', { class: 'modal-msg', attrs: { role: 'status' }, text: nearbyNote }));
+    return node('div', { class: 'cer-nearby', style: 'margin:12px 0;padding-top:10px;border-top:1px solid hsl(var(--muted, 0 0% 90%))' }, kids);
+  }
+
   function buildInvite(): (Node | null)[] {
     const invite = machine?.state.invite;
     const skins = presentSignal(invite?.signal ?? '', 'invite');
@@ -1353,6 +1423,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
       tokenSlot(tRaw(STRINGS.inviteCodeLabel), skins.qr, 'copy-invite-code', tRaw(STRINGS.copyCode)),
       qrSlot(tRaw(STRINGS.inviteQrLabel), skins.qr),
       warn(tRaw(STRINGS.inviteTrust)),
+      buildNearby(),
       noticeLine(),
       actions(cancelButton(), button('to-waiting', tRaw(STRINGS.toWaiting), true)),
     ];
@@ -1372,6 +1443,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
       rearmed,
       retry,
       pasteField(REPLY_FIELD, tRaw(STRINGS.replyLabel), tRaw(STRINGS.replyPlaceholder)),
+      buildNearby(),
       noticeLine(),
       actions(
         button('show-invite', tRaw(STRINGS.showInvite)),
@@ -1624,6 +1696,13 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
         close: () => modal.close(),
       });
     }
+
+    // The acceptor's reply is minted the moment it reaches `awaiting-connection`. Hand it
+    // straight back over the nearby channel (plans/110 §3) rather than waiting for a scan.
+    if (role === 'acceptor' && state?.answer && !answerFired) {
+      answerFired = true;
+      opts.onAnswer?.(state.answer.signal);
+    }
   }
 
   // ── Wiring ──────────────────────────────────────────────────────────────────
@@ -1652,6 +1731,31 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
       case 'restart':
         restart();
         return;
+      case 'nearby-visible': {
+        if (nearbyProvider) {
+          nearbyVisible = true;
+          void nearbyProvider
+            .setVisible(timedWindow(clock()), resolveName(nameValue, role))
+            .catch(() => { nearbyVisible = false; });
+          render();
+        }
+        return;
+      }
+      case 'nearby-pick': {
+        // Hand the current invite to the tapped peer over the nearby channel, then feed the
+        // reply it sends back through the SAME path a pasted reply takes (plans/110 §3).
+        const peerId = target?.closest<HTMLElement>('[data-peer-id]')?.dataset.peerId;
+        const signal = machine?.state.invite?.signal;
+        if (nearbyProvider && peerId && signal) {
+          nearbyNote = tRaw(STRINGS.nearbyHandingOver);
+          render();
+          void nearbyProvider
+            .exchangeInvite(peerId, signal)
+            .then((reply) => { if (!closed) submitReply(reply); })
+            .catch(() => { nearbyNote = tRaw(STRINGS.nearbyFailed); if (!closed) render(); });
+        }
+        return;
+      }
       case 'create-invite': {
         nameValue = fieldValue(`#${NAME_FIELD}`);
         const started = machine ?? startMachine();

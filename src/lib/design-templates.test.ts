@@ -78,11 +78,11 @@ test('the folder is named after the imported file, extension stripped', () => {
 
 test('a template session is an ordinary session plus two additive `__` keys', () => {
   const data = templateSessionData(tpl('PERSON INTRO'), {
-    toolId: 'layout-studio', toolVersion: '1.10.0', boxesField: 'boxes', format: 'png',
+    toolId: 'design', toolVersion: '1.10.0', boxesField: 'boxes', format: 'png',
   });
   // The boxes go to the tool's OWN blocks input, whatever it is called.
   assert.deepEqual(data.boxes, [{ id: 'n0', kind: 'box' }]);
-  assert.equal(data.__toolId, 'layout-studio');
+  assert.equal(data.__toolId, 'design');
   assert.equal(data.__toolVersion, '1.10.0');
   assert.equal(data.__label, 'PERSON INTRO', 'the label IS the component name');
   assert.equal(data.__template, true);
@@ -114,13 +114,13 @@ test('one session per component, all filed into one new per-file folder', async 
   const host = fakeHost();
   const templates = [tpl('TEXT 8'), tpl('TEXT 9', { thumb: 'data:image/png;base64,AAAA' }), tpl('TITLES2')];
   const out = await fileTemplatesAsSessions(host, templates, {
-    fileName: 'Keynote.penpot', toolId: 'layout-studio', toolVersion: '1.10.0',
+    fileName: 'Keynote.penpot', toolId: 'design', toolVersion: '1.10.0',
     boxesField: 'boxes', format: 'png', now: () => 1000,
   });
 
   assert.equal(out.saved, 3);
   assert.equal(out.folderName, 'Keynote templates');
-  assert.deepEqual(out.slots, ['layout-studio:1000', 'layout-studio:1001', 'layout-studio:1002'],
+  assert.deepEqual(out.slots, ['design:1000', 'design:1001', 'design:1002'],
     'slots are minted off one stamp, so a batch can never collide with itself');
   assert.deepEqual(host._saved.map(s => s.data.__label), ['TEXT 8', 'TEXT 9', 'TITLES2']);
   // Penpot's own preview rides the existing 3-arg save; the rest save thumbless.
@@ -133,14 +133,14 @@ test('one session per component, all filed into one new per-file folder', async 
 });
 
 test('a failed save warns and the rest of the design system still lands', async () => {
-  const host = fakeHost({ failSlot: 'layout-studio:2001' });
+  const host = fakeHost({ failSlot: 'design:2001' });
   const warnings: string[] = [];
   const out = await fileTemplatesAsSessions(host, [tpl('A'), tpl('B'), tpl('C')], {
-    fileName: 'deck.penpot', toolId: 'layout-studio', boxesField: 'boxes',
+    fileName: 'deck.penpot', toolId: 'design', boxesField: 'boxes',
     warn: (m) => warnings.push(m), now: () => 2000,
   });
   assert.equal(out.saved, 2);
-  assert.deepEqual(out.slots, ['layout-studio:2000', 'layout-studio:2002']);
+  assert.deepEqual(out.slots, ['design:2000', 'design:2002']);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0]!, /“B”/);
   const folders = host._profile.folders as Array<{ items: unknown[] }>;
@@ -149,7 +149,7 @@ test('a failed save warns and the rest of the design system still lands', async 
 
 test('re-importing the same file mints a second folder (the v1 assumption)', async () => {
   const host = fakeHost();
-  const opts = { fileName: 'deck.penpot', toolId: 'layout-studio', boxesField: 'boxes' };
+  const opts = { fileName: 'deck.penpot', toolId: 'design', boxesField: 'boxes' };
   await fileTemplatesAsSessions(host, [tpl('A')], { ...opts, now: () => 10 });
   await fileTemplatesAsSessions(host, [tpl('A')], { ...opts, now: () => 20 });
   const folders = host._profile.folders as Array<{ name: string }>;

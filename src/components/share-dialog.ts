@@ -17,6 +17,15 @@ import { packQuery, isPackAvailable, PACK_PARAM, packEncrypted, isEncryptAvailab
 import { mountModal } from './modal.ts';
 import { shareSectionBuilders } from '../lib/share-sections.ts';
 import { jellyActive } from '../lib/jelly.ts';
+import type { LollySummary } from '../lib/lolly-pack.ts';
+
+/** The `.lolly` download vehicle (plans/114 Wave 2). Supplied by the tool view, which
+ *  has the host + session the link builder never sees. `build(includeLicensed)` returns
+ *  the file + a summary of what it carries; `save` delivers it (download / native share). */
+export interface ShareDialogLolly {
+  build: (includeLicensed: boolean) => Promise<{ blob: Blob; filename: string; summary: LollySummary }>;
+  save: (blob: Blob, filename: string) => Promise<void>;
+}
 
 // Above this readable-query length the Share dialog auto-adopts the packed form.
 const AUTO_PACK_MIN = 1800;
@@ -92,6 +101,43 @@ function hasImageInput(manifest: ShareManifest): boolean {
   );
 }
 
+/**
+ * What the current state loses when squeezed into a URL. `buildShareParams` (the
+ * link builder) fills this in as it drops the things a link cannot carry, so the
+ * dialog can tell the user *what* won't travel instead of handing them a link that
+ * silently opens with the content missing (the reported "the link has no content"
+ * bug). Content loss is distinct from length: a long link may still be faithful
+ * (packing rescues it); an unfaithful one drops images/text no matter how short.
+ */
+export interface ShareFidelity {
+  /** false when any list below is non-empty — the link cannot reproduce the state. */
+  faithful: boolean;
+  /** scalar inputs whose value exceeded the link's per-value cap and were dropped. */
+  droppedScalars: { id: string; label: string }[];
+  /** `blocks` inputs whose encoded form exceeded the link cap and were dropped. */
+  droppedBlocks: { id: string; label: string }[];
+  /** device-local (`user/*`) images/files a URL can't carry, so they don't travel. */
+  excludedAssets: { id: string; label: string }[];
+}
+
+/** Human list, no Oxford comma (house i18n style): "a", "a and b", "a, b and c". */
+function joinList(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/** Plain-language summary of what a link had to drop, for the fidelity verdict. */
+function describeLoss(f: ShareFidelity): string {
+  const bits: string[] = [];
+  const imgs = f.excludedAssets.length;
+  if (imgs) bits.push(imgs === 1 ? 'an image or file added from this device' : `${imgs} images or files added from this device`);
+  const texts = f.droppedScalars.length;
+  if (texts) bits.push(texts === 1 ? 'a long text value' : `${texts} long text values`);
+  const blocks = f.droppedBlocks.length;
+  if (blocks) bits.push(blocks === 1 ? 'a large list' : `${blocks} large lists`);
+  return joinList(bits);
+}
+
 export interface ShareDialogOpts {
   /** the tool this link opens */
   toolId?: string;
@@ -103,6 +149,19 @@ export interface ShareDialogOpts {
   currentFormat?: string;
   /** dialog heading */
   title?: string;
+  /**
+   * What the link can't carry (from `buildShareParams`). When supplied, the dialog
+   * shows a content-loss verdict naming the drops; when omitted (e.g. the Projects
+   * per-session share, which can't measure them), it falls back to the static
+   * image note driven by the manifest.
+   */
+  fidelity?: ShareFidelity;
+  /**
+   * The `.lolly` file vehicle. When supplied, the dialog offers "Download .lolly" —
+   * the faithful fallback a link can't be (device-local images, big designs). The
+   * content-loss verdict points here.
+   */
+  lolly?: ShareDialogLolly;
 }
 
 /**
@@ -114,7 +173,7 @@ export interface ShareDialogOpts {
  * @param {string} [o.currentFormat] the export format the link should imply (for copy-on-visit)
  * @param {string} [o.title]       dialog heading
  */
-export function openShareDialog({ toolId, baseParts = [], manifest = {}, currentFormat = '', title = 'Share this tool' }: ShareDialogOpts): HTMLDialogElement {
+export function openShareDialog({ toolId, baseParts = [], manifest = {}, currentFormat = '', title = 'Share this tool', fidelity, lolly }: ShareDialogOpts): HTMLDialogElement {
   // The readable query we'd pack (tool state + export settings) — WITHOUT the on-visit
   // flags, which stay readable outside the pack and merge on load.
   const baseQuery = baseParts.join('&');
@@ -127,7 +186,11 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const showCopy   = canExport && actions.includes('copy') && (isBitmap || SHARE_TEXT_FORMATS.has(currentFmt));
   const copyLabel  = isBitmap ? 'Copy image to clipboard on visit' : 'Copy to clipboard on visit';
   const version    = manifest.version;
-  const showImageNote = hasImageInput(manifest);
+  // When the caller supplies a fidelity report (the live tool view), the verdict
+  // banner below names exactly what won't travel — so the generic manifest note is
+  // redundant and doubly-noisy. Keep the static note only for callers without one
+  // (the Projects per-session share reconstructs state and can't measure the drops).
+  const showImageNote = hasImageInput(manifest) && !fidelity;
   // Offer password-protection only when there's state to encrypt and WebCrypto is present.
   const encryptable = isEncryptAvailable() && !!baseQuery;
   // The "Link options" section holds shortest-link / password / pin-version. Only render it
@@ -152,6 +215,16 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
         <span class="share-note-ico" aria-hidden="true">🛫</span>
         <span>Only the <b>inputs</b>, <b>settings</b>, <b>tool</b> selection, and <b>catalog assets</b> travel in this link. <br><b>images</b> or <b>files</b> you added from <b>this device stay here</b> <i>— you'll need to share those separately</i>.</span>
       </p>` : ''}
+      ${lolly ? `<div class="share-file" data-share-file>
+        <div class="share-file-text">
+          <strong>Send it as a file</strong>
+          <span class="share-file-note">A .lolly file carries the whole design — images and all — and always opens complete.</span>
+        </div>
+        ${jellyActive()
+          ? `<jelly-button class="share-file-btn" data-lolly-download label="Download .lolly">Download .lolly</jelly-button>`
+          : `<button type="button" class="btn share-file-btn" data-lolly-download>Download .lolly</button>`}
+        <div class="share-file-licensed" data-lolly-licensed hidden></div>
+      </div>` : ''}
       ${showLinkOptions ? `
       <details class="share-section" data-link-options>
         <summary>Link options</summary>
@@ -220,19 +293,39 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const copyBtn     = dialog.querySelector<HTMLButtonElement>('.share-copy-btn')!;
   let encToken: string | null = null;
 
-  // Warn once we know the shortest link this state can produce is still too long to
-  // share reliably (see SHARE_WARN_LEN). `bestLen` is the packed length when packing
-  // helps, else the readable length — so the message reflects the best case, not the
-  // toggle. Suggest trimming, since compression can't rescue it.
-  const flagShareability = (bestLen: number) => {
-    const over = bestLen >= SHARE_WARN_LEN;
-    warnEl.hidden = !over;
-    if (over) {
-      warnEl.textContent = `⚠️ This link is very long (${bestLen.toLocaleString()} characters) and may get cut off when pasted into chats, emails or social posts — or fail to open. Remove some elements (blocks, long text) to make it shareable.`;
+  // The share verdict combines the two independent ways a link can fail its job.
+  // CONTENT loss (fidelity: device-local images, or text/blocks past the link caps
+  // that a URL cannot hold) is the worse failure — packing can rescue length, but
+  // nothing rescues a dropped image — so it wins the banner and reads red. Otherwise
+  // an over-LONG link reads amber. `bestLen` is the shortest achievable length (the
+  // packed length once known, else readable), so length is judged on the best case,
+  // never the current toggle. A control-plane deployment (or private collab) registers
+  // an extra section, so we can point at "your network" only when one will mount.
+  const canShareOtherwise = shareSectionBuilders().length > 0;
+  const renderVerdict = (bestLen: number) => {
+    const lost = fidelity && !fidelity.faithful ? fidelity : null;
+    if (lost) {
+      warnEl.hidden = false;
+      warnEl.classList.add('is-error');
+      warnEl.classList.remove('is-warn');
+      // Prefer the file (it carries everything faithfully); fall back to a network
+      // share, then to "trim it" when neither vehicle is available here.
+      const remedy = lolly ? 'Download it as a file below to send everything.'
+        : canShareOtherwise ? 'To send everything, share it on your network below.'
+        : 'To send everything, reduce these elements.';
+      warnEl.textContent = `⚠️ A link can't include ${describeLoss(lost)}, so it won't be there when someone opens this. ${remedy}`;
+    } else if (bestLen >= SHARE_WARN_LEN) {
+      warnEl.hidden = false;
+      warnEl.classList.add('is-warn');
+      warnEl.classList.remove('is-error');
+      warnEl.textContent = `⚠️ This link is very long (${bestLen.toLocaleString()} characters). It may get cut off when pasted into chats, emails or social posts, or fail to open. Turn on 'Shortest link' below, or remove some elements.`;
+    } else {
+      warnEl.hidden = true;
+      warnEl.classList.remove('is-error', 'is-warn');
     }
   };
   const readableLen = shareUrlFromParts(baseParts, toolId).length;
-  flagShareability(readableLen);   // best guess until the packed length lands
+  renderVerdict(readableLen);   // best guess until the packed length lands
 
   const flagParts = () => {
     const parts: string[] = [];
@@ -280,7 +373,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       if (shortestNote) shortestNote.textContent = `${readableLen} → ${packedLen} characters`;
       shortestRow.hidden = false;
       if (readableLen >= AUTO_PACK_MIN) shortestCb.checked = true;   // auto-adopt for big states
-      flagShareability(packedLen);   // the packed form is the shortest we can offer
+      renderVerdict(packedLen);   // the packed form is the shortest we can offer
       refresh();
     }).catch(() => { /* leave the readable link */ });
   }
@@ -328,6 +421,9 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     setTimeout(() => { this.textContent = prev; }, 1500);
   });
 
+  const lollyBtn = dialog.querySelector<HTMLButtonElement>('[data-lolly-download]');
+  if (lolly && lollyBtn) wireLollyDownload(lolly, lollyBtn, dialog.querySelector<HTMLElement>('[data-lolly-licensed]'));
+
   dialog.querySelector('.share-done')!.addEventListener('click', () => modal.close());
   // Escape and a backdrop click are handled by mountModal (both close with no value).
 
@@ -353,4 +449,61 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   }
 
   return dialog;
+}
+
+/**
+ * Wire the "Download .lolly" button. Build once holding licensed brand content back
+ * (the safe default); only if the result reports licensed assets do we ask whether to
+ * include them — so an ordinary design downloads in one click, and licensed content
+ * never travels without an explicit, informed yes.
+ */
+function wireLollyDownload(lolly: ShareDialogLolly, btn: HTMLButtonElement, licensedEl: HTMLElement | null): void {
+  const LABEL = 'Download .lolly';
+  const busy = (on: boolean, label?: string) => { btn.toggleAttribute('disabled', on); if (label) btn.textContent = label; };
+  const done = () => { busy(false, 'Downloaded'); setTimeout(() => { btn.textContent = LABEL; }, 1800); };
+  const fail = () => busy(false, 'Could not build the file');
+  const deliver = (blob: Blob, filename: string) => lolly.save(blob, filename).then(done, fail);
+
+  btn.addEventListener('click', async () => {
+    if (licensedEl) { licensedEl.hidden = true; licensedEl.textContent = ''; }
+    busy(true, 'Preparing…');
+    let built: Awaited<ReturnType<ShareDialogLolly['build']>>;
+    try { built = await lolly.build(false); } catch { fail(); return; }
+    if (!built.summary.hasLicensed) { void deliver(built.blob, built.filename); return; }
+    offerLicensedChoice(built, lolly, btn, licensedEl, busy, deliver, fail);
+  });
+}
+
+/** Present the licensed-content choice: download without the brand assets (the file
+ *  already built), or rebuild including them. Sharing the file distributes those bytes,
+ *  so the decision is explicit. */
+function offerLicensedChoice(
+  built: { blob: Blob; filename: string; summary: LollySummary },
+  lolly: ShareDialogLolly,
+  btn: HTMLButtonElement,
+  licensedEl: HTMLElement | null,
+  busy: (on: boolean, label?: string) => void,
+  deliver: (blob: Blob, filename: string) => Promise<void>,
+  fail: () => void,
+): void {
+  busy(false, 'Download .lolly');
+  const n = Math.max(1, built.summary.licensedExcluded);
+  const it = n === 1 ? 'it' : 'them';
+  if (!licensedEl) { void deliver(built.blob, built.filename); return; }   // nowhere to ask ⇒ safe default
+  licensedEl.hidden = false;
+  licensedEl.innerHTML = `
+    <p class="share-file-warn">⚠️ This design uses ${n} licensed brand ${n === 1 ? 'asset' : 'assets'}. The file leaves ${it} out. Including ${it} shares the actual ${n === 1 ? 'file' : 'files'} with whoever opens the .lolly.</p>
+    <div class="share-file-actions">
+      <button type="button" class="btn" data-lolly-without>Download without ${it}</button>
+      <button type="button" class="btn" data-lolly-include>Include and download</button>
+    </div>`;
+  licensedEl.querySelector<HTMLButtonElement>('[data-lolly-without]')!.addEventListener('click', () => {
+    licensedEl.hidden = true;
+    void deliver(built.blob, built.filename);
+  });
+  licensedEl.querySelector<HTMLButtonElement>('[data-lolly-include]')!.addEventListener('click', async () => {
+    licensedEl.hidden = true;
+    busy(true, 'Preparing…');
+    try { const full = await lolly.build(true); await deliver(full.blob, full.filename); } catch { fail(); }
+  });
 }

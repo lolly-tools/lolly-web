@@ -955,7 +955,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   position: relative;
   isolation: isolate;                /* contain the .gtile-iconfill backdrop's z-index:-1 */
   width: 100%;
-  aspect-ratio: 1 / 1;               /* square preview area — the preview contains within it */
+  aspect-ratio: 16 / 9;              /* 16:9 preview area — the preview contains within it */
   padding: 0;
   border: 0;
   margin: 0;
@@ -1083,7 +1083,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   position: relative;                /* anchor for nav, dots, badge, Continue chip */
   isolation: isolate;                /* contain the .gtile-iconfill backdrop's z-index:-1 */
   width: 100%;
-  aspect-ratio: 1 / 1;               /* uniform square preview area (matches .gtile-hero) */
+  aspect-ratio: 16 / 9;              /* uniform 16:9 preview area (matches .gtile-hero) */
   overflow: hidden;
   line-height: 0;
   background: var(--preview-checker), var(--preview-surface);   /* same shade as .gtile-hero */
@@ -1143,11 +1143,15 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   .gcar-slide--ex.is-loaded .gcar-img { animation: none; }
 }
 
-/* Multi-page tools (render.paged) render their pages as a swipeable STACK — the same
-   visual language as carousel-maker's featured card. Each page is an absolutely-positioned
-   layer, offset + slightly rotated by its depth (--d: 0 = front, on top). The gcar is a
-   fixed square; each page is object-fit:contain, so a portrait/landscape page fits within
-   the deck (letterboxed) rather than dictating the box shape. */
+/* Multi-page tools (render.paged) render their pages as a STACK — the same visual language
+   as carousel-maker's featured card. Two layers per page:
+   • .gcar-deck-page — a full-square layer that carries the fan OFFSET + rotation by depth
+     (--d: 0 = front, on top). Its translate is a % of the SQUARE box, so the spread is the
+     same whatever the page shape — a razor-thin 5:1 banner fans as much as a portrait sheet
+     (a card-relative offset would collapse to nothing once the card is a thin strip).
+   • .gcar-deck-card — the image, sized to the PAGE's real aspect (width/height set inline by
+     gallery.ts deckPageFit) and centred with margin:auto, so its shadow/rim wrap the true
+     sheet (landscape, portrait, or banner) instead of a letterboxed square. */
 .gcar-deck {
   position: relative;
   display: block;
@@ -1157,21 +1161,34 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
 .gcar-deck-page {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  border-radius: 6px;
-  /* Drop shadow lifts the deck on light backgrounds; the hairline rim defines each card's
-     edge on dark ones, where the dark shadow can't (mirrors the featured card.svg). */
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .28), 0 0 0 1px hsl(var(--foreground) / .10);
+  /* Offsets are % of the square box (see the outer-layer note above), so the fan is centred
+     and stays within the frame at any page shape. Both translate axes span ±(mean 0) so the
+     stack sits centred — a wider or lower spread let the back cards of a full-width sheet
+     (4:3, or a 3:1/5:1 banner) clip the right edge and a full-height 1:5 banner kiss the
+     bottom. rotate riffles the stack; scale leaves an edge margin around the fanned deck. */
   transform:
-    translate(calc(var(--d) * 9% - 3%), calc(8% - var(--d) * 5%))
+    translate(calc(var(--d) * 6% - 6%), calc(5% - var(--d) * 5%))
     rotate(calc(var(--d) * 3.5deg - 2deg))
     scale(.8);
   transform-origin: 50% 60%;
   z-index: calc(40 - var(--d) * 10);
   animation: gcar-fade .35s ease both;
 }
+.gcar-deck-card {
+  position: absolute;
+  inset: 0;
+  /* width/height are overridden inline from the page's real aspect; these defaults keep a
+     square until the aspect is known. margin:auto centres the fitted rectangle in the box. */
+  width: 100%;
+  height: 100%;
+  margin: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  /* Drop shadow lifts the deck on light backgrounds; the hairline rim defines each card's
+     edge on dark ones, where the dark shadow can't (mirrors the featured card.svg). 
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .28), 0 0 0 1px hsl(var(--foreground) / .10);*/
+    filter: drop-shadow(2px 4px 6px #0002);
+  }
 @media (prefers-reduced-motion: reduce) {
   .gcar-deck-page { animation: none; }
 }
@@ -1330,9 +1347,9 @@ html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
 .gtile > .gtile-hero,
 .gtile > .gcar,
 .gtile > .gtile-tile { flex: 0 0 auto; }
-/* Icon-led / resume / "desktop only" tiles were slim boxes → square them to match
-   the preview heroes so a card with no preview is the same size as one with. */
-.gtile-tile { aspect-ratio: 1 / 1; }
+/* Icon-led / resume / "desktop only" tiles were slim boxes → give them the 16:9
+   preview-hero shape so a card with no preview is the same size as one with. */
+.gtile-tile { aspect-ratio: 16 / 9; }
 /* Hover feedback comes from the title underline + "+ New" chip below — no
    background tint, which muddied the caption text. */
 .gtile-body--link { cursor: pointer; }

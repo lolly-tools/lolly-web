@@ -413,19 +413,21 @@ test('the scheme prefix is the exported constant the tool default is authored ag
 
 // ── the shipped default composition ─────────────────────────────────────────
 
-test('sequence-studio ships a procedural bed, not a catalog loop', () => {
-  const manifest = JSON.parse(
-    readFileSync(fileURLToPath(new URL('../../../../community/sequence-studio/tool.json', import.meta.url)), 'utf8'),
-  ) as { inputs: { id: string; default?: unknown }[] };
-  const boxes = manifest.inputs.find(i => i.id === 'boxes')?.default as { kind?: string; image?: { id?: string } }[];
+test('the Design video template ships a procedural bed, not a catalog loop', () => {
+  // Migrated from Sequence Studio (retired into Design, plans/104): the "carry a
+  // procedural, licence-free bed" contract now lives on Design's Video template.
+  const tpl = JSON.parse(
+    readFileSync(fileURLToPath(new URL('../../../../brands/lolly-start/tools/design/templates/video.json', import.meta.url)), 'utf8'),
+  ) as { values?: { boxes?: { kind?: string; image?: { id?: string } }[] } };
+  const boxes = tpl.values?.boxes;
   assert.ok(Array.isArray(boxes));
   const bed = boxes.find(b => b.kind === 'audio');
-  assert.ok(bed, 'the default composition must still carry an audio bed');
+  assert.ok(bed, 'the video template must carry an audio bed');
   const ref = parseZzfxmRef(bed.image?.id);
   assert.ok(ref, `the bed must be a procedural ref, got ${JSON.stringify(bed.image?.id)}`);
   // Pinned: changing the shipped seed changes the tune every existing share link
-  // of the untouched default renders. It is a contract, not a preference.
-  assert.equal(bed.image?.id, 'zzfxm:20260726');
+  // of the untouched template renders. It is a contract, not a preference.
+  assert.equal(bed.image?.id, 'zzfxm:20260807');
   // Offline by construction — no fetch, no brand pack, no licence surface.
   const song = composeSong(generatedSongSpec(ref.seed, 8));
   assert.ok(song.sequence.length > 0 && song.patterns.length > 0);

@@ -60,6 +60,16 @@ export function domReflectsValue(el: HTMLElement, input: SyncableInput): boolean
   const control = el.querySelector<HTMLInputElement>(`[data-input-id="${cssEscape(input.id)}"]`);
   if (!control) return false;
   if (input.control === 'checkbox') return control.checked === Boolean(input.value);
+  // A custom slider is a <div> (no .value), but mountCustomSlider keeps its
+  // authoritative value in aria-valuenow, updated live through a drag AND on every
+  // keyboard step. So a committed slider change is already shown — comparing here
+  // lets it SKIP the full-panel rebuild that otherwise fires on drop and made the
+  // whole section flash/jump ("the sliders feel unreliable"). Numeric compare so a
+  // hook that clamps/transforms the value (aria ≠ model) still forces the rebuild.
+  if (input.control === 'slider') {
+    const now = control.getAttribute('aria-valuenow');
+    return now != null && input.value != null && Number(now) === Number(input.value);
+  }
   if (SIMPLE_VALUE_CONTROLS.has(input.control)) {
     return control.value === (input.value == null ? '' : String(input.value));
   }

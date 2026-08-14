@@ -15,7 +15,7 @@ import {
   parseDimension, isPhysical, toPixels, toPoints, toCssPx, toCssLength, CSS_DPI,
   iccProfileBytes, rgbToCmyk, cmykCondition, computePrintGeometry, emitEmf, emitWmf, emitEps, emitDxf, packApng, packWebpAnim,
   parseCssLength, cornerRadii, uniformRadius, insetCorners, roundedRectPath, parseBoxShadow, parseTextShadow, gaussianShadowBands, gaussianShadowRings,
-  parseCssMatrix, matAboutPivot, isAxisAlignedMat, matToSvg, type Mat2D,
+  parseCssMatrix, isNonAffineTransform, matAboutPivot, isAxisAlignedMat, matToSvg, type Mat2D,
   parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
   splitCssArgs, parseGradientAngle, parseGradientStop, expandGradientStops,
   parseColor, interpolateColor, colorToSrgb8,
@@ -37,6 +37,8 @@ import {
 } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
 import { namespaceInlinedSvgIds } from './svg-inline-ids.ts';
+// The walkers' transform neutralise + re-entry guard (plans/104 §9 P3.1).
+import { neutraliseTransform, newNeutraliseGuard } from './transform-neutralise.ts';
 import type { VectorFont } from './font-registry.ts';
 import { svgDomToIr } from './svg-ir.ts';
 import { placeBackground } from './bg-layout.ts';
@@ -2059,7 +2061,7 @@ export function detectUnsupportedCss(el: Element, s: CSSStyleDeclaration, vector
   // is expressible as an SVG filter" is NOT the same claim as "the caller will emit
   // one". It was written as the bare test, so `filter: blur(6px)` was declared
   // supported for EVERY caller while only the SVG walker fulfilled it: the PDF walker
-  // has no filter branch at all, so DOF blur and the layout-studio `shadow: content` /
+  // has no filter branch at all, so DOF blur and the design `shadow: content` /
   // `shadow: depth` silhouettes were dropped from PDF in silence — no raster, no
   // warning, no shadow. (Coloured drop-shadows escaped by accident: their computed
   // value nests an rgba(), which parseCssFilter's flat tokeniser refuses, so they fell
@@ -2271,7 +2273,7 @@ const FILTER_FN_RE = /[a-z-]+\((?:[^()]|\([^()]*\))*\)/gi;
  * a MIXED chain defeats both of them: parseDropShadowFilter refuses any chain containing
  * a non-drop-shadow function, and parseCssFilter's flat tokeniser cannot see past the
  * nested rgba() of a coloured drop-shadow. `filter: blur(10px) drop-shadow(rgba(0,0,0,
- * 0.33) 0px 15px 30px)` — exactly what layout-studio emits for a blurred box carrying a
+ * 0.33) 0px 15px 30px)` — exactly what design emits for a blurred box carrying a
  * depth shadow — therefore measured ZERO spill, so the raster hatch cropped the effect
  * off at the box edge for the one case that spills furthest. Each function is still
  * measured by the engine parsers; only the splitting is done here.
@@ -2428,6 +2430,16 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
 
   const rootRect = node.getBoundingClientRect();
   let uid = 0;
+  // Per-walk state for the transform neutralise branches below (see
+  // bridge/transform-neutralise.ts): which elements are mid-neutralise, and the one
+  // warning line a walk may spend saying a transform could not be stilled.
+  const neutralise = newNeutraliseGuard();
+  const warnTransform = (m: string): void => { _host?.log?.('warn', `svg: ${m}`); };
+  // How many elements went out as a posed raster instead of vector (plans/104 §12 Q2).
+  // Counted rather than logged per element: a lifted stack under a tilted camera is
+  // every layer, and one line naming the total is the honest report. It is also what
+  // the amber notice in the export panel is telling the user in advance.
+  let tiltedRasters = 0;
 
   // Cooperative yielding: the SVG-IR walk + host.text.toPath (HarfBuzz) shaping
   // runs fully synchronously and janks the UI for the whole export on a complex
@@ -2826,29 +2838,37 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // unlike the AABB fallback). Additive — no-op for every unrotated element.
     const rotDeg = pureRotationDeg(style.transform);
     if (rotDeg) {
-      const prevInline = el.style.transform;
-      el.style.transform = 'none';
-      const unrot = el.getBoundingClientRect();   // reading forces the reflow
-      const pivot = rotationPivot(style, unrot, rootRect);
-      const gRot = document.createElementNS(NS, 'g');
-      gRot.setAttribute('transform', `rotate(${rotDeg.toFixed(4)} ${pivot.x.toFixed(3)} ${pivot.y.toFixed(3)})`);
-      // gRot is the paint unit for this element (the rotation wraps everything
-      // it emits), so IT is what gets deferred.
-      place(gRot, role, ctx, parentG);
-      // forceContext + placeDirect exist ONLY for this re-entry, and they are
-      // both about the same piece of hidden state: `el.style.transform` has just
-      // been set to 'none', so the recursive call's getComputedStyle reports
-      // `transform: none`.
-      //   • forceContext — without it the element stops looking like a stacking
-      //     context (CSS Transforms 1 §3) on the way in, and its descendants
-      //     would hoist straight out of a rotation that is about to be applied.
-      //   • placeDirect  — without it `g` would be deferred a SECOND time into
-      //     the same frame, leaving gRot empty and painting the element twice
-      //     over at the wrong depth.
-      // Delete either one and the failure is silent. They are load-bearing.
-      try { await visitSvgNode(el, gRot, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true }); }
-      finally { el.style.transform = prevInline; }
-      return;
+      // Neutralise through the guarded helper, never by hand: a RUNNING transform
+      // animation/transition outranks any inline declaration, and the un-neutralised
+      // re-entry that follows is what turned one gallery tile into 2 136 nested
+      // groups (plans/104 §9 P3.1 — see bridge/transform-neutralise.ts). `null` means
+      // the transform survived and nothing was touched, so this element falls through
+      // to the AABB path below, whose rect already carries the rotation.
+      const restore = neutraliseTransform(el, neutralise, warnTransform);
+      if (restore) {
+        try {
+          const unrot = el.getBoundingClientRect();   // reading forces the reflow
+          const pivot = rotationPivot(style, unrot, rootRect);
+          const gRot = document.createElementNS(NS, 'g');
+          gRot.setAttribute('transform', `rotate(${rotDeg.toFixed(4)} ${pivot.x.toFixed(3)} ${pivot.y.toFixed(3)})`);
+          // gRot is the paint unit for this element (the rotation wraps everything
+          // it emits), so IT is what gets deferred.
+          place(gRot, role, ctx, parentG);
+          // forceContext + placeDirect exist ONLY for this re-entry, and they are
+          // both about the same piece of hidden state: `el.style.transform` has just
+          // been set to 'none', so the recursive call's getComputedStyle reports
+          // `transform: none`.
+          //   • forceContext — without it the element stops looking like a stacking
+          //     context (CSS Transforms 1 §3) on the way in, and its descendants
+          //     would hoist straight out of a rotation that is about to be applied.
+          //   • placeDirect  — without it `g` would be deferred a SECOND time into
+          //     the same frame, leaving gRot empty and painting the element twice
+          //     over at the wrong depth.
+          // Delete either one and the failure is silent. They are load-bearing.
+          await visitSvgNode(el, gRot, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true });
+        } finally { restore(); }
+        return;
+      }
     }
 
     // General 2-D transform (rotate+scale, skew, arbitrary matrix) that isn't a pure
@@ -2871,18 +2891,67 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     const scaled = Boolean(mtx && isAxisAlignedMat(mtx)
       && (Math.abs(mtx.a - 1) > 1e-4 || Math.abs(mtx.d - 1) > 1e-4));
     if (mtx && (!isAxisAlignedMat(mtx) || scaled)) {
-      const prevInline = el.style.transform;
-      el.style.transform = 'none';
-      const unrot = el.getBoundingClientRect();
-      const pivot = rotationPivot(style, unrot, rootRect);
-      const gM = document.createElementNS(NS, 'g');
-      gM.setAttribute('transform', matToSvg(matAboutPivot(mtx, pivot.x, pivot.y)));
-      place(gM, role, ctx, parentG);
-      // Same forceContext/placeDirect contract as the rotation branch above —
-      // see the comment there before touching either flag.
-      try { await visitSvgNode(el, gM, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true }); }
-      finally { el.style.transform = prevInline; }
-      return;
+      // Same guarded neutralise as the rotation branch — read its comment.
+      const restore = neutraliseTransform(el, neutralise, warnTransform);
+      if (restore) {
+        try {
+          const unrot = el.getBoundingClientRect();
+          const pivot = rotationPivot(style, unrot, rootRect);
+          const gM = document.createElementNS(NS, 'g');
+          gM.setAttribute('transform', matToSvg(matAboutPivot(mtx, pivot.x, pivot.y)));
+          place(gM, role, ctx, parentG);
+          // Same forceContext/placeDirect contract as the rotation branch above —
+          // see the comment there before touching either flag.
+          await visitSvgNode(el, gM, { frame: ctx.frame, clips: ctx.clips }, { forceContext: true, placeDirect: true });
+        } finally { restore(); }
+        return;
+      }
+    }
+
+    // ── A real 3-D pose: per-element raster, never the AABB (plans/104 §12 Q2) ──
+    //
+    // SVG has no perspective transform, so `parseCssMatrix` refuses a `matrix3d` that
+    // carries a perspective row and BOTH branches above decline. Falling through from
+    // there to the AABB path is not a lossy approximation, it is a different picture:
+    // `neutraliseTransform` writes `transform: none` and the subtree comes out
+    // axis-aligned, stretched to fill the projected bounding box — a tilted card
+    // exported as a `<rect>`, with no notice (measured: two cards under `rx −45`,
+    // 495 B of SVG, zero `matrix3d`, zero `<image>`, two upright rects).
+    //
+    // §12 Q2 is the decision, and spike S2 cleared it unreserved: keep every untilted
+    // layer vector and embed a per-box captured raster for the tilted ones, with the
+    // amber notice (`tool-actions.ts`'s fidelity row). On Chromium the capture is
+    // indistinguishable from the preview — flat-region diff 0.012–0.045/255, ink IoU
+    // 0.985–0.993 across 20 poses to 85°, and text comes out marginally SHARPER than
+    // the live compositor's filtered layer. `rasterizePosedNodeToDataUrl` is the
+    // wrapper-shaped capture S2 said this needs; `effectSpillCss` is the padding it
+    // said is not optional (up to 42 px for a drop-shadow on a tilted box).
+    //
+    // Children are NOT walked afterwards: the image IS the subtree's picture, and
+    // emitting the descendants again would paint them a second time, untilted.
+    if (opts.rasterFallback !== false && isNonAffineTransform(style.transform)) {
+      const pxScale = scaleX * Math.max(1, d.dpi / CSS_DPI);
+      const posedShot = await rasterizePosedNodeToDataUrl(
+        el as HTMLElement, pxScale, opts._imprintSink, effectSpillCss(style),
+      );
+      if (posedShot) {
+        tiltedRasters++;
+        const gT = document.createElementNS(NS, 'g');
+        place(gT, role, ctx, parentG);
+        const img = document.createElementNS(NS, 'image');
+        img.setAttribute('href', posedShot.dataUrl);
+        img.setAttribute('x', String(n2(posedShot.x - rootRect.left)));
+        img.setAttribute('y', String(n2(posedShot.y - rootRect.top)));
+        img.setAttribute('width', String(n2(posedShot.w)));
+        img.setAttribute('height', String(n2(posedShot.h)));
+        img.setAttribute('preserveAspectRatio', 'none');
+        gT.appendChild(img);
+        return;
+      }
+      // Capture refused (a corner behind the eye, dom-to-image failed). Say so, then
+      // fall through — an AABB rectangle is wrong, but it is what this walker did
+      // before §12 Q2 and it is better than a hole.
+      _host?.log?.('warn', `svg: tilted <${tag}> could not be captured; falling back to its bounding box`);
     }
 
     const rect = el.getBoundingClientRect();
@@ -2917,7 +2986,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // The walker emits one <g> per element in ROOT coordinates and has always
     // stamped ZERO identity on it, so a Lolly screenshot imported back in was one
     // undifferentiated scene. This is the one point that changes: where the walked
-    // element already carries `data-box-id` (layout-studio's own boxes,
+    // element already carries `data-box-id` (design's own boxes,
     // template.html), the group carries it out, and `enumerateSvgLayers` reports it
     // as `layer.boxId` — so a lift lands on real UI boundaries instead of on
     // whatever the markup happened to group.
@@ -4105,6 +4174,14 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
   // directly. Handing it a frame nobody finalises would silently drop the whole
   // page if the export root ever happened to be positioned.
   await visitSvgNode(node, rootG, { frame: null, clips: [] });
+  // ONE line for the whole walk (plans/104 §12 Q2): what did not stay vector, and why.
+  // The user was told in advance by the export panel's amber row; this is the record in
+  // the log, and it is what a CLI or a headless caller has instead of that row.
+  if (tiltedRasters) {
+    _host?.log?.('info',
+      `svg: ${tiltedRasters} tilted element${tiltedRasters === 1 ? '' : 's'} embedded as images `
+      + '(SVG has no perspective transform; every untilted layer stayed vector)');
+  }
   const xml = injectSvgMeta(new XMLSerializer().serializeToString(svgEl), opts.meta);
 
   // Parse-check before returning. This walker can emit XML that does not parse,
@@ -6532,6 +6609,147 @@ export async function rasterizeNodeToDataUrl(el: HTMLElement, pxW: number, pxH: 
   }
 }
 
+/**
+ * plans/104 §12 Q2 — capture ONE element that carries a real 3-D pose, with the pose
+ * intact, for a vector export to embed as a per-box `<image>`.
+ *
+ * Separate from {@link rasterizeNodeToDataUrl} because that function CANNOT do this,
+ * and spike S2 measured how badly: it overwrites the clone root's `transform` with its
+ * own fit translate/scale and resizes the root to `getBoundingClientRect()` — which on
+ * a tilted element IS the projected AABB — so a 45°-pitched card comes back untilted
+ * and stretched to fill that box (mean 35/255, IoU 0.88, "trapezoid → rectangle"). S2's
+ * rule was "capture a WRAPPER whose posed box is the child, never the tilted element as
+ * the capture root".
+ *
+ * This is that rule without touching the live DOM. There is no wrapper to insert (and
+ * inserting one would move a node on a live artboard mid-export, restarting animations
+ * and resetting media): instead the clone root keeps its OWN layout size — so nothing
+ * re-lays-out — and the fit transform is composed IN FRONT of the element's own pose,
+ * pre-anchored about its `transform-origin`:
+ *
+ *   translate(pad − s·aabb.x, pad − s·aabb.y) · scale(s) · [T(o)·M·T(−o)]
+ *
+ * with `transform-origin: 0 0` on the clone so the composition is read left to right in
+ * the box's own space. `T(o)·M·T(−o)` is computed here with `DOMMatrix` (which performs
+ * the perspective divide the same way the compositor does) and emitted as one
+ * `matrix3d`, which S2 measured to be byte-identical to the equivalent transform list.
+ *
+ * ⚑ THE FIT TRANSFORM LANDS AFTER THE DIVIDE, which is the one thing about this that
+ * looks wrong and is not. CSS composes the whole list into ONE 4×4 and divides once at
+ * the end, so the instinct is that `translate(tx)` gets divided by `w` too. It does not:
+ * the translate's first row is `(1, 0, 0, tx)`, so it contributes `tx·w`, and `(s·x_M +
+ * tx·w_M) / w_M = s·(x_M/w_M) + tx` exactly. A uniform scale is likewise exact (it never
+ * touches `w`). Both hold only while the fit sits LEFT of the pose in the list, which is
+ * why the order here is not cosmetic. Measured on a `rx −45` still: per-row ink-centre
+ * drift 0.00 px across both embeds, where a divided translate would shear each row by
+ * `tx·(1/w−1)`.
+ *
+ * The returned `rect` is where the caller must place the image — the posed AABB grown
+ * by the effect spill, in the element's own client coordinates. `getBoundingClientRect`
+ * is exact against an analytic projection in both engines (S2 §3a), so the placement
+ * needs no second implementation of the projection.
+ *
+ * Null on any failure, so the caller can fall through to what it did before.
+ */
+export async function rasterizePosedNodeToDataUrl(
+  el: HTMLElement, scale: number, imprint?: ImprintState, padCss = 0,
+): Promise<{ dataUrl: string; x: number; y: number; w: number; h: number } | null> {
+  const aabb = el.getBoundingClientRect();
+  // The element's own LAYOUT box, which a transform never changes — so the clone can
+  // keep it and skip the re-layout that is the whole defect in the escape hatch.
+  const cssW = el.offsetWidth || aabb.width;
+  const cssH = el.offsetHeight || aabb.height;
+  if (!(cssW > 0.5 && cssH > 0.5) || !(aabb.width > 0.5 && aabb.height > 0.5)) return null;
+  const style = window.getComputedStyle(el);
+  const posed = posedLocalMatrix(style, cssW, cssH);
+  if (!posed) return null;
+  const pad = Math.max(0, Math.round(padCss * scale));
+  const s = Math.max(0.05, scale);
+  // Output size from the POSED extent, not the layout box: a tilted card's picture is
+  // its trapezoid's bounding box, and at 85° that is a sliver three times as wide as
+  // the card is tall.
+  const outW = Math.min(MAX_RASTER_PX, Math.max(2, Math.round(posed.w * s)));
+  const outH = Math.min(MAX_RASTER_PX, Math.max(2, Math.round(posed.h * s)));
+  const lib = await getDomToImage();
+  const restore = await swapBlobUrls(el);
+  try {
+    const canvas = await lib.toCanvas(el, {
+      width: outW + 2 * pad, height: outH + 2 * pad,
+      style: {
+        transform: `translate(${(pad - posed.x * s).toFixed(3)}px, ${(pad - posed.y * s).toFixed(3)}px) `
+          + `scale(${(outW / posed.w).toFixed(6)}, ${(outH / posed.h).toFixed(6)}) ${posed.css}`,
+        transformOrigin: 'top left',
+        width: `${cssW}px`, height: `${cssH}px`,
+        left: '0', top: '0', margin: '0',
+      },
+    });
+    imprintEmbedCanvas(canvas, imprint);
+    return {
+      dataUrl: canvas.toDataURL('image/png'),
+      // The placement rect in the element's own client space: the posed AABB, grown by
+      // the same padding the capture carries, so the image lands where the browser
+      // painted the pose. `aabb` and `posed` are the same rectangle in two coordinate
+      // systems (client vs the box's own), which is why only the pad is added here.
+      x: aabb.left - padCss, y: aabb.top - padCss,
+      w: aabb.width + 2 * padCss, h: aabb.height + 2 * padCss,
+    };
+  } catch (e) {
+    _host?.log?.('warn', `vector export: posed node rasterise failed — ${(e as Error).message}`);
+    return null;
+  } finally {
+    restore();
+  }
+}
+
+/**
+ * An element's own transform re-anchored about its `transform-origin`, plus the AABB
+ * that pose gives its layout box — the two numbers {@link rasterizePosedNodeToDataUrl}
+ * needs, and nothing about the DOM beyond the computed style it is handed.
+ *
+ * `DOMMatrix` is the projector on purpose: it is the same 4×4 the compositor builds
+ * from the same string, including the `w` divide, so the AABB agrees with
+ * `getBoundingClientRect()` rather than approximating it.
+ */
+function posedLocalMatrix(
+  style: CSSStyleDeclaration, cssW: number, cssH: number,
+): { css: string; x: number; y: number; w: number; h: number } | null {
+  const raw = (style.transform || '').trim();
+  if (!raw || raw === 'none') return null;
+  try {
+    const [ox, oy] = transformOriginPx(style, cssW, cssH);
+    const M = new DOMMatrix(raw);
+    const local = new DOMMatrix().translate(ox, oy).multiply(M).translate(-ox, -oy);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [px, py] of [[0, 0], [cssW, 0], [0, cssH], [cssW, cssH]] as const) {
+      const p = local.transformPoint(new DOMPoint(px, py, 0, 1));
+      // A corner behind the eye divides by a non-positive w. There is no picture to
+      // capture through that pose, so refuse rather than emit a mirrored ghost — the
+      // engine's own alphaGuard has already faded such a layer to nothing anyway.
+      if (!(p.w > 1e-6)) return null;
+      const x = p.x / p.w, y = p.y / p.w;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    const w = maxX - minX, h = maxY - minY;
+    if (!(w > 0.5 && h > 0.5) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+    return { css: local.toString(), x: minX, y: minY, w, h };
+  } catch {
+    return null;
+  }
+}
+
+/** `transform-origin` in px against a `cssW × cssH` box. Percentages resolved. */
+function transformOriginPx(style: CSSStyleDeclaration, cssW: number, cssH: number): [number, number] {
+  const parts = (style.transformOrigin || '50% 50%').trim().split(/\s+/);
+  const one = (v: string | undefined, extent: number, fallback: number): number => {
+    if (!v) return fallback;
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return fallback;
+    return v.endsWith('%') ? (n / 100) * extent : n;
+  };
+  return [one(parts[0], cssW, cssW / 2), one(parts[1], cssH, cssH / 2)];
+}
+
 // Draws the live DOM as PDF vectors into the rectangular region (ox, oy, regionW,
 // regionH) in page points (top-left origin). Callers pass the full page for an
 // ordinary export, or the bleed box for a print export (so the design bleeds).
@@ -6570,6 +6788,11 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
   const totalNodes = ((node as any).querySelectorAll?.('*').length ?? 0) + 1;
   let nodesWalked = 0;
   const YIELD_NODES = 200;
+  // The SVG walker's transform guard, mirrored (bridge/transform-neutralise.ts).
+  const neutralise = newNeutraliseGuard();
+  const warnTransform = (m: string): void => { _host?.log?.('warn', `pdf: ${m}`); };
+  /** Elements embedded as a posed raster instead of vector — see the branch below. */
+  let tiltedRasters = 0;
 
   async function visit(el: any): Promise<void> {
     if (el.nodeType !== 1) return;
@@ -6597,36 +6820,64 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // in a jsPDF rotation about the transform-origin. Additive (no-op unrotated).
     const rotDeg = pureRotationDeg(style.transform);
     if (rotDeg) {
-      const prevInline = el.style.transform;
-      el.style.transform = 'none';
-      const unrot = el.getBoundingClientRect();     // reading forces the reflow
-      const pivot = rotationPivot(style, unrot, rootRect);
-      try { await withPdfRotation(pdf, rotDeg, pivot.x * scaleX, pivot.y * scaleY, () => visit(el)); }
-      finally { el.style.transform = prevInline; }
-      return;
+      // Guarded neutralise, exactly as the SVG walker does it — a running transform
+      // animation outranks the inline style, and the re-entry that follows recurses
+      // per attempt (plans/104 §9 P3.1; bridge/transform-neutralise.ts). `null` = the
+      // transform survived, so fall through to the AABB path with its rect as-is.
+      const restore = neutraliseTransform(el, neutralise, warnTransform);
+      if (restore) {
+        try {
+          const unrot = el.getBoundingClientRect();     // reading forces the reflow
+          const pivot = rotationPivot(style, unrot, rootRect);
+          await withPdfRotation(pdf, rotDeg, pivot.x * scaleX, pivot.y * scaleY, () => visit(el));
+        } finally { restore(); }
+        return;
+      }
     }
 
     // General 2-D transform (rotate+scale / skew / matrix) that isn't a pure rotation:
     // mirror the SVG walker — neutralise, walk the untransformed subtree, wrap the draw
     // in the full CTM about the transform-origin. Pure translate/scale → AABB path below;
-    // 3-D/perspective → parseCssMatrix null → AABB path.
+    // a real 3-D/perspective pose takes the posed-raster branch straight after this one.
     const mtx = pureRotationDeg(style.transform) === 0 ? parseCssMatrix(style.transform) : null;
     if (mtx && !isAxisAlignedMat(mtx)) {
-      const prevInline = el.style.transform;
-      el.style.transform = 'none';
-      const unrot = el.getBoundingClientRect();
-      const pivot = rotationPivot(style, unrot, rootRect);
-      // Child geometry is drawn in anisotropically-scaled pt space (S = diag(scaleX,scaleY)),
-      // so the CTM that reproduces the CSS matrix M there is S·M·S⁻¹, NOT M: the off-diagonals
-      // pick up the aspect ratio (rotate/skew shear differently once x and y are scaled
-      // unequally). The SVG walker gets this for free from its single outer scale(scaleX,scaleY)
-      // group; the PDF walker bakes scale per-axis into every coord, so conjugate here. e,f are
-      // the S-scaled translation. (Uniform scale → ar=1 → unchanged, matching withPdfRotation.)
-      const ar = (scaleX && scaleY) ? scaleX / scaleY : 1;
-      const mPt: Mat2D = { a: mtx.a, b: mtx.b / ar, c: mtx.c * ar, d: mtx.d, e: mtx.e * scaleX, f: mtx.f * scaleY };
-      try { await withPdfMatrix(pdf, mPt, pivot.x * scaleX, pivot.y * scaleY, () => visit(el)); }
-      finally { el.style.transform = prevInline; }
-      return;
+      // Same guarded neutralise as the rotation branch above.
+      const restore = neutraliseTransform(el, neutralise, warnTransform);
+      if (restore) {
+        try {
+          const unrot = el.getBoundingClientRect();
+          const pivot = rotationPivot(style, unrot, rootRect);
+          // Child geometry is drawn in anisotropically-scaled pt space (S = diag(scaleX,scaleY)),
+          // so the CTM that reproduces the CSS matrix M there is S·M·S⁻¹, NOT M: the off-diagonals
+          // pick up the aspect ratio (rotate/skew shear differently once x and y are scaled
+          // unequally). The SVG walker gets this for free from its single outer scale(scaleX,scaleY)
+          // group; the PDF walker bakes scale per-axis into every coord, so conjugate here. e,f are
+          // the S-scaled translation. (Uniform scale → ar=1 → unchanged, matching withPdfRotation.)
+          const ar = (scaleX && scaleY) ? scaleX / scaleY : 1;
+          const mPt: Mat2D = { a: mtx.a, b: mtx.b / ar, c: mtx.c * ar, d: mtx.d, e: mtx.e * scaleX, f: mtx.f * scaleY };
+          await withPdfMatrix(pdf, mPt, pivot.x * scaleX, pivot.y * scaleY, () => visit(el));
+        } finally { restore(); }
+        return;
+      }
+    }
+
+    // A real 3-D pose: per-element raster, never the AABB (plans/104 §12 Q2). The SVG
+    // walker's branch carries the full reasoning and the S2 numbers; this is the mirror,
+    // and it has to exist here too because PDF inherits the same `parseCssMatrix`
+    // refusal and therefore the same wrong picture (a tilted card as an upright
+    // rectangle stretched to its projected bounding box).
+    if (rasterFallback && isNonAffineTransform(style.transform)) {
+      const posedShot = await rasterizePosedNodeToDataUrl(
+        el as HTMLElement, (RASTER_DPI / 72) * Math.max(scaleX, scaleY), imprint, effectSpillCss(style),
+      );
+      if (posedShot) {
+        tiltedRasters++;
+        pdf.addImage(posedShot.dataUrl, 'PNG',
+          (posedShot.x - rootRect.left) * scaleX, (posedShot.y - rootRect.top) * scaleY,
+          posedShot.w * scaleX, posedShot.h * scaleY);
+        return;
+      }
+      _host?.log?.('warn', `pdf: tilted <${tag}> could not be captured; falling back to its bounding box`);
     }
 
     const rect = el.getBoundingClientRect();
@@ -6741,7 +6992,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     // filtered box comes here. Declining the caps is what routes them here rather than
     // letting detectUnsupportedCss call them "supported" on the SVG walker's behalf and
     // drop them in silence, which is what happened until now (DOF blur and the
-    // layout-studio `shadow: content` / `shadow: depth` silhouettes simply were not in
+    // design `shadow: content` / `shadow: depth` silhouettes simply were not in
     // the PDF).
     //
     // WHY RASTER AND NOT A NATIVE BRANCH. The box-shadow block above proves a blur CAN
@@ -7152,6 +7403,11 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
   }
 
   await visit(node);
+  if (tiltedRasters) {
+    _host?.log?.('info',
+      `pdf: ${tiltedRasters} tilted element${tiltedRasters === 1 ? '' : 's'} embedded as images `
+      + '(PDF has no perspective transform; every untilted layer stayed vector)');
+  }
 }
 
 // Walks text nodes and inline elements within blockEl, rendering each fragment
@@ -10272,7 +10528,7 @@ function addWatermarkOverlay(node: HTMLElement): () => void {
 // with no `[data-cam]` to find, the camera BOX stopped being `kind: 'camera'` and was
 // posed as an ordinary lifted layer, its dolly track read as depth.
 // Leaving it attached costs nothing: every walker skips `display: none` (both
-// layout-studio copies ship `.lolly-box-cam { display: none }` in styles.css), the
+// design copies ship `.lolly-box-cam { display: none }` in styles.css), the
 // marker has no fill and no children, and the plates loop skips `camera` layers by
 // kind. Keyed on the ATTRIBUTE, not the class, because the attribute is what the
 // hooks promise and what both evaluators match on.

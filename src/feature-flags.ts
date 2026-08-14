@@ -131,6 +131,24 @@ export const PRIVATE_COLLAB_FLAG: FeatureFlag = {
   info: 'Lets you invite one other device to co-edit a tool session directly - no account, no server, works offline on the same network. It starts on, and nothing is shared until you start a collab. Anyone with the invite can join and edit until you close the session.',
 };
 
+// ON by default: nearby discovery (plans/110 §3) — advertise/browse for other Lolly
+// devices on the same network so an invite can be handed over by tapping a name instead
+// of scanning a QR. Like PRIVATE_COLLAB_FLAG, this gates the ENTRY POINTS only (the
+// ceremony's Nearby section and any share-sheet nearby rows). Registration of a provider
+// is separate and Tauri-only (lib/nearby-boot.ts registers the LAN provider when the
+// native runtime is present; a plain web build never has one, so the flag is moot there).
+// Nothing advertises because the flag is on: advertising begins only when a human presses
+// "Make me visible nearby". A stored `false` still wins; a control plane can force it
+// fleet-wide (GOVERNED_FLAG_IDS below, mirrored in lolly-work policy/feature-flags.ts).
+export const NEARBY_DISCOVERY_FLAG: FeatureFlag = {
+  id: 'nearby-discovery',
+  label: 'Nearby discovery',
+  pill: 'beta',
+  default: true,
+  // Plain hyphen, house copy rule (see PRIVATE_COLLAB_FLAG). English source is the key.
+  info: 'Lets nearby Lolly devices on the same network find each other, so you can start a collab or share files by tapping a name instead of scanning a code. You are never visible until you choose to be, and only for as long as you set - the ceremony still confirms the connection with matching plates.',
+};
+
 // The standalone flags this shell will honour governance for (default + visibility);
 // category/Pro flags stay purely local.
 //
@@ -140,7 +158,7 @@ export const PRIVATE_COLLAB_FLAG: FeatureFlag = {
 // toggle with it (plan 100 §6.3/§11.24). The `builtinDefault` recorded server-side must
 // keep matching each flag's `default` here, or an instance that chose "inherit" would be
 // told the wrong thing; the two moved together on 2026-08-10 for `private-collab`.
-export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, STRIP_UPLOAD_META_FLAG.id, PREFLIGHT_FLAG.id, PRIVATE_COLLAB_FLAG.id];
+export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, STRIP_UPLOAD_META_FLAG.id, PREFLIGHT_FLAG.id, PRIVATE_COLLAB_FLAG.id, NEARBY_DISCOVERY_FLAG.id];
 
 /** Whether the control plane has hidden a flag's user-facing toggle (a staged
  *  surprise, or a policy the deployment owns). Dormant ⇒ false. The resolved
@@ -210,7 +228,7 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   // entry — which is what makes a fresh device read it as on (PRIVATE_COLLAB_FLAG
   // since 2026-08-10; it stays in this list because the list is "every standalone
   // flag", not "every opt-in one").
-  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG]) {
+  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, NEARBY_DISCOVERY_FLAG]) {
     if (eff[f.id] === undefined && f.default === false) eff[f.id] = false;
   }
   try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(eff)); } catch { /* best-effort */ }

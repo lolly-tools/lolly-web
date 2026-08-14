@@ -97,6 +97,10 @@ const BULK_TYPES = new Set<string>([
 const RESERVED_KEYS = new Set<string>([
   'format', 'export', 'copy', 'slot', 'output', 'filename', '_v',
   'width', 'height', 'w', 'h', 'unit', 'dpi', 'full', 'options',
+  // presentation-mode addresses (plan 112) — shell-owned, never a batch column.
+  // NB: the signage flag `loop` is intentionally absent — it is a real input id in
+  // several tools (slides/deck-builder/3d/…) and must keep its own grid column.
+  'present', 's',
 ]);
 
 /**

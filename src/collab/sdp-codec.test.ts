@@ -131,7 +131,7 @@ function randomMaterial(rnd: () => number): SdpMaterial {
 function randomInvite(rnd: () => number): InviteMeta {
   const meta: InviteMeta = {
     v: SDP_CODEC_VERSION,
-    toolId: pick(rnd, ['layout-studio', 'qr-code', 'meeting-planner', 'd3', 'a', 'street-map']),
+    toolId: pick(rnd, ['design', 'qr-code', 'meeting-planner', 'd3', 'a', 'street-map']),
     toolVersion: pick(rnd, ['1.4.0', '0.0.1', '12.255.7', '2.0.0-beta.3', '1.10.0']),
     engineVersion: pick(rnd, ['1.108.0', '1.77.0', '2.0.0', '1.108.0-rc.1']),
   };
@@ -506,7 +506,7 @@ test('unpack: hostile and truncated payloads always come back as typed failures'
   const good = ok(pack({
     kind: 'invite',
     material: ok(extract(CHROME_MDNS_OFFER)),
-    invite: { v: 1, toolId: 'layout-studio', toolVersion: '1.4.0', engineVersion: '1.108.0', name: 'Priya', colorIndex: 2 },
+    invite: { v: 1, toolId: 'design', toolVersion: '1.4.0', engineVersion: '1.108.0', name: 'Priya', colorIndex: 2 },
   }));
 
   err(unpack(new Uint8Array(0)), 'empty');
@@ -600,7 +600,7 @@ test('unpack: single-bit flips of a valid payload are caught or harmless, never 
 test('size: a typical LAN invite fits the QR budget', t => {
   const meta: InviteMeta = {
     v: SDP_CODEC_VERSION,
-    toolId: 'layout-studio',
+    toolId: 'design',
     toolVersion: '1.4.0',
     engineVersion: '1.108.0',
     name: 'Priya',
@@ -768,7 +768,7 @@ test('end to end: offer → invite link → answer token → both sides rebuild 
   const offerMaterial = ok(extract(CHROME_MDNS_OFFER));
   const invite: InviteMeta = {
     v: SDP_CODEC_VERSION,
-    toolId: 'layout-studio',
+    toolId: 'design',
     toolVersion: '1.4.0',
     engineVersion: '1.108.0',
     name: 'Priya',

@@ -32,6 +32,8 @@ import {
   plateBudgetBytes,
   plateLongSideCap,
   platesPerLayer,
+  FX_CACHE_BUDGET_SHARE,
+  fxCacheBudgetBytes,
   type PlateLayerNeed,
 } from './plate-budget.ts';
 
@@ -51,6 +53,17 @@ test('plateBudgetBytes scales with deviceMemory and stops at the cap', () => {
   // Unknown memory is treated as the default, not as unlimited.
   assert.equal(plateBudgetBytes(null), plateBudgetBytes(PLATE_BUDGET_DEFAULT_GB));
   assert.equal(plateBudgetBytes(0), plateBudgetBytes(PLATE_BUDGET_DEFAULT_GB));
+});
+
+test('fxCacheBudgetBytes is a share of the same allowance, and scales with it', () => {
+  for (const gb of [2, 4, 8, 64, null]) {
+    assert.equal(fxCacheBudgetBytes(gb), Math.round(plateBudgetBytes(gb) * FX_CACHE_BUDGET_SHARE), `${gb}GB`);
+  }
+  // It is a CEILING on what a render may retain, never a reservation taken off the
+  // plate budget — nothing here may make a plate lower-resolution (plans/104 P3.1).
+  const before = planPlateBudget({ layers: [layer({ maxEff: 3 })], scale: 2, worker: false });
+  const after = planPlateBudget({ layers: [layer({ maxEff: 3 })], scale: 2, worker: false, budgetBytes: plateBudgetBytes(8) });
+  assert.equal(after.effOf.get(0), before.effOf.get(0));
 });
 
 test('plateLongSideCap steps at the deviceMemory cap', () => {

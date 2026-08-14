@@ -43,9 +43,9 @@ import { recTransition, isTransitionKind, type TransitionKind } from '../lib/tra
 // share the engine's maths, so a drift needs a deliberate edit in one place rather than
 // an oversight in two.
 import {
-  parseKf, evaluateKf, projectLayer, dofBlur, resolveCamera,
+  parseKf, evaluateKf, projectLayer, dofBlur, resolveCamera, cameraTilted,
   DEFAULT_PERSPECTIVE, KF_CLAMPS, KF_MAX_BLUR, KF_Z_FIELD_CLAMP,
-  type KfTrack, type KfPose, type KfCameraClip, type KfCameraView,
+  type KfTrack, type KfPose, type KfCameraClip, type KfCameraView, type KfMatrix3,
 } from '@lolly/engine';
 
 // ── clamps (mirroring the tool hook + timeline-math, so nothing can disagree) ──
@@ -547,8 +547,52 @@ export function camerasMove(cameras: readonly KfCameraClip[] | null | undefined)
     if ((b.x ?? 0) !== 0 || (b.y ?? 0) !== 0 || (b.z ?? 0) !== 0) return true;
     if ((b.a ?? 0) !== 0 || (b.f ?? 0) !== 0) return true;
     if (b.p != null && b.p !== DEFAULT_PERSPECTIVE) return true;
+    // A tilt is a camera that is somewhere other than the default just as much as a pan
+    // is (P2): it changes every projectable layer's magnification and its DOF distance,
+    // so a plate cannot carry a filter shot for one instant of it either.
+    if (cameraTilted(b)) return true;
   }
   return false;
+}
+
+/**
+ * Does any camera in this set author a TILT — and if so, which channel and how much
+ * (P2, §6.4)?
+ *
+ * The gate `renderSequence` branches on, and the same COARSE shape as `camerasMove`
+ * for the same reason: it is asked once for a whole render, over the whole camera set,
+ * because the answer decides which compositor runs and that cannot change mid-film.
+ * Any non-zero `rx`/`ry` anywhere — in a base pose or in any keyframe of any camera —
+ * makes the render a tilted one, even if the angle is zero for most of its length.
+ *
+ * It returns the TRIGGER rather than a boolean because §6.4 asks for the gate to be
+ * "logged with the trigger": a user whose export just took a ten-times-slower path is
+ * owed the name of the channel that put it there.
+ */
+export function camerasTilt(
+  cameras: readonly KfCameraClip[] | null | undefined,
+): { ch: 'rx' | 'ry'; deg: number; atMs: number | null } | null {
+  if (!Array.isArray(cameras)) return null;
+  for (const c of cameras) {
+    if (!c || typeof c !== 'object') continue;
+    const b = c.base;
+    if (b && typeof b === 'object') {
+      for (const ch of ['rx', 'ry'] as const) {
+        const v = b[ch];
+        if (typeof v === 'number' && Number.isFinite(v) && v !== 0) return { ch, deg: v, atMs: null };
+      }
+    }
+    if (!Array.isArray(c.track)) continue;
+    for (const key of c.track) {
+      for (const ch of ['rx', 'ry'] as const) {
+        const v = key?.v?.[ch];
+        if (typeof v === 'number' && Number.isFinite(v) && v !== 0) {
+          return { ch, deg: v, atMs: (typeof c.start === 'number' ? c.start : 0) + key.t };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /** The camera + stage `t` is projected through. One resolution per frame, shared by every layer. */
@@ -572,7 +616,12 @@ export function planCameraView(env: SeqPlanEnv | null | undefined, tMs: number):
  * box takes the exact same path it took before this feature existed.
  */
 export function viewMoves(view: KfCameraView): boolean {
-  return view.x !== 0 || view.y !== 0 || view.z !== 0 || view.a > 0;
+  // TILT COUNTS (P2). A tilted camera moves a z = 0 box more than a pan does — it
+  // reshapes it — so leaving it out here would have left every flat layer on the
+  // screen-parallel path while the lifted ones pitched, i.e. an artwork that comes
+  // apart. It is the same reading as the pan: "does even a flat box have to be
+  // projected".
+  return view.x !== 0 || view.y !== 0 || view.z !== 0 || view.a > 0 || cameraTilted(view);
 }
 
 /** The surface-space inputs one layer brings to the fold. */
@@ -623,6 +672,22 @@ export interface KfFold {
   h: number;
   /** True when `w`/`h` are a keyed size rather than the box's own — the reflow flag. */
   sized: boolean;
+  /**
+   * P2 — the element-local homography a TILTED camera needs, or null (every other
+   * case, which is every document before this milestone).
+   *
+   * It REPLACES the leading `translate(dx, dy)` in a DOM consumer's transform list and
+   * changes nothing else: `scale` still carries eff and `rot` is still applied after
+   * it, because the engine divides the centre magnification back out of the matrix.
+   * `dx`/`dy` stay populated — they are the projected CENTRE, which is what the chrome
+   * (handles, motion path) reads — so a consumer that only wants a position needs to
+   * know nothing about tilt.
+   *
+   * The CANVAS compositor has no way to draw this: `setTransform` is affine by
+   * definition. That is why a tilted export is captured off the live DOM instead
+   * (§6.4's P2a capture tier), gated in `renderSequence` before a plate is shot.
+   */
+  m3: KfMatrix3 | null;
 }
 
 /**
@@ -665,12 +730,27 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
   // also be built by hand (a rebase, a test) and a NaN width would size a plate to NaN.
   const w = keyedW ? clamp(pose.w as number, KF_CLAMPS.w[0], KF_CLAMPS.w[1]) : boxW;
   const h = keyedH ? clamp(pose.h as number, KF_CLAMPS.h[0], KF_CLAMPS.h[1]) : boxH;
+  // The layer scale WITHOUT eff — what the box's own extent is multiplied by before the
+  // projection sees it. Read only by the tilted branch, which needs the posed corners to
+  // find the layer's nearest approach to the near plane (the guard generalisation).
+  const layerScale = typeof pose.s === 'number' ? tr.sc * pose.s : tr.sc;
   const proj = projectLayer(view, {
     bx: inp.cx + (w - boxW) / 2,
     by: inp.cy + (h - boxH) / 2,
     dxT: tr.dx, dyT: tr.dy, dxK, dyK, z,
+    w: w * layerScale, h: h * layerScale,
   });
-  const flat = proj.scale === 1 && view.x === 0 && view.y === 0;
+  // `!cameraTilted` FIRST, and it is not redundant. The rest of this test was written
+  // for the affine tier, where `eff === 1` and a parked camera really do imply
+  // `proj.dx === tr.dx + dxK` in ℝ. Under tilt that implication is false: `proj.scale`
+  // is `P/D` at the layer's posed CENTRE and can be exactly 1 — `ry = 45` puts
+  // `sin = cos` in IEEE, so a layer at `z = −100` off to one side lands `dC === P`
+  // exactly — while the homography has still moved that centre 41 px sideways. Taking
+  // the transition offset there would throw the projection away and hand the chrome
+  // (handles, motion path) a centre the render does not use. The clause is an exact
+  // zero test on rx/ry, so the untilted byte-identity floor is untouched by
+  // construction: with no angle authored, `flat` is the expression that shipped.
+  const flat = !cameraTilted(view) && proj.scale === 1 && view.x === 0 && view.y === 0;
   // DOF IS A SCREEN-SPACE NUMBER; THE OTHER TWO ARE LAYER-SPACE ONES. `dofBlur`
   // already carries `eff(z)·eff(f)` (§4.4) and is documented as "px at stage-native
   // scale" — i.e. what the viewer sees. But BOTH executors apply `PlanItem.blur` in
@@ -694,6 +774,7 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
     w,
     h,
     sized: keyedW || keyedH,
+    m3: proj.m,
   };
 }
 
@@ -791,6 +872,16 @@ export interface PlanItem {
    * back sorted by it (ascending — higher z is nearer the camera, so it paints last).
    */
   resolvedZ: number;
+  /**
+   * P2 — `KfFold.m3`, carried through. Null on every untilted camera, which is the
+   * only case a canvas executor can draw: `drawItem` composes an affine transform and
+   * there is no affine spelling of a homography. A non-null value here means the frame
+   * belongs to the P2a capture tier, and `renderSequence` has already gated on the
+   * camera set before any plate was photographed — an executor that met one anyway
+   * would draw the centre-magnified approximation rather than nothing, which is the
+   * survivable direction.
+   */
+  m3: KfMatrix3 | null;
 }
 
 const IDENTITY = { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 } as const;
@@ -964,7 +1055,7 @@ export function sequenceDrawPlan(
       })
       : {
         dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha,
-        blur: layer.blur, z: 0, w: layer.rect.w, h: layer.rect.h, sized: false,
+        blur: layer.blur, z: 0, w: layer.rect.w, h: layer.rect.h, sized: false, m3: null,
       };
     // A layer the behind-camera guard has ramped to 0 stays IN the plan carrying
     // alpha 0, rather than being dropped from it: `alpha <= 0` is already the
@@ -984,12 +1075,32 @@ export function sequenceDrawPlan(
       w: fold.w,
       h: fold.h,
       sized: fold.sized,
+      m3: fold.m3,
     });
   }
   // §4.2: paint order IS depth order once anything is lifted. `Array.prototype.sort`
   // is stable, and `out` was built in DOM order, so the explicit idx tiebreak is
   // belt-and-braces rather than load-bearing — but it says out loud which order two
   // layers at the same depth keep.
+  //
+  // AND IT STAYS THE `z` ORDER UNDER TILT (P2), which is not obvious and is worth
+  // stating. The painter order that reproduces a perspective render is the VIEW-AXIS
+  // one, and a pitched camera's view axis is not the z axis. But the layers are
+  // PARALLEL PLANES: the view-axis depth of a plane is `P − (… + κ·(z − camZ))` with
+  // `κ = cos(rx)·cos(ry)`, so for κ > 0 a higher `z` is nearer EVERYWHERE the two
+  // overlap, and sorting by z and sorting by view-axis distance are the same sort.
+  //
+  // **κ > 0 IS THE CONDITION, and it is enforced by the CONTROL range, not by taste.**
+  // Past a quarter turn the sign flips: at `rx = −120` three layers at z 0/100/200 have
+  // view-axis depths 1200/1250/1300, so the HIGHEST z is the farthest, this sort paints
+  // it last, and the behind-camera guard never rescues it because `D = P − κζ` grows
+  // with ζ once κ < 0 (all three stay fully opaque; the lifted layer also shrinks). The
+  // wire clamp is ±180 because a hand-edited share link has to be held to something —
+  // it is not a control range, and the Tilt X / Tilt Y fields and the shift-drag are
+  // both held to `KF_TILT_CONTROL` (±75) instead, which keeps `κ ≥ cos(75°)² = 0.067`
+  // for every combination the UI can author. A link that says 120 renders in the wrong
+  // order; that is the documented cost of a wire wider than its controls, and the
+  // alternative (a per-frame view-axis sort) buys nothing the UI can reach.
   if (out.some((i) => i.resolvedZ !== 0)) {
     out.sort((a, b) => a.resolvedZ - b.resolvedZ || a.layer.idx - b.layer.idx);
   }
@@ -1087,6 +1198,12 @@ export const SEQ_ERROR_CODES = Object.freeze([
   'SEQ_NO_CODEC',
   'SEQ_TOO_HEAVY',
   'SEQ_ABORTED',
+  // P2 (plans/104 §6.4). A tilted camera is composited by CAPTURING the live DOM, and
+  // dom-to-image cannot serialise a playing `<video>` — the freeze would bake one frame
+  // of it under the whole move. That combination refuses with a visible notice rather
+  // than exporting something wrong, and it is its own code because it is neither a
+  // decode failure nor a missing codec: it is a composition this tier does not do yet.
+  'SEQ_TILT_UNSUPPORTED',
 ] as const);
 
 export type SeqErrorCode = (typeof SEQ_ERROR_CODES)[number];

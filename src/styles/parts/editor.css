@@ -121,6 +121,35 @@
 .fc-toolbar:hover .fc-grip span { background: hsl(var(--muted-foreground) / 0.6); }
 @media (pointer: coarse) { .fc-grip { height: 20px; } }
 
+/* Rail tooltips point INTO the canvas (to the RIGHT), overriding tooltip.css's centred-above
+   default. The rail hugs the left edge, so an above-centred bubble runs off the left edge for
+   a long label (e.g. "Click a shape to edit its nodes directly") and stacks over the button
+   above it. Right-side keeps the whole label on-screen and reads toward the work. Higher
+   specificity than the base `[data-tip]::after` so it wins, incl. over the reduced-motion
+   resting transform. (A rail dragged to the far-right edge falls back to a possibly-clipped
+   bubble — the common left dock is what this optimises.) */
+.fc-toolbar [data-tip]::after {
+  bottom: auto;
+  top: 50%;
+  left: calc(100% + 10px);
+  right: auto;
+  transform: translateY(-50%) translateX(-3px);
+}
+.fc-toolbar [data-tip]::before {
+  bottom: auto;
+  top: 50%;
+  left: calc(100% + 5px);
+  right: auto;
+  transform: translateY(-50%);
+  border-color: transparent;
+  border-right-color: hsl(var(--foreground));
+}
+.fc-toolbar [data-tip]:hover::after,
+.fc-toolbar [data-tip]:focus-visible::after { transform: translateY(-50%) translateX(0); }
+@media (prefers-reduced-motion: reduce) {
+  .fc-toolbar [data-tip]::after { transform: translateY(-50%); }
+}
+
 /* The Lolly mark at the top of the rail opens the document menu (export, save,
    undo/redo, canvas size, copy, share, info, import). Brand-hued identity mark
    (--lolly-mark, injected by brand-vars.ts) — never the verify verdict green.
@@ -128,17 +157,54 @@
    the editor's primary affordance to focus. */
 .fc-toolbar .fc-btn.fc-btn-lolly {
   --lolly-accent: 145 58% 34%;
+  /* The mark's swirl inherits this (lolly-mark.ts uses var(--lolly-swirl)); the grey rings
+     keep their own gradients. Brand-hued, matching the identity mark it replaced. */
+  --lolly-swirl: var(--lolly-mark, hsl(var(--lolly-accent)));
   background: transparent;
   color: var(--lolly-mark, hsl(var(--lolly-accent)));
 }
 [data-theme="dark"] .fc-toolbar .fc-btn.fc-btn-lolly { --lolly-accent: 145 52% 60%; }
 .fc-toolbar .fc-btn.fc-btn-lolly:hover:not(:disabled) { background: hsl(var(--muted)); }
-.fc-toolbar .fc-btn.fc-btn-lolly svg { width: calc(22px * var(--a11y-fs)); height: calc(22px * var(--a11y-fs)); }
-/* Unsaved work: Save lives in the menu now, so the mark carries the render pill's cue. */
-.fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved,
-.fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved:hover:not(:disabled) {
-  background: var(--brand-warn, #b28727); color: var(--brand-warn-ink, #0c322c);
+/* The mark is the rail's brand anchor — deliberately larger than the tool glyphs (nearly
+   fills its 40px button), so it reads as the app's identity, not just another tool. */
+.fc-toolbar .fc-btn.fc-btn-lolly svg { width: calc(36px * var(--a11y-fs)); height: calc(36px * var(--a11y-fs)); }
+/* Unsaved work (Save lives in the menu now): no background pill — the MARK ITSELF warns.
+   Its swirl inherits --lolly-swirl (the same variable that brand-tints it), so pointing that
+   at the amber warning colour recolours the identity glyph instead of boxing it. The grey
+   rings stay neutral; only the spiral goes amber, which is the cue. */
+.fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved { --lolly-swirl: var(--brand-warn, #b28727); }
+
+/* The brand mark's three rings spin (interaction-only, calm at rest) on hover / focus — the
+   same treatment as the Ask Lolly send button (parts/ask.css). transform-box:fill-box turns
+   each ring about its own centre; the counter-rotating speeds give it life. Static otherwise —
+   Andy's "minus animation unless hover". */
+.fc-btn-lolly svg .lolly-mark__spin-1,
+.fc-btn-lolly svg .lolly-mark__spin-2,
+.fc-btn-lolly svg .lolly-mark__spin-3 { transform-origin: 50% 50%; transform-box: fill-box; }
+.fc-btn-lolly:hover svg .lolly-mark__spin-1,
+.fc-btn-lolly:focus-visible svg .lolly-mark__spin-1 { animation: fc-lolly-spin 2.4s linear infinite; }
+.fc-btn-lolly:hover svg .lolly-mark__spin-2,
+.fc-btn-lolly:focus-visible svg .lolly-mark__spin-2 { animation: fc-lolly-spin 4.6s linear infinite reverse; }
+.fc-btn-lolly:hover svg .lolly-mark__spin-3,
+.fc-btn-lolly:focus-visible svg .lolly-mark__spin-3 { animation: fc-lolly-spin 7s linear infinite; }
+@keyframes fc-lolly-spin { to { transform: rotate(360deg); } }
+/* Motion prefs (OS + app): the mark never spins; the button keeps its quiet hover fill. The
+   OS media query and the app attribute are kept adjacent (same as parts/ask.css) so the two
+   can't drift — the global base.css app-motion rule already caps duration, this zeroes it. */
+@media (prefers-reduced-motion: reduce) {
+  .fc-btn-lolly:hover svg .lolly-mark__spin-1,
+  .fc-btn-lolly:hover svg .lolly-mark__spin-2,
+  .fc-btn-lolly:hover svg .lolly-mark__spin-3,
+  .fc-btn-lolly:focus-visible svg .lolly-mark__spin-1,
+  .fc-btn-lolly:focus-visible svg .lolly-mark__spin-2,
+  .fc-btn-lolly:focus-visible svg .lolly-mark__spin-3 { animation: none; }
 }
+html[data-a11y-motion="reduce"] .fc-btn-lolly:hover svg .lolly-mark__spin-1,
+html[data-a11y-motion="reduce"] .fc-btn-lolly:hover svg .lolly-mark__spin-2,
+html[data-a11y-motion="reduce"] .fc-btn-lolly:hover svg .lolly-mark__spin-3,
+html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spin-1,
+html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spin-2,
+html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spin-3 { animation: none; }
 
 /* (Undo / redo used to be a stacked capsule in the rail. They are menu rows in the
    Lolly menu now — see lollyItems() in free-canvas.ts — where they keep their live
@@ -184,6 +250,8 @@
    purpose — those sizes are matched to screen-px hit tolerances owned by JS. */
 .fc-btn svg { width: calc(21px * var(--a11y-fs)); height: calc(21px * var(--a11y-fs)); }
 .fc-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
+/* Press feedback — a tactile down-state (audit A4#7). Brightness only, so it needs no reduced-motion guard. */
+.fc-btn:active:not(:disabled) { filter: brightness(0.92); }
 .fc-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Undo/redo dim out at the ends of history (same treatment as .history-btn). */
 .fc-btn:disabled { opacity: 0.3; cursor: default; }
@@ -217,6 +285,28 @@
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
   padding: 5px; display: flex; flex-direction: column;
 }
+
+/* Import a design (openImportPanel) — the chrome that used to live in `style=` attributes
+   on every element, hard-coding a brand green that never themed. Now class-driven, so it
+   follows the active brand + dark mode; the choose button is the standard `.btn--primary`. */
+.fc-import-panel { width: 264px; padding: 12px; white-space: normal; gap: 0; }
+.fc-import-title { font-weight: 700; margin-bottom: 6px; }
+.fc-import-hint { margin: 0 0 10px; font-size: calc(12px * var(--a11y-fs)); line-height: 1.45; opacity: 0.82; }
+.fc-import-mode { display: flex; gap: 6px; margin: 0 0 8px; }
+.fc-import-mode-opt {
+  flex: 1; display: flex; align-items: center; gap: 5px;
+  padding: 6px 8px; border: 1px solid hsl(var(--border)); border-radius: 7px;
+  font-size: calc(12px * var(--a11y-fs)); cursor: pointer;
+}
+.fc-import-scenes-hint { margin: 0 0 10px; font-size: calc(12px * var(--a11y-fs)); line-height: 1.45; opacity: 0.82; }
+.fc-import-choose { width: 100%; }
+.fc-import-templates { align-items: flex-start; gap: 6px; margin-top: 8px; font-size: calc(12px * var(--a11y-fs)); line-height: 1.4; }
+.fc-import-templates:not([hidden]) { display: flex; }
+.fc-import-templates > input { margin-top: 2px; }
+.fc-import-status { margin-top: 8px; font-size: calc(12px * var(--a11y-fs)); line-height: 1.4; min-height: 16px; }
+.fc-import-status.is-ok { color: #128a5b; }
+.fc-import-status.is-err { color: hsl(var(--destructive)); }
+
 .fc-pop-item {
   display: flex; align-items: center; gap: 9px;
   border: none; background: transparent; color: inherit;
@@ -317,6 +407,28 @@
   pointer-events: none;
 }
 
+/* Camera-gesture HUD (audit A2/A4): the only live feedback a camera drag has, since the
+   shot itself commits on release. Pinned bottom-centre of the stage, pointer-transparent,
+   above the guides. Same card recipe as the panels so it reads as chrome, not artwork. */
+.fc-cam-hud {
+  position: absolute; z-index: 17;
+  left: 50%; bottom: 18px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 13px; border-radius: 10px;
+  background: hsl(var(--card) / 0.86); color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border)); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.24);
+  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
+  font-size: calc(12.5px * var(--a11y-fs)); line-height: 1;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  pointer-events: none;
+}
+.fc-cam-hud-k {
+  font-weight: 700; font-size: calc(10.5px * var(--a11y-fs));
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+}
+.fc-cam-hud-v { font-weight: 600; min-width: 3.4em; }
+
 /* Contextual bar PINNED to the top chrome row (JS sets left/top/max-width from ctxTopBand
    in free-canvas.ts) — a toolbar on the line with the back pill and zoom HUD, no longer a
    float above the selection where it sat over the artwork being edited. Its `left` is
@@ -384,6 +496,7 @@
 }
 .fc-cbtn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .fc-cbtn:hover { background: hsl(var(--muted)); }
+.fc-cbtn:active:not(:disabled) { filter: brightness(0.92); }
 /* An action the SELECTION cannot take right now (today: "+Keyframe" on a sound clip,
    plans/104 §8). Dimmed and inert, never hidden and never removed — a control that
    comes and goes as you click around teaches nothing, and its tooltip is where the
@@ -590,6 +703,16 @@
    preview, not a control: no checkboxes (an unticked layer would have nowhere to go —
    see askLiftLayers) and no thumbnails, so the row is a tick, an index and a count. */
 .fc-lift-panel { min-width: 264px; max-width: 340px; }
+/* `aria-busy` on this panel (askLiftLayers, while it reads and while it lifts) is a
+   STATE for assistive tech, not a look — and it has to be pinned as one, because
+   parts/multi-edit.css declares an UNSCOPED `[aria-busy="true"] { opacity: .6;
+   pointer-events: none }` and CSS has no module scope: whether that rule is in the
+   document depends on whether the session has been through /multi. Without this the
+   reading sentence would fade on some routes and not others, and the panel would stop
+   swallowing its own presses mid-read (the pointerdown guard needs the event to land),
+   so an idle click would dismiss it there and do nothing here. Two classes beat one
+   attribute, so this wins wherever both are loaded. */
+.fc-lift-panel[aria-busy="true"] { opacity: 1; pointer-events: auto; }
 .fc-lift-list {
   list-style: none;
   margin: 8px 0 0;
@@ -615,10 +738,16 @@
 }
 /* The enumerator's own words about anything it refused, repaired or capped. */
 .fc-lift-warn { margin-top: 8px; }
+/* Depth intensity (audit A5#2): label left, the select taking the rest of the row. */
+.fc-lift-strength-row { margin-top: 10px; }
+.fc-lift-strength-lab { flex: none; }
+.fc-lift-strength { flex: 1 1 auto; min-width: 0; }
 /* A worded ACTION inside the More panel, as opposed to the labelled controls around
    it: full width, glyph then words, so it reads as a button rather than a row that
-   happens to be clickable. */
-.fc-row-act { display: block; }
+   happens to be clickable. The row itself needs nothing — a `.fc-row-act { display:
+   block }` used to sit here and never applied, because `.fc-row` below is the same
+   specificity and comes later in the same layer, so flex won every time. The whole
+   look is the button's, which is where it now says so. */
 .fc-mp-lift { width: 100%; justify-content: flex-start; gap: 7px; }
 body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 
@@ -1101,7 +1230,7 @@ button.fc-readout:empty { display: none; }
 /* Editor (free-canvas) only — boxes dragged off the artboard stay visible and
    selectable: hit-testing follows the visual overflow, and the box DOM still
    lives inside the canvas so clicks bubble to the overlay's handlers. `> *`
-   un-clips the tool's own clipping root (e.g. layout-studio's .artboard)
+   un-clips the tool's own clipping root (e.g. design's .artboard)
    without naming a tool class. Export is unaffected: the raster capture is
    bounded by the canvas rect, and the vector walkers' out-of-viewBox geometry
    never paints. */

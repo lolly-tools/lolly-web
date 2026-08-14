@@ -108,6 +108,10 @@ const PATHS = {
   // merged: projects.ts HISTORY_ICON === gallery.ts HISTORY_ICON
   history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
   play: '<path d="M5 3 19 12 5 21Z"/>',
+  // Filled skip-to-frame glyphs for the animation transport bar (views/anim-transport.ts):
+  // a bar plus a triangle, drawn solid via icon(..., { filled: true }).
+  skipBack: '<path d="M6 6h2v12H6zM20 6v12l-9-6z"/>',
+  skipForward: '<path d="M16 6h2v12h-2zM4 6l9 6-9 6z"/>',
   externalLink: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
   // merged: valid.ts ICONS.pen === projects.ts EDIT_ICON (a 2.1 vs 2.12 arc-radius rounding difference)
   pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -189,12 +193,24 @@ const PATHS = {
   // Per-operation change-history glyphs — a recognisable mark for each edit we log.
   crop: '<path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/>',
   droplet: '<path d="M12 2.7l5.3 5.3a7.5 7.5 0 1 1-10.6 0z"/>',
+  // Lucide "blend" — two overlapping circles. Reads as opacity / overlay, unlike the
+  // droplet, which looks like a colour/tint control.
+  opacity: '<circle cx="9" cy="9" r="7"/><circle cx="15" cy="15" r="7"/>',
   convert: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
   resize: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>',
   // A vertical double-headed arrow. Drawn upright so it can be ROTATED by whoever uses it
   // — the visualizer turns it 45deg for its "enlarge" control, which is the conventional
   // diagonal expand affordance.
   arrowsV: '<path d="M12 4v16"/><path d="m8 8 4-4 4 4"/><path d="m8 16 4 4 4-4"/>',
+  // Horizontal twin of arrowsV — a left/right double-arrow. Pairs with it as the pitch (X)
+  // / yaw (Y) tilt pair; roll (Z) is the circular rotateCw below.
+  arrowsH: '<path d="M4 12h16"/><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/>',
+  // Single clockwise circular arrow (Lucide rotate-cw) — an in-plane spin, i.e. roll.
+  rotateCw: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  // Translate handles — a double-arrow with a centre tick marking the moved object, so they
+  // read as "move along X / Y" and stay distinct from the tilt rotation arrows above.
+  moveX: '<path d="M2 12h20"/><path d="m6 8-4 4 4 4"/><path d="m18 8 4 4-4 4"/><path d="M12 8.5v7"/>',
+  moveY: '<path d="M12 2v20"/><path d="m8 6 4-4 4 4"/><path d="m8 18 4 4 4-4"/><path d="M8.5 12h7"/>',
   sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>',
   // Image fit modes — a deliberately symmetric pair: the same frame, with the
   // artwork drawn OVERFLOWING it (fill/crop) or INSET within it (fit whole). The

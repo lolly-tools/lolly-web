@@ -77,7 +77,10 @@ import {
   planCameraView, readDepthZ, splitFilterBlur, viewMoves,
   type SeqPlanEnv,
 } from './sequence-plan.ts';
-import { evaluateKf, type KfCameraClip, type KfCameraView, type KfTrack } from '@lolly/engine';
+import {
+  evaluateKf, kfMatrix3dCss,
+  type KfCameraClip, type KfCameraView, type KfMatrix3, type KfTrack,
+} from '@lolly/engine';
 
 export { MIN_SPEED, MAX_SPEED, MIN_TRANSITION_MS, MAX_TRANSITION_MS };
 
@@ -246,10 +249,29 @@ const n3 = (v: number): string => String(Math.round(v * 1000) / 1000);
  * order exactly (bridge/export.ts drawObject). Putting the animation's rotate after
  * the authored one is what keeps a box the user rotated by hand spinning about its
  * own centre rather than swinging around the authored angle.
+ *
+ * P2 — `m3` is the TILTED camera's element-local homography (plans/104 §6.4), and it
+ * takes the leading translate's place and nothing else's. It sits exactly where the
+ * translate sat because that is what it generalises: at `rx = ry = 0` the engine's
+ * matrix IS `translate(dx, dy)` (a pinned golden), so the authored transform, the
+ * rotation and the scale keep composing against it in the order they always did. Null
+ * — every camera before this milestone — reproduces the previous string byte for byte,
+ * which is the whole reason the parameter is optional and defaulted rather than
+ * threaded through every call site.
+ *
+ * ONE `matrix3d` PER ELEMENT, AND THE ELEMENT STAYS FLAT. The matrix carries its own
+ * perspective divide, so no ancestor may declare `perspective` or
+ * `transform-style: preserve-3d` — the Cover Flow rule (`parseCssMatrix` refuses a real
+ * 3D context, and a walker capture of one comes out mis-scaled or blank).
  */
-export function composeTransform(authored: string, tr: { dx: number; dy: number; sc: number; rot: number }): string {
+export function composeTransform(
+  authored: string,
+  tr: { dx: number; dy: number; sc: number; rot: number },
+  m3: KfMatrix3 | null = null,
+): string {
   const parts: string[] = [];
-  if (tr.dx || tr.dy) parts.push(`translate(${n3(tr.dx)}px, ${n3(tr.dy)}px)`);
+  if (m3) parts.push(kfMatrix3dCss(m3));
+  else if (tr.dx || tr.dy) parts.push(`translate(${n3(tr.dx)}px, ${n3(tr.dy)}px)`);
   const auth = (authored || '').trim();
   if (auth && auth !== 'none') parts.push(auth);
   if (tr.rot) parts.push(`rotate(${n3(tr.rot)}deg)`);
@@ -968,7 +990,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
         })
         : {
           dx: off.dx, dy: off.dy, scale: off.sc, rot: off.rot, alpha: off.alpha,
-          blur: rec.filterBlur, z: 0, w: rec.w, h: rec.h, sized: false,
+          blur: rec.filterBlur, z: 0, w: rec.w, h: rec.h, sized: false, m3: null,
         };
       // THE LAYOUT WRITE (§5.2, and the header's stated exception). Gated on `sized`,
       // which is only ever true when the track actually mentioned `w`/`h` — so a stage
@@ -988,7 +1010,14 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
         rec.lastWidth = null;
         rec.lastHeight = null;
       }
-      const transform = composeTransform(rec.transform, { dx: fold.dx, dy: fold.dy, sc: fold.scale, rot: fold.rot });
+      // P2 — a TILTED camera hands the fold a homography, and it goes on this element
+      // and no other: per-element `matrix3d`, flattened, never a shared `perspective`
+      // ancestor (§6.4's Cover Flow rule). The z-index rank below is unaffected and has
+      // to be — under tilt the paint order is still the view-axis order the engine
+      // resolved, and a browser given a flat matrix3d has no depth of its own to sort by.
+      const transform = composeTransform(
+        rec.transform, { dx: fold.dx, dy: fold.dy, sc: fold.scale, rot: fold.rot }, fold.m3,
+      );
       const opacity = composeOpacity(rec.opacity, fold.alpha);
       if (transform !== rec.lastTransform) {
         if (transform) el.style.transform = transform; else el.style.removeProperty('transform');

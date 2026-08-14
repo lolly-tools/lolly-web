@@ -16,6 +16,10 @@
 // purely in native pixels.
 
 import type { InputValue } from '../../../../engine/src/inputs.ts';
+// The lift ladder is written in MAGNIFICATION and stored as depth; the engine owns
+// the conversion (plans/104 §4.3 — `eff` and `z` are only the same sentence at one
+// perspective, so nobody re-types the formula).
+import { depthForEff } from '../../../../engine/src/keyframes.ts';
 
 /** A flat row of a `blocks` input, keyed by field id — the shape of one "box". */
 export type Box = { [key: string]: InputValue | undefined };
@@ -452,6 +456,29 @@ export interface LiftLayerSource {
   src: string;
   /** Fresh box id for this row, minted by the caller (ids must stay unique). */
   id: string | number;
+  /**
+   * The crop the engine gave this layer's document (`SvgLayer.viewBox`), in the
+   * SOURCE SVG's user units — absent when the layer kept the whole stage.
+   *
+   * With {@link LiftOptions.viewBox} it is the affine map from the source box's
+   * rect to this row's, which is what makes a row CONTENT-SIZED: the 16 px icon
+   * gets a 16 px box, so its depth shadow is a 16 px gaussian and not a
+   * full-frame one (plans/104 §9 P3.1 item 1 — eleven full-stage shadows abort
+   * the encoder watchdog).
+   */
+  crop?: { x: number; y: number; w: number; h: number } | null;
+  /**
+   * The layer's INK EXTENT as the engine measured it (`SvgLayer.bbox`), in the
+   * same units as {@link crop}. Used only to decide which rows are geometric
+   * peers ({@link liftSlots}) — never for placement.
+   *
+   * It is a different rectangle from the crop and both are needed: a crop is
+   * intersected with the source viewBox, so three identical cards half off the
+   * edge of a phone screenshot crop to three different widths while remaining
+   * obviously one row of one grid. Depth coherence is a question about the
+   * artwork; placement is a question about the document.
+   */
+  bbox?: { x: number; y: number; w: number; h: number } | null;
 }
 
 /** The extra field ids a lift writes, beyond the geometry `BoxFieldConfig`. */
@@ -464,11 +491,15 @@ export interface LiftFieldConfig {
   textField?: string;
   fillField?: string;
   gradField?: string;
+  /** `object-fit`. A cropped row is written `fill`: its rect IS the image's rect. */
+  fitField?: string;
+  /** `object-position`. Anything but centred takes cropping off the table. */
+  imgPosField?: string;
+  /** A shape clip on the box — per-row clips are not one clip, so: no cropping. */
+  clipField?: string;
 }
 
 export interface LiftOptions {
-  /** Depth step between consecutive layers, px. §7: 0 / 40 / 80 / … */
-  zStep?: number;
   /** Clamp for the depth field — pass `KF_Z_FIELD_CLAMP` from the engine. */
   zClamp?: readonly [number, number];
   /** Group id shared by every lifted row, minted by the caller (freshGroupId). */
@@ -477,10 +508,284 @@ export interface LiftOptions {
   shadow?: string;
   /** Box kind for a row holding an image. Defaults to the source's own kind. */
   kind?: string;
+  /**
+   * The source SVG's own viewBox (`enumerateSvgLayers().viewBox`). Without it
+   * every row keeps the source's rect, exactly as 1.119 did — there is no map
+   * from a layer's crop to a rect on the canvas.
+   */
+  viewBox?: { x: number; y: number; w: number; h: number } | null;
+  /** How the source box renders the image: `contain` (default), `cover`, `fill`. */
+  fit?: string;
+  /**
+   * Depth-intensity multiplier for the derived stack (audit A5#2) — one of
+   * {@link LIFT_STRENGTH}. Absent / 1 is the shipped taste ceiling, so a lift with no
+   * strength chosen is byte-identical to every lift before the control existed.
+   */
+  strength?: number;
 }
 
-/** §7: 0 / 40 / 80 / … — enough separation to read as depth, small enough to stay tasteful. */
-export const LIFT_Z_STEP = 40;
+// ─── the depth ladder ───────────────────────────────────────────────────────
+
+/**
+ * How much bigger than the page the FIRST lifted layer reads, at the default
+ * camera — the ladder's rung height where there is room for a full one.
+ *
+ * The ladder is written in magnification, not in depth, because magnification
+ * is the thing a person sees and depth is the thing a file stores. `z` is only
+ * meaningful against a perspective: at P = 1200 a step of 40 px is +3.4 %, and
+ * the same 40 px is +0.7 % at P = 6000. So the step is 2 % and the engine
+ * ({@link depthForEff}) says what that costs in z — 23.53 px today.
+ */
+export const LIFT_EFF_STEP = 0.02;
+
+/**
+ * The magnification the TOP of a lifted stack reaches, and never passes,
+ * however many layers there are — plans/104 §5.3's taste ceiling (the "tasteful
+ * eff 1.05–1.2 band"), which is z = 200 at P = 1200.
+ *
+ * This is the fix for a content-blind ladder. A fixed 40 px per layer is fine
+ * for three layers and absurd for thirty: the acceptance pass measured a
+ * 54-layer lift where 31 rows sat pinned at the field clamp (z = 900) with NO
+ * relative parallax at all, and the layers that did move spread 125× apart —
+ * a "stack" whose top plate flew past the camera at eff 10 while its bottom
+ * crawled at 1.2. Above ~11 layers the rung shrinks so the top rung still lands
+ * here; below it, every rung is a full {@link LIFT_EFF_STEP}.
+ */
+export const LIFT_EFF_CEIL = 1.2;
+
+/**
+ * Depth-intensity presets for the Lift dialog (audit A5#2) — a multiplier on the
+ * per-rung magnification `liftDepths` derives. `medium` is 1: the tasteful ceiling this
+ * feature shipped with, so a Medium lift is BYTE-IDENTICAL to every lift before this
+ * control existed. `subtle` flattens it for busy artwork; `dramatic` pushes past the
+ * ceiling for real parallax on a sparse hero shot — the "less flat" the audit asked for,
+ * as an opt-in rather than a moved default. The numbers stay well clear of collapsing the
+ * 0.01 px depth quantum even at the 64-layer cap (closest rungs ~0.24 px × 0.6 ≈ 0.14 px).
+ */
+export const LIFT_STRENGTH: Readonly<Record<string, number>> = Object.freeze({
+  subtle: 0.6,
+  medium: 1,
+  dramatic: 1.9,
+});
+
+/**
+ * The depth for each row of a stack, given each row's DEPTH SLOT.
+ *
+ * Slots rather than positions, because {@link liftSlots} puts several rows on one
+ * rung — a 3 × 3 grid of cards is one surface at one height, and staggering its
+ * cells reads as a bug, not as depth.
+ *
+ * Rows sharing a rung do NOT share a depth exactly: they spread across that one
+ * rung, in paint order, by a fraction of it. plans/104 P3.2's "one depth, or a
+ * whisper apart — at most one band step", and the whisper is doing real work.
+ * Equal depths would make the depth sort (§4.2) a tie broken by DOM order, which
+ * is correct but leaves two plates at one z and a stack with no ordering of its
+ * own; a nine-hundredth of a magnification between them keeps every depth
+ * DISTINCT and monotone in paint order while the grid still reads as one
+ * surface. Nothing else in the feature has to know about peers at all.
+ *
+ * Properties this guarantees, which the P3.1 acceptance pass measured the
+ * absence of: every depth inside the band (so nothing reaches the guard, nothing
+ * reaches the field clamp), rungs of equal magnification (so the parallax
+ * between neighbours is even), and every depth DISTINCT (measured on all six
+ * banked shots; at the 64-layer cap the closest two rungs are ~0.24 px apart
+ * against the 0.01 px quantum, so distinctness survives the rounding).
+ *
+ * ⚑ NOT "strictly increasing depth per row", which this docstring used to claim
+ * and which is false on half the banked shots — `ai-stance-change-history` reads
+ * `0, 14.16, …, 80.22, 48.14, 92.56, …`. It is monotone in RUNG, and a rung is
+ * monotone in paint order only where no rows are peers: {@link liftSlots} puts
+ * peers on one rung and peer sets interleave in DOM order, so their rungs
+ * interleave with them. That is the behaviour three paragraphs up asks for
+ * ("interleaving is allowed, inversions are not") — the guarantee list simply
+ * over-stated it.
+ */
+export function liftDepths(
+  slots: readonly number[], zClamp?: readonly [number, number], strength = 1,
+): number[] {
+  if (!slots.length) return [];
+  // Where each row sits on the ladder: its rung, plus its place within the rung.
+  const size = new Map<number, number>();
+  for (const s of slots) size.set(s, (size.get(s) ?? 0) + 1);
+  const seen = new Map<number, number>();
+  const rungs = slots.map((s) => {
+    const rank = seen.get(s) ?? 0;
+    seen.set(s, rank + 1);
+    const base = Number.isFinite(s) && s > 0 ? s : 0;
+    return base + rank / Math.max(1, size.get(s) ?? 1);
+  });
+  const top = rungs.reduce((a, b) => Math.max(a, b), 0);
+  // `strength` scales the per-rung magnification (audit A5#2 — the Lift dialog's Depth
+  // intensity). Default 1 is the shipped ceiling, so an unscaled lift is byte-identical.
+  // Guarded so a junk value can never zero the ladder (which would TIE every depth and
+  // collapse the paint order) or invert it: <=0 / non-finite falls back to 1.
+  const k = Number.isFinite(strength) && strength > 0 ? strength : 1;
+  const step = (top > 0 ? Math.min(LIFT_EFF_STEP, (LIFT_EFF_CEIL - 1) / top) : 0) * k;
+  const [lo, hi] = zClamp ?? [-Infinity, Infinity];
+  return rungs.map((rung) => {
+    // §4.6's z quantum is 0.01 px, and the ladder is stored, so it quantises here
+    // rather than leaving 23.529411764705884 in a URL.
+    const z = Math.round(depthForEff(1 + rung * step) * 100) / 100;
+    return Math.min(hi, Math.max(lo, z));
+  });
+}
+
+/** Relative size difference two rows may have and still be peers. */
+export const LIFT_PEER_SIZE_TOL = 0.12;
+/** How far apart, as a fraction of size, two peers' edges may sit and still align. */
+export const LIFT_PEER_ALIGN_TOL = 0.25;
+/**
+ * How far apart two peers may sit ALONG their shared band, in multiples of the
+ * larger one's size, and still be neighbours.
+ *
+ * Union-find chains, so a row of ten icons still links end to end at one hop
+ * each — this only stops the hop that is not a neighbour at all. Measured on
+ * `seq-studio-timeline`: a 16 px toolbar icon and an 18 px clip icon 146 px
+ * below it are the same size and the same column, and chaining them dragged the
+ * toolbar's whole row down among the clip bars — where the inversions it caused
+ * then dissolved the row entirely. A grid is a local thing.
+ */
+export const LIFT_PEER_GAP = 4;
+
+/**
+ * How much of the smaller box two rows must share before a depth INVERSION
+ * between them counts as repainting the picture.
+ *
+ * Not zero, and the reason is measured: `bs-palette-pane`'s swatch wells are
+ * 66 px on a 55 px pitch and each carries a drop shadow, so every row of that
+ * grid overlaps its neighbour a little and each chip kisses the NEXT well by
+ * about 4 % of its own area. At a zero threshold that hairline is enough to
+ * refuse coherence on the one piece of content coherence exists for — fifty
+ * swatches, fifty depths. At a quarter, an edge that two anti-aliased pixels
+ * wide is tolerated and a card genuinely sitting on a panel is not.
+ */
+export const LIFT_PEER_OVERLAP_TOL = 0.25;
+
+/**
+ * Which rows share a depth: geometric PEERS get one rung between them.
+ *
+ * A lift reads its stack out of paint order, which is a fine default and a poor
+ * description of a grid. The nine cards of `cc-verify-mobile`'s 3 × 3 block are
+ * one surface — same size, same rows, same columns — and a ladder that lifts
+ * each one 40 px above the last turns a grid into a staircase. So rows that are
+ * the same size AND share a row band or a column band are one rung.
+ *
+ * Two decisions worth their sentences:
+ *
+ *   • **Alignment is required, not just size.** Two 48 px icons at opposite
+ *     corners of a page are the same size and are not a grid. Sharing a band is
+ *     what makes a set read as one surface.
+ *   • **Interleaving is allowed, inversions are not.** A swatch grid alternates
+ *     66 px wells and 48 px chips, so the two peer sets interleave in paint
+ *     order and their rungs necessarily do too. That is fine while the rows it
+ *     inverts do not overlap — draw order only matters where ink meets ink.
+ *     Where an inversion WOULD flip overlapping ink, the group causing it gives
+ *     up its coherence (its members become singletons) rather than repaint the
+ *     picture. plans/104 §4.2 sorts paint order by resolved depth, so this is a
+ *     property of the render, not a nicety.
+ *
+ * Rows with no crop (unmeasured ink, a full-stage layer) are always their own
+ * rung: nothing is known about their extent, and the background of a screenshot
+ * is not a peer of anything.
+ */
+export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefined>): number[] {
+  const n = crops.length;
+  if (n <= 1) return crops.map((_, i) => i);
+  const box = (i: number): { x: number; y: number; w: number; h: number } | null => {
+    const c = crops[i];
+    return c && Number.isFinite(c.w) && Number.isFinite(c.h) && c.w > 0 && c.h > 0 ? c : null;
+  };
+
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]!]!; i = parent[i]!; } return i; };
+  const near = (a: number, b: number, scale: number, tol: number): boolean =>
+    Math.abs(a - b) <= tol * Math.max(1e-6, scale);
+
+  const join = (dropped: ReadonlySet<number>): number[] => {
+    for (let i = 0; i < n; i++) parent[i] = i;
+    for (let i = 0; i < n; i++) {
+      const a = box(i);
+      if (!a || dropped.has(i)) continue;
+      for (let j = i + 1; j < n; j++) {
+        const b = box(j);
+        if (!b || dropped.has(j) || find(i) === find(j)) continue;
+        const sameSize = near(a.w, b.w, Math.max(a.w, b.w), LIFT_PEER_SIZE_TOL)
+          && near(a.h, b.h, Math.max(a.h, b.h), LIFT_PEER_SIZE_TOL);
+        if (!sameSize) continue;
+        const mw = Math.max(a.w, b.w), mh = Math.max(a.h, b.h);
+        const sameRow = near(a.y, b.y, mh, LIFT_PEER_ALIGN_TOL) && Math.abs(a.x - b.x) <= LIFT_PEER_GAP * mw;
+        const sameCol = near(a.x, b.x, mw, LIFT_PEER_ALIGN_TOL) && Math.abs(a.y - b.y) <= LIFT_PEER_GAP * mh;
+        if (!sameRow && !sameCol) continue;
+        const ra = find(i), rb = find(j);
+        if (ra !== rb) parent[ra] = rb;
+      }
+    }
+    // Slot numbers follow FIRST APPEARANCE, so the ladder still climbs with the
+    // artwork: the first row of a group fixes the group's rung.
+    const slotOf = new Map<number, number>();
+    return Array.from({ length: n }, (_, i) => {
+      const root = box(i) && !dropped.has(i) ? find(i) : ~i; // singletons get a private key
+      let s = slotOf.get(root);
+      if (s == null) { s = slotOf.size; slotOf.set(root, s); }
+      return s;
+    });
+  };
+
+  const overlaps = (i: number, j: number): boolean => {
+    const a = box(i), b = box(j);
+    // ⚑ An unmeasured row does NOT veto coherence, which is the one place this
+    // function guesses instead of refusing. A row is unmeasured because it holds
+    // `<text>` or `<use>` — a glyph run, whose ink is a fraction of any box it
+    // sits in — and the alternative was measured on the P3 demo: four identical
+    // cards, each followed by its own caption, lost their grid entirely because
+    // an unmeasurable caption sat between every pair of them. The cost of being
+    // wrong is a label drawn under a card it does not belong to, in a proposal
+    // the user accepts or cancels; the cost of refusing is that no labelled grid
+    // ever coheres.
+    if (!a || !b) return false;
+    const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    if (w <= 0 || h <= 0) return false;
+    return w * h >= LIFT_PEER_OVERLAP_TOL * Math.min(a.w * a.h, b.w * b.h);
+  };
+
+  const dropped = new Set<number>();
+  for (let pass = 0; pass <= n; pass++) {
+    const slots = join(dropped);
+    // An inversion is a pair the depth sort would repaint out of authored order.
+    const guilty = new Map<number, number>();
+    const size = new Map<number, number>();
+    for (let i = 0; i < n; i++) {
+      if (!box(i) || dropped.has(i)) continue;
+      const r = find(i);
+      size.set(r, (size.get(r) ?? 0) + 1);
+    }
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (slots[i]! <= slots[j]! || !overlaps(i, j)) continue;
+        // Both ends of an inversion are implicated; only a MERGED group can give
+        // anything up, so singletons are counted and then never chosen.
+        for (const k of [i, j]) {
+          if (!box(k) || dropped.has(k)) continue;
+          const r = find(k);
+          guilty.set(r, (guilty.get(r) ?? 0) + 1);
+        }
+      }
+    }
+    if (!guilty.size) return slots;
+    let worst = -1;
+    let worstCount = 0;
+    for (const [root, count] of guilty) {
+      if ((size.get(root) ?? 0) < 2) continue;
+      if (count > worstCount) { worstCount = count; worst = root; }
+    }
+    // Nothing left to give up: the inversions are between rows that were never
+    // merged, so coherence is not what caused them — fall back to one rung each.
+    if (worst < 0) break;
+    for (let i = 0; i < n; i++) if (box(i) && !dropped.has(i) && find(i) === worst) dropped.add(i);
+  }
+  return crops.map((_, i) => i);
+}
 
 /**
  * The rows that replace a lifted box: one per layer, same geometry, staggered depth.
@@ -502,9 +807,46 @@ export const LIFT_Z_STEP = 40;
  *
  * …so bg → layer 1 … layer N → text comes out in the original order, and nothing
  * the user authored is silently dropped. Everything else on the source row
- * (rotation, opacity, fit, blend, clip, frame, timing) is inherited by every row,
- * because those are properties of WHERE the artwork sits, and every layer sits
- * in the same place.
+ * (rotation, opacity, blend, clip, frame, timing) is inherited by every row,
+ * because those are properties of WHERE the artwork sits.
+ *
+ * ## Rows are SIZED TO THEIR INK where the engine could crop safely
+ *
+ * A row whose layer came back with a `crop` gets the rect that crop maps to
+ * inside the source box, not the source's own rect. Same picture — the derived
+ * document's viewBox is that same crop, so a smaller window over a
+ * proportionally smaller box is an identity — and everything that follows the
+ * BOX rather than the ink stops being charged for the whole stage: a depth
+ * shadow becomes a shadow of the thing, a plate becomes the size of the thing,
+ * and the fx cache stops evicting itself (measured on the six banked shots: the
+ * per-layer filtered area falls to 6–30 % of the full-stage cost).
+ *
+ * Placement is exact rather than tidy: the rect is quantised to 0.01 px instead
+ * of rounded to whole pixels, because a rounded row is a row whose ink has moved
+ * up to half a pixel away from where the original drew it, and the identity
+ * property is measured against a real renderer.
+ *
+ * Which rows crop is not this function's decision — it is
+ * {@link liftCanCrop}'s, asked BEFORE the documents were derived, because a
+ * cropped document needs a cropped row and the two are decided in different
+ * places. Here a layer that arrived with a crop is placed at it, and a layer
+ * that did not keeps the source's rect; the only refusal left is geometric (no
+ * viewBox to map through, or a `cover` fit whose content overflows the box —
+ * a sub-rect row would reveal what the box was clipping).
+ *
+ * ⚑ AND IT IS NOT RE-ASKED HERE, which an earlier version of this comment claimed.
+ * It cannot usefully be: by the time `liftRows` runs the DOCUMENTS already carry the
+ * crop as their viewBox, so answering "no" now would place a cropped document in a
+ * full-stage row — the layer blown up to the whole box, which is worse than the thing
+ * the predicate was refusing. The geometric half IS re-derived (via
+ * {@link liftContentRect} above), because that half is about the row and can still be
+ * honoured. The paint half — a corner radius, a shape clip, an off-centre
+ * `object-position`, a background fill, a gradient, a caption — is decided once, at the
+ * dialog. KNOWN WINDOW, small and stated rather than papered over: `runLift` re-reads
+ * `getBoxes()` and tolerates the box having moved while the assets were written, so a
+ * box that GAINS a caption or a background between opening the dialog and confirming it
+ * gets cropped rows anyway (and the background ends up confined to the bottom layer's
+ * ink). Closing it means re-deriving the documents at commit time, not re-asking here.
  *
  * Note on `shadow: depth` at z = 0: the derivation is a pure function of z
  * (§12.5), and at z = 0 it is still a 10 px ground shadow — the bottom layer is
@@ -518,19 +860,31 @@ export function liftRows(
   opts: LiftOptions = {},
 ): Box[] {
   if (!Array.isArray(layers) || !layers.length) return [];
-  const step = Number.isFinite(opts.zStep as number) ? (opts.zStep as number) : LIFT_Z_STEP;
-  const [zMin, zMax] = opts.zClamp ?? [-Infinity, Infinity];
   const shadow = opts.shadow === undefined ? 'depth' : opts.shadow;
   const last = layers.length - 1;
 
+  const src = boxRect(source, cfg);
+  const content = liftContentRect(src, opts.viewBox, String(opts.fit ?? 'contain'));
+  const crops = layers.map((L) => (content && L.crop ? L.crop : null));
+  // Peers are decided on INK, cropped or not: coherence is a property of the
+  // artwork, so a lift with cropping refused still keeps its grids together.
+  const depths = liftDepths(liftSlots(layers.map((L, i) => L.bbox ?? crops[i] ?? null)), opts.zClamp, opts.strength);
+
   return layers.map((layer, i) => {
-    const row: Box = { ...source };
+    let row: Box = { ...source };
     if (cfg.idField) row[cfg.idField] = layer.id;
     row[cfg.imageField] = layer.src;
     if (cfg.kindField && opts.kind) row[cfg.kindField] = opts.kind;
     if (cfg.groupField && opts.group) row[cfg.groupField] = opts.group;
-    if (cfg.zField) row[cfg.zField] = Math.min(zMax, Math.max(zMin, i * step));
+    if (cfg.zField) row[cfg.zField] = depths[i]!;
     if (cfg.shadowField && shadow) row[cfg.shadowField] = shadow;
+    const crop = crops[i];
+    if (crop && content) {
+      row = liftPlaceRow(row, src, content, crop, cfg);
+      // The row's rect IS the crop's rect, so `fill` is the identity map and the
+      // one fit that cannot letterbox it back by a rounding hair.
+      if (cfg.fitField) row[cfg.fitField] = 'fill';
+    }
     // Paint order, restated as code: background on the bottom row, text on the top.
     if (i > 0) {
       if (cfg.fillField) row[cfg.fillField] = '';
@@ -539,6 +893,114 @@ export function liftRows(
     if (i < last && cfg.textField) row[cfg.textField] = '';
     return row;
   });
+}
+
+/** Where the source SVG's viewBox actually lands inside the source box, or null. */
+interface LiftContent { x: number; y: number; sx: number; sy: number; vx: number; vy: number }
+
+/**
+ * Is this box one whose layers may be cropped to their ink? — ASK BEFORE
+ * ENUMERATING (`enumerateSvgLayers(markup, { cropToInk: liftCanCrop(…) })`).
+ *
+ * The decision has to be made before the documents are derived, because a
+ * cropped document and a full-stage row are not the same picture: the crop is
+ * the document's viewBox, so a row that ignores it renders the layer blown up to
+ * the whole box. ⚑ ONE CALLER — the Lift dialog, which asks this to configure the
+ * engine (and {@link liftCropScale} beside it, for the scale the crop is snapped
+ * to). `liftRows` does NOT ask it again: see its own docstring for why re-asking
+ * at commit time would be actively wrong, which half it does re-derive, and the
+ * window that leaves.
+ *
+ * It refuses on geometry it cannot map ({@link liftContentRect}) and on paint the
+ * split would move: a corner radius or a shape clip (per-row clips are not one
+ * clip), an `object-position` that is not centred, and — the two that surprise —
+ * a background fill or a caption, because `liftRows` leaves those on the bottom
+ * and top rows, and a background confined to one layer's crop is not a
+ * background. Such a box lifts exactly as it did in 1.119: full-stage rows.
+ */
+export function liftCanCrop(
+  source: Box,
+  cfg: BoxFieldConfig & LiftFieldConfig,
+  opts: Pick<LiftOptions, 'viewBox' | 'fit'> = {},
+): boolean {
+  if (!liftContentRect(boxRect(source, cfg), opts.viewBox, String(opts.fit ?? 'contain'))) return false;
+  if (cfg.radiusField && num(source[cfg.radiusField], 0) > 0) return false;
+  if (cfg.clipField) {
+    const clip = String(source[cfg.clipField] ?? '').trim().toLowerCase();
+    if (clip && clip !== 'none') return false;
+  }
+  if (cfg.imgPosField) {
+    const pos = String(source[cfg.imgPosField] ?? '').trim().toLowerCase();
+    if (pos && pos !== 'center' && pos !== 'centre' && pos !== '50% 50%') return false;
+  }
+  if (cfg.fillField && source[cfg.fillField]) return false;
+  if (cfg.gradField && source[cfg.gradField]) return false;
+  if (cfg.textField && source[cfg.textField]) return false;
+  return true;
+}
+
+/**
+ * The scale a cropped row will be PLACED at — user units → canvas px, per axis —
+ * or null when there is no map (the same refusal {@link liftCanCrop} makes).
+ *
+ * Handed to `enumerateSvgLayers`'s `cropScale` so the engine can snap each crop
+ * to whole ROW pixels instead of whole user units. The two are the same number
+ * only at k = 1, and a lifted box is any size: at k = 0.694 (a 1440-wide shot in
+ * a 1000-wide box) a user-unit crop puts every row between device pixels and the
+ * browser resamples the whole layer, which costs more fidelity than the crop was
+ * ever going to buy. Same inputs as `liftRows`' own placement, and it is the same
+ * function underneath, so the dialog and the write cannot disagree about k.
+ */
+export function liftCropScale(
+  source: Box,
+  cfg: BoxFieldConfig & LiftFieldConfig,
+  opts: Pick<LiftOptions, 'viewBox' | 'fit'> = {},
+): { x: number; y: number } | null {
+  const c = liftContentRect(boxRect(source, cfg), opts.viewBox, String(opts.fit ?? 'contain'));
+  return c ? { x: c.sx, y: c.sy } : null;
+}
+
+function liftContentRect(
+  src: Rect,
+  viewBox: LiftOptions['viewBox'],
+  fit: string,
+): LiftContent | null {
+  if (!viewBox || !(viewBox.w > 0 && viewBox.h > 0) || !(src.w > 0 && src.h > 0)) return null;
+  const base = { vx: viewBox.x, vy: viewBox.y };
+  if (fit === 'fill') return { x: src.x, y: src.y, sx: src.w / viewBox.w, sy: src.h / viewBox.h, ...base };
+  const k = fit === 'cover'
+    ? Math.max(src.w / viewBox.w, src.h / viewBox.h)
+    : Math.min(src.w / viewBox.w, src.h / viewBox.h);
+  const w = viewBox.w * k;
+  const h = viewBox.h * k;
+  // `cover` that actually crops: the box is hiding part of the artwork, and a row
+  // placed at the artwork's own rect would put the hidden part back on the canvas.
+  if (w > src.w + 1e-6 || h > src.h + 1e-6) return null;
+  return { x: src.x + (src.w - w) / 2, y: src.y + (src.h - h) / 2, sx: k, sy: k, ...base };
+}
+
+/** Write one row's rect: the crop mapped into the box, rotated with the box. */
+function liftPlaceRow(
+  row: Box, src: Rect, c: LiftContent,
+  crop: { x: number; y: number; w: number; h: number },
+  cfg: BoxFieldConfig,
+): Box {
+  const w = crop.w * c.sx;
+  const h = crop.h * c.sy;
+  const x = c.x + (crop.x - c.vx) * c.sx;
+  const y = c.y + (crop.y - c.vy) * c.sy;
+  // A rotated box rotates about ITS OWN centre, so a sub-rect that inherits the
+  // angle has to have its CENTRE carried round the source's centre first —
+  // otherwise every row spins in place and the picture comes apart.
+  const centre = rectCentre(src);
+  const v = rotateVec(x + w / 2 - centre.x, y + h / 2 - centre.y, src.rot);
+  const q = (n: number): number => Math.round(n * 100) / 100;
+  const next: Box = { ...row };
+  next[cfg.xField] = q(centre.x + v.x - w / 2);
+  next[cfg.yField] = q(centre.y + v.y - h / 2);
+  next[cfg.wField] = q(w);
+  next[cfg.hField] = q(h);
+  return next;
 }
 
 /**
@@ -818,7 +1280,7 @@ export function pathEndPoints(cubics: CubicTuple[]): { start: Point; end: Point 
 // The canonical stored form is SPACE-separated, deliberately: the compact blocks URL
 // splits rows on '~' and fields on ',', and neither separator can be escaped inside a
 // value (see lib/blocks-url.ts), so a comma-bearing dash array would push every
-// layout-studio link onto the lossless JSON fallback. Commas are ACCEPTED on the way in
+// design link onto the lossless JSON fallback. Commas are ACCEPTED on the way in
 // (they are what every other tool prints) and normalised away by formatDashArray.
 //
 // This is the SHELL's copy of a contract the engine also owns: at runtime the panel

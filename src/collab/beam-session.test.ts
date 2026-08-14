@@ -244,7 +244,7 @@ function makeHost(): FakeHost {
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const PHOTO = 'user/upload/1-photo.png';
 const LOGO = 'suse/logo/primary';
-const SLOT = 'layout-studio:1000';
+const SLOT = 'design:1000';
 
 /** Deterministic pseudo-random bytes (xorshift32) — same seed, same beam, always. */
 function bytesOf(n: number, seed: number): Uint8Array {
@@ -287,7 +287,7 @@ function ref(source: string, id: string): Record<string, unknown> {
 /** One catalog ref (listed, never sent) and one upload (which must travel). */
 function fixtureSession(): Record<string, unknown> {
   return {
-    __toolId: 'layout-studio',
+    __toolId: 'design',
     __toolVersion: '1.0.0',
     __label: 'Berlin poster',
     logo: ref('library', LOGO),
@@ -758,7 +758,7 @@ test('sendCurrentSession packs a live, unsaved state — no slot required', asyn
 
   assert.equal(hostB.sessions.size, 1);
   const [slot, saved] = [...hostB.sessions.entries()][0]!;
-  assert.ok(slot.startsWith('layout-studio:'), `minted from the tool id, got ${slot}`);
+  assert.ok(slot.startsWith('design:'), `minted from the tool id, got ${slot}`);
   assert.equal(saved.data.__label, 'Unsaved draft (from Andy)');
   const asset = [...hostB.records.values()][0]!;
   assert.equal((saved.data.photo as { id: string }).id, asset.id);

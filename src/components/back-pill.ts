@@ -45,6 +45,14 @@ export interface BackTarget {
   label: string;
   /** True when clicking should pop the history entry instead of pushing a new one. */
   useHistory: boolean;
+  /**
+   * True when the pill is the front-door escape rather than a real "back": either
+   * there is no previous view (a direct/deep-link entry), OR the resolved back
+   * target IS the current view (a self-loop — pressing back would land where you
+   * already are). The pill wears a HOME icon in this case instead of the back
+   * arrow, so it reads as "leave to Home" rather than a back that goes nowhere.
+   */
+  isHome: boolean;
 }
 
 export interface BackPillOpts {
@@ -79,12 +87,33 @@ const sameTarget = (a: string, b: string): boolean =>
  */
 export function resolveBackTarget(opts: BackPillOpts = {}): BackTarget {
   const prev = getPrevView();
+  // The view we are on right now, so a back target that resolves to THIS view can
+  // be caught and turned into a Home escape instead of a button that loops.
+  const hereRel = (() => {
+    try {
+      const u = new URL(window.location.href);
+      return u.pathname + u.search + u.hash;
+    } catch { return window.location.hash; }
+  })();
+  // The front-door escape — no real "back" exists, so leave to Home. `isHome`
+  // makes the pill wear a house icon rather than a back arrow.
+  //
+  // The href MUST be root-absolute. A bare '#/' resolves against whatever path
+  // we're on, and a tool's canonical URL is the PATH form /t/<id> — so '#/'
+  // became /t/<id>#/, which parseRoute (main.ts) reads as … the same tool: hash
+  // '/' is skipped, the /t/<id> path branch wins. That left anyone who opened a
+  // tool link directly with no way out of the editor at all.
+  const home = (): BackTarget => ({ href: '/#/', label: opts.label ?? t('Home'), useHistory: false, isHome: true });
+
   if (opts.href) {
+    // A forced target that IS the current view would loop → Home instead.
+    if (sameTarget(opts.href, hereRel)) return home();
     const match = !!prev && sameTarget(prev.href, opts.href);
     return {
       href: opts.href,
       label: opts.label ?? (match ? prev!.label : t('Back')),
       useHistory: match && canGoBack(),
+      isHome: false,
     };
   }
   // A known previous view always NAMES the pill and is always where it goes —
@@ -92,20 +121,15 @@ export function resolveBackTarget(opts: BackPillOpts = {}): BackTarget {
   // sessionStorage. Only the mechanism varies: this document pushed an entry
   // (canGoBack) → pop it, so repeated backs unwind rather than pile up;
   // otherwise (reloaded straight onto this view) there's no entry of ours to
-  // pop, so go forward to the same place.
-  if (prev) {
-    return { href: prev.href, label: opts.label ?? prev.label, useHistory: canGoBack() };
+  // pop, so go forward to the same place. EXCEPT when that previous view is the
+  // one we are already on (entering a view directly can record it as its own
+  // previous) — a back to yourself is not a back, so escape to Home.
+  if (prev && !sameTarget(prev.href, hereRel)) {
+    return { href: prev.href, label: opts.label ?? prev.label, useHistory: canGoBack(), isHome: false };
   }
-  // No previous view — a direct visit / fresh session (a shared /t/<id> link, a
-  // reloaded editor). The only honest answer is the app's front door, so the pill
-  // says "Home" and goes there.
-  //
-  // The href MUST be root-absolute. A bare '#/' resolves against whatever path
-  // we're on, and a tool's canonical URL is the PATH form /t/<id> — so '#/'
-  // became /t/<id>#/, which parseRoute (main.ts) reads as … the same tool: hash
-  // '/' is skipped, the /t/<id> path branch wins. That left anyone who opened a
-  // tool link directly with no way out of the editor at all.
-  return { href: '/#/', label: opts.label ?? t('Home'), useHistory: false };
+  // No previous view (or it loops to here) — a direct visit / fresh session (a
+  // shared /t/<id> link, a reloaded editor). The only honest answer is Home.
+  return home();
 }
 
 /** The pill's markup. `data-back-pill` carries the mode so mountBackPill()
@@ -114,10 +138,14 @@ export function backPillHtml(opts: BackPillOpts = {}): string {
   const target = resolveBackTarget(opts);
   const cls = opts.class ?? 'home-full';
   const mode = target.useHistory ? 'history' : 'link';
-  const arrow = `<span class="back-pill-icon" aria-hidden="true">${icon('arrowLeft', { size: 18 })}</span>`;
+  // A house glyph when the pill is the front-door escape (no real back / a back
+  // that would loop to this same view); the back arrow otherwise.
+  const glyph = target.isHome ? 'home' : 'arrowLeft';
+  const arrow = `<span class="back-pill-icon" aria-hidden="true">${icon(glyph, { size: 18 })}</span>`;
   if (opts.iconOnly) {
+    const aria = target.isHome ? target.label : tRaw('Back to {view}', { view: target.label });
     // nosemgrep: lolly-href-escape-is-not-scheme-validation — resolveBackTarget() returns only an origin-relative in-app route (back-nav toRelative(), the '/#/p…' returnTo marker, or the '/#/' literal)
-    return `<a href="${escape(target.href)}" class="${cls}" data-back-pill="${mode}" aria-label="${escape(tRaw('Back to {view}', { view: target.label }))}">${arrow}</a>`;
+    return `<a href="${escape(target.href)}" class="${cls}" data-back-pill="${mode}" aria-label="${escape(aria)}">${arrow}</a>`;
   }
   // nosemgrep: lolly-href-escape-is-not-scheme-validation — same resolveBackTarget() origin-relative route as above
   return `<a href="${escape(target.href)}" class="tools-home${cls ? ` ${cls}` : ''}" data-back-pill="${mode}">${arrow}<span class="back-pill-label">${escape(target.label)}</span></a>`;

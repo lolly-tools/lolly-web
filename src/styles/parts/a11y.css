@@ -310,7 +310,7 @@ html[data-a11y-contrast="high"] .color-input:focus {
 /* ─── The render canvas keeps the theme's ink under high contrast (@layer a11y) ─
    parts/base.css sets `body { color: hsl(var(--foreground)) }`, and that
    declaration is INHERITED by tool markup: most templates set no colour of their
-   own, several draw with `currentColor` (e.g. layout-studio's undrawn-path
+   own, several draw with `currentColor` (e.g. design's undrawn-path
    placeholder), and neither #tool-content nor the offscreen export stages
    .pro-export-canvas / .me-canvas declare a colour. So whatever --foreground
    resolves to is the ink of the live canvas AND of the stage every export is

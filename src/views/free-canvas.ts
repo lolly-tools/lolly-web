@@ -65,7 +65,7 @@ import {
   // Lift layers (plans/104 §7): the pure box synthesis. The ENUMERATION is the
   // engine's (`enumerateSvgLayers`) and is fetched lazily with the dialog, because a
   // tag scanner has no business in the chunk of every editor that never lifts.
-  isSvgImageRef, liftRows, applyLift, LIFT_Z_STEP,
+  isSvgImageRef, liftRows, applyLift, liftCanCrop, liftCropScale, LIFT_STRENGTH,
 } from './free-canvas-math.ts';
 import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box } from './free-canvas-math.ts';
 // Phase-A spatial-index pick: grid-accelerated on large docs, identical result to the
@@ -113,8 +113,9 @@ import { takePendingDesignImport } from '../lib/drop-router.ts';
 // The boot-path slice of user-fonts (NOT ../user-fonts.ts, which would drag the
 // whole Google-font fetcher into this view chunk — see user-fonts.ts:73-80).
 import { brandFontFamilies } from '../lib/register-user-fonts.ts';
-import { LOLLY_ICON } from '../lib/lolly-badge.ts';
+import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import { ensureRowIds, ulid } from '../lib/row-id.ts';
+import { mountCssEditor } from '../lib/css-code-editor.ts';
 import { announce } from '../a11y.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { escape } from '../utils.ts';
@@ -390,6 +391,7 @@ interface ToolbarActions {
   save(): void;
   copy(): void;
   share(): void;
+  present?(): void;                  // open the frames as a fullscreen deck (plan 112); absent = not a frame tool
   canSave?: boolean;                 // omit the Save icon for tools that don't persist a session
   dirtyRef?: HTMLElement | null;     // element whose `is-unsaved` class the Save icon mirrors
 }
@@ -456,6 +458,18 @@ interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; a
  * drag move the shot half as far at 50 % and twice as far at 200 %.
  */
 interface CamPanGesture extends GestureBase { type: 'campan'; client: Point; dx: number; dy: number }
+/**
+ * The CAMERA TILT drag (plans/104 §8, P2): shift + empty-stage drag, the chord §8
+ * reserved at M2.5 ("shift-drag reserved for tilt (P2)") and P2 finally spends.
+ *
+ * CLIENT px, and deliberately NOT native ones — the opposite of its `campan` sibling,
+ * for the same reason that one converts. A pan writes a MODEL DISPLACEMENT, so it must
+ * track the hand through the canvas zoom; a tilt writes an ANGLE, which has no length
+ * in stage space at all. Converting here would make the same wrist movement turn the
+ * camera four times as far at 25 % zoom as at 100 %, which is a dial whose gearing
+ * depends on how far you happen to be zoomed out.
+ */
+interface CamTiltGesture extends GestureBase { type: 'camtilt'; client: Point; dx: number; dy: number }
 interface CreateGesture extends GestureBase { type: 'create'; origin: Point; seed: Box; others: AABB[]; corner?: Point }
 // Line tool — one drag draws a TWO-NODE authored path (plan 96 P2; it made a connector
 // edge under plan 90). Both ends are plain canvas points: a line is a path box like any
@@ -482,13 +496,14 @@ interface PenMarqueeGesture extends GestureBase { type: 'penmarquee'; origin: Po
 /** One contour's slice of the combined node-edit path: how many nodes it owns, and the
  *  kind + closed flag to restore when the flat run is split back into real contours. */
 interface PenPart { count: number; kind: SplineKind; closed: boolean }
-type Gesture = TapGesture | MarqueeGesture | CamPanGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture
+type Gesture = TapGesture | MarqueeGesture | CamPanGesture | CamTiltGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture
   | GScaleGesture | GRotateGesture | PenDrawGesture | PenNodeGesture | PenHandleGesture | PenMarqueeGesture | LineGesture;
 type FilledBaseFields = 'pointerId' | 'startClient';
 type GestureInit =
   | Omit<TapGesture, FilledBaseFields>
   | Omit<MarqueeGesture, FilledBaseFields>
   | Omit<CamPanGesture, FilledBaseFields>
+  | Omit<CamTiltGesture, FilledBaseFields>
   | Omit<CreateGesture, FilledBaseFields>
   | Omit<MoveGesture, FilledBaseFields>
   | Omit<ResizeGesture, FilledBaseFields>
@@ -505,6 +520,12 @@ const HANDLES: HandleName[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const SNAP_PX = 6;          // snap threshold in SCREEN px
 const SVG = {
   add: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  // Present — a play triangle (open the frames as a fullscreen deck, plan 112).
+  present: '<path d="M8 5v14l11-7z"/>',
+  // Code — angle brackets (open the Custom CSS editor, plan 112 M4).
+  code: '<polyline points="8 6 3 11 8 16"/><polyline points="16 6 21 11 16 16"/>',
+  // Notes — a lined note card (open the speaker-notes panel, plan 112 M5).
+  notes: '<rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
   // Undo/redo — same glyphs as the sidebar header's history buttons (tool.js).
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/>',
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/>',
@@ -845,7 +866,7 @@ const FALLBACK_FONT_OPTIONS: FontOption[] = [
   { value: 'SUSE Mono', label: 'SUSE Mono' },
 ];
 // Live-preview font stacks — kept byte-for-byte in step with the shipped
-// layout-studio hooks.js FONTS maps (SUSE profile: 'SUSE'/'SUSE Mono';
+// design hooks.js FONTS maps (SUSE profile: 'SUSE'/'SUSE Mono';
 // lolly-start: 'sans'/'mono') so the in-edit preview matches the committed
 // render and the vector export exactly. Wire values not listed here derive a
 // stack from the value itself (fontStackFor inside initFreeCanvas).
@@ -1036,6 +1057,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const shapeFieldDef = cfg.shapeField ? (input.fields || []).find((f) => f.id === cfg.shapeField) : undefined;
   const shapeChoices: Array<[string, string, string?]> = (shapeFieldDef?.options || [])
     .map((o) => [String(o.value ?? ''), t(String(o.label || o.value || '')), SHAPE_ICON[String(o.value ?? '')]]);
+  // ── Manifest-driven SHADOW control, for the same reason ──────────────────────
+  // The shadow segments were a fixed four (`none`/`box`/`text`/`content`) while the
+  // manifests had moved on: Layout Studio and Sequence Studio both declare a fifth,
+  // `depth` — the very target `liftRows` pre-sets on every lifted layer (plans/104
+  // §7) and a real branch of SHADOW_TARGETS in all three hooks copies. A segmented
+  // control marks `is-on` by exact match, so a lifted layer opened its Shadow row
+  // with ALL FOUR segments off (the control reads as broken) and clicking any of
+  // them silently replaced the depth shadow with no way back from that panel.
+  // Reading the tool's own options fixes it everywhere at once and keeps the three
+  // manifests that DON'T declare `depth` (carousel-maker, org-chart, record) from
+  // offering a target their hooks cannot render.
+  const shadowFieldDef = cfg.shadowField ? (input.fields || []).find((f) => f.id === cfg.shadowField) : undefined;
+  const shadowChoices: Array<[string, string]> = (shadowFieldDef?.options || []).length
+    ? (shadowFieldDef!.options || []).map((o) => [String(o.value ?? ''), t(String(o.label || o.value || ''))])
+    : [['none', t('None')], ['box', t('Box')], ['text', t('Text')], ['content', t('Content')]];
   const addKinds: AddKind[] = Array.isArray(cv.addKinds) && cv.addKinds.length
     ? cv.addKinds : [{ id: 'box', label: 'Box', seed: {} }];
   // Opt-in design-file import (Figma SVG / Penpot). Falsy for Layout Studio, whose
@@ -1133,12 +1169,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // means knowing what the unkeyed value is.
       zField: cv.zField || '',
     } : null;
-  // Scene-mode import (`canvas.import.mode: 'scenes'`, e.g. Sequence Studio): an
-  // imported design's frames land as timed clips appended to the main sequence
-  // instead of replacing the canvas. An explicit manifest opt-in — Layout Studio
-  // also declares the time model, and its import must keep replacing the board.
-  const importScenesMode: boolean = !!(timeCfg && importCfg
-    && (importCfg as { mode?: unknown }).mode === 'scenes');
+  // Can this tool import a design AS timed scenes (frames → timeline clips) at all?
+  // Time-capable + import-capable. Design qualifies (it declares the time model), so it
+  // OFFERS the "as scenes vs replace the board" choice (plans/104 §337) — on the drop
+  // door (the stash's `scenes` flag) and in the import panel (the toggle below).
+  const importSceneCapable: boolean = !!(timeCfg && importCfg);
+  // Whether SCENES is the DEFAULT: only a manifest that still declares `import.mode:
+  // 'scenes'`. Design does NOT (that opt-in flipped every import, plans/104 §337), so
+  // Design defaults to replacing the board and asks per-import.
+  const importScenesMode: boolean = importSceneCapable
+    && (importCfg as { mode?: unknown }).mode === 'scenes';
 
   // Opt-in snap-to-grid. gridOn is toggled from the rail; gridSize is native px.
   const gridSize = Math.max(2, Math.round(cv.grid?.size ?? 20));
@@ -1479,6 +1519,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     timelineWantOpen = open;
     if (timelinePanel) {
       timelinePanel.setOpen(open); syncTimelineBtn();
+      // The motion path is gated on `timelinePanel.isOpen()` (see motionIds), and this
+      // is the ONE place that answer changes on an already-mounted panel — so this is
+      // where the overlay is re-asked, rather than where it happens to be re-asked.
+      //
+      // It DOES already arrive without this line, and the route is worth naming because
+      // it is not one anybody wrote down: `setOpen` calls `reserve()`, which writes (or
+      // clears) `--stage-reserve-bottom` on the stage's inline style, which trips the
+      // stage MutationObserver, which schedules a sync, which repaints the chrome. Real,
+      // measured, and made entirely of other decisions — it holds only while opening and
+      // closing happen to reserve different heights and the observer happens to watch
+      // attributes. One repaint on a toggle the user pressed is a cheap price for the
+      // gate not resting on that.
+      renderChrome();
       if (open) maybePromptSequenceFrames(); else hideSeqPrompt();
       return;
     }
@@ -1821,6 +1874,62 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   guidesEl.className = 'fc-guides';
   overlay.appendChild(guidesEl);
 
+  // Camera-gesture HUD (audit A2/A4). A camera drag commits on release and previews
+  // NOTHING on the stage (§8's "drags commit on release"), so a shift-drag tilt or an
+  // empty-stage pan gives no feedback at all until the drop — the single biggest reason
+  // the camera "shortcuts are very noticable". This readout is that feedback: the
+  // ABSOLUTE tilt the drop will land (via `timelinePanel.cameraTiltPreview`, so it can
+  // never disagree with the write's own clamp) or the pan offset. Hidden except during a
+  // camera gesture; decorative to assistive tech (the committed pose is the panel's job
+  // to announce), pointer-transparent so it never eats the drag it is describing.
+  const camHud = document.createElement('div');
+  camHud.className = 'fc-cam-hud';
+  camHud.hidden = true;
+  camHud.setAttribute('aria-hidden', 'true');
+  overlay.appendChild(camHud);
+
+  const camHudDeg = (n: number): string => `${n > 0 ? '+' : ''}${Math.round(n)}°`;
+  const camHudPx = (n: number): string => `${n > 0 ? '+' : ''}${Math.round(n)}`;
+  // Built with DOM + textContent, never innerHTML: the values are numbers and the labels
+  // are `t()` strings, so nothing here needs escaping — and keeping it off the raw-HTML
+  // path is why this readout is not one more sink the R10 guard has to vouch for.
+  const camHudSpan = (cls: string, text: string): HTMLElement => {
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = text;
+    return s;
+  };
+  /** Show the tilt the drop would land — absolute, clamped, straight from the panel. */
+  function showCamTiltHud(dRx: number, dRy: number): void {
+    const p = timelinePanel?.cameraTiltPreview(getBoxes(), dRx, dRy) ?? null;
+    camHud.replaceChildren(
+      camHudSpan('fc-cam-hud-k', t('Tilt')),
+      ...(p
+        ? [camHudSpan('fc-cam-hud-v', `X ${camHudDeg(p.rx)}`), camHudSpan('fc-cam-hud-v', `Y ${camHudDeg(p.ry)}`)]
+        : [camHudSpan('fc-cam-hud-v', t('No keyframe here'))]),
+    );
+    camHud.hidden = false;
+  }
+  /** Show the pan offset the drag has accumulated (native px — the model's own units). */
+  function showCamPanHud(dx: number, dy: number): void {
+    camHud.replaceChildren(
+      camHudSpan('fc-cam-hud-k', t('Pan')),
+      camHudSpan('fc-cam-hud-v', `X ${camHudPx(dx)}`),
+      camHudSpan('fc-cam-hud-v', `Y ${camHudPx(dy)}`),
+    );
+    camHud.hidden = false;
+  }
+  function hideCamHud(): void {
+    if (camHud.hidden) return;
+    camHud.hidden = true;
+    camHud.replaceChildren();
+  }
+  /** Arm the HUD + a mode cursor at the start of a camera gesture. */
+  function startCamHud(tilt: boolean): void {
+    stageEl.style.cursor = tilt ? 'move' : 'grabbing';
+    if (tilt) showCamTiltHud(0, 0); else showCamPanHud(0, 0);
+  }
+
   // First-run invite on an empty canvas — a blank editor is otherwise a mystery. Only
   // shown for tools that can add boxes; clicking it opens the same Add menu as the rail.
   const emptyHint = document.createElement('div');
@@ -2128,7 +2237,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // is what keeps a click on a tool from starting a drag).
   const grip = document.createElement('div');
   grip.className = 'fc-grip';
-  grip.title = t('Drag to move the tools');
+  grip.setAttribute('data-tip', t('Drag to move the tools'));
   grip.setAttribute('aria-hidden', 'true');
   grip.innerHTML = '<span></span><span></span>';
   toolbar.appendChild(grip);
@@ -2268,7 +2377,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'fc-btn ' + extraClass;
-    b.title = label;
+    b.setAttribute('data-tip', label);
     b.setAttribute('aria-label', label);
     b.innerHTML = icon(svg);
     let holdTimer: ReturnType<typeof setTimeout> | 0 = 0;
@@ -2334,6 +2443,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     let lollyBtn: HTMLButtonElement | null = null;
     const lollyItems = (): PopItem[] => {
       const items: PopItem[] = [];
+      // Export leads — it's the star of the Lolly menu. Present is added LAST (very bottom).
       if (actions) {
         items.push({ label: t('Export'), icon: icon(SVG.exportUp), key: 'export', run: () => actions.export() });
         if (actions.canSave !== false) items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => actions.save() });
@@ -2362,6 +2472,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // size / info rows are safe — those assign `morePanel`, a different variable.)
         if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), key: 'import', keepOpen: true, run: () => openImportPanel(lollyBtn!) });
       }
+      // Custom CSS (plan 112 M4): only for a tool that declares the `customCss` input
+      // (Layout Studio). Opens a highlighted, auto-completing editor bound to that input.
+      if (runtime.getModel().some((i) => i.id === 'customCss')) {
+        if (items.length) items.push({ sep: true });
+        items.push({ label: t('Custom CSS'), icon: icon(SVG.code), key: 'css', run: () => openCssPanel(lollyBtn!) });
+      }
+      // Slide transition (plan 112 M5): one compact cycling row — Slide → Fade → Morph.
+      // The menu closes on click; reopening shows the new value (no live refresh needed).
+      const trModel = runtime.getModel().find((i) => i.id === 'transition');
+      if (trModel) {
+        const order = ['slide', 'fade', 'morph'];
+        const cur = String(trModel.value ?? 'slide');
+        const nice = cur === 'morph' ? t('Morph') : cur === 'fade' ? t('Fade') : t('Slide');
+        items.push({
+          label: `${t('Slide transition')}: ${nice}`, icon: icon(SVG.present), key: 'transition',
+          run: () => {
+            const next = order[(order.indexOf(cur) + 1) % order.length]!;
+            onDirty?.('transition');
+            runtime.setInput('transition', next);
+          },
+        });
+      }
+      // Present is the VERY LAST row (Andy: Export is the star; Present sits at the bottom),
+      // set off by its own separator and next to the Slide transition it uses (plan 112).
+      if (actions?.present) {
+        if (items.length) items.push({ sep: true });
+        items.push({ label: t('Present'), icon: icon(SVG.present), key: 'present', run: () => actions.present!() });
+      }
       return items;
     };
     if (actions || history || info || importCfg || pages || setCanvasSize) {
@@ -2371,8 +2509,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       lollyBtn = toolBtn(t('Menu — export, save, undo, canvas size'), '',
         () => { const items = lollyItems(); if (items.length) spawnPopover(lollyBtn!, items); },
         'fc-action fc-action-primary fc-btn-lolly');
-      // The mark is a whole <svg>, not a path set, so it replaces toolBtn's icon().
-      lollyBtn.innerHTML = LOLLY_ICON(22);
+      // The mark is a whole <svg> (the brand swirl, root icon.svg), not a path set, so it
+      // replaces toolBtn's icon(). Its three rings spin on hover only — see .fc-btn-lolly in
+      // editor.css, the same interaction-only treatment as the Ask Lolly send button.
+      lollyBtn.innerHTML = LOLLY_MARK_SVG;
       lollyBtn.setAttribute('aria-haspopup', 'menu');
       const ref = actions?.dirtyRef;
       if (ref && actions && actions.canSave !== false) {
@@ -2418,16 +2558,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (timeCfg) {
       timelineBtn = toolBtn(t('Timeline — arrange clips over time'), SVG.timeline,
         () => toggleTimeline(), 'fc-btn-timeline');
-      timelineBtn.setAttribute('data-tip', t('Timeline — arrange clips over time'));
       timelineBtn.setAttribute('aria-pressed', String(!!timelinePanel?.isOpen()));
     }
     // Frames reorder (opt-in via canvas.orderField — the frame primitive's page-order
     // field). A tool with nowhere to store `order` has no frame sequence to sort, so the
     // button is absent for carousel/deck and every non-frame tool. Toggles the panel.
     if (frameCfg?.orderField) {
-      const framesBtn = toolBtn(t('Artboards — reorder'), SVG.frame,
+      toolBtn(t('Artboards — reorder'), SVG.frame,
         (b) => { if (morePanel?.classList.contains('fc-frames-panel')) closeMorePanel(); else openFramesPanel(b); }, 'fc-btn-frames');
-      framesBtn.setAttribute('data-tip', t('Artboards — reorder'));
     }
     // Auto-arrange, for a tool whose boxes can be JOINED (opt-in via canvas.bindStartField).
     // It used to hang off `canvas.connect`, the edge input; the graph it walks is now the
@@ -2458,7 +2596,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Canvas background — the app's shared colour picker (swatches + hex + alpha).
     const bgWrap = document.createElement('div');
     bgWrap.className = 'fc-btn fc-color-btn';
-    bgWrap.title = t('Canvas background');
+    bgWrap.setAttribute('data-tip', t('Canvas background'));
     bgWrap.innerHTML = colorFieldHtml('fc-bg', getBg(), { float: true });
     bgWrap.addEventListener('pointerdown', (e) => e.stopPropagation());
     toolbar.appendChild(bgWrap);
@@ -2483,7 +2621,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           gb.type = 'button';
           gb.className = 'fc-pop-gitem' + (gi.danger ? ' fc-pop-danger' : '');
           gb.disabled = gi.disabled === true;
-          gb.title = gi.label;
+          gb.setAttribute('data-tip', gi.label);
           gb.setAttribute('aria-label', gi.label);
           gb.innerHTML = gi.icon || '';
           gb.addEventListener('click', (e) => { e.stopPropagation(); if (gb.disabled) return; gi.run(); if (!gi.keepOpen) closePopover(); });
@@ -2574,25 +2712,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closePopover();
     const panel = document.createElement('div');
     panel.className = 'fc-popover fc-import-panel';
-    panel.style.width = '264px';
-    panel.style.padding = '12px';
-    panel.style.whiteSpace = 'normal';
+    // The §337 choice, per-import: scenes-capable tools (Design) let the user pick
+    // between replacing the board and laying the frames out as timed scenes. Default
+    // follows the manifest (importScenesMode) — false for Design, so it replaces.
+    let chooseScenes = importScenesMode;
+    // Class-styled, not inline: this panel used to carry its whole look in `style=`
+    // attributes (and a HARD-CODED brand green on the choose button, which never themed
+    // or respected dark mode). The chrome now lives in `.fc-import-*` in editor.css and
+    // the button is the standard `.btn .btn--primary`, so it follows the active brand.
     panel.innerHTML =
-      `<div style="font-weight:700;margin-bottom:6px;">${t('Import a design')}</div>` +
-      '<p style="margin:0 0 10px;font-size:12px;line-height:1.45;opacity:.82;">' +
+      `<div class="fc-import-title">${t('Import a design')}</div>` +
+      '<p class="fc-import-hint">' +
       t('Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, or an InDesign <b>.idml</b> (File → Export → InDesign Markup). (For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)') +
       '</p>' +
-      (importScenesMode ? '<p style="margin:0 0 10px;font-size:12px;line-height:1.45;opacity:.82;">' +
-        t('Every frame becomes its own scene on the timeline, ready for timing tweaks, music and voiceover.') +
-        '</p>' : '') +
-      '<button type="button" class="fc-import-choose" style="width:100%;padding:8px 12px;border:0;border-radius:8px;' +
-      `background:#30BA78;color:#0c322c;font-weight:700;font-size:13px;cursor:pointer;">${t('Choose file…')}</button>` +
+      (importSceneCapable
+        ? `<div class="fc-import-mode" role="radiogroup" aria-label="${t('Import as')}">` +
+          `<label class="fc-import-mode-opt"><input type="radio" name="fc-imp-mode" value="board"${chooseScenes ? '' : ' checked'}>${t('Replace the board')}</label>` +
+          `<label class="fc-import-mode-opt"><input type="radio" name="fc-imp-mode" value="scenes"${chooseScenes ? ' checked' : ''}>${t('As timed scenes')}</label>` +
+          '</div>' +
+          `<p class="fc-import-scenes-hint"${chooseScenes ? '' : ' hidden'}>` +
+          t('Every frame becomes its own scene on the timeline, ready for timing tweaks, music and voiceover.') +
+          '</p>'
+        : '') +
+      `<button type="button" class="btn btn--primary fc-import-choose">${t('Choose file…')}</button>` +
       // Components-as-templates: revealed once the chosen file turns out to
       // define components (countPenpotComponents peeks the zip), so a file
       // without a design system never shows a control that would do nothing.
-      '<label class="fc-import-templates" hidden style="display:none;align-items:flex-start;gap:6px;margin-top:8px;font-size:12px;line-height:1.4;">' +
-      '<input type="checkbox" checked style="margin-top:2px;"><span></span></label>' +
-      '<div class="fc-import-status" role="status" aria-live="polite" style="margin-top:8px;font-size:12px;line-height:1.4;min-height:16px;"></div>';
+      '<label class="fc-import-templates" hidden>' +
+      '<input type="checkbox" checked><span></span></label>' +
+      '<div class="fc-import-status" role="status" aria-live="polite"></div>';
     panel.addEventListener('pointerdown', (e) => e.stopPropagation());
     stageEl.appendChild(panel);
     const ar = anchor.getBoundingClientRect();
@@ -2606,6 +2754,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const tplRow = panel.querySelector<HTMLElement>('.fc-import-templates')!;
     const tplBox = tplRow.querySelector<HTMLInputElement>('input')!;
     const tplLabel = tplRow.querySelector<HTMLElement>('span')!;
+    // Wire the scenes/board choice (present only for scene-capable tools).
+    const scenesHint = panel.querySelector<HTMLElement>('.fc-import-scenes-hint');
+    panel.querySelectorAll<HTMLInputElement>('.fc-import-mode input[name="fc-imp-mode"]').forEach((r) => {
+      r.addEventListener('change', () => {
+        chooseScenes = r.value === 'scenes' && r.checked;
+        if (scenesHint) scenesHint.hidden = !chooseScenes;
+      });
+    });
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
     fileEl.accept = '.fig,.svg,.penpot,.zip,.ai,.pdf,.idml,.indd,image/svg+xml,application/zip,application/pdf,application/illustrator';
@@ -2616,7 +2772,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const f = fileEl.files && fileEl.files[0];
       fileEl.value = '';
       if (!f) return;
-      status.style.color = '';
+      status.classList.remove('is-ok', 'is-err');
       status.textContent = t('Importing…');
       // Re-hide the components offer for the NEW file. One handler serves every pick and
       // the panel survives a failed import (the auto-close is the last statement of the
@@ -2624,15 +2780,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // stays on screen — checked — while a plain SVG is imported, offering something
       // that can never happen (componentCount is re-derived per file, and is 0).
       tplRow.hidden = true;
-      tplRow.style.display = 'none';
       tplLabel.textContent = '';
       tplBox.checked = true;
       chooseBtn.disabled = true;
       try {
-        if (importScenesMode) {
-          // Sequence editor: frames become timed scenes (importAsScenes above).
+        if (chooseScenes) {
+          // The user chose "As timed scenes": frames become timed scenes (importAsScenes above).
           const n = await importAsScenes(f, (m: string) => { status.textContent = m; });
-          status.style.color = '#128a5b';
+          status.classList.add('is-ok');
           status.textContent = n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n });
         } else {
           const { parseDesignFile, countPenpotComponents, parseDesignTemplates } = await import('./design-import.ts');
@@ -2650,7 +2805,6 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
                 ? t('Also save 1 component as a template')
                 : t('Also save {n} components as templates', { n: componentCount });
               tplRow.hidden = false;
-              tplRow.style.display = 'flex';
             }
           }
           // interactive: a multi-page PDF/.ai asks which page (shared page-picker dialog)
@@ -2662,7 +2816,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           selection = new Set<string>();
           commit(boxes);
           if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
-          status.style.color = '#128a5b';
+          status.classList.add('is-ok');
           const imported = boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length });
           status.textContent = imported;
           if (componentCount > 0 && tplBox.checked) {
@@ -2699,7 +2853,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         }
         setTimeout(() => { if (popover === panel) closePopover(); }, 1400);
       } catch (err) {
-        status.style.color = '#c0362c';
+        status.classList.add('is-err');
         status.textContent = ((err as any) && (err as any).message) || t('Import failed.');
       } finally {
         chooseBtn.disabled = false;
@@ -2790,6 +2944,75 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         label: t('Make always on'), icon: icon(SVG.boxKind),
         run: withPanel((p) => p.demote(oneId)), disabled: !timed,
       });
+    }
+    // ── presentation (plan 112) ─────────────────────────────────────────────────
+    // Per-box authoring for present mode, on a frame-capable tool: the audio opt-in and
+    // the build (reveal) step. Shown ONLY for a single selected non-frame box, so a
+    // multi-select, a frame, or a non-frame tool leaves the menu byte-for-byte unchanged.
+    if (frameCfg && selection.size === 1) {
+      const rows = getBoxes();
+      const si = selIndices(rows);
+      const one = si.length === 1 ? rows[si[0]!]! : null;
+      const isFrame = !!one && String(one[cfg.kindField]) === frameCfg.frameKind;
+      if (one && !isFrame) {
+        const img = one['image'] as { url?: string; type?: string } | undefined;
+        const hasImage = !!img?.url;
+        const isVid = img?.type === 'video' || /\.(mp4|m4v|mov|webm)($|\?|#)/i.test(String(img?.url ?? ''));
+        const curBuild = Number(one['build']);
+        const frameBoxesNow = rows.filter((b) => String(b[cfg.kindField]) === frameCfg.frameKind);
+        const bgFrameId = String(one['frame'] ?? '') || resolveFrame(one, frameBoxesNow);
+        const setField = (field: string, value: InputValue): void => {
+          const bs = getBoxes();
+          const idx = new Set(selIndices(bs));
+          commit(bs.map((b, i) => (idx.has(i) ? { ...b, [field]: value } : b)));
+        };
+        items.push({ sep: true });
+        // Set as background: fill the box's frame, cover-fit, adopt membership, and send it
+        // behind its siblings — the one-click cover image/video backdrop (plan §8). Any
+        // image/video box that resolves to a frame; disabled otherwise so the row is stable.
+        items.push({
+          label: t('Set as slide background'), icon: icon(SVG.image),
+          disabled: !(hasImage && bgFrameId),
+          run: () => {
+            const bs = getBoxes();
+            const idx = selIndices(bs);
+            const fbs = bs.filter((b) => String(b[cfg.kindField]) === frameCfg.frameKind);
+            const fid = String(bs[idx[0]!]?.['frame'] ?? '') || resolveFrame(bs[idx[0]!], fbs);
+            const fb = bs.find((b) => String(b['id'] ?? '') === fid);
+            if (!fb || idx.length !== 1) return;
+            const filled = bs.map((b, i) => (i === idx[0]
+              ? { ...b, x: fb['x'], y: fb['y'], w: fb['w'], h: fb['h'], fit: 'cover', frame: fid }
+              : b));
+            commit(reorderZ(filled, idx, 'back'));
+          },
+        });
+        items.push({
+          label: t('Play sound when presenting'), icon: icon(SVG.video),
+          on: one['presentAudio'] === true, disabled: !isVid,
+          run: () => setField('presentAudio', one['presentAudio'] !== true),
+        });
+        // Reveal step (build): "Always visible" + steps 1–3 as radios (equal numbers
+        // reveal together; a box hidden until its step is advanced to in present mode).
+        items.push({
+          label: t('Always visible'), icon: icon(SVG.present),
+          on: !(curBuild >= 1), run: () => setField('build', ''),
+        });
+        for (const n of [1, 2, 3]) {
+          items.push({ label: `${t('Reveal at step')} ${n}`, on: curBuild === n, run: () => setField('build', n) });
+        }
+      } else if (one && isFrame) {
+        // A selected FRAME: set its present-mode `state` tokens (per-slide theming) and
+        // its speaker `notes` (shown only in the speaker view, never on the slide).
+        items.push({ sep: true });
+        items.push({
+          label: t('Frame state (present)…'), icon: icon(SVG.present),
+          run: () => openFrameStatePanel(viewEl, si[0]!),
+        });
+        items.push({
+          label: t('Speaker notes…'), icon: icon(SVG.notes),
+          run: () => openSpeakerNotesPanel(viewEl, si[0]!),
+        });
+      }
     }
     // ── vector operations ──────────────────────────────────────────────────────
     // Present only for tools whose manifest declares `canvas.pathField` (there is
@@ -2975,13 +3198,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const gradOn = gradEdit != null;
     const fillTitle = gradOn ? t('Gradient stop colour') : t('Fill');
     const fillShown = gradOn ? (gradStopColor(first) ?? fillVal) : fillVal;
-    return (cfg.fillField ? `<span class="fc-cfield" title="${escape(fillTitle)}">${colorFieldHtml('fc-fill', fillShown, { float: true })}</span>` : '')
+    return (cfg.fillField ? `<span class="fc-cfield" data-tip="${escape(fillTitle)}">${colorFieldHtml('fc-fill', fillShown, { float: true })}</span>` : '')
       + (cfg.gradField && !allPaths
-        ? `<button type="button" class="fc-cbtn${gradOn ? ' is-on' : ''}" data-cx="grad" aria-pressed="${gradOn}" title="${escape(t('Gradient — drag the stops on the canvas'))}" aria-label="${escape(t('Gradient fill'))}">${icon(SVG.gradIc)}</button>`
+        ? `<button type="button" class="fc-cbtn${gradOn ? ' is-on' : ''}" data-cx="grad" aria-pressed="${gradOn}" data-tip="${escape(t('Gradient — drag the stops on the canvas'))}" aria-label="${escape(t('Gradient fill'))}">${icon(SVG.gradIc)}</button>`
         : '')
-      + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" title="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : '')
-      + (allPaths && cfg.strokeField ? `<span class="fc-cfield" title="${escape(t('Stroke colour'))}">${colorFieldHtml('fc-stroke', strokeVal, { float: true })}</span>` : '')
-      + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" title="${escape(t('Stroke — width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
+      + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" data-tip="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : '')
+      + (allPaths && cfg.strokeField ? `<span class="fc-cfield" data-tip="${escape(t('Stroke colour'))}">${colorFieldHtml('fc-stroke', strokeVal, { float: true })}</span>` : '')
+      + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke — width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
   }
 
   /** One `wireColorField` call per bar — it binds delegated listeners on the scope, so a
@@ -3029,7 +3252,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       : idx.filter((i) => String(boxes[i]?.kind ?? '') !== 'audio').length;
     const tip = n ? t('+Keyframe') : t('Sound has no pose to keyframe');
     return `<button type="button" class="fc-cbtn" data-cx="kf" aria-disabled="${n ? 'false' : 'true'}"`
-      + ` title="${escape(tip)}" aria-label="${escape(tip)}">${icon(SVG.keyframe)}</button>`;
+      + ` data-tip="${escape(tip)}" aria-label="${escape(tip)}">${icon(SVG.keyframe)}</button>`;
   }
 
   /**
@@ -3077,6 +3300,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** Wheel notches → dolly px. A notch is ~100 deltaY on a mouse; ~24px of camera is a
    *  visible but recoverable step at P = 1200. */
   const DOLLY_PX_PER_DELTA = 0.24;
+  /**
+   * Screen px → degrees of tilt (P2). 0.2 puts the Surface glide preset's own −40° at
+   * a 200 px drag: one comfortable wrist movement reaches the signature angle.
+   *
+   * The band this runs into is `KF_TILT_CONTROL` (±75), not the ±180 WIRE clamp, and
+   * the hold is in `timelinePanel.cameraWrite` rather than here — a drag supplies a
+   * DELTA, so only the site that composes it with the pose it started from can bound
+   * the result. 375 px of drag reaches the end of the band; past that the shot stops
+   * turning, which is the same thing the Tilt X / Tilt Y number fields do.
+   */
+  const CAM_TILT_DEG_PER_PX = 0.2;
   /**
    * `deltaY` is only in PIXELS when `deltaMode` says so. Firefox reports LINES (mode 1,
    * ~3 per notch) and a page-scroll device reports PAGES (mode 2) — read raw, a notch
@@ -3136,18 +3370,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     ctxbar.innerHTML = `
       ${paintCtxHtml(first, allPaths)}
       ${vectorCfg && idx.length === 1 && boxOutlineKind(first, vectorCfg) === 'path'
-        ? `<button type="button" class="fc-cbtn" data-cx="nodes" title="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
+        ? `<button type="button" class="fc-cbtn" data-cx="nodes" data-tip="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
         : ''}
-      <button type="button" class="fc-cbtn" data-cx="edit" title="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>
-      <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" title="${escape(t('Text — size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>
-      <button type="button" class="fc-cbtn" data-cx="setimg" title="${escape(t('Set image'))}" aria-label="${escape(t('Set image'))}">${icon(SVG.image)}</button>
-      <button type="button" class="fc-cbtn" data-cx="more" title="${escape(t('More — shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
+      <button type="button" class="fc-cbtn" data-cx="edit" data-tip="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>
+      <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" data-tip="${escape(t('Text — size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>
+      <button type="button" class="fc-cbtn" data-cx="setimg" data-tip="${escape(t('Set image'))}" aria-label="${escape(t('Set image'))}">${icon(SVG.image)}</button>
+      <button type="button" class="fc-cbtn" data-cx="more" data-tip="${escape(t('More — shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
       <span class="fc-sep fc-sep-v"></span>
       ${kfCtxHtml(boxes, idx)}
-      <button type="button" class="fc-cbtn" data-cx="dup" title="${escape(t('Duplicate'))}" aria-label="${escape(t('Duplicate'))}">${icon(SVG.dup)}</button>
-      <button type="button" class="fc-cbtn fc-danger" data-cx="del" title="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">${icon(SVG.trash)}</button>
-      ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" title="${escape(t('Select more — tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
-      <button type="button" class="fc-readout" data-cx="dims" data-cx-readout title="${escape(t('Edit position & size'))}" aria-label="${escape(t('Edit position and size'))}"></button>`;
+      <button type="button" class="fc-cbtn" data-cx="dup" data-tip="${escape(t('Duplicate'))}" aria-label="${escape(t('Duplicate'))}">${icon(SVG.dup)}</button>
+      <button type="button" class="fc-cbtn fc-danger" data-cx="del" data-tip="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">${icon(SVG.trash)}</button>
+      ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" data-tip="${escape(t('Select more — tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
+      <button type="button" class="fc-readout" data-cx="dims" data-cx-readout data-tip="${escape(t('Edit position & size'))}" aria-label="${escape(t('Edit position and size'))}"></button>`;
     wirePaintCtx(ctxbar);
     ctxbar.querySelectorAll<HTMLElement>('[data-cx]').forEach((b) => b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3406,8 +3640,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       h.style.top = `${p.y}px`;
       // The handle IS its colour — a swatch you can see against the paint behind it.
       h.style.setProperty('--stop', parseColor(st.color) ? st.color : 'transparent');
-      h.title = t('Stop {n} — {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) });
-      h.setAttribute('aria-label', h.title);
+      h.setAttribute('data-tip', t('Stop {n} — {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) }));
+      h.setAttribute('aria-label', h.getAttribute('data-tip') || '');
       h.addEventListener('pointerdown', (e) => onGradStopDown(e, si));
       gradChrome.appendChild(h);
     });
@@ -3420,8 +3654,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     dir.className = 'fc-grad-dir';
     dir.style.left = `${b.x + ((b.x - a.x) / dirLen) * 30}px`;
     dir.style.top = `${b.y + ((b.y - a.y) / dirLen) * 30}px`;
-    dir.title = t('Drag to set the gradient direction (hold Shift to snap)');
-    dir.setAttribute('aria-label', dir.title);
+    dir.setAttribute('data-tip', t('Drag to set the gradient direction (hold Shift to snap)'));
+    dir.setAttribute('aria-label', dir.getAttribute('data-tip') || '');
     dir.addEventListener('pointerdown', onGradDirDown);
     gradChrome.insertBefore(dir, gradChrome.firstChild);
   }
@@ -3626,9 +3860,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     setCanvasSize(w, h, unit);
     scheduleSync();
   }
+  // 16:9 leads — a design/deck starts widescreen (Andy's rule); the rest cover the range a
+  // deck actually ships at: portrait + ultrawide signage, cinematic + full-stage keynote walls,
+  // then social/print. Custom W×H below the presets covers anything else.
   const SIZE_PRESETS: Array<[string, number, number]> = [
-    ['Square', 1080, 1080], ['Portrait 4:5', 1080, 1350], ['Story 9:16', 1080, 1920],
-    ['Landscape 16:9', 1920, 1080], ['Wide 1.91:1', 1200, 630], ['A4 portrait', 2480, 3508],
+    ['Landscape 16:9', 1920, 1080], ['Story 9:16', 1080, 1920], ['Square', 1080, 1080],
+    ['Standard 4:3', 1440, 1080], ['Cinematic 21:9', 2520, 1080], ['Stage 32:9', 3840, 1080],
+    ['Portrait 4:5', 1080, 1350], ['Wide 1.91:1', 1200, 630], ['A4 portrait', 2480, 3508],
   ];
   // Page-size presets for multi-page (carousel) mode. Every page shares one size.
   const PAGE_PRESETS: Array<[string, number, number]> = [
@@ -3770,12 +4008,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const shBlur = Math.round(clampN(parseFloat(String(b[cfg.shadowBlurField])), 10, 0, 300));
     // Row with a leading icon label (keeps the "clean up + use icons" intent while
     // staying legible). segRow hosts a segmented control; iconRow a slider/select.
-    const iconRow = (ic: string, lbl: string, ctrl: string): string => `<label class="fc-row"><span class="fc-row-lbl" title="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${ctrl}</label>`;
-    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" title="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
+    const iconRow = (ic: string, lbl: string, ctrl: string): string => `<label class="fc-row"><span class="fc-row-lbl" data-tip="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${ctrl}</label>`;
+    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" data-tip="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel';
     p.innerHTML = `
-      ${showClip ? `<label class="fc-row fc-row-toggle field-toggle"><span class="fc-row-lbl" title="${escape(t('Clip children'))}">${icon(SVG.clip)}<span>${t('Clip children')}</span></span><input type="checkbox" class="field-check" data-mp-clip${clipCur ? ' checked' : ''}></label>` : ''}
+      ${showClip ? `<label class="fc-row fc-row-toggle field-toggle"><span class="fc-row-lbl" data-tip="${escape(t('Clip children'))}">${icon(SVG.clip)}<span>${t('Clip children')}</span></span><input type="checkbox" class="field-check" data-mp-clip${clipCur ? ' checked' : ''}></label>` : ''}
       ${cfg.shapeField && shapeChoices.length ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, shapeChoices)) : ''}
       ${cfg.radiusField ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" class="field-range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
       ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" class="field-range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
@@ -3785,12 +4023,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         ${['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'].map((m) => opt(m, t(m[0]!.toUpperCase() + m.slice(1).replace('-', ' ')), blendCur)).join('')}
       </select>`) : ''}
       ${cfg.shadowField ? `<div class="fc-panel-sub">${t('Shadow')}</div>
-        ${segRow(SVG.shadowIc, t('Apply to'), segHtml(cfg.shadowField, shadowCur, [['none', t('None')], ['box', t('Box')], ['text', t('Text')], ['content', t('Content')]]))}
+        ${segRow(SVG.shadowIc, t('Apply to'), segHtml(cfg.shadowField, shadowCur, shadowChoices))}
         <label class="fc-row"><span class="fc-row-lbl">${t('Colour')}</span><span class="fc-cfield">${colorFieldHtml('fc-shadow', shColor, { float: true })}</span></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" class="field-range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" class="field-range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}
-      ${showLift ? `<div class="fc-row fc-row-act"><button type="button" class="fc-cbtn fc-mp-lift" data-mp-lift>${icon(SVG.liftLayers)}<span>${escape(t('Lift layers'))}</span></button></div>` : ''}`;
+      ${showLift ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-lift" data-mp-lift>${icon(SVG.liftLayers)}<span>${escape(t('Lift layers'))}</span></button></div>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // Shape is special-cased: switching to "circle" also squares the box (w = h),
     // since a circle is only an ellipse the geometry keeps 1:1. Everything else writes
@@ -3862,11 +4100,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       p.innerHTML = `<div class="fc-panel-head">${escape(t('Artboards'))}</div>` +
         `<div class="fc-frames-list">` + frames.map((b, i) => {
           const fid = fidOf(b);
-          return `<div class="fc-frame-row" draggable="true" data-fid="${escape(fid)}" title="${escape(t('Drag to reorder'))}">
+          return `<div class="fc-frame-row" draggable="true" data-fid="${escape(fid)}" data-tip="${escape(t('Drag to reorder'))}">
             <span class="fc-frame-grip" aria-hidden="true">${icon(SVG.grip)}</span>
             <span class="fc-frame-name">${escape(t('Artboard'))} ${i + 1}</span>
-            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="up" title="${escape(t('Move up'))}" aria-label="${escape(t('Move up'))}"${i === 0 ? ' disabled' : ''}>${icon(SVG.chevUp)}</button>
-            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="down" title="${escape(t('Move down'))}" aria-label="${escape(t('Move down'))}"${i === frames.length - 1 ? ' disabled' : ''}>${icon(SVG.chevDown)}</button>
+            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="up" data-tip="${escape(t('Move up'))}" aria-label="${escape(t('Move up'))}"${i === 0 ? ' disabled' : ''}>${icon(SVG.chevUp)}</button>
+            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="down" data-tip="${escape(t('Move down'))}" aria-label="${escape(t('Move down'))}"${i === frames.length - 1 ? ' disabled' : ''}>${icon(SVG.chevDown)}</button>
           </div>`;
         }).join('') + `</div>`;
       wireRows();
@@ -3973,7 +4211,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // supplies the label for what Auto currently resolves to, so "auto" is never a mystery.
     const routeCur = String(b[cfg.routeField] ?? '');
     const routeBound = hasRouteCfg && isBoundPath(b);
-    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" title="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
+    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" data-tip="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
     const headSelect = (field: string, cur: string, lbl: string): string =>
       `<select class="field-select field-select--sm" data-sp-head="${escape(field)}" aria-label="${escape(lbl)}">` +
       HEAD_CHOICES.map(([v, l]) => `<option value="${v}"${cur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('') +
@@ -3981,7 +4219,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel fc-stroke-panel';
     p.innerHTML =
-      `<label class="fc-row"><span class="fc-row-lbl" title="${escape(t('Stroke width'))}">${icon(SVG.strokeIc)}<span>${t('Stroke width')}</span></span>` +
+      `<label class="fc-row"><span class="fc-row-lbl" data-tip="${escape(t('Stroke width'))}">${icon(SVG.strokeIc)}<span>${t('Stroke width')}</span></span>` +
         `<input type="range" class="field-range" data-sp="width" min="0" max="120" value="${swCur}"><b data-sp-val="width">${swCur}</b></label>` +
       segRow(SVG.dashDashed, t('Stroke style'), segHtml(cfg.strokeDashField, dashCur, [
         ['', t('Solid'), SVG.dashSolid],
@@ -3994,11 +4232,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // is not asked about dashes it has none of.
       (hasDashArrayCfg
         ? `<label class="fc-row" data-sp-row="dasharray"${dashRowOn(dashCur, dashArrCur) ? '' : ' hidden'}>` +
-          `<span class="fc-row-lbl" title="${escape(t('Dash array'))}">${icon(SVG.dashDotted)}<span>${t('Dash array')}</span></span>` +
+          `<span class="fc-row-lbl" data-tip="${escape(t('Dash array'))}">${icon(SVG.dashDotted)}<span>${t('Dash array')}</span></span>` +
           `<input type="text" data-sp="dasharray" inputmode="decimal" spellcheck="false" autocomplete="off"` +
           ` value="${escape(dashArrCur)}" placeholder="6 4" aria-label="${escape(t('Dash array'))}"></label>` +
           `<label class="fc-row fc-row-toggle field-toggle" data-sp-row="dashfit"${dashRowOn(dashCur, dashArrCur) ? '' : ' hidden'}>` +
-          `<span class="fc-row-lbl" title="${escape(t('Fit dashes to corners'))}">${icon(SVG.joinMiter)}<span>${t('Fit dashes to corners')}</span></span>` +
+          `<span class="fc-row-lbl" data-tip="${escape(t('Fit dashes to corners'))}">${icon(SVG.joinMiter)}<span>${t('Fit dashes to corners')}</span></span>` +
           `<input type="checkbox" class="field-check" data-sp="dashfit"${dashFitCur ? ' checked' : ''}></label>`
         : '') +
       segRow(SVG.capRound, t('Line ends'), segHtml(cfg.strokeCapField, capCur, [
@@ -4234,9 +4472,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function liftBaseName(ref: unknown): string {
     const r = (ref || {}) as { url?: unknown; meta?: { name?: unknown } | null };
     const named = typeof r.meta?.name === 'string' ? r.meta.name : '';
-    const fromUrl = typeof r.url === 'string'
-      ? decodeURIComponent((r.url.split(/[?#]/)[0] || '').split('/').pop() || '')
-      : '';
+    // `decodeURIComponent` THROWS on a lone `%` or a bad escape, and the tail it is
+    // handed comes from a ref the shell did not necessarily mint — `isSvgImageRef`
+    // accepts a hand-written `data:image/svg+xml` link, and a hook patch can put
+    // anything in `url`. A URIError here used to escape a naming helper into an
+    // unhandled rejection; the raw tail is a perfectly good name.
+    const tail = typeof r.url === 'string' ? (r.url.split(/[?#]/)[0] || '').split('/').pop() || '' : '';
+    let fromUrl = tail;
+    try { fromUrl = decodeURIComponent(tail); } catch { /* keep the raw tail */ }
     const raw = (named || fromUrl || 'artwork').replace(/\.[a-z0-9]+$/i, '');
     // The picker's own id sanitiser runs over the final filename anyway; keeping this
     // conservative means the derived names stay readable in the asset library.
@@ -4264,6 +4507,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * sanitise + enumerate can take a moment on a large file, and a menu item that does
    * nothing visible for half a second reads as broken), then re-renders in place with
    * the plan, or with the enumerator's own refusal in its own words.
+   *
+   * That second stage is the whole reason this panel is built in THREE pieces (head,
+   * a live `[data-lift-msg]` sentence, a swapped `[data-lift-body]`) rather than one
+   * `innerHTML` per stage. "Reading the artwork…" is a picture of work in flight, and
+   * a picture is all it was: the panel opened without focus and repainted wholesale
+   * whenever the enumeration landed, so a screen reader was told nothing at open and
+   * nothing at the finish — and then focus jumped to a button that had appeared out of
+   * a silence. Three habits the shell already has fix it:
+   *
+   *   • `aria-busy` on the container while it reads (template-chooser's tile,
+   *     tool-actions' export button, color-lab's charts section);
+   *   • ONE `role="status"` sentence that OUTLIVES both stages, so the outcome is a
+   *     mutation of a mounted live region rather than a new region nobody announces;
+   *   • focus taken at OPEN (askConfirm's move, and it is the user's own gesture that
+   *     opened this), then moved WITHIN the panel afterwards — `focusInPanel` declines
+   *     when the user has since gone somewhere else, because a control that appears
+   *     after an await has no claim on where they went while it loaded.
    */
   function askLiftLayers(): void {
     if (!cfg.imageField) return;
@@ -4279,17 +4539,45 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closeMorePanel();
     const p = document.createElement('div');
     p.className = 'fc-panel fc-num-panel fc-lift-panel';
+    p.tabIndex = -1;
+    p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-label', t('Lift layers'));
+    // Reading is a STATE, not just a sentence. Dropped again by whichever of
+    // renderPlan / renderRefusal lands — both are the end of the work.
+    p.setAttribute('aria-busy', 'true');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
-    const head = `<div class="fc-panel-head">${escape(t('Lift layers'))}</div>`;
-    p.innerHTML = `${head}<p class="fc-num-hint" data-lift-msg>${escape(t('Reading the artwork…'))}</p>`;
+    p.innerHTML = `<div class="fc-panel-head">${escape(t('Lift layers'))}</div>`
+      + `<p class="fc-num-hint" data-lift-msg role="status" aria-live="polite">${escape(t('Reading the artwork…'))}</p>`
+      + '<div data-lift-body></div>';
+    // Mounted once and only ever re-WORDED: the count sentence, the refusal and the
+    // reading state are the same line of the panel, so the announcement is a change to
+    // a live region that was already in the tree.
+    const msgEl = p.querySelector<HTMLElement>('[data-lift-msg]')!;
+    const bodyEl = p.querySelector<HTMLElement>('[data-lift-body]')!;
     stageEl.appendChild(p);
     morePanel = p;
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
     p.style.top = Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    // At OPEN, synchronously, on the gesture that asked for it — so the dialog's name
+    // and its reading sentence are what gets read, and every later focus move is a move
+    // WITHIN a surface the user is already in rather than a jump out of one they left.
+    p.focus();
 
     /** Still the panel on screen? Every await below re-asks before touching the DOM. */
     const live = (): boolean => !disposed && morePanel === p && p.isConnected;
+
+    /**
+     * Move focus to a control this panel just built — unless the user went elsewhere
+     * while it was reading. `document.body` (or nothing at all) counts as "still ours":
+     * that is where focus lands when the element it was on is replaced, which is
+     * exactly what the stage swap below does.
+     */
+    const focusInPanel = (el: HTMLElement | null | undefined): void => {
+      if (!el) return;
+      const active = document.activeElement;
+      if (active === null || active === document.body || p.contains(active)) el.focus();
+    };
 
     void (async () => {
       try {
@@ -4297,13 +4585,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // serialised from the sanitised NODE). `fetchAnimSvg` is that path plus a
         // per-URL cache — named for its first caller, but it is simply "give me this
         // SVG's markup, safely", which is exactly what an enumeration needs.
-        const [{ fetchAnimSvg }, { enumerateSvgLayers }] = await Promise.all([
+        const [{ fetchAnimSvg }, { enumerateSvgLayers, svgRootViewBox }] = await Promise.all([
           import('./anim-svg-mount.ts'),
           import('../../../../engine/src/svg-layers.ts'),
         ]);
         const markup = await fetchAnimSvg(url);
         if (!live()) return;
-        const { layers, warnings } = enumerateSvgLayers(markup);
+        // Whether a derived document may be CROPPED to its own ink is a property of
+        // the box it will land in, and it has to be settled before the documents
+        // exist — a cropped document needs a row cut to the same rect (plans/104
+        // P3.2). `liftCanCrop` is the one predicate; `liftRows` asks it again at
+        // commit time, so the dialog and the write cannot disagree.
+        const sboxes = getBoxes();
+        const src = sboxes[indexOfId(sboxes, sourceId)];
+        const place = { viewBox: svgRootViewBox(markup), fit: String(src?.[cfg.fitField] ?? 'contain') };
+        const cropToInk = !!src && liftCanCrop(src, cfg, place);
+        // …and WHERE it will be cropped to. A crop is only free if the row it maps
+        // to lands on the pixel grid the uncropped picture was already on, and the
+        // scale that decides that is a property of THIS box, not of the artwork —
+        // so the engine is told it rather than assuming 1:1 (engine 1.122).
+        const cropScale = (src && liftCropScale(src, cfg, place)) || undefined;
+        const { layers, warnings, viewBox } = enumerateSvgLayers(markup, { cropToInk, cropScale });
         if (!live()) return;
         if (layers.length < 2) {
           // ONE layer is not a stack, and lifting it would add a box and a group for no
@@ -4311,7 +4613,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           renderRefusal(warnings[0] || t('This artwork is a single layer, so there is nothing to lift apart.'));
           return;
         }
-        renderPlan(layers, warnings);
+        renderPlan(layers, warnings, viewBox);
       } catch (e) {
         console.error(e);
         if (live()) renderRefusal(t('That artwork could not be read.'));
@@ -4319,52 +4621,95 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     })();
 
     function renderRefusal(message: string): void {
-      p.innerHTML = `${head}<p class="fc-num-hint">${escape(message)}</p>`
-        + `<div class="fc-num-row fc-confirm-row"><button type="button" class="btn btn--sm" data-lift-close>${escape(t('Close'))}</button></div>`;
-      p.querySelector<HTMLButtonElement>('[data-lift-close]')?.addEventListener('click', (e) => {
+      p.removeAttribute('aria-busy');
+      msgEl.textContent = message;
+      bodyEl.innerHTML =
+        `<div class="fc-num-row fc-confirm-row"><button type="button" class="btn btn--sm" data-lift-close>${escape(t('Close'))}</button></div>`;
+      const close = bodyEl.querySelector<HTMLButtonElement>('[data-lift-close]');
+      close?.addEventListener('click', (e) => {
         e.stopPropagation();
         closeMorePanel();
       });
-      p.querySelector<HTMLButtonElement>('[data-lift-close]')?.focus();
+      focusInPanel(close);
     }
 
-    function renderPlan(layers: SvgLayerPlan[], warnings: string[]): void {
-      // The count sentence is the headline §7 names verbatim ("6 layers found").
-      p.innerHTML = head
-        + `<p class="fc-num-hint">${escape(t('{n} layers found', { n: layers.length }))}</p>`
-        + `<ul class="fc-lift-list">${layers.map((L, i) => {
-          // The label is an INDEX, never a name out of the file: `data-name` and
-          // `inkscape:label` are stripped at ingest as PII (§2) and the engine never
-          // reads them, so "Layer 3" is the honest thing to print. The count beside it
-          // is what tells a stack of six real layers apart from six stray leaves the
-          // clusterer happened to group.
+    function renderPlan(layers: SvgLayerPlan[], warnings: string[], viewBox: SvgSourceBox): void {
+      p.removeAttribute('aria-busy');
+      // The count sentence is the headline §7 names verbatim ("6 layers found"), and it
+      // is the SAME line that said "Reading the artwork…" a moment ago — so a screen
+      // reader hears the finish without the dialog being rebuilt around it.
+      msgEl.textContent = t('{n} layers found', { n: layers.length });
+      bodyEl.innerHTML =
+        `<ul class="fc-lift-list">${layers.map((L, i) => {
+          // The label is an INDEX, never a name out of the file: the engine never
+          // reads `data-name`/`inkscape:label`, so "Layer 3" is the honest thing to
+          // print. The count beside it is what tells a stack of six real layers apart
+          // from six stray leaves the clusterer happened to group.
+          //
+          // One exception, and it is an ID rather than a name: `boxId` is the walker's
+          // `data-box-id` come back round (§7's identity passthrough — a Lolly
+          // screenshot exported with `layerIds` carries the canvas's own box ids), so
+          // when it is there the row can say WHICH element of the original page this
+          // layer is. Minted by the canvas, never read out of a stranger's file.
           const label = t('Layer {n}', { n: i + 1 });
           const nodes = L.nodes === 1 ? t('1 shape') : t('{n} shapes', { n: L.nodes });
+          const from = typeof L.boxId === 'string' && L.boxId ? ` <span class="fc-lift-n">${escape(L.boxId)}</span>` : '';
           return `<li class="fc-lift-row"><span class="fc-lift-tick" aria-hidden="true">${icon(SVG.check)}</span>`
-            + `<span class="fc-lift-name">${escape(label)}</span><span class="fc-lift-n">${escape(nodes)}</span></li>`;
+            + `<span class="fc-lift-name">${escape(label)}${from}</span><span class="fc-lift-n">${escape(nodes)}</span></li>`;
         }).join('')}</ul>`
         + (warnings.length ? `<p class="fc-num-hint fc-lift-warn">${escape(warnings.join(' '))}</p>` : '')
+        // Depth intensity (audit A5#2): how far apart the stack stands. Medium is the
+        // shipped taste ceiling — an unchanged lift is byte-identical to before — with
+        // Dramatic there for a sparse hero shot that reads flat at the default.
+        + '<div class="fc-num-row fc-lift-strength-row">'
+          + `<label class="field-label fc-lift-strength-lab" for="fc-lift-strength">${escape(t('Depth intensity'))}</label>`
+          + '<select class="field-select field-select--sm fc-lift-strength" id="fc-lift-strength" data-lift-strength>'
+            + `<option value="subtle">${escape(t('Subtle'))}</option>`
+            + `<option value="medium" selected>${escape(t('Medium'))}</option>`
+            + `<option value="dramatic">${escape(t('Dramatic'))}</option>`
+          + '</select>'
+        + '</div>'
         + '<div class="fc-num-row fc-confirm-row">'
           + `<button type="button" class="btn btn--sm" data-lift-no>${escape(t('Cancel'))}</button>`
           + `<button type="button" class="btn btn--primary btn--sm" data-lift-yes>${escape(t('Lift layers'))}</button>`
         + '</div>';
-      p.querySelector<HTMLButtonElement>('[data-lift-no]')?.addEventListener('click', (e) => {
+      bodyEl.querySelector<HTMLButtonElement>('[data-lift-no]')?.addEventListener('click', (e) => {
         e.stopPropagation();
         closeMorePanel();
       });
-      const yes = p.querySelector<HTMLButtonElement>('[data-lift-yes]');
+      const yes = bodyEl.querySelector<HTMLButtonElement>('[data-lift-yes]');
       yes?.addEventListener('click', (e) => {
         e.stopPropagation();
+        // Read the Depth-intensity choice at commit time — the select is the only source
+        // of truth, and an unknown value maps to `medium` (1), the byte-identical default.
+        const pick = bodyEl.querySelector<HTMLSelectElement>('[data-lift-strength]')?.value ?? 'medium';
+        const strength = LIFT_STRENGTH[pick] ?? LIFT_STRENGTH.medium;
         yes.disabled = true;
         yes.textContent = t('Lifting…');
-        void runLift(sourceId, ref, layers, () => live());
+        // Busy again, and for the same reason it was at open: the stores and the commit
+        // are work in flight. `runLift`'s `finally` takes the panel down whichever way
+        // it goes, so there is no path that leaves this attribute standing.
+        p.setAttribute('aria-busy', 'true');
+        // The button that was pressed is now disabled, so focus is about to be dropped
+        // on the floor by the browser — park it on the panel, which still says what is
+        // happening, rather than letting it fall to <body> and out of the dialog.
+        p.focus();
+        void runLift(sourceId, ref, layers, viewBox, () => live(), strength);
       });
-      yes?.focus();
+      focusInPanel(yes);
     }
   }
 
   /** What this file needs from an engine `SvgLayer` — structural, so no runtime import. */
-  interface SvgLayerPlan { markup: string; nodes: number }
+  interface SvgLayerPlan {
+    markup: string; nodes: number; boxId?: string;
+    /** The crop the engine cropped this layer's document to (§P3.2), in source user units. */
+    viewBox?: { x: number; y: number; w: number; h: number };
+    /** The layer's measured ink extent — what decides which rows are peers. */
+    bbox?: { x: number; y: number; w: number; h: number } | null;
+  }
+  /** The source document's own viewBox — the denominator for those crops. */
+  type SvgSourceBox = { x: number; y: number; w: number; h: number } | null;
 
   /**
    * Do the lift: store one asset per derived layer, then write the rows in ONE commit.
@@ -4379,11 +4724,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * click could have moved it while the assets were being written.
    */
   async function runLift(
-    sourceId: string, ref: unknown, layers: SvgLayerPlan[], stillOpen: () => boolean,
+    sourceId: string, ref: unknown, layers: SvgLayerPlan[], viewBox: SvgSourceBox,
+    stillOpen: () => boolean, strength = 1,
   ): Promise<void> {
     if (!cfg.imageField) return;
-    const base = liftBaseName(ref);
     try {
+      // Inside the try, with the panel's close in the `finally` below: the confirm
+      // button is already disabled and reading "Lifting…", so ANY throw from here on
+      // that left the panel open would strand it in that state, dismissable only by
+      // clicking outside. Naming the file was the one step that used to sit outside
+      // both.
+      const base = liftBaseName(ref);
       const [{ storeUserUpload }, { KF_Z_FIELD_CLAMP }] = await Promise.all([
         import('./picker.ts'),
         import('../../../../engine/src/keyframes.ts'),
@@ -4394,6 +4745,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         refs.push(await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file) as unknown as InputValue);
       }
       if (disposed) return;
+      // Still closed here on the happy path, BEFORE the commit re-renders the
+      // stage — the `finally` below is the safety net for the paths that used to
+      // sail past this line, not a replacement for it.
       if (stillOpen()) closeMorePanel();
 
       const boxes = getBoxes();
@@ -4410,7 +4764,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       const rows = liftRows(
         source,
-        layers.map((_, i) => ({ src: String((refs[i] as { url?: unknown } | null)?.url ?? ''), id: ids[i]! })),
+        layers.map((L, i) => ({
+          src: String((refs[i] as { url?: unknown } | null)?.url ?? ''),
+          id: ids[i]!,
+          // The engine cropped the document; this is the same rect, so the row can
+          // be sized to the ink instead of to the stage (plans/104 P3.2).
+          crop: L.viewBox ?? null,
+          bbox: L.bbox ?? null,
+        })),
         // `zField` is the DEPTH field (plans/104 §5.3) and lives on the canvas block
         // rather than in this module's geometry cfg — the only reader it has had until
         // now is `timeCfg`, because a keyed `z` replaces it for its segment. A lift is
@@ -4418,9 +4779,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // where thirty other call sites would then have to ignore it.
         { ...cfg, zField: cv.zField || '' },
         {
-          zStep: LIFT_Z_STEP,
           zClamp: KF_Z_FIELD_CLAMP,
           group: cfg.groupField ? freshGroupId(boxes) : '',
+          viewBox,
+          fit: String(source[cfg.fitField] ?? 'contain'),
+          strength,
         },
       // `liftRows` types the image value as a URL STRING, but this canvas's image
       // sub-field is a declared `asset`: the engine resolves block asset sub-fields by
@@ -4432,12 +4795,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
       selection = new Set(ids);
       commit(applyLift(boxes, at, rows));
-      flash(layers.length === 1
-        ? t('Lifted 1 layer.')
-        : t('Lifted {n} layers.', { n: layers.length }));
+      // No singular branch: `askLiftLayers` refuses anything under two layers with
+      // `renderRefusal`, and `runLift` is reachable only from `renderPlan`, so a
+      // "Lifted 1 layer." string could never have been shown — it was a dead key in
+      // twenty-six locales.
+      flash(t('Lifted {n} layers.', { n: layers.length }));
     } catch (e) {
       console.error(e);
       if (!disposed) flash(t('Those layers could not be lifted, so nothing was changed.'));
+    } finally {
+      // The panel closes whatever happened, which the try alone never guaranteed:
+      // an IndexedDB quota rejection during the uploads (the very failure a heavy
+      // lift invites — see the engine's SVG_LAYERS_HEAVY_BYTES warning) flashed a
+      // message and left the confirm button disabled and reading "Lifting…" for
+      // good, dismissable only by clicking outside. Idempotent — on the happy path
+      // the panel is already gone and `stillOpen()` is false.
+      if (stillOpen()) closeMorePanel();
     }
   }
 
@@ -4469,10 +4842,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.innerHTML =
       `<div class="fc-panel-head">${t('Position &amp; size')}</div>` +
       '<div class="fc-dims">' +
-        `<div class="fc-dims-row"><span class="fc-dims-ic" title="${escape(t('Position'))}">${icon(SVG.move)}</span>${cell(t('X'), cfg.xField, x)}${cell(t('Y'), cfg.yField, y)}</div>` +
-        `<div class="fc-dims-row"><span class="fc-dims-ic" title="${escape(t('Size'))}">${icon(SVG.size)}</span>${cell(t('W'), cfg.wField, w, true)}${cell(t('H'), cfg.hField, h, true)}</div>` +
+        `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Position'))}">${icon(SVG.move)}</span>${cell(t('X'), cfg.xField, x)}${cell(t('Y'), cfg.yField, y)}</div>` +
+        `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Size'))}">${icon(SVG.size)}</span>${cell(t('W'), cfg.wField, w, true)}${cell(t('H'), cfg.hField, h, true)}</div>` +
         (cfg.rotationField
-          ? `<div class="fc-dims-row fc-dims-rot"><span class="fc-dims-ic" title="${escape(t('Rotation'))}">${icon(SVG.rotate)}</span>` +
+          ? `<div class="fc-dims-row fc-dims-rot"><span class="fc-dims-ic" data-tip="${escape(t('Rotation'))}">${icon(SVG.rotate)}</span>` +
             `<label class="fc-dims-f"><input type="number" min="-180" max="180" data-dm="${cfg.rotationField}" value="${rot}"><i>°</i></label>` +
             `<input type="range" class="field-range fc-dims-slider" min="-180" max="180" value="${rot}" aria-label="${escape(t('Rotation'))}" data-dm-slider></div>`
           : '') +
@@ -4507,6 +4880,78 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── Document info panel: rename the session/file + at-a-glance details ─────────
+  // Custom CSS editor panel (plan 112 M4): a highlighted, auto-completing editor bound to
+  // the doc-level `customCss` input. setInput (+ onDirty) applies it live to the editor,
+  // exports, and presentation, and rides undo/save like any other edit. rAF-coalesced, so
+  // per-keystroke re-render is a live preview, not churn.
+  function openCssPanel(anchor: HTMLElement): void {
+    closeMorePanel();
+    const current = String(runtime.getModel().find((i) => i.id === 'customCss')?.value ?? '');
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-css-panel';
+    p.innerHTML =
+      `<div class="fc-panel-head">${t('Custom CSS')}</div>` +
+      `<div class="fc-css-hint">${t('Applies to the editor, exports, and presentation. Target .lolly-box, a frame with [data-frame-id], or a present state like .pr-active.')}</div>` +
+      '<div class="fc-css-mount"></div>';
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    stageEl.appendChild(p);
+    morePanel = p;
+    positionPanelBelow(p, anchor);
+    mountCssEditor(p.querySelector<HTMLElement>('.fc-css-mount')!, {
+      value: current,
+      ariaLabel: t('Custom CSS'),
+      placeholder: '.lolly-box { … }',
+      onChange: (v) => { onDirty?.('customCss'); runtime.setInput('customCss', v); },
+    });
+  }
+
+  // Per-frame present `state` panel (plan 112 M4): a one-field editor for a selected
+  // frame's state tokens. Commits on change (blur), not per keystroke — state has no live
+  // editor effect (it themes present mode), so there is no reason to churn the boxes array.
+  function openFrameStatePanel(anchor: HTMLElement, frameIdx: number): void {
+    closeMorePanel();
+    const cur = String(getBoxes()[frameIdx]?.['state'] ?? '');
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-fstate-panel';
+    p.innerHTML =
+      `<div class="fc-panel-head">${t('Frame state')}</div>` +
+      `<div class="fc-css-hint">${t('Space-separated tokens for present mode. Stamped as data-frame-state on the frame — target them in Custom CSS, e.g. [data-frame-state~="dark"] .lolly-box { … }. Also lifted onto the presenter root while this slide is active.')}</div>` +
+      `<input type="text" class="fc-fstate-input field-input" value="${escapeHtml(cur)}" placeholder="dark title-slide" spellcheck="false" autocomplete="off" autocapitalize="off">`;
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    stageEl.appendChild(p);
+    morePanel = p;
+    positionPanelBelow(p, anchor);
+    const input = p.querySelector<HTMLInputElement>('.fc-fstate-input');
+    input?.addEventListener('change', () => {
+      const boxes = getBoxes();
+      if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, state: input.value } : b)));
+    });
+    input?.focus();
+  }
+
+  // Speaker notes (plan 112 M5): a multi-line note the presenter reads while this slide is
+  // active in the speaker view — never rendered on the slide the audience sees.
+  function openSpeakerNotesPanel(anchor: HTMLElement, frameIdx: number): void {
+    closeMorePanel();
+    const cur = String(getBoxes()[frameIdx]?.['notes'] ?? '');
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-notes-panel';
+    p.innerHTML =
+      `<div class="fc-panel-head">${t('Speaker notes')}</div>` +
+      `<div class="fc-css-hint">${t('Shown only in the speaker view (press S while presenting) while this slide is active. Never rendered on the slide itself.')}</div>` +
+      `<textarea class="fc-notes-input field-input" rows="5" spellcheck="true" placeholder="${escapeHtml(t('What to say on this slide…'))}">${escapeHtml(cur)}</textarea>`;
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    stageEl.appendChild(p);
+    morePanel = p;
+    positionPanelBelow(p, anchor);
+    const input = p.querySelector<HTMLTextAreaElement>('.fc-notes-input');
+    input?.addEventListener('change', () => {
+      const boxes = getBoxes();
+      if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, notes: input.value } : b)));
+    });
+    input?.focus();
+  }
+
   function openInfoPanel(anchor: HTMLElement): void {
     closeMorePanel();
     const d = canvasWH();
@@ -4642,7 +5087,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // label); otherwise the label text.
   function segHtml(field: string, cur: any, choices: Array<[string, string, string?]>): string {
     return `<div class="fc-seg" data-seg="${field}">` +
-      choices.map(([v, lbl, ic]) => `<button type="button" class="fc-seg-btn${String(cur) === String(v) ? ' is-on' : ''}${ic ? ' fc-seg-ic' : ''}" data-v="${v}" title="${escape(lbl)}" aria-label="${escape(lbl)}">${ic ? icon(ic) : escape(lbl)}</button>`).join('') +
+      choices.map(([v, lbl, ic]) => `<button type="button" class="fc-seg-btn${String(cur) === String(v) ? ' is-on' : ''}${ic ? ' fc-seg-ic' : ''}" data-v="${v}" data-tip="${escape(lbl)}" aria-label="${escape(lbl)}">${ic ? icon(ic) : escape(lbl)}</button>`).join('') +
       '</div>';
   }
   // Image-position anchor picker — a 3×3 grid of the CSS `object-position` anchors,
@@ -4657,7 +5102,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   ];
   function posGridHtml(field: string, cur: string): string {
     return `<div class="fc-seg fc-posgrid" data-seg="${field}">` +
-      POS9.map(([v, lbl]) => `<button type="button" class="fc-seg-btn fc-pos-btn${cur === v ? ' is-on' : ''}" data-v="${v}" title="${escape(t(lbl))}" aria-label="${escape(tRaw('Anchor image {pos}', { pos: t(lbl).toLowerCase() }))}"><i></i></button>`).join('') +
+      POS9.map(([v, lbl]) => `<button type="button" class="fc-seg-btn fc-pos-btn${cur === v ? ' is-on' : ''}" data-v="${v}" data-tip="${escape(t(lbl))}" aria-label="${escape(tRaw('Anchor image {pos}', { pos: t(lbl).toLowerCase() }))}"><i></i></button>`).join('') +
       '</div>';
   }
   function wireSegs(panel: HTMLElement, onSet: (field: string | undefined, v: string | undefined) => void = (field, v) => setField(field, v)): void {
@@ -4700,9 +5145,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       (cfg.fontField ? `<label class="fc-row"><span>${t('Font')}</span><select class="field-select field-select--sm" data-tp="font">${fontOptionsHtml(fontCur)}</select></label>` : '') +
       // Size row now carries the A−/A+ steppers (moved off the object bar) around the number.
       (cfg.fontSizeField ? `<div class="fc-row"><span>${t('Size')}</span><div class="fc-stepper">
-        <button type="button" class="fc-cbtn" data-tp="smaller" title="${escape(t('Smaller'))}" aria-label="${escape(t('Smaller text'))}">A−</button>
+        <button type="button" class="fc-cbtn" data-tp="smaller" data-tip="${escape(t('Smaller'))}" aria-label="${escape(t('Smaller text'))}">A−</button>
         <input type="number" min="4" max="2000" data-tp="size" value="${sizeCur}">
-        <button type="button" class="fc-cbtn" data-tp="bigger" title="${escape(t('Bigger'))}" aria-label="${escape(t('Bigger text'))}">A+</button>
+        <button type="button" class="fc-cbtn" data-tp="bigger" data-tip="${escape(t('Bigger'))}" aria-label="${escape(t('Bigger text'))}">A+</button>
       </div></div>` : '') +
       (cfg.weightField ? `<label class="fc-row"><span>${t('Weight')}</span><select class="field-select field-select--sm" data-tp="weight">${weightChoicesFor(fontCur).map(([v, l]) => opt(v, t(l), weightCur)).join('')}</select></label>` : '') +
       (cfg.lineHeightField ? `<label class="fc-row"><span>${t('Line height')}</span><input type="range" class="field-range" min="0.7" max="3" step="0.01" data-tp="lh" value="${lhCur}"><b data-tp-val="lh">${lhCur.toFixed(2)}</b></label>` : '') +
@@ -6242,7 +6687,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     ctxbar.innerHTML =
       (painted ? paintCtxHtml(editBox, true) + '<span class="fc-sep fc-sep-v"></span>' : '') +
-      `<select class="field-select field-select--sm fc-pen-kind" data-pen="kind" title="${escape(t('Spline type'))}" aria-label="${escape(t('Spline type'))}">` +
+      `<select class="field-select field-select--sm fc-pen-kind" data-pen="kind" data-tip="${escape(t('Spline type'))}" aria-label="${escape(t('Spline type'))}">` +
         PEN_KINDS.map((k) => `<option value="${k}"${k === p.kind ? ' selected' : ''}>${escape(kindLabel[k] || k)}</option>`).join('') +
       '</select>' +
       (drawing ? '' :
@@ -6252,16 +6697,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           ['smooth', t('Smooth point - handles stay in line'), SVG.contSmooth],
           ['symmetric', t('Symmetric point - handles stay in line and equal'), SVG.contSymmetric],
         ]) +
-        `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" title="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
+        `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" data-tip="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
         // Marquee selection mode: nodes only, or nodes + control points. Only meaningful
         // where control points exist (cubic / hyperbezier).
         (kindReadsHandles(p.kind)
-          ? `<button type="button" class="fc-cbtn${penSelectHandles ? ' is-on' : ''}" data-pen="handlesel" aria-pressed="${penSelectHandles}" title="${escape(penSelectHandles ? t('Selecting nodes and control points - click for nodes only') : t('Selecting nodes only - click to include control points'))}" aria-label="${escape(t('Include control points in a marquee selection'))}">${icon(SVG.nodes)}</button>`
+          ? `<button type="button" class="fc-cbtn${penSelectHandles ? ' is-on' : ''}" data-pen="handlesel" aria-pressed="${penSelectHandles}" data-tip="${escape(penSelectHandles ? t('Selecting nodes and control points - click for nodes only') : t('Selecting nodes only - click to include control points'))}" aria-label="${escape(t('Include control points in a marquee selection'))}">${icon(SVG.nodes)}</button>`
           : '') +
-        `<button type="button" class="fc-cbtn" data-pen="arrange"${selPts >= 2 ? '' : ' disabled'} title="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
-        `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} title="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
+        `<button type="button" class="fc-cbtn" data-pen="arrange"${selPts >= 2 ? '' : ' disabled'} data-tip="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
+        `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} data-tip="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
       '<span class="fc-sep fc-sep-v"></span>' +
-      `<button type="button" class="fc-cbtn" data-pen="done" title="${escape(drawing ? t('Finish this path (Enter)') : t('Finish editing points (Esc)'))}" aria-label="${escape(drawing ? t('Finish this path') : t('Finish editing points'))}">${icon(SVG.penDone)}</button>` +
+      `<button type="button" class="fc-cbtn" data-pen="done" data-tip="${escape(drawing ? t('Finish this path (Enter)') : t('Finish editing points (Esc)'))}" aria-label="${escape(drawing ? t('Finish this path') : t('Finish editing points'))}">${icon(SVG.penDone)}</button>` +
       `<span class="fc-readout">${escape(drawing
         ? (p.nodes.length === 1 ? t('1 point - hold Alt for a corner') : t('{n} points - hold Alt for a corner', { n: p.nodes.length }))
         : (selN ? t('{k} of {n} points', { k: selN, n: p.nodes.length }) : t('{n} points', { n: p.nodes.length })))}</span>`;
@@ -6695,6 +7140,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     document.body.classList.remove('fc-manipulating');
     gesture = null;
     rubber.hidden = true;
+    // The camera HUD and its mode cursor die WITH the gesture, whichever way it ended —
+    // committed, cancelled, or a click that never moved. This one teardown covers every
+    // exit path, so no branch has to remember to clear them.
+    hideCamHud();
+    stageEl.style.cursor = '';
     clearGuides();
     setFramesClipped(true);
     frameOffCache = null;   // release the gesture-scoped frame-offset cache
@@ -7135,7 +7585,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     };
     const mk = (label: string, html: string, run: () => void): HTMLButtonElement => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'fc-cbtn'; b.title = label; b.setAttribute('aria-label', label);
+      b.type = 'button'; b.className = 'fc-cbtn'; b.setAttribute('data-tip', label); b.setAttribute('aria-label', label);
       b.innerHTML = html;
       // preventDefault on pointerdown keeps the caret/selection in the editable
       // (focus never leaves → the toggle hits the live selection, no blur/commit).
@@ -7156,7 +7606,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (cfg.fontField) {
       const fsel = document.createElement('select');
       fsel.className = 'field-select field-select--sm field-select--auto fc-fmt-font';
-      fsel.title = t('Font');
+      fsel.setAttribute('data-tip', t('Font'));
       fsel.setAttribute('aria-label', t('Font'));
       fsel.innerHTML = fontOptionsHtml();
       fsel.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -7183,7 +7633,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (cfg.weightField) {
       const sel = document.createElement('select');
       sel.className = 'field-select field-select--sm field-select--auto fc-fmt-weight';
-      sel.title = t('Weight of the selected text');
+      sel.setAttribute('data-tip', t('Weight of the selected text'));
       sel.setAttribute('aria-label', t('Weight of the selected text'));
       const font = String((cfg.fontField && box[cfg.fontField]) || defaultFont);
       sel.innerHTML = `<option value="">${t('Auto')}</option>` + weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`).join('');
@@ -7258,7 +7708,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const emo = document.createElement('button');
         emo.type = 'button';
         emo.className = 'fc-cbtn fc-fmt-emoji';
-        emo.title = t('Insert 🦎💚🐧 — turns ligatures on (⌥-click for 🐧💚🦎)');
+        emo.setAttribute('data-tip', t('Insert 🦎💚🐧 — turns ligatures on (⌥-click for 🐧💚🦎)'));
         emo.setAttribute('aria-label', t('Insert Geeko loves Tux'));
         emo.textContent = '🦎💚🐧';
         emo.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
@@ -7581,11 +8031,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The camera takes the drag the marquee would have had: there is nothing on the
     // empty stage for a marquee to catch that a camera user is reaching for, and
     // clicking any box hands the gesture straight back by ordinary selection.
-    // SHIFT IS RESERVED (§8: "shift-drag reserved for tilt (P2)"), so it keeps the
-    // meaning it already had — the additive marquee — rather than being given a second
-    // one now and taken away again at P2.
-    if (e.pointerType === 'mouse' && !e.shiftKey && camModeId()) {
-      beginGesture(e, { type: 'campan', client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0 });
+    // SHIFT IS THE TILT (P2 — §8 reserved the chord at M2.5 and this milestone spends
+    // it). The additive marquee keeps shift everywhere else, including on this very
+    // canvas the moment no camera is armed: `camModeId()` is a selection state the user
+    // can see, so the chord is never quietly reassigned under them.
+    if (e.pointerType === 'mouse' && camModeId()) {
+      beginGesture(e, {
+        type: e.shiftKey ? 'camtilt' : 'campan',
+        client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0,
+      });
+      startCamHud(e.shiftKey);
       e.stopPropagation();
       return;
     }
@@ -7636,7 +8091,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // …and the CAMERA takes it first when one is armed (plans/104 §8), exactly as it
     // does over the artboard: the backdrop is empty stage too, and a camera pan that
     // stopped at the artboard's edge would be a gesture with an invisible boundary.
-    if (!e.shiftKey && camModeId()) { beginGesture(e, { type: 'campan', client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0 }); return; }
+    if (camModeId()) {
+      beginGesture(e, {
+        type: e.shiftKey ? 'camtilt' : 'campan',
+        client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0,
+      });
+      startCamHud(e.shiftKey);
+      return;
+    }
     beginGesture(e, { type: 'marquee', origin: clientToNative(e.clientX, e.clientY), additive });
     rubber.hidden = false;
     // The gesture captures the pointer on canvasEl, so the move/up handlers bound there
@@ -7699,6 +8161,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       gesture.dx += nat.x - prev.x;
       gesture.dy += nat.y - prev.y;
       gesture.client = { x: e.clientX, y: e.clientY };
+      showCamPanHud(gesture.dx, gesture.dy);
+      return;
+    }
+    // …and its shifted twin, in CLIENT px (see CamTiltGesture: an angle has no length
+    // in stage space, so a zoom-relative gearing would be gearing by accident).
+    if (gesture.type === 'camtilt') {
+      gesture.dx += e.clientX - gesture.client.x;
+      gesture.dy += e.clientY - gesture.client.y;
+      gesture.client = { x: e.clientX, y: e.clientY };
+      // The HUD shows the ABSOLUTE landing tilt, so it maps the drag to the same deltas
+      // the release will (`rx = -dy·K`, `ry = dx·K`) and asks the panel to compose+clamp.
+      showCamTiltHud(-gesture.dy * CAM_TILT_DEG_PER_PX, gesture.dx * CAM_TILT_DEG_PER_PX);
       return;
     }
     // Pen: pull the just-placed node's handles out, the universal click-and-drag idiom.
@@ -8009,6 +8483,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const wasAudio = armedKind?.id === 'audio' || g.seed?.[cfg.kindField] === 'audio';
       const wasCard = armedKind?.id === 'card';
       const wasTool = armedKind?.id === 'tool';
+      const wasCamera = armedKind?.id === 'camera' || g.seed?.[cfg.kindField] === 'camera';
       const wasImage = !wasLottie && !wasVideo && !wasClip && !wasAudio && !wasTool
         && ((g.seed?.[cfg.kindField] === 'image') || armedKind?.id === 'image');
       const wasText = (g.seed?.[cfg.kindField] === 'text') || armedKind?.id === 'text' || wasCard;
@@ -8028,8 +8503,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // overwrite the `card` kind's own seeded 2.5s. Unauthored, the seq pack derives it
       // from the media and an overlay runs to the sequence end — same as a canvas add.
       if (addAtMs != null) timelinePanel?.promote(id, { start: addAtMs / 1000, dur: null });
-      // A new timed box is only useful next to a timeline, so creating one opens it.
-      if (timeCfg && (wasClip || wasCard || wasAudio)) openTimeline();
+      // A new timed box is only useful next to a timeline, so creating one opens it — and
+      // a CAMERA needs the timeline up too, because camera mode (and with it the shift-drag
+      // tilt / drag-pan gestures, plans/104 §8) only arms while `cameraModeId()` sees an
+      // OPEN timeline. Without this, adding a camera left the timeline shut and a shift-drag
+      // fell through to the marquee — "tilt doesn't work" until you happened to open it.
+      if (timeCfg && (wasClip || wasCard || wasAudio || wasCamera)) openTimeline();
       if (wasLottie) setTimeout(() => pickImage({ pickType: 'lottie', initialTab: 'library' }), 0);
       else if (wasVideo || wasClip) setTimeout(() => pickImage({ pickType: 'video', initialTab: 'library' }), 0);
       else if (wasAudio) setTimeout(() => pickImage({ pickType: 'audio', initialTab: 'library' }), 0);
@@ -8053,6 +8532,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // hand at every canvas zoom instead of only at 100 %.
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         const next = timelinePanel?.cameraWrite(boxes, { x: -dx, y: -dy });
+        if (next && next !== boxes) commit(next);
+      }
+      return;
+    }
+    if (g.type === 'camtilt') {
+      const { dx, dy } = g;
+      endGesture();
+      // DIRECT MANIPULATION, like every other drag here: you are turning the ARTWORK,
+      // not aiming the lens. Drag DOWN and the near edge comes toward you at the bottom
+      // of frame — which is `rx` NEGATIVE in the engine's convention (see
+      // `surfaceMatrix`: negative Tilt X pitches the camera nose-down over the surface,
+      // far edge receding to a horizon at the top). Drag RIGHT and the right-hand edge
+      // comes nearer, which is `ry` positive. Aiming the lens instead would invert both
+      // and put the horizon where the hand did not ask for it.
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        const next = timelinePanel?.cameraWrite(boxes, {
+          rx: -dy * CAM_TILT_DEG_PER_PX, ry: dx * CAM_TILT_DEG_PER_PX,
+        });
         if (next && next !== boxes) commit(next);
       }
       return;
@@ -8861,12 +9358,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // zoom/resize set scrimDirty); a box drag/hover/selection change never moves it.
     const movedStage = scrimDirty;
     if (scrimDirty) { positionFrameScrim(); scrimDirty = false; }
-    // Ghosts are positioned in stage px from the MODEL, exactly like the selection
-    // outline, so they have to be re-placed whenever the artboard's geometry or the
-    // model moves. Skipped on the LIVE path (`liveRects` non-null = a box drag is in
-    // flight) unless the stage itself moved: a ghosted box is off-playhead by
-    // definition and therefore never the one being dragged, so rebuilding its ghost
-    // sixty times a second buys nothing.
+    // Ghosts and motion paths are both positioned in stage px from the MODEL, exactly
+    // like the selection outline, so they have to be re-placed whenever the artboard's
+    // geometry or the model moves. Skipped on the LIVE path (`liveRects` non-null = a
+    // box drag is in flight) unless the stage itself moved — and the two have SEPARATE
+    // reasons, which is worth writing down because the shared line reads like one:
+    //
+    //   • a GHOST is of an off-playhead box, which is by definition never the one being
+    //     dragged, so rebuilding it sixty times a second buys nothing;
+    //   • a MOTION PATH is of the box being dragged, and skipping it is what holds the
+    //     line still at the pose the drag started from. Not a compromise: no gesture
+    //     here writes the model while the pointer is down (see writeGradSpec's note —
+    //     it is the discipline all of them follow), `getBoxes()` hands back the input's
+    //     own array, and `samplePaths` memoises on that array's IDENTITY plus the
+    //     selection and the artboard size. So a paint per pointermove would re-run the
+    //     same map over the same samples and draw the same polyline — the path CANNOT
+    //     follow a live drag, and the honest picture is the authored one it is still
+    //     describing. The commit at pointerup replaces the array, which is the moment
+    //     the path is allowed to move.
     if (!liveRects || movedStage) { paintOnion(); paintMotion(); }
     // ── THE ONE RULE, enforcement point 2 of 3: RETENTION (see the file header) ──
     // The chrome below is positioned from the MODEL, not from the DOM: a selected box
@@ -8992,7 +9501,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       chrome.appendChild(stem);
       rot = document.createElement('div');
       rot.className = 'fc-handle fc-h-rotate';
-      rot.title = t('Rotate');
+      rot.setAttribute('data-tip', t('Rotate'));
       rot.addEventListener('pointerdown', (e) => onHandlePointerDown(e, 'rotate'));
       chrome.appendChild(rot);
     } else if (count > 1) {
@@ -9015,7 +9524,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       chrome.appendChild(stem);
       rot = document.createElement('div');
       rot.className = 'fc-handle fc-h-rotate';
-      rot.title = t('Rotate group');
+      rot.setAttribute('data-tip', t('Rotate group'));
       rot.addEventListener('pointerdown', (e) => onGroupHandleDown(e, 'rotate'));
       chrome.appendChild(rot);
     }
@@ -9561,11 +10070,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // is what "lazy" buys — no migration pass over stored slots.
   {
     const loaded = getBoxes();
-    const withIdsNow = withIds(loaded);
+    let next = withIds(loaded);
+    // Frame membership follows spatial position (plan 112 (b)): a box placed OVER a frame
+    // (its centre inside) becomes that frame's member on load — exactly as a drag would
+    // assign it — so a template or import that positioned content spatially WITHOUT setting
+    // `frame` still presents and per-page-exports as frames, not as excluded pasteboard. A
+    // centre OUTSIDE every frame stays '' (assignFrames leaves it), keeping the pasteboard
+    // scratchpad. Quiet, like the id stamping below: membership matching position is not a
+    // user edit, so no onDirty (no Save-pill flash) and no history entry (no ⌘Z surprise).
+    if (frameCfg) next = assignFrames(next, new Set(next.map((_, i) => i)));
     // mountTool installs the un-wrapped setter; a mount without it falls back.
     const quiet = (runtime as RuntimeApi & { setInputNoHistory?: RuntimeApi['setInput'] }).setInputNoHistory
       ?? ((id: string, value: unknown) => runtime.setInput(id, value));
-    if (withIdsNow !== loaded) quiet(blockId, withIdsNow);
+    const changed = next.length !== loaded.length || next.some((b, i) => b !== loaded[i]);
+    if (changed) quiet(blockId, next);
   }
 
   renderChrome();
@@ -9582,15 +10100,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     void (async () => {
       announce(t('Importing…'));
       try {
-        if (importScenesMode) {
-          // Sequence editor: the dropped design's frames become timed scenes.
-          const n = await importAsScenes(pendingImport, (m: string) => announce(m));
+        if (pendingImport.scenes && importSceneCapable) {
+          // The "Make a video from its frames" drop door: the dropped design's frames
+          // become timed scenes on the timeline (plans/104 §337).
+          const n = await importAsScenes(pendingImport.file, (m: string) => announce(m));
           if (disposed) return;
           announce(n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n }));
           return;
         }
         const { parseDesignFile } = await import('./design-import.ts');
-        const res = await parseDesignFile(pendingImport, {
+        const res = await parseDesignFile(pendingImport.file, {
           host: host as any, log: (m: string) => announce(m), interactive: true, map: importMap,
         });
         if (disposed) return;

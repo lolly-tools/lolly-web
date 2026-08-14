@@ -15,16 +15,20 @@
 //   scrubT   number | null — the SHELL sets 0..1 to seek/hold; null = follow the clock
 //   gen      number        — the tool bumps it when it republishes so the bar resyncs ticks
 
+import { icon } from '../lib/icons.ts';
+
 export type AnimState = {
   active?: boolean; labels?: string[]; loopMs?: number; curT?: number;
   playing?: boolean; scrubT?: number | null; gen?: number;
 };
 
+// Transport glyphs come from the one icon registry (lib/icons.ts) — filled so the
+// solid transport look matches the audio player's play/pause.
 const ICON = {
-  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
-  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
-  prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zM20 6v12l-9-6z"/></svg>',
-  next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 6h2v12h-2zM4 6l9 6-9 6z"/></svg>',
+  play: icon('play', { filled: true }),
+  pause: icon('pause', { filled: true }),
+  prev: icon('skipBack', { filled: true }),
+  next: icon('skipForward', { filled: true }),
 };
 
 export function setupAnimTransport({ stageEl }: { stageEl: HTMLElement }): () => void {

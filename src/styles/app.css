@@ -52,6 +52,8 @@
 @import './parts/components.css'   layer(chrome);
 @import './parts/color-field.css'  layer(chrome); /* colour picker — split out of components.css; same layer, so host overrides keep winning */
 @import './parts/dialogs.css'      layer(chrome);
+@import './parts/present.css'      layer(chrome); /* presentation mode fullscreen deck (plan 112) — body-level fixed overlay, above every view */
+@import './parts/css-editor.css'   layer(chrome); /* shared CSS code editor (plan 112 M4) — highlight overlay + autocomplete */
 @import './parts/saved-list.css'   layer(chrome); /* saved-session rows — history modal + drawer + /profile */
 @import './parts/notfound.css'     layer(chrome);
 @import './parts/overrides.css'    layer(overrides); /* cross-cutting overrides (top-right FAB/profile cluster) */

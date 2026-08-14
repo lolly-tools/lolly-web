@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) — it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform } from '@lolly/engine';
 import type {
   Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
@@ -1689,12 +1689,45 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
     return false;
   }
+  // The second fidelity guard, and the visible half of plans/104 §12 Q2: a box under a
+  // real 3-D pose (a tilted camera, or a per-box perspective tilt) cannot stay vector,
+  // because neither SVG nor PDF has a perspective transform. The walkers keep every
+  // untilted layer as geometry and embed a per-box raster for the tilted ones — house
+  // style degrades visibly, nothing refuses — so this row is the "visibly" part. It says
+  // what happened BEFORE the download rather than leaving the user to find a soft edge in
+  // the file, which is the same contract the frosted-glass row above has.
+  //
+  // ⚑ RASTER FORMATS ARE NOT WARNED, and that is a measurement rather than an omission:
+  // spike S2 put a per-element `matrix3d` through the same dom-to-image path 20 poses
+  // deep and found no geometric error at all (flat-region diff 0.012–0.045/255, ink IoU
+  // 0.985–0.993, text marginally sharper than the live compositor). A PNG of a tilted
+  // scene is right, so there is nothing to say about it.
+  const VECTOR_FORMATS = new Set(['svg', 'pdf', 'pdf-cmyk', 'emf', 'wmf', 'eps', 'dxf']);
+  function canvasHasPerspectivePose(): boolean {
+    const root = canvasEl;
+    if (!root) return false;
+    for (const node of [root, ...Array.from(root.querySelectorAll('*'))]) {
+      // Same exemption as the backdrop scan: editor-only chrome is detached before any
+      // render, so a pose on it is never in the export.
+      if (node.closest('[data-export-hide]')) continue;
+      if (isNonAffineTransform(getComputedStyle(node).transform)) return true;
+    }
+    return false;
+  }
   function updateFidelityWarning(): void {
     if (!fidelityWarnEl) return;
     const fmt = formatEl?.value || initialFmt || formats[0] || '';
-    const msg = (fmt && !FROST_OK_FORMATS.has(fmt) && canvasUsesBackdropFilter())
-      ? `This design uses a frosted glass effect. ${fmt.toUpperCase()} exports can’t keep the blur, so the panel exports without it.`
-      : '';
+    // Both guards can fire at once (a frosted panel on a tilted stage), so the row
+    // carries whichever sentences apply rather than the first one that matched.
+    const parts: string[] = [];
+    if (fmt && !FROST_OK_FORMATS.has(fmt) && canvasUsesBackdropFilter()) {
+      parts.push(`This design uses a frosted glass effect. ${fmt.toUpperCase()} exports can’t keep the blur, so the panel exports without it.`);
+    }
+    if (fmt && VECTOR_FORMATS.has(fmt) && canvasHasPerspectivePose()) {
+      parts.push(t('Tilted layers export as images inside this {fmt}. Everything else stays vector.',
+        { fmt: fmt.toUpperCase() }));
+    }
+    const msg = parts.join(' ');
     fidelityWarnEl.querySelector<HTMLElement>('[data-fidelity-warning-text]')!.textContent = msg;
     fidelityWarnEl.hidden = !msg;
   }

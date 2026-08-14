@@ -304,6 +304,11 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         name: meta.name,
         tags: meta.tags,
         ...(meta.aiGenerated ? { aiGenerated: meta.aiGenerated } : {}),
+        // Licensing signals ride onto the resolved ref so downstream (e.g. the
+        // `.lolly` share file, plans/114) can tell a freely-shareable catalog asset
+        // from proprietary/brand-locked content that must not travel by default.
+        ...(meta.brandLock ? { brandLock: true } : {}),
+        ...((meta as { license?: string }).license ? { license: (meta as { license?: string }).license } : {}),
         ...(durationMs != null ? { durationMs } : {}),
       };
 

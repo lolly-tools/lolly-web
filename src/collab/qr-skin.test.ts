@@ -921,7 +921,7 @@ test('a real invite token fits well inside version 10, with margin', (t) => {
         ]),
         invite: {
           v: 1,
-          toolId: 'layout-studio',
+          toolId: 'design',
           toolVersion: '1.4.0',
           engineVersion: '1.108.0',
           name: 'Priya',
@@ -1001,7 +1001,7 @@ test('byte mode alone would NOT hold a typical invite — the base32 skin is loa
     ]),
     invite: {
       v: 1,
-      toolId: 'layout-studio',
+      toolId: 'design',
       toolVersion: '1.4.0',
       engineVersion: '1.108.0',
       name: 'Priya',

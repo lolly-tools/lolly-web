@@ -202,7 +202,7 @@ const ROWS: Row[] = [
   // the cap wrongly declared here the box draws sharp and this row reads 1.62%.
   { name: 'layer blur', markup: box('background:#4a90d9;filter:blur(6px)'),
     maxMean: 0.005, maxWorst: 0.08 },                       // absent → 0.14% / 2.4%
-  // The mixed chain, which is what layout-studio emits for a blurred box carrying a
+  // The mixed chain, which is what design emits for a blurred box carrying a
   // depth shadow. This one ALWAYS rasterised (parseCssFilter cannot tokenise the nested
   // rgba(), so it fell to the hatch by accident) — what it guards is the SPILL: measured
   // whole-value it came out at zero padding, the capture was sized to the bare box, and

@@ -17,7 +17,7 @@
  * anything, and pen paths. Each is lowered to a contour before it can be combined, and if
  * the lowering disagrees with what `hooks.js` paints even slightly, a union visibly does
  * not match the shapes the user selected. So `boxToPath` reproduces `boxCss`/`radiusFor`
- * in brands/<brand>/tools/layout-studio/hooks.js term for term, including the parts that
+ * in brands/<brand>/tools/design/hooks.js term for term, including the parts that
  * look like noise:
  *
  * - `x`/`y` are rounded to whole px and `w`/`h` are `max(1, round(v))` — a zero-width box
@@ -279,7 +279,7 @@ export type PathPayload = AuthoredPath | AuthoredPath[];
  * commas, and `encodeBlocksCompact` refuses to emit a compact string at all when any
  * value contains `,` or `~` (they cannot be escaped — `URLSearchParams` percent-DECODES
  * the query before the block splitter runs), so a JSON path field would silently push
- * EVERY layout-studio link containing one pen shape onto the lossless JSON fallback: the
+ * EVERY design link containing one pen shape onto the lossless JSON fallback: the
  * whole `boxes` array, every field of every box, re-encoded. The engine's grammar emits
  * only unreserved characters minus `~`, so it costs zero bytes to percent-encode.
  *

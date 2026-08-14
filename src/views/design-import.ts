@@ -1388,7 +1388,7 @@ async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => v
     const compose = host && host.compose;
     if (!compose || typeof compose.render !== 'function') throw new Error('tool composition isn’t available here');
     const rendered = await compose.render({
-      toolId: 'layout-studio',
+      toolId: 'design',
       inputs: { boxes, background: 'transparent' },
       format: 'svg',
       width: Math.max(1, Math.round(width)),
@@ -1418,12 +1418,12 @@ async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => v
 // render bakeSceneAsset uses, WITHOUT storing it — the raster bake rasterises this
 // intermediate itself (rendering vector once, then drawing at each scale, keeps a
 // png@4 crisp: re-rendering the tool at 4x page size would scale the CANVAS, not
-// the content, because layout-studio boxes are absolute px).
+// the content, because design boxes are absolute px).
 async function renderBoxesSvgBlob(host: HostV1 | undefined, name: string, boxes: unknown[], width: number, height: number): Promise<Blob> {
   const compose = host && host.compose;
   if (!compose || typeof compose.render !== 'function') throw new Error('tool composition isn’t available here');
   const rendered = await compose.render({
-    toolId: 'layout-studio',
+    toolId: 'design',
     inputs: { boxes, background: 'transparent' },
     format: 'svg',
     width: Math.max(1, Math.round(width)),

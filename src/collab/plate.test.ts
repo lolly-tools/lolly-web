@@ -32,8 +32,10 @@ import {
   PLATE_ALPHABET,
   PLATE_CHARS,
   PLATE_DOMAIN,
+  PLATE_DOMAIN_NATIVE,
   PLATE_RE,
   derivePlate,
+  derivePlateFromTranscript,
   formatPlate,
   orderFingerprints,
 } from './plate.ts';
@@ -262,4 +264,39 @@ test('an absent or impossible fingerprint is refused, never hashed as nothing', 
     /fingerprint must be/,
     'a caller that reads material off a transport that has none must not get a plate',
   );
+});
+
+// ── Native transport plate (Noise handshake hash) ───────────────────────────────────
+
+test('a transcript plate has the plate form', async () => {
+  assert.match(await derivePlateFromTranscript(fp(5)), PLATE_RE);
+});
+
+test('the same handshake hash always yields the same plate (both peers agree)', async () => {
+  const h = fp(9);
+  assert.equal(await derivePlateFromTranscript(h), await derivePlateFromTranscript(fp(9)));
+});
+
+test('a different handshake hash yields a different plate (a MITM leg diverges)', async () => {
+  const base = await derivePlateFromTranscript(fp(11));
+  // Flip one byte of h — the transcript a man-in-the-middle would produce on one leg.
+  const mutated = fp(11);
+  mutated[7]! ^= 0x01;
+  assert.notEqual(await derivePlateFromTranscript(mutated), base);
+});
+
+test('the native domain is separated from the DTLS domain, so plates never collide', async () => {
+  assert.notEqual(PLATE_DOMAIN_NATIVE, PLATE_DOMAIN);
+  // Same 32 bytes fed to the DTLS pair-derivation (as local==remote==h) vs the transcript
+  // derivation must NOT produce the same plate: the domain string is part of the preimage.
+  const h = fp(13);
+  const asTranscript = await derivePlateFromTranscript(h);
+  const asPairDegenerate = await derivePlate(h, h); // a degenerate DTLS pairing over the same bytes
+  assert.notEqual(asTranscript, asPairDegenerate, 'domain separation failed — the two plates match');
+});
+
+test('an empty or oversized transcript hash is refused, never an approximate plate', async () => {
+  await assert.rejects(() => derivePlateFromTranscript(new Uint8Array(0)), /transcript hash must be/);
+  await assert.rejects(() => derivePlateFromTranscript(new Uint8Array(256)), /transcript hash must be/);
+  await assert.rejects(() => derivePlateFromTranscript(undefined as unknown as Uint8Array), /transcript hash must be/);
 });

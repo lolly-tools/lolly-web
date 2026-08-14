@@ -37,6 +37,8 @@ import { registerShareSection } from '../lib/share-sections.ts';
 import { setExportPolicy } from '../lib/export-policy.ts';
 import { registerApprovalOpener } from '../lib/approval-request.ts';
 import { registerSessionSource } from '../lib/session-source.ts';
+import { registerNearbyProvider } from '../lib/nearby.ts';
+import { createOrgNearbyProvider } from './nearby-source.ts';
 import { setInjectedTools } from '../lib/injected-tools.ts';
 // Import from the LEAF module, not the '@lolly/engine' barrel: org/index.ts is on the boot
 // static-import chain (jelly → feature-flags → org), so a barrel import drags the whole
@@ -178,6 +180,9 @@ let unregisterShareSection: (() => void) | null = null;
  *  leaks the previous registration. */
 let unregisterApprovalOpener: (() => void) | null = null;
 let unregisterSessionSource: (() => void) | null = null;
+/** Unregister for the `'org'` nearby provider (plans/26 §8), so a re-init replaces
+ *  rather than stacks it. Registered only when the instance grants `collab.nearby`. */
+let unregisterNearbySource: (() => void) | null = null;
 /** Unregister for the work-collab factory (plan 100 wave 3.1), so a re-init replaces
  *  rather than stacks the registration. Null whenever the instance does not grant
  *  `collab.join` — which is every instance until the server ships the bits. */
@@ -634,6 +639,15 @@ export async function initOrg(): Promise<OrgState | null> {
       unregisterSessionSource = registerSessionSource(
         createInstanceSessionSource(orgConfigState?.instance?.name || t('your organisation')),
       );
+      // Instance-mediated "nearby" (plans/26 §8): register the `'org'` provider when
+      // this instance grants `collab.nearby` (enabled policy ∩ collab.join). Absent
+      // ⇒ NO registration, so a plain build or an instance without the bit stays
+      // byte-identical. Replaced (not stacked) on re-init, and dropped on reset.
+      unregisterNearbySource?.();
+      unregisterNearbySource = null;
+      if (orgConfigState?.can?.['collab.nearby'] === true) {
+        unregisterNearbySource = registerNearbyProvider(createOrgNearbyProvider());
+      }
       // Offer live co-editing on this instance's sessions (plan 100 §7, wave 3.1),
       // through the factory seam in org/collab-provider.ts. Gated on the caller's
       // `collab.join` capability bit — read inline here rather than through
@@ -790,6 +804,8 @@ export function _resetOrgForTests(): void {
   unregisterApprovalOpener = null;
   unregisterSessionSource?.();
   unregisterSessionSource = null;
+  unregisterNearbySource?.();
+  unregisterNearbySource = null;
   unregisterCollabFactory?.();
   unregisterCollabFactory = null;
   unregisterCollabShareSection?.();

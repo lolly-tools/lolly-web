@@ -3,10 +3,10 @@
    bottom bar (components/spotlight.ts positions `bottom`/`max-height` inline
    from the footer's live rect). Body-mounted — NEVER a footer child, because
    .gallery-footer's backdrop-filter would become the containing block for a
-   fixed panel (the fixed-popover trap). Deliberately a plain elevated card
-   rather than a frosted pass: a second full-width backdrop blur directly above
-   the already-blurred footer is wasted GPU work, and the frosted-menus gotcha
-   stays out of play entirely. */
+   fixed panel (the fixed-popover trap). Frosted: a translucent --card over a
+   light backdrop blur, so it reads as one glass unit with the footer it docks
+   to. (backdrop-filter here makes the panel its own containing block, but its
+   children don't position fixed, so the trap stays out of play.) */
 
 .spotlight-panel {
   position: fixed;
@@ -19,7 +19,9 @@
   z-index: 60; /* above the footer (50) — they read as one stacked unit */
   display: flex;
   flex-direction: column;
-  background: hsl(var(--card));
+  background: hsla(var(--card) / .75);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1.4);
@@ -109,6 +111,27 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
   font-weight: 600;
 }
 .spotlight-see-all-arrow { flex: none; }
+
+/* ─── The current view's own group (plans/99 §2a) ────────────────────────────
+   Hoisted to the top of the panel (spotlight.ts) and washed in the brand accent
+   so the results for the view you're ON read as "here". Discovery no longer
+   depends on seeing the live-filtered cards behind the panel, which it can
+   overlap — the same results lead the overlay, highlighted. Uses --primary, the
+   shell-chrome accent brand-vars.ts overrides per active brand (same token the
+   see-all and Ask rows already tint with). */
+.spotlight-group-label--own { color: hsl(var(--primary)); }
+.spotlight-opt--own {
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.08), hsl(var(--primary) / 0));
+  padding-block: 1rem;
+  margin: .5rem 0; /* the lead group breathes a little more than the rest */
+}
+.spotlight-opt--own .spotlight-opt-icon { color: hsl(var(--primary)); }
+/* Hover / keyboard-active deepen the wash so the own group's selection still
+   reads over its resting tint (out-specifies the shared .spotlight-opt:hover). */
+.spotlight-opt--own:hover,
+.spotlight-opt--own.is-active {
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.16), hsl(var(--primary) / 0.04));
+}
 
 .spotlight-empty {
   padding: 14px 12px;

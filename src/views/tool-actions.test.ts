@@ -635,7 +635,7 @@ function mountPaged(opts: {
   }
   const pageExports: Array<{ format: string; opts: Record<string, unknown> }> = [];
   const manifest = {
-    id: 'layout-studio', name: 'Design', version: '1.0.0', inputs: opts.inputs ?? [],
+    id: 'design', name: 'Design', version: '1.0.0', inputs: opts.inputs ?? [],
     render: { width: 1080, height: 1080, formats: ['png', 'svg', 'pdf'], ...(opts.render ?? {}) },
   };
   const runtime = {

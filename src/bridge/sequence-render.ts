@@ -70,11 +70,13 @@ import {
   parseSequenceStage,
   applyDurationOverride,
   camerasMove,
+  camerasTilt,
   frameTimestamps,
   activeFrameWindow,
   crossfadeJunctions,
   normalizeFrameScene,
   ownsLayerFx,
+  planCameraView,
   sequenceDrawPlan,
   stageCameras,
   sequenceError,
@@ -91,7 +93,23 @@ import {
   planPlateBudget,
   type PlateLayerNeed,
 } from './plate-budget.ts';
-import { parseDropShadows, spillPad } from '../lib/canvas-blur.ts';
+import {
+  parseDropShadows,
+  spillPad,
+  renderFx,
+  laneFor,
+  releaseStage,
+  releaseBlurScratches,
+  type BlurCanvas,
+  type BlurCtx,
+} from '../lib/canvas-blur.ts';
+// P2b — the WebGL2 quad compositor for tilt export (plans/104 §6.4). Shell-only; the
+// engine supplies the projection math (`projectLayer` → `m3`) and nothing else.
+import {
+  createGlQuadCompositor,
+  glQuadCompositorSupported,
+  type GlQuadCompositor,
+} from './sequence-gl.ts';
 import {
   createClipAudio,
   type ClipAudio,
@@ -105,6 +123,7 @@ import {
 // AND spawned as a Worker below — one compositor, two hosts (see the header).
 import {
   runSequenceJob,
+  itemFx,
   toJobLayer,
   jobTransferables,
   closeJobBitmaps,
@@ -134,6 +153,7 @@ import {
   iccProfileBytes,
   parseClipShape,
   projectDepth,
+  projectLayer,
   resolveCamera,
 } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
@@ -146,7 +166,7 @@ import {
 // the clock APPLIES, and the four inline properties it COMPOSES (transform, opacity,
 // filter, z-index) have to come off the stage for exactly as long — see the wrapper on
 // `renderSequence` below, and plans/104 §6 point 0.
-import { OFF_CLASS, withAuthoredDom } from './sequence-dom.ts';
+import { OFF_CLASS, createSequenceTime, withAuthoredDom } from './sequence-dom.ts';
 // bridge → views. Phase 3 already has this edge (sequence-providers.ts reuses the
 // clock's seek semantics); reusing the LIVE Lottie player instance is the only way
 // a Lottie box can be exported at all — re-mounting a second player would double
@@ -184,6 +204,21 @@ export const MAX_SEQUENCE_MS = 600_000;
 
 /** No frame completed for this long ⇒ the export is stuck; fail, never hang. */
 export const WATCHDOG_MS = 10_000;
+
+/**
+ * Bytes of cached fx plates one render may retain, or null for this machine's own
+ * allowance (`fxCacheBudgetBytes`). TEST SEAM ONLY — see `fxPlateKey` in the executor.
+ *
+ * It exists because the claim the cache makes is PIXEL IDENTITY, and the only way to
+ * prove that on a real engine is to render the same scene both ways in one run. 0
+ * turns the cache off completely, which is the "both ways" the goldens compare.
+ */
+let fxCacheBytesOverride: number | null = null;
+
+/** TEST SEAM: pin the fx-plate allowance (null restores the machine's own). */
+export function _setFxCacheBytes(bytes: number | null): void {
+  fxCacheBytesOverride = Number.isFinite(bytes as number) && (bytes as number) >= 0 ? (bytes as number) : null;
+}
 
 /** Everything mixes at 48 kHz stereo — the rate both AAC and Opus want. */
 export const MIX_RATE = 48_000;
@@ -1079,6 +1114,50 @@ async function renderSequenceAuthored(
   const cameras = stageCameras(stage.layers);
   const planEnv: SeqPlanEnv = { stageW: nativeW, stageH: nativeH, cameras };
   const camMoves = camerasMove(cameras);
+
+  // ── the TILT GATE (plans/104 §6.4, P2) ────────────────────────────────────
+  //
+  // Here, and here specifically: after the stage and its keyframe tracks have been
+  // parsed (so the question is asked of the camera set the render will actually use)
+  // and BEFORE a single plate is photographed (so a refusal costs nothing and a capture
+  // run does not pay for plates it will never draw).
+  //
+  // A tilted camera projects a screen-parallel layer through a HOMOGRAPHY, and the
+  // canvas compositor's transform is affine by definition — there is no approximation
+  // to fall back to, only a wrong picture. So the whole render moves to the P2a capture
+  // tier: the DOM applier already writes the engine's matrix as a per-element
+  // `matrix3d`, so the live artboard IS the composite, and every frame is a photograph
+  // of it. Slower by an order of magnitude and correct, which is the trade §6.4 makes
+  // explicitly ("that's the price of correct-first").
+  const tilt = camerasTilt(cameras);
+  // P2b (plans/104 §6.4, plan 98 §9.1 Phase C): with the opt-in GPU compositor flag on
+  // AND WebGL2 present, a tilted export takes the GL quad-compositor path — ONE clean
+  // plate texture per layer, resampled coherently through each per-quad homography,
+  // which fixes the P2a capture-tier flicker (127 independent full-frame dom-to-image
+  // rasters). It reuses the very plate pipeline below (the tilt gate has always sat
+  // BEFORE it, so plates are never built under P2a) — hence the render does NOT return
+  // here; it falls through, builds plates, and hands the finished SeqJob to
+  // `renderGlComposite` after the thread-selection point. Everything else about the
+  // export (the plates, the audio mix, the mux, one container-level C2PA) is identical.
+  const useGl = !!tilt && glSequenceRenderEnabled() && supportsGlSequenceRender();
+  if (tilt && !useGl) {
+    log('info', `sequence: TILT export — the camera authors ${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°${tilt.atMs == null ? ' as its scene pose' : ` at ${Math.round(tilt.atMs)}ms`}, which is a homography the canvas compositor cannot draw. Every frame is captured off the live artboard instead (slower, and pixel-for-pixel what the preview shows).`);
+    return await renderTiltCapture(tilt);
+  }
+  if (useGl) {
+    // The video refusal stays reachable on the P2b path too (§6.4 first cut: video
+    // under tilt is an explicit follow-up). Failed up front, before a single plate is
+    // photographed, exactly as `renderTiltCapture` refuses it — same coded error, same
+    // wording, so a user sees one answer whichever tilt tier is active.
+    const videos = stage.layers.filter((L) => L.kind === 'video');
+    if (videos.length > 0) {
+      throw sequenceError(
+        'SEQ_TILT_UNSUPPORTED',
+        `tilt export of video needs the GPU compositor's video path, which is a follow-up. This scene tilts the camera (${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}. Remove the tilt to export it now, or replace the video clip with a still.`,
+      );
+    }
+  }
+
   const demands = plateWindowDemands(stage.layers, usedGrid, stage.totalMs, planEnv, camMoves);
   // The blur lanes pool their scratch canvases ACROSS frames (canvas-blur.ts's POOL),
   // and those scratches are plate-sized — so they are part of what this render will
@@ -1309,6 +1388,10 @@ async function renderSequenceAuthored(
       stageW: nativeW, stageH: nativeH,
       bg: bgRaster, bgPad, plates, clips,
       maxLiveProviders: MAX_LIVE_PROVIDERS, watchdogMs: WATCHDOG_MS,
+      // A plain number, so the worker path caches exactly the layers the in-thread
+      // path does (plans/104 P3.1). Omitted unless a test pinned it, which keeps the
+      // wire — and `structuredClone(job)` — identical to what it was.
+      ...(fxCacheBytesOverride == null ? {} : { fxCacheBytes: fxCacheBytesOverride }),
     };
     // The DRAW size of a size-tweened layer at one output frame. Answered by re-running
     // the SAME planner the executor runs, over the same layers, grid, totalMs and env —
@@ -1334,6 +1417,15 @@ async function renderSequenceAuthored(
       liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt,
     );
     const hybrid = liveBoxes.size > 0;
+
+    // ── P2b: the GPU compositor draws tilt (plans/104 §6.4) ────────────────
+    // Reached only under a tilted camera with the opt-in flag on and WebGL2 present
+    // (`useGl`, decided at the gate above). The plate pipeline just ran, so this reuses
+    // the SeqJob verbatim — plates, clips, the live raster, the audio mix — and only the
+    // COMPOSITOR differs: GL quads through the per-quad homography instead of `drawItem`'s
+    // affine canvas. Kept ahead of the worker/in-thread selection because tilt cannot run
+    // on either of those (both call `drawItem`, which has no homography to draw).
+    if (useGl) return await renderGlComposite(job, mix, audioPick, liveRaster);
 
     // ── which thread executes ─────────────────────────────────────────────
     if (pick && supportsWorkerSequenceRender()) {
@@ -1420,6 +1512,317 @@ async function renderSequenceAuthored(
       return await gifBlob(gifPixels, outW, targetH, opts);
     } finally {
       if (mux) { try { await mux.abort(); } catch { /* already down */ } }
+    }
+  }
+
+  /**
+   * **P2b — the GPU COMPOSITOR** (plans/104 §6.4, plan 98 §9.1 Phase C).
+   *
+   * The sibling of `renderInThread`: same SeqJob, same plates, same audio mix, same mux
+   * sink, same one-container-C2PA — but the frame is COMPOSED on the GPU instead of by
+   * `drawItem`, which is the only thing that lets a TILTED camera export cleanly. Each
+   * layer's clean plate becomes one texture; every frame draws each PlanItem as a quad
+   * through its per-quad homography (`item.m3`), resampled coherently in one GL pass.
+   * That is the flicker fix: P2a takes 127 independent full-frame dom-to-image rasters
+   * (each its own serialise → SVG → raster with its own rounding); this takes one
+   * texture per layer and resamples them together.
+   *
+   * It draws CLEAN plates and reads them back CLEAN — no per-frame, per-quad imprint;
+   * provenance stays at the container exactly as P2a's does (this file makes zero
+   * imprint calls, and this path keeps it that way). A tilted-video export is refused up
+   * front at the gate, so no `<video>` reaches here in this cut.
+   */
+  async function renderGlComposite(
+    job: SeqJob, mix: MixResult, audioPick: SeqAudioPick | null, liveRaster: SeqJobIO['lottieAt'],
+  ): Promise<Blob> {
+    // Re-bound because a closure does not inherit the outer narrowing of `stage`, which
+    // the guard at the top of the render has already made non-null (same as P2a).
+    const stageLayers: SeqLayer[] = stage?.layers ?? [];
+    const totalMs = stage?.totalMs ?? 0;
+    const comp: GlQuadCompositor | null = createGlQuadCompositor(outW, targetH);
+    if (!comp) {
+      // WebGL2 vanished between the probe and here (a lost context, a refused
+      // allocation). The correct-but-slow capture tier is the honest fallback; the video
+      // refusal already ran, so `renderTiltCapture` cannot meet a `<video>` it can't shoot.
+      log('warn', 'sequence: the GPU compositor could not be created — falling back to the P2a capture tier.');
+      return await renderTiltCapture(tilt as { ch: 'rx' | 'ry'; deg: number; atMs: number | null });
+    }
+
+    // The 2D readback destination — same kind and shape as `renderInThread`'s canvas, so
+    // every frame sink (mp4/webm/gif/apng) consumes an ordinary 2D canvas and keeps
+    // working unchanged. The GL frame is blitted onto it once per frame.
+    const destCanvas: AnyCanvas = streaming && typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(outW, targetH)
+      : Object.assign(document.createElement('canvas'), { width: outW, height: targetH });
+    const destCtx = (destCanvas as unknown as { getContext(id: string, o?: unknown): unknown }).getContext('2d', { alpha: true }) as AnyCtx | null;
+    if (!destCtx) throw sequenceError('SEQ_DECODE_FAILED', 'no 2D context for the GL readback canvas');
+
+    const plateOf = new Map(job.plates.map((p) => [p.idx, p]));
+    const wireOf = new Map(job.layers.map((w) => [w.idx, w]));
+    /** A texture slot the stage background owns — never a real layer idx (those are ≥ 0). */
+    const BG_TEX_IDX = -1;
+
+    let mux: StreamingMux | null = null;
+    const bitmaps: ImageBitmap[] = [];
+    const apngFrames: Uint8Array[] = [];
+    const gifPixels: Uint8ClampedArray[] = [];
+    try {
+      if (pick) {
+        mux = await createStreamingMux(pick, {
+          width: outW, height: targetH, fps, bitrate,
+          audio: audioPick ? { ...audioPick, channels: [] } : null,
+        });
+        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) — WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${job.frameCount}f, one clean plate texture per layer.`);
+      } else {
+        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) — ${job.frameCount} frames of ${outW}×${targetH}, one clean plate texture per layer resampled on the GPU.`);
+      }
+
+      for (let i = 0; i < job.frameCount; i++) {
+        const t = usedGrid[i] as number;
+        comp.beginFrame();
+
+        // THE BACKGROUND is an implicit z = 0 layer (§5.5) and is projected like one —
+        // through the SAME `projectLayer`, so a tilt tilts the wallpaper too (the DOM
+        // does exactly this in `sequence-dom.ts`). `bgPad` is the overscan the plate was
+        // captured with so the reveal has artboard in it.
+        if (job.bg) {
+          const view = planCameraView(planEnv, t);
+          const proj = projectLayer(view, { bx: nativeW / 2, by: nativeH / 2, z: 0 });
+          const bgTex = comp.uploadPlate(BG_TEX_IDX, job.bg);
+          if (bgTex) {
+            comp.drawQuad({
+              texture: bgTex,
+              rect: { x: 0, y: 0, w: nativeW, h: nativeH },
+              S,
+              item: { dx: proj.dx, dy: proj.dy, scale: proj.scale, rot: 0, alpha: clamp01(proj.alphaGuard), blend: '', m3: proj.m },
+              platePad: Number.isFinite(job.bgPad) && (job.bgPad as number) > 0 ? (job.bgPad as number) : 0,
+              plateEff: 1,
+            });
+          }
+        }
+
+        // The plan is ALREADY depth-sorted (sequence-plan.ts's `out.sort` by resolvedZ)
+        // — DO NOT re-sort. Drawing it in order is the painter's order a perspective
+        // render needs, and it holds under tilt (κ > 0 over the control range, §4.2).
+        const plan = sequenceDrawPlan(stageLayers, t, totalMs, planEnv);
+        for (const item of plan) {
+          const L = item.layer;
+          if (L.kind === 'audio' || L.kind === 'camera') continue;   // no picture (§5.4)
+          if (item.alpha <= 0) continue;
+          const wire = wireOf.get(L.idx);
+          // The RESOLVED box (§5.2) — the authored rect unless the track keyed `w`/`h`.
+          const bw = item.sized ? item.w : (Number.isFinite(item.w) && item.w > 0 ? item.w : L.rect.w);
+          const bh = item.sized ? item.h : (Number.isFinite(item.h) && item.h > 0 ? item.h : L.rect.h);
+          if (bw <= 0 || bh <= 0) continue;
+          const platePad = Number.isFinite(wire?.platePad) ? (wire?.platePad as number) : 0;
+          const plateEff = Number.isFinite(wire?.plateEff) && (wire?.plateEff as number) > 0 ? (wire?.plateEff as number) : 1;
+
+          // The picture: the static plate, or a live re-raster for a Lottie/size-tween
+          // layer (video is refused, so `over` never applies here).
+          let src: CanvasImageSource | null = plateOf.get(L.idx)?.under ?? null;
+          let perFrame = false;
+          if ((wire?.needsLiveRaster || item.sized) && liveRaster) {
+            const live = await liveRaster(L.idx, i, item.sourceSec ?? 0, 'under');
+            if (live) { src = live; perFrame = true; }
+          }
+          if (!src) continue;
+
+          // DEPTH-OF-FIELD / owned filter (§5.5): when the compositor owns this layer's
+          // blur it bakes a variant via the SAME S1 mip lane the canvas path uses
+          // (`renderFx`), at the plate's own resolution (`S·plateEff`) so the scaling
+          // law holds — the quad then minifies it to `S`, and `item.scale` (carrying
+          // eff) magnifies it back, exactly as `drawItem` does. `renderFx` hands back a
+          // POOLED scratch: upload it, then release it the same tick.
+          let tex: WebGLTexture | null = null;
+          if (ownsLayerFx(L, camMoves)) {
+            const fx = itemFx(item, S * plateEff, camMoves);
+            if (fx) {
+              const dof = renderFx(src as BlurCanvas, fx, laneFor(destCtx as BlurCtx));
+              if (dof) { tex = comp.setDofVariant(L.idx, dof.canvas); releaseStage(dof); }
+            }
+          }
+          if (!tex) tex = perFrame ? comp.setDofVariant(L.idx, src) : comp.uploadPlate(L.idx, src);
+          if (!tex) continue;
+
+          comp.drawQuad({
+            texture: tex,
+            rect: { x: L.rect.x, y: L.rect.y, w: bw, h: bh },
+            S,
+            item: {
+              dx: item.dx, dy: item.dy, scale: item.scale, rot: item.rot,
+              alpha: item.alpha, blend: L.blend, m3: item.m3,
+            },
+            platePad,
+            plateEff,
+          });
+        }
+
+        // Blit the finished GL frame onto the 2D canvas and hand it to the SAME sink the
+        // in-thread path uses. `tsUs = round(t·1000)`, matching P2a exactly.
+        comp.readInto(destCtx as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
+        const tsUs = Math.round(t * 1000);
+        if (mux) await mux.addFrame(destCanvas as CanvasImageSource, tsUs);
+        else if (streaming) bitmaps.push(await createImageBitmap(destCanvas as ImageBitmapSource));
+        else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(destCanvas, 'image/png')).arrayBuffer()));
+        else gifPixels.push((destCtx as CanvasRenderingContext2D).getImageData(0, 0, outW, targetH).data);
+        opts.onProgress?.(i + 1, job.frameCount);
+      }
+
+      if (mux) {
+        if (mix.buffer && audioPick) await mux.addAudio(mix.buffer);
+        const blob = await mux.finalize();
+        mux = null;
+        return await withVideoMeta(blob, blob.type, opts.meta, host);
+      }
+      if (streaming) return await recorderReplay(bitmaps, destCanvas as HTMLCanvasElement, destCtx as CanvasRenderingContext2D, format, fps, opts, host);
+      if (format === 'apng') return await apngBlob(apngFrames, fps, opts);
+      return await gifBlob(gifPixels, outW, targetH, opts);
+    } finally {
+      if (mux) { try { await mux.abort(); } catch { /* already down */ } }
+      // The blur lanes pooled plate-sized scratches for the DOF bakes — a finished
+      // render has no next frame to hold them warm for. No-op if nothing blurred.
+      releaseBlurScratches();
+      comp.dispose();
+    }
+  }
+
+  /**
+   * **P2a — the CAPTURE TIER** (plans/104 §6.4, verbatim: "its own loop
+   * `createSequenceTime(root).apply(grid[i])` per frame → dom-to-image capture → the
+   * existing streaming mux").
+   *
+   * The other renderer in this file plans a frame and DRAWS it; this one poses the
+   * live artboard and PHOTOGRAPHS it. Everything downstream of the picture — the
+   * encoder pick, the streaming muxer, the gif/apng sinks, the audio mix, the
+   * provenance tags — is the same machinery, which is the point: the tilt tier changes
+   * where pixels come from and nothing else about what an export is.
+   *
+   * Why it has to be a photograph. A tilted camera's projection is a homography, and
+   * `CanvasRenderingContext2D.setTransform` takes six numbers — an affine map. There
+   * is no approximation of a perspective divide in that vocabulary, only a wrong
+   * picture. The browser, meanwhile, has done this since CSS transforms shipped: the
+   * DOM applier writes the engine's own matrix as a per-element `matrix3d` (see
+   * `composeTransform`), so by the time this loop takes its shot the artboard already
+   * IS the composite, tilt and all. Capturing it is the shortest correct path, and it
+   * makes "the video reflects the preview" true by construction rather than by parity
+   * testing.
+   *
+   * NOT `createFrameSource`. That drives animation clocks, not the sequence session
+   * (§6.4 says so explicitly): its `frame(t)` knows nothing about `.seq-off`, the
+   * per-frame `filter`/`z-index` surface or the camera. This loop drives the same
+   * `createSequenceTime` session the contact sheet uses, which is the one apply site
+   * every still and every preview already goes through.
+   *
+   * VIDEO REFUSES, visibly (§6.4). dom-to-image serialises the DOM into an SVG
+   * `<foreignObject>`, and a `<video>` element does not survive that — the freeze would
+   * bake one frame of it under the whole move, silently. Hybrid compositing (draw the
+   * decoded frames, then the captured chrome over them) is P2b's job with the GPU
+   * compositor; until then this says no with a reason.
+   *
+   * The static-chrome fast path self-declines here for a reason worth stating: the
+   * session writes inline styles on every frame, which raises MutationObserver records,
+   * so every frame pays a full dom-to-image serialisation. That is the price §6.4 named
+   * in advance, and it is why the log below quotes an estimate rather than pretending
+   * this is free.
+   */
+  async function renderTiltCapture(
+    trigger: { ch: 'rx' | 'ry'; deg: number; atMs: number | null },
+  ): Promise<Blob> {
+    // Re-bound because a closure does not inherit the outer narrowing of `stage`, which
+    // the guard above the gate has already made non-null.
+    const layers: SeqLayer[] = stage?.layers ?? [];
+    const videos = layers.filter((L) => L.kind === 'video');
+    if (videos.length > 0) {
+      throw sequenceError(
+        'SEQ_TILT_UNSUPPORTED',
+        `tilt export of video needs the GPU compositor. This scene tilts the camera (${trigger.ch} ${Math.round(trigger.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}, and a tilted frame is captured off the live page — which cannot photograph a playing video. Remove the tilt to export it now, or replace the video clip with a still.`,
+      );
+    }
+    const resumeThumbs = suspendNodeRasters();
+    try {
+      await drainNodeRasters();
+      const lib = await getDomToImage();
+      const restoreBlobs = await swapBlobUrls(stageEl);
+      // ONE session for the whole film, exactly as the contact sheet keeps one across
+      // all N cuts: a per-frame session would capture frame 0's composed pose as
+      // "authored" and compound the offsets from frame 1 onward. It composes normally
+      // because `renderSequence`'s `withAuthoredDom` scope was opened BEFORE it existed
+      // (§6 point 0) — the other writers are stood down, this one is not in the snapshot.
+      const session = createSequenceTime(stageEl);
+      // The stage's own background rides along inside the photograph (there is no
+      // separate bg plate here — the whole artboard is one shot), so a transparent
+      // export has to take it off the element for the duration.
+      const bgPrev = stageEl.style.background;
+      if (transparent) stageEl.style.background = 'transparent';
+      const canvas: AnyCanvas = streaming && typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(outW, targetH)
+        : Object.assign(document.createElement('canvas'), { width: outW, height: targetH });
+      const ctx = (canvas as unknown as { getContext(id: string, o?: unknown): unknown }).getContext('2d', { alpha: true }) as AnyCtx | null;
+      if (!ctx) throw sequenceError('SEQ_DECODE_FAILED', 'no 2D context for the tilt capture canvas');
+      let mux: StreamingMux | null = null;
+      const bitmaps: ImageBitmap[] = [];
+      const apngFrames: Uint8Array[] = [];
+      const gifPixels: Uint8ClampedArray[] = [];
+      try {
+        const mix = streaming
+          ? await mixSequenceAudio(layers, frameCount / fps, opts, host)
+          : { buffer: null, hasClipAudio: false, hasBed: false };
+        const audioPick = pick && mix.buffer ? await pickWebCodecsAudio(pick.container) : null;
+        if (pick) {
+          mux = await createStreamingMux(pick, {
+            width: outW, height: targetH, fps, bitrate,
+            audio: audioPick ? { ...audioPick, channels: [] } : null,
+          });
+        }
+        log('info', `sequence: tilt capture — ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
+        for (let i = 0; i < frameCount; i++) {
+          const t = usedGrid[i] as number;
+          session.apply(t);
+          let shot: HTMLCanvasElement | null = null;
+          try {
+            shot = await lib.toCanvas(stageEl, {
+              width: outW,
+              height: targetH,
+              style: {
+                transform: `scale(${S})`, transformOrigin: 'top left',
+                width: `${nativeW}px`, height: `${nativeH}px`, left: '0', top: '0', margin: '0',
+              },
+            }) as HTMLCanvasElement;
+          } catch (err) {
+            throw sequenceError('SEQ_DECODE_FAILED', `tilt capture failed at frame ${i}: ${toCodedError(err).message}`);
+          }
+          // CLEARED, not painted over: a transparent export has to stay transparent
+          // where the artboard is, and an opaque one already carries its own background
+          // inside the shot.
+          ctx.clearRect(0, 0, outW, targetH);
+          if (shot) ctx.drawImage(shot as unknown as CanvasImageSource, 0, 0);
+          const tsUs = Math.round(t * 1000);
+          if (mux) await mux.addFrame(canvas as CanvasImageSource, tsUs);
+          else if (streaming) bitmaps.push(await createImageBitmap(canvas as ImageBitmapSource));
+          else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(canvas, 'image/png')).arrayBuffer()));
+          else gifPixels.push((ctx as CanvasRenderingContext2D).getImageData(0, 0, outW, targetH).data);
+          opts.onProgress?.(i + 1, frameCount);
+        }
+        if (mux) {
+          if (mix.buffer && audioPick) await mux.addAudio(mix.buffer);
+          const blob = await mux.finalize();
+          mux = null;
+          return await withVideoMeta(blob, blob.type, opts.meta, host);
+        }
+        if (streaming) return await recorderReplay(bitmaps, canvas as HTMLCanvasElement, ctx as CanvasRenderingContext2D, format, fps, opts, host);
+        if (format === 'apng') return await apngBlob(apngFrames, fps, opts);
+        return await gifBlob(gifPixels, outW, targetH, opts);
+      } finally {
+        if (mux) { try { await mux.abort(); } catch { /* already down */ } }
+        // Unwound in the reverse order it was built, on every path including a throw
+        // from the middle of frame 300: the artboard must not be left posed on the last
+        // captured frame with `.seq-off` still hiding two thirds of the composition.
+        if (transparent) { if (bgPrev) stageEl.style.background = bgPrev; else stageEl.style.removeProperty('background'); }
+        session.restore();
+        restoreBlobs();
+      }
+    } finally {
+      resumeThumbs();
     }
   }
 }
@@ -1656,6 +2059,30 @@ export function supportsWorkerSequenceRender(): boolean {
     && typeof VideoEncoder !== 'undefined'
     && typeof createImageBitmap === 'function'
     && workerSequenceRenderEnabled();
+}
+
+/**
+ * The opt-in flag for the P2b GPU compositor (plans/104 §6.4) — its own switch,
+ * separate from the worker one, so a user can trial the tilt compositor without also
+ * moving the untilted render off-thread. A test flips it with
+ * `localStorage.setItem('lolly.glCompositor', '1')`.
+ */
+export function glSequenceRenderEnabled(): boolean {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem('lolly.glCompositor') === '1'; }
+  catch { return false; }
+}
+
+/**
+ * Can (and should) a tilted export take the GPU compositor?
+ *
+ * Needs WebGL2 (probed once, cached) and the opt-in; the compositor runs IN-THREAD
+ * (this cut skips Worker-OffscreenGL), so unlike `supportsWorkerSequenceRender` it asks
+ * for no Worker/WebCodecs capability — a gif/apng tilt export composites on the GPU and
+ * reads back to a 2D canvas just the same. Anything missing keeps the P2a capture tier,
+ * which is correct, only slower. Mirrors `supportsWorkerSequenceRender`'s shape.
+ */
+export function supportsGlSequenceRender(): boolean {
+  return glSequenceRenderEnabled() && glQuadCompositorSupported();
 }
 
 /**

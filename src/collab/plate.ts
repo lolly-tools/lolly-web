@@ -173,6 +173,70 @@ export function formatPlate(symbols: string): string {
 }
 
 /**
+ * The SAS domain for the native (Noise-over-TCP) transport, plans/110 §4. DISTINCT from
+ * `PLATE_DOMAIN` on purpose: a native plate is derived from a Noise handshake hash, a
+ * DTLS plate from a pair of certificate fingerprints, and separating the domains means a
+ * value drawn for one transport can never be read as, or substituted for, the other's.
+ */
+export const PLATE_DOMAIN_NATIVE = 'lolly/collab/plate/native/v1';
+
+/** `DOMAIN || 0x00 || len(value) || value || counter` — the single-value preimage, for a
+ *  shared transcript hash both peers compute identically (so no ordering is needed). */
+function preimageSingle(domain: Uint8Array, value: Uint8Array, counter: number): Uint8Array {
+  const out = new Uint8Array(domain.length + 1 + 1 + value.length + 1);
+  let at = 0;
+  out.set(domain, at);
+  at += domain.length;
+  out[at++] = 0x00;
+  out[at++] = value.length;
+  out.set(value, at);
+  at += value.length;
+  out[at] = counter;
+  return out;
+}
+
+/**
+ * The plate for a native pairing, from the Noise handshake hash `h` (plans/110 §4).
+ *
+ * Unlike {@link derivePlate}, there is no PAIR to order: after a completed Noise XX
+ * handshake both peers hold the SAME `h`, a transcript hash over both static keys, both
+ * ephemerals, and every handshake message. A man-in-the-middle who terminated and
+ * re-originated the handshake computes a DIFFERENT `h` on each leg, so equal plates prove
+ * one unbroken handshake.
+ *
+ * CRUCIAL CAVEAT (review finding #1): this holds ONLY because the native transport binds the
+ * initiator to its static key BEFORE the handshake (the static-key commitment in
+ * `native_transport.rs run_initiator`/`run_responder`). A bare XX handshake hash is NOT a
+ * safe 6-char SAS input on its own — the initiator picks its static in the last message, so a
+ * MITM could grind it (~2^29) to force a matching plate. The commitment removes that freedom;
+ * do not treat `h` as a safe SAS input for any handshake that lacks it.
+ *
+ * Rejection-sampled and domain-framed exactly like {@link derivePlate}; throws rather than
+ * returning an approximate plate, for the same reason.
+ */
+export async function derivePlateFromTranscript(
+  h: Uint8Array,
+  opts: { readonly hash?: PlateHasher } = {},
+): Promise<string> {
+  if (!(h instanceof Uint8Array) || h.length === 0 || h.length > MAX_FINGERPRINT_BYTES) {
+    throw new Error(`plate: a transcript hash must be 1–${MAX_FINGERPRINT_BYTES} bytes`);
+  }
+  const hash = opts.hash ?? sha256Bytes;
+  const domain = new TextEncoder().encode(PLATE_DOMAIN_NATIVE);
+  let symbols = '';
+  for (let counter = 0; counter < 256 && symbols.length < PLATE_CHARS; counter++) {
+    const block = await hash(preimageSingle(domain, h, counter));
+    for (const byte of block) {
+      if (symbols.length === PLATE_CHARS) break;
+      if (byte >= REJECT_FROM) continue;
+      symbols += PLATE_ALPHABET[byte % PLATE_ALPHABET.length];
+    }
+  }
+  if (symbols.length < PLATE_CHARS) throw new Error('plate: the digest stream yielded no plate');
+  return formatPlate(symbols);
+}
+
+/**
  * The plate for one pairing: `XXX-XXX`, identical on both devices.
  *
  * Order-independent by construction (see {@link orderFingerprints}), so neither side has
