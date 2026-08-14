@@ -119,35 +119,67 @@ function pointsPath(str: string | null, close: boolean): string {
 
 // ─── main walk ──────────────────────────────────────────────────────────────
 
-/** Group/transform accumulator carried down the walk. */
-interface WalkTransform {
-  tx: number;
-  ty: number;
-  sX: number;
-  sY: number;
+/** A 2-D affine matrix [[a c e][b d f]] mapping user coords → group space:
+ *  x' = a·x + c·y + e,  y' = b·x + d·y + f. Carried down the walk as the CTM.
+ *  A full matrix (not a translate+scale accumulator) so rotation/skew survive. */
+interface Mat {
+  a: number; b: number; c: number; d: number; e: number; f: number;
+}
+const IDENTITY: Mat = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+/** m ∘ n — apply n first, then m (SVG transform-list composition order). */
+function matMul(m: Mat, n: Mat): Mat {
+  return {
+    a: m.a * n.a + m.c * n.b,
+    b: m.b * n.a + m.d * n.b,
+    c: m.a * n.c + m.c * n.d,
+    d: m.b * n.c + m.d * n.d,
+    e: m.a * n.e + m.c * n.f + m.e,
+    f: m.b * n.e + m.d * n.f + m.f,
+  };
 }
 
-// Compose an element's own `transform` (translate/scale) onto the inherited CTM.
-// Applies to containers AND leaf drawables — a <path transform="translate() scale()">
-// (brand-lockup's per-leaf layout) must scale/position like a <g> would.
-function applyElementTransform(el: Element, t: WalkTransform): WalkTransform {
-  const nt: WalkTransform = { ...t };
-  const transform = el.getAttribute?.('transform') || '';
-  if (transform) {
-    const { sX, sY } = t;
-    const tm = transform.match(/translate\(\s*([+-]?\d*\.?\d+)[,\s]\s*([+-]?\d*\.?\d+)\s*\)/) ??
-               transform.match(/translate\(\s*([+-]?\d*\.?\d+)\s*\)/);
-    const sm = transform.match(/scale\(\s*([+-]?\d*\.?\d+)(?:[,\s]\s*([+-]?\d*\.?\d+))?\s*\)/);
-    if (tm) { nt.tx += sX * parseFloat(tm[1]!); nt.ty += sY * parseFloat(tm[2] ?? '0'); }
-    if (sm) { nt.sX = sX * parseFloat(sm[1]!); nt.sY = sY * parseFloat(sm[2] ?? sm[1]!); }
+// Parse an SVG transform LIST into one matrix, composing each function in order.
+// translate/scale reproduce the old accumulator exactly (verified); rotate — incl.
+// the rotate(θ cx cy) pivot form — matrix, and skew are now honoured too, so
+// rotated text (angled axis labels, word-cloud verticals) and tilted groups
+// survive to EMF/WMF/EPS/DXF instead of flattening. Unknown functions are skipped.
+function parseTransformList(str: string): Mat {
+  let m = IDENTITY;
+  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/gi;
+  let hit: RegExpExecArray | null;
+  while ((hit = re.exec(str))) {
+    const fn = (hit[1] ?? '').toLowerCase();
+    const a = (hit[2] ?? '').split(/[\s,]+/).map(parseFloat).filter((n) => !Number.isNaN(n));
+    const g = (i: number, d: number): number => { const v = a[i]; return typeof v === 'number' && Number.isFinite(v) ? v : d; };
+    let local: Mat | null = null;
+    if (fn === 'translate') local = { ...IDENTITY, e: g(0, 0), f: g(1, 0) };
+    else if (fn === 'scale') { const sx = g(0, 1); local = { ...IDENTITY, a: sx, d: a.length > 1 ? g(1, sx) : sx }; }
+    else if (fn === 'rotate') {
+      const rad = g(0, 0) * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+      const rot: Mat = { a: cos, b: sin, c: -sin, d: cos, e: 0, f: 0 };
+      // rotate(θ cx cy) == translate(cx,cy) · rotate(θ) · translate(-cx,-cy)
+      if (a.length >= 3) { const cx = g(1, 0), cy = g(2, 0); local = matMul(matMul({ ...IDENTITY, e: cx, f: cy }, rot), { ...IDENTITY, e: -cx, f: -cy }); }
+      else local = rot;
+    }
+    else if (fn === 'matrix' && a.length >= 6) local = { a: g(0, 1), b: g(1, 0), c: g(2, 0), d: g(3, 1), e: g(4, 0), f: g(5, 0) };
+    else if (fn === 'skewx') local = { ...IDENTITY, c: Math.tan(g(0, 0) * Math.PI / 180) };
+    else if (fn === 'skewy') local = { ...IDENTITY, b: Math.tan(g(0, 0) * Math.PI / 180) };
+    if (local) m = matMul(m, local);
   }
-  return nt;
+  return m;
+}
+
+// Compose an element's own `transform` onto the inherited CTM. Applies to
+// containers AND leaf drawables — a <path transform="translate() scale()">
+// (brand-lockup's per-leaf layout) must scale/position like a <g> would.
+function applyElementTransform(el: Element, t: Mat): Mat {
+  const transform = el.getAttribute?.('transform') || '';
+  return transform ? matMul(t, parseTransformList(transform)) : t;
 }
 
 /** Geometry closures + per-leaf opacity handed to emitText. */
 interface LeafTextGeometry {
-  PX: (v: number) => number;
-  PY: (v: number) => number;
   mapPt: (x: number, y: number) => { x: number; y: number };
   gAvg: number;
   rAvg: number;
@@ -331,9 +363,9 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
   };
   const warn = (m: string) => host?.log?.('warn', `${LABEL.toLowerCase()}: ${m}`);
 
-  // tx/ty/sX/sY accumulate the group transform; the closure maps a user coord to
-  // device px (region-scaled).
-  async function visit(el: Element, t: WalkTransform, inherited: StyleMap | null): Promise<void> {
+  // et is the CTM (a full affine, so rotation/skew survive); the closure maps a
+  // user coord through it, then viewBox offset + region scale, to device px.
+  async function visit(el: Element, t: Mat, inherited: StyleMap | null): Promise<void> {
     if (!el.tagName) return;
     const tag = el.tagName.toLowerCase().replace(/^svg:/, '');
     if (SKIP.has(tag)) return;
@@ -342,11 +374,14 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     // it to their children; leaf drawables map their own geometry through it (so a
     // per-leaf `transform` is honoured, not silently dropped).
     const et = applyElementTransform(el, t);
-    const { tx, ty, sX, sY } = et;
-    const PX = (v: number) => (tx + sX * v - vbX) * regX;
-    const PY = (v: number) => (ty + sY * v - vbY) * regY;
-    const mapPt = (x: number, y: number) => ({ x: PX(x), y: PY(y) });
-    const gAvg = (Math.abs(sX) + Math.abs(sY)) / 2;
+    const mapPt = (x: number, y: number) => ({
+      x: (et.a * x + et.c * y + et.e - vbX) * regX,
+      y: (et.b * x + et.d * y + et.f - vbY) * regY,
+    });
+    // Per-axis scale magnitudes (rotation-invariant) for stroke width, radii, images.
+    const sxLen = Math.hypot(et.a, et.b);
+    const syLen = Math.hypot(et.c, et.d);
+    const gAvg = (sxLen + syLen) / 2;
     const rAvg = (regX + regY) / 2;
 
     if (tag === 'g' || tag === 'a' || tag === 'svg') {
@@ -380,7 +415,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     else if (tag === 'polygon') d = pointsPath(el.getAttribute('points'), true);
     else if (tag === 'polyline') d = pointsPath(el.getAttribute('points'), false);
     else if (tag === 'line') { d = `M${len(prop(el, style, 'x1'), vbW)},${len(prop(el, style, 'y1'), vbH)} L${len(prop(el, style, 'x2'), vbW)},${len(prop(el, style, 'y2'), vbH)}`; forceStrokeOnly = true; }
-    else if (tag === 'text') { await emitText(el, style, { PX, PY, mapPt, gAvg, rAvg, elemOpacity }); return; }
+    else if (tag === 'text') { await emitText(el, style, { mapPt, gAvg, rAvg, elemOpacity }); return; }
     else if (tag === 'image') {
       // The vector rasterise escape-hatch (visitSvgNode) emits <image href="data:…">
       // for a node whose CSS the walker can't express. Decode it to an opaque RGB
@@ -391,10 +426,9 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
       if (!href) { warn('image with no href (skipped)'); return; }
       const dec = await decodeImageToRgb(href, bg);
       if (!dec) { warn('image could not be rasterised for this format (skipped)'); return; }
-      const bx = PX(len(prop(el, style, 'x'), vbW));
-      const by = PY(len(prop(el, style, 'y'), vbH));
-      const bw = len(prop(el, style, 'width'), vbW) * Math.abs(sX) * regX;
-      const bh = len(prop(el, style, 'height'), vbH) * Math.abs(sY) * regY;
+      const { x: bx, y: by } = mapPt(len(prop(el, style, 'x'), vbW), len(prop(el, style, 'y'), vbH));
+      const bw = len(prop(el, style, 'width'), vbW) * sxLen * regX;
+      const bh = len(prop(el, style, 'height'), vbH) * syLen * regY;
       if (bw < 0.5 || bh < 0.5) return;
       // Honour preserveAspectRatio. The escape-hatch always emits 'none' with a box
       // matched to the node (so none == meet there). Tool-authored <image>s (tool-logo,
@@ -458,7 +492,8 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     const shadow = resolveDropShadow(el);
     if (shadow) {
       const rings = gaussianShadowRings(shadow.stdDeviation * 2, shadow.alpha);
-      const sdx = shadow.dx * sX * regX, sdy = shadow.dy * sY * regY;
+      // The offset is a vector → transform by the linear part (a,b,c,d) only, no translation.
+      const sdx = (et.a * shadow.dx + et.c * shadow.dy) * regX, sdy = (et.b * shadow.dx + et.d * shadow.dy) * regY;
       const shifted = subpaths.map((sub) => ({
         closed: sub.closed,
         segments: sub.segments.map((seg) => shiftSeg(seg, sdx, sdy)),
@@ -568,7 +603,7 @@ export async function svgDomToIr(svgEl: Element, ctx: SvgIrContext = {}): Promis
     prims.push({ type: 'path', subpaths, fill: rgbObj(rgb), stroke, fillRule: 'nonzero' });
   }
 
-  await visit(svgEl, { tx: 0, ty: 0, sX: 1, sY: 1 }, null);
+  await visit(svgEl, IDENTITY, null);
 
   return { width: Math.round(canvasW), height: Math.round(canvasH), prims };
 }
