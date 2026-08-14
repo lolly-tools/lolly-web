@@ -830,8 +830,9 @@
   font-size: calc(11px * var(--a11y-fs)); font-weight: 400; line-height: 1.4;
   letter-spacing: 0; text-transform: none; white-space: normal;
 }
-/* Block sub-field cells are narrow — let their tip take its own width. */
-.block-control > .help-tip-pop { right: auto; width: max-content; min-width: 140px; max-width: 210px; }
+/* Block sub-field cells are narrow — let their tip take its own width, capped so a long
+   help string WRAPS to several lines instead of one runaway line (white-space:normal above). */
+.block-control > .help-tip-pop { right: auto; width: max-content; min-width: 150px; max-width: 240px; }
 .help-tip-pop[hidden] { display: none; }
 /* Optional action link at the foot of a tip (e.g. "Check a file →" to /verify). */
 .help-tip-link { display: block; margin-top: 5px; color: hsl(var(--primary)); font-weight: 600; text-decoration: none; }
@@ -1209,6 +1210,27 @@
 .badge-select-pill[data-badge="vector"] {
   background: hsl(var(--primary) / 0.15);
   color: hsl(var(--primary));
+}
+
+/* Segmented select (display:'segmented') — the same radiogroup laid out as a row of
+   equal-width tabs for a small mode switch (e.g. Hue / Saturation / Luminance). */
+.badge-select--segmented {
+  flex-direction: row;
+  gap: 4px;
+}
+.badge-select--segmented .badge-select-opt {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding: 6px 4px;
+  /* Slightly smaller than the 13px stacked pills so 2–4 full words (Saturation,
+     Luminance) fit a narrow sidebar without truncating. Keeps the a11y multiplier. */
+  font-size: calc(12px * var(--a11y-fs));
+}
+.badge-select--segmented .badge-select-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* (A `.input-row input[type="color"]:not(.color-popover-native)` box lived here.
@@ -1829,6 +1851,26 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .block-control { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .block-control--full { grid-column: 1 / -1; }
+/* Icon-labelled field: the icon sits inline to the LEFT of the control (used by dense
+   slider grids like flythrough poses), the control flexes to fill the rest of the cell.
+   The icon doubles as the help-tip trigger, so these rules also OVERRIDE the .help-tip-btn
+   button chrome (16px round / 0.55 opacity / 13px svg) back to the block icon's look —
+   higher specificity than the .help-tip-btn base, matched source order below it. */
+.block-control--ico { flex-direction: row; align-items: center; gap: 6px; }
+.block-control--ico > .block-control-ico {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: calc(15px * var(--a11y-fs)); height: auto; margin: 0; padding: 0;
+  border: none; background: transparent; opacity: 1;
+  color: hsl(var(--muted-foreground)); cursor: help;
+}
+.block-control--ico > .block-control-ico > svg { width: 100%; height: auto; }
+.block-control--ico > .block-control-ico:hover,
+.block-control--ico > .block-control-ico:focus-visible { color: var(--primary); opacity: 1; }
+.block-control--ico > .block-field,
+.block-control--ico > input[type="range"] { flex: 1 1 0; min-width: 0; }
+/* A grid of icon-labelled controls gets a wider column gutter so the two columns of
+   sliders read as separate (the default 8px is too tight once each has an icon). */
+.block-fields:has(> .block-control--ico) { column-gap: 18px; }
 .block-control-label {
   font-size: calc(10px * var(--a11y-fs)); font-weight: 600; letter-spacing: 0.04em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
@@ -1864,6 +1906,20 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-collapse:hover { background: hsl(var(--muted-foreground) / 0.12); color: hsl(var(--foreground)); }
 .block-collapse svg { transition: transform 0.15s ease; width: calc(12px * var(--a11y-fs)); height: calc(12px * var(--a11y-fs)); }
 .block-item.is-collapsed .block-collapse svg { transform: rotate(-90deg); }
+
+/* Per-row copy / paste / clear buttons (rowActions) — same icon-button chrome as collapse,
+   a touch smaller since there are three of them. Hidden on the collapsed pill to keep it tidy. */
+.block-act {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  border: none; border-radius: 6px; background: transparent;
+  color: hsl(var(--muted-foreground)); cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.block-act:hover { background: hsl(var(--muted-foreground) / 0.12); color: hsl(var(--foreground)); }
+.block-act svg { width: calc(12px * var(--a11y-fs)); height: calc(12px * var(--a11y-fs)); }
+.block-act.is-done { color: hsl(var(--primary)); }   /* brief tick after Copy */
+.block-item.is-collapsed .block-act { display: none; }
 
 .block-item.is-collapsed { padding: 0; border-radius: 999px; background: hsl(var(--muted) / 0.5); }
 /* The whole collapsed pill is clickable to expand (JS handler), so the header reads as
@@ -2608,6 +2664,117 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .canvas-record-btn:hover { border-color: hsl(var(--destructive)); }
 .canvas-record-btn:disabled { opacity: 0.6; cursor: progress; }
+
+/* Animation transport (play / pause / scrub) — reusable across animated tools, driven by
+   window.__lollyAnim (see views/anim-transport.ts). Bottom-centre pill on the stage,
+   hidden until an animation is active; [data-export-hide] keeps it out of captures. */
+.anim-transport {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 460px;
+  max-width: min(560px, calc(100% - 28px));
+  padding: 6px 12px 6px 6px;
+  background: hsl(var(--card) / 0.95);
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.anim-transport[hidden] { display: none; }
+.anim-transport-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(30px * var(--a11y-fs));
+  height: calc(30px * var(--a11y-fs));
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--card-foreground));
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.anim-transport-btn:hover { background: hsl(var(--muted)); }
+.anim-transport-btn svg { width: 62%; height: 62%; fill: currentColor; }
+.anim-transport-play { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.anim-transport-play:hover { background: hsl(var(--primary)); filter: brightness(1.08); }
+.anim-transport-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 22px;
+  margin: 0 6px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.anim-transport-track::before {   /* the rail */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: hsl(var(--muted));
+  border-radius: 999px;
+}
+.anim-transport-fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 0;
+  height: 4px;
+  transform: translateY(-50%);
+  background: hsl(var(--primary));
+  border-radius: 999px;
+  pointer-events: none;
+}
+.anim-transport-ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.anim-transport-tick {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  background: hsl(var(--border));
+  border-radius: 1px;
+}
+.anim-transport-head {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  background: hsl(var(--primary));
+  border: 2px solid hsl(var(--card));
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+.anim-transport-label {
+  flex: none;
+  min-width: 2.5em;
+  padding-left: 2px;
+  font-size: calc(12px * var(--a11y-fs));
+  font-weight: 700;
+  color: hsl(var(--card-foreground));
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 /* Flip-camera control (touch video capture) — bottom-right, clear of the centred record btn. */
 .canvas-record-flip {
   position: absolute;

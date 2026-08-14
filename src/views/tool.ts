@@ -89,7 +89,10 @@ import { createNetAPI } from '../bridge/net.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
 import { mountTableCellEditing, markdownSafeUrl, type TableEditOpts } from '../lib/table-canvas-edit.ts';
 import { mountFilmstrip, type Filmstrip, type FilmstripSide } from '../lib/page-filmstrip.ts';
-import { openShareDialog } from '../components/share-dialog.ts';
+import { openShareDialog, type ShareFidelity, type ShareDialogLolly } from '../components/share-dialog.ts';
+import { buildLollyFile, creatorFromProfile, type LollyLibraryAsset } from '../lib/lolly-pack.ts';
+import type { BeamAssetRecord } from '../lib/beam-pack.ts';
+import { ENGINE_VERSION } from '@lolly/engine';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
 
 // Type-only imports (erased at build). The `@lolly/engine` barrel re-exports
@@ -591,6 +594,14 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // preview — the opposite intent — so it wins when both are present, matching the
   // CSS, which hides the export panel whenever its host sidebar is collapsed.
   const showExportPanel = !isFull && urlFlags.has('options');
+  // Presentation mode (plan 112): `?present` opens a frame document as a fullscreen,
+  // click-advanced deck; `?s=` deep-links a slide (1-based position, frame id, or `h.f`);
+  // `?loop` makes it signage. `present`/`s` are engine-reserved (url-mode.ts RESERVED); `loop`
+  // is read raw here because it is a real input id in other tools, so it is a present-only
+  // kiosk flag on this frame tool, never reserved globally.
+  const isPresent = urlFlags.has('present');
+  const presentAddress = urlFlags.get('s');
+  const presentLoop = urlFlags.has('loop');
 
   let initialValues: Record<string, InputValue> = values;
   if (slot) {
@@ -601,7 +612,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     // (no pages/pageW/pageH) or an already-framed doc, and SCOPED to Design so it never
     // rewrites carousel-maker's own resume while that tool still exists.
     // (migrateCarouselToFrames — free-canvas-math.ts)
-    if (saved && toolId === 'layout-studio') {
+    if (saved && toolId === 'design') {
       saved = migrateCarouselToFrames(saved as Record<string, unknown>) as typeof saved;
     }
     if (saved) initialValues = { ...saved, ...values };
@@ -1431,7 +1442,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // link carries the per-tool OG preview — see scripts/build-tool-og.ts). All in-tool
   // URL writers (syncUrl, updateFullParam) build on this; the bar is rewritten from
   // the boot-time #/tool/<id> hash to this on the first syncUrl.
-  const TOOL_URL_BASE = `/t/${toolId}`;
+  // The Design tool owns the bare vanity path `/design` (main.ts parseRoute returns it as
+  // a first-class route); keep the bar there instead of rewriting it to /t/design.
+  const TOOL_URL_BASE = toolId === 'design' ? '/design' : `/t/${toolId}`;
 
   // The live param string, whichever URL form the bar is in: the path's ?search once
   // syncUrl has prettified it, or the hash's #…?query in the instant after boot.
@@ -1947,6 +1960,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     runtime.stopMeter?.(); runtime.cancelRecording?.(); // release the mic / abort any take
     runtime.destroy?.(); // release per-mount executor resources (a Worker-isolated tool's run)
     (stageEl as (HTMLElement & { _recordCleanup?: () => void }) | null)?._recordCleanup?.(); // viewfinder + timers
+    (stageEl as (HTMLElement & { _animCleanup?: () => void }) | null)?._animCleanup?.(); // animation transport bar + its rAF poll
     actionsApi?.stopAudioPreview?.(); // a detached <audio> keeps playing — stop it on navigation
     stopSlotPreview();                // and the sidebar slot's own sound preview (also a detached <audio>)
     actionsApi?.dispose?.();          // unsubscribe the cost-authoring registry listener + tear down its extension
@@ -2402,8 +2416,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     };
 
   // Copy-URL now lives in the actions bar (renderActions), alongside the export
-  // buttons — its format/filename/dimension inputs are in the same element.
-  if (actionsEl) wireUpCopyUrl(actionsEl, runtime, actionsEl, tool.manifest);
+  // buttons — its format/filename/dimension inputs are in the same element. The Share
+  // dialog also offers a `.lolly` download (plans/114) when the tool has a session.
+  if (actionsEl) {
+    const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState);
+    wireUpCopyUrl(actionsEl, runtime, actionsEl, tool.manifest, lolly);
+  }
 
   // The render pill's Save half: an in-place quick-save. It reuses the exact same
   // export-aware save routine as the popup's Save button (performSave), but unlike
@@ -2467,6 +2485,64 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       markUserDirty('w'); markUserDirty('h');
       resetView();
     };
+
+    // --- Presentation mode (plan 112) ------------------------------------------------
+    // A lazily-imported view state over the live canvas: it clones the rendered
+    // `.lolly-frame-page` nodes out of contentEl into a body-level fullscreen deck stage
+    // and never mutates the editor DOM, so exit restores the editor for free. Present is
+    // reachable from the ⋯ menu (actions.present) and by opening a `?present` link.
+    let presenter: import('./present-mode.ts').PresentController | null = null;
+    // Debounced `s=` writer — mirrors updateFullParam, but no more than once per second
+    // (reveal's MAX_REPLACE_STATE_FREQUENCY; Safari throttles replaceState). Writes the
+    // reorder-proof frame id, so a deep link survives a later frame reorder.
+    let sTimer: ReturnType<typeof setTimeout> | null = null;
+    let sPending: string | null = null;
+    const writePresentUrl = (mutate: (sp: URLSearchParams) => void): void => {
+      const sp = new URLSearchParams(currentQuery());
+      mutate(sp);
+      barSeq.v++;
+      const q = sp.toString();
+      history.replaceState(null, '', q ? `${TOOL_URL_BASE}?${q}` : TOOL_URL_BASE);
+    };
+    const flushPresentAddress = (): void => {
+      if (sPending == null) return;
+      const s = sPending; sPending = null;
+      writePresentUrl((sp) => {
+        sp.set('present', ''); if (presentLoop) sp.set('loop', ''); sp.set('s', s);
+      });
+    };
+    const writePresentAddress = (frameId: string): void => {
+      sPending = frameId;
+      if (sTimer) return;                       // a write is already scheduled this window
+      sTimer = setTimeout(() => { sTimer = null; flushPresentAddress(); }, 1100);
+    };
+    const openPresenter = async (): Promise<void> => {
+      if (presenter) return;
+      const { openPresentMode } = await import('./present-mode.ts');
+      if (presenter || !viewEl.isConnected) return;   // re-check after the await
+      // Present from the ENGINE's render (nested frame pages WITH their children), not the
+      // editor's live DOM: the free-canvas editor flattens boxes to siblings of empty
+      // frame-page backgrounds for editing, so cloning those pages would show blank frames.
+      // getHydrated() reflects the current committed model as the template renders it.
+      const presentSource = document.createElement('div');
+      presentSource.innerHTML = runtime.getHydrated();
+      const transitionVal = String(runtime.getModel().find((i) => i.id === 'transition')?.value ?? 'slide');
+      presenter = openPresentMode({
+        source: presentSource,
+        initial: presentAddress,
+        loop: presentLoop,
+        transition: transitionVal === 'morph' || transitionVal === 'fade' ? transitionVal : 'slide',
+        onAddress: (frameId, _index, build) => writePresentAddress(build > 0 ? `${frameId}.${build}` : frameId),
+        onClose: () => {
+          presenter = null;
+          if (sTimer) { clearTimeout(sTimer); sTimer = null; }
+          sPending = null;
+          // Leave the editor's own URL clean: drop the present params on exit.
+          writePresentUrl((sp) => { sp.delete('present'); sp.delete('loop'); sp.delete('s'); });
+        },
+      });
+    };
+
     import('./free-canvas.ts').then(({ initFreeCanvas }) => {
       if (!viewEl.isConnected) return;   // navigated away before the chunk loaded
       // The host-UI profile setter is a web-shell extension (WebProfileAPI), not on
@@ -2555,13 +2631,35 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           save: () => renderSaveBtn?.click(),
           copy: () => viewEl.querySelector<HTMLButtonElement>('[data-action="copy"]')?.click(),
           share: () => viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click(),
+          // Present the frames as a fullscreen deck (plan 112). Fire-and-forget: the
+          // presenter module is lazily imported on first use.
+          present: () => { void openPresenter(); },
           canSave: canSaveSession,
           dirtyRef: renderSaveBtn,
         },
       } as Parameters<typeof initFreeCanvas>[0]);
       const prevCleanup = viewEl._cleanup;
       viewEl._cleanup = () => { try { fc.destroy(); } catch (e) { console.error(e); } prevCleanup?.(); };
-    }).catch((err: unknown) => console.error('[layout-studio] editor overlay failed to load:', err));
+    }).catch((err: unknown) => console.error('[design] editor overlay failed to load:', err));
+
+    // `?present` auto-entry: open the deck once the canvas has rendered its frame pages
+    // (the runtime paints on mount asynchronously, so poll a few frames for them).
+    if (isPresent) {
+      let tries = 0;
+      const tryOpen = (): void => {
+        if (!viewEl.isConnected || presenter) return;
+        if (contentEl.querySelector('.lolly-frame-page')) { void openPresenter(); return; }
+        if (tries++ < 120) requestAnimationFrame(tryOpen);   // ~2s at 60fps, then give up
+      };
+      requestAnimationFrame(tryOpen);
+    }
+
+    // Fold the presenter into teardown so navigating away closes the deck cleanly.
+    const prevCleanupPresent = viewEl._cleanup;
+    viewEl._cleanup = () => {
+      try { presenter?.close(); } catch (e) { console.error(e); }
+      prevCleanupPresent?.();
+    };
   }
 
   // Multi-page rich-text document editor (render.layout:'document'). Mounts the
@@ -3398,6 +3496,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     setupRecordControl({ stageEl, runtime, host, mode: captureMode, markSessionDirty });
   }
 
+  // Animation transport (play/pause/scrub): any tool declaring render.video gets a
+  // reusable transport bar driven entirely by the tool's window.__lollyAnim clock — it
+  // shows itself only while an animation is actually active. Lazy-loaded to stay off the
+  // boot critical path; torn down via stageEl._animCleanup in _cleanup above.
+  if (stageEl && (runtime.manifest.render as { video?: unknown } | undefined)?.video) {
+    const { setupAnimTransport } = await import('./anim-transport.ts');
+    (stageEl as HTMLElement & { _animCleanup?: () => void })._animCleanup = setupAnimTransport({ stageEl });
+  }
+
   // File-input tools: the whole canvas accepts a dropped file — drag-and-drop, or
   // click-to-pick via an explicit [data-file-pick] affordance. In canvas layout the
   // canvas IS the file control; in sidebar layout it complements the sidebar
@@ -3775,7 +3882,11 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
     if (input.urlKey) inputsByKey[input.urlKey] = input;
   }
 
-  const RESERVED_KEEP = new Set(['format', 'export', 'copy', 'slot', 'output', 'full', '_v', 'nostage', 'lang']);
+  // `present`/`s` are engine-reserved; `loop` is NOT reserved (it is a live input id
+  // in several tools) but the presenter reads it as a raw kiosk flag on design,
+  // so it must survive shrinkUrl here to keep signage links (`?present&loop`) whole. See
+  // plan 112 and the RESERVED note in engine/src/url-mode.ts.
+  const RESERVED_KEEP = new Set(['format', 'export', 'copy', 'slot', 'output', 'full', '_v', 'nostage', 'lang', 'present', 's', 'loop']);
 
   const kept: string[] = [];
   for (const part of qs.split('&')) {
@@ -3827,17 +3938,87 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
 
 // btnScopeEl — element containing the copy-url button (the actions bar)
 // exportScopeEl — element containing format/filename/w/h inputs (actionsEl); optional
-function wireUpCopyUrl(btnScopeEl: HTMLElement, runtime: Runtime, exportScopeEl: HTMLElement | null, manifest: ToolManifest): void {
+function wireUpCopyUrl(btnScopeEl: HTMLElement, runtime: Runtime, exportScopeEl: HTMLElement | null, manifest: ToolManifest, lolly?: ShareDialogLolly): void {
   btnScopeEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.addEventListener('click', () => {
-    showShareDialog(runtime, exportScopeEl ?? btnScopeEl, manifest);
+    showShareDialog(runtime, exportScopeEl ?? btnScopeEl, manifest, lolly);
   });
+}
+
+/** The internal assets-bridge methods the `.lolly` builder needs, typed structurally —
+ *  they are web-only (not on the public HostV1.AssetsAPI), the same reason
+ *  data-transfer.ts declares its own `BackupHost`. */
+interface LollyAssetsSlice {
+  get(id: string): Promise<AssetRef>;
+  _getBlob(id: string, opts?: { format?: string; version?: string }): Promise<Blob | null>;
+  _exportUserAssets(): Promise<readonly BeamAssetRecord[]>;
+}
+
+/** A catalog license that must NOT travel by default — proprietary / brand content
+ *  (SUSE `LicenseRef-…-Proprietary`, PremiumBeat music). Open or unmarked catalog art
+ *  carries freely; brand-locked tokens are caught separately via `meta.brandLock`. */
+function isProprietaryLicense(license: unknown): boolean {
+  const l = String(license ?? '').toLowerCase();
+  return !!l && /proprietary|all-rights-reserved|licenseref|premiumbeat/.test(l);
+}
+
+/**
+ * Build the `.lolly` download vehicle for the Share dialog, or undefined when the tool
+ * has no saveable session (a pure render-only utility). Reuses the catalog + user-asset
+ * bridge to resolve the session's closure, gates proprietary/brand-locked catalog bytes,
+ * and assembles the creator block from the profile (identity gated on `useDetails`).
+ */
+function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManifest, sessionState: (() => unknown) | undefined): ShareDialogLolly | undefined {
+  if (typeof sessionState !== 'function') return undefined;
+  const assets = host.assets as unknown as LollyAssetsSlice;
+  const appVersion = `Lolly ${ENGINE_VERSION}`;
+
+  const resolveLibrary = async (id: string): Promise<LollyLibraryAsset | null> => {
+    try {
+      const blob = await assets._getBlob(id);
+      if (!blob) return null;
+      const ref = await assets.get(id).catch(() => null);
+      const meta = (ref?.meta ?? {}) as Record<string, unknown>;
+      const licensed = meta.brandLock === true || isProprietaryLicense(meta.license);
+      return {
+        bytes: new Uint8Array(await blob.arrayBuffer()),
+        mime: blob.type || '',
+        type: ref?.type ?? 'raster',
+        format: ref?.format ?? '',
+        label: typeof meta.name === 'string' ? meta.name : id,
+        licensed,
+      };
+    } catch { return null; }
+  };
+
+  const build = async (includeLicensed: boolean) => {
+    const session = sessionState() ?? null;
+    const profile = await host.profile.get().catch(() => null);
+    const userAssets = await assets._exportUserAssets();
+    const creator = creatorFromProfile(profile, { appVersion });
+    const { blob, filename, summary } = await buildLollyFile({
+      session, toolId,
+      toolVersion: manifest.version != null ? String(manifest.version) : undefined,
+      name: String((manifest as { name?: unknown }).name ?? toolId),
+      userAssets, resolveLibrary, includeLicensed, creator,
+      appVersion, engineVersion: ENGINE_VERSION,
+    });
+    return { blob, filename, summary };
+  };
+
+  return { build, save: (blob: Blob, filename: string) => host.export.file(blob, { filename }) };
 }
 
 // Builds the base share-link query parts (tool inputs + the chosen export
 // settings) — WITHOUT the on-visit behaviour flags (full/options/export/copy/_v),
 // which the share dialog appends per the user's toggles.
-function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): string[] {
+function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { parts: string[]; fidelity: ShareFidelity } {
   const parts: string[] = [];
+  // What a URL can't carry, recorded as we drop it, so the Share dialog can tell the
+  // user what won't travel instead of dropping it silently (the "link has no content"
+  // bug). Each `continue`-with-a-drop below records here.
+  const droppedScalars: { id: string; label: string }[] = [];
+  const droppedBlocks: { id: string; label: string }[] = [];
+  const excludedAssets: { id: string; label: string }[] = [];
 
   for (const input of runtime.getModel()) {
     const { id, type, value, fields } = input;
@@ -3857,6 +4038,10 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
       const assetId = ref ? assetIdForUrl(ref) : undefined;
       if (assetId && !assetId.startsWith('user/')) {
         parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(assetId)}`);
+      } else if (ref) {
+        // An image is set but can't ride in a URL: a device-local (user/*) upload,
+        // or a ref with no shareable id. Record it so the dialog says it won't travel.
+        excludedAssets.push({ id, label: input.label ?? id });
       }
       continue;
     }
@@ -3871,6 +4056,7 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
       // rows are their own, and they cost 38 characters each of the same budget.
       const encoded = compact ?? JSON.stringify(blocksForUrl(stripHiddenRowIds(value)));
       if (encoded.length <= 8000) parts.push(`${key}=${compact ? encoded : encodeURIComponent(encoded)}`);
+      else droppedBlocks.push({ id, label: input.label ?? id });
       continue;
     }
 
@@ -3903,7 +4089,7 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
     // so a shared/embedded link re-resolves against the destination's tokens — and
     // never leaks "[object Object]" into the URL (mirrors the engine's coerceToString).
     let str = type === 'color' && isTokenValue(value) ? value.ref : String(value);
-    if (str.length > 150) continue;
+    if (str.length > 150) { droppedScalars.push({ id, label: input.label ?? id }); continue; }
 
     // Strip # from plain hex colors — saves 3 encoded chars (%23) per color param.
     // A token ref ({color.brand.jungle}) has no leading # and passes through as-is.
@@ -3985,14 +4171,20 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): st
     }))}`);
   }
 
-  return parts;
+  const fidelity: ShareFidelity = {
+    faithful: excludedAssets.length === 0 && droppedScalars.length === 0 && droppedBlocks.length === 0,
+    droppedScalars,
+    droppedBlocks,
+    excludedAssets,
+  };
+  return { parts, fidelity };
 }
 
 
 // The Share button opens the shared dialog (components/share-dialog.js): a ready-to-copy
 // link plus the on-visit behaviour toggles. This thin wrapper feeds it the live tool
 // state; the Projects view reuses the same dialog for a saved session.
-function showShareDialog(runtime: Runtime, exportScope: HTMLElement | null, manifest: ToolManifest): void {
+function showShareDialog(runtime: Runtime, exportScope: HTMLElement | null, manifest: ToolManifest, lolly?: ShareDialogLolly): void {
   // Resolve the tool id from the address bar (path or hash form) so the link is the
   // crawler-visible /t/<id> shape. The dialog itself lives in components/share-dialog.js,
   // shared with the Projects view's per-session "Share link". buildShareParams stays here
@@ -4000,7 +4192,8 @@ function showShareDialog(runtime: Runtime, exportScope: HTMLElement | null, mani
   const toolId = window.location.pathname.match(/^\/t\/([^/?]+)/)?.[1]
               ?? window.location.hash.match(/^#\/tool\/([^/?]+)/)?.[1];
   const currentFormat = exportScope?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value || '';
-  openShareDialog({ toolId, baseParts: buildShareParams(runtime, exportScope), manifest, currentFormat });
+  const { parts, fidelity } = buildShareParams(runtime, exportScope);
+  openShareDialog({ toolId, baseParts: parts, manifest, currentFormat, fidelity, lolly });
 }
 
 
