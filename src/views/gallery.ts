@@ -641,7 +641,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     for (const t of index.tools) {
       if (!seen.has(t.id) && favourites.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
     }
-    // Starred VIEW cards (Verify, Take a PDF apart, Colour Lab) promote into the
+    // Starred VIEW cards (Verify, Unpack, Colour Lab) promote into the
     // hero strip exactly like starred tools — as icon-hero tiles, since a view has
     // no preview or render path. `href` routes the tile to the view (the same
     // non-tool-tile mechanism the Projects ribbon uses), and the `view:`-prefixed
@@ -761,7 +761,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   });
 
   // Universal drop front door: any file dragged onto the gallery is sniffed and
-  // routed (design → Layout Studio, PDF → import/compress, media → library or
+  // routed (design → Design, PDF → import/compress, media → library or
   // /verify). Scoped to this view's root (its listeners die with the node on
   // navigation) — never a window/document-global handler. drop-router (~6 KB) is
   // dynamic-imported off the boot path; kicked at mount, it resolves in ~ms same-origin,
@@ -2215,10 +2215,10 @@ const utilityViews = (speechOk: boolean): UtilityView[] => [{
   description: t('Check any file on-device: who made it, what it has been through, and what it hides. Metadata, attachments, scripts and tracking links.'),
 }, {
   id: 'pdf-extract',
-  href: '#/pdf',
+  href: '#/unpack',
   icon: 'document',
-  name: t('Take a PDF apart'),
-  description: t('Pull the words out of any PDF, page by page, and keep them as plain text or markdown. Nothing is uploaded.'),
+  name: t('Unpack'),
+  description: t('Take a design file apart: the words, images, fonts, colours and marks inside a PDF, SVG, InDesign, Penpot, Figma, PowerPoint or Photoshop file, each one viewable and keepable. Nothing is uploaded.'),
 }, {
   id: 'color-lab',
   href: '#/lab',
@@ -2262,7 +2262,7 @@ function viewCardMarkup(v: UtilityView, isFav: boolean): string {
         <div class="gtile-cap">
           <span class="tool-card-icon" aria-hidden="true">${icon(v.icon, { size: 24 })}</span>
           <span class="gtile-meta">
-            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — v.href comes from the hardcoded utilityViews() table ('#/verify', '#/pdf', '#/lab', '#/data', '#/script') */ ''}
+            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — v.href comes from the hardcoded utilityViews() table ('#/verify', '#/unpack', '#/lab', '#/data', '#/script') */ ''}
             <a class="gtile-name" href="${escape(v.href)}">${escape(v.name)}</a>
             <p class="gtile-desc">${escape(v.description)}</p>
           </span>
@@ -2371,7 +2371,7 @@ function cardMarkup(
   const hasSession = !!latest && !unavailable;          // resumable, with or without a preview
   const hasThumbHero = hasSession && !!latest!.thumb;    // resumable AND has a preview image
   const hasPreview = !unavailable && !hasSession && !!tool.preview; // committed demo preview, no session yet
-  // A committed AUTHORED card (tools/<id>/card.svg|png — e.g. bag-video's animated-Geeko
+  // A committed AUTHORED card (tools/<id>/card.svg|png — e.g. pose-geeko's animated-Geeko
   // SVG, which animates natively in an <img>) is served from /tools/, unlike a generated
   // preview (/catalog/previews/…). When a tool ALSO has examples, we lead its carousel
   // with this card so the tile opens on the tool's real, often-animated hero and then
@@ -2418,7 +2418,7 @@ function cardMarkup(
     // object-fit:contain (differently-shaped looks fit within, never cropped). Decorative:
     // the real navigation is the card's name link + info/history buttons, so slides are aria-hidden.
     // Lead slide: a saved-session thumb (resume) wins; else the committed authored card
-    // (bag-video's animated Geeko) leads with the tool's real hero. Only one lead.
+    // (pose-geeko's animated Geeko) leads with the tool's real hero. Only one lead.
     const leadSlide = hasThumbHero
       ? `<li class="gcar-slide gcar-slide--lead">
            <button class="gcar-open" type="button" data-resume="${escape(latest!.toolId)}" data-slot="${escape(latest!.slot)}" aria-label="${escape(tRaw('Continue {name}', { name: latest!.filename || tool.name }))}">

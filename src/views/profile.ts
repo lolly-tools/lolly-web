@@ -2731,7 +2731,7 @@ function userImageThumb(ref: AssetRef) {
   // SVGs (logos/icons) shouldn't be cropped to fill — show the whole mark.
   const isVector = ref.type === 'vector' || ref.format === 'svg';
   // A lottie's url is JSON (no still image) — show a play-glyph stub, not a broken
-  // <img>. Its live preview surface is Layout Studio; here it's just manageable.
+  // <img>. Its live preview surface is Design; here it's just manageable.
   // A video plays itself, muted + looping; gif/apng/animated-webp animate in <img>.
   const media = ref.type === 'lottie'
     ? `<span class="userimg-thumb" style="display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--text-muted,#789)" aria-hidden="true">▶</span>`
@@ -2759,7 +2759,7 @@ function openImageLightbox(ref: AssetRef) {
   // leaving the dimensions blank.
   const dims = ref.width && ref.height ? `${ref.width} × ${ref.height}` : (isVector ? 'SVG' : (isLottie ? 'Lottie' : (isVideo ? 'Video' : '')));
   // A lottie has no still frame to enlarge — show a play-glyph placeholder instead
-  // of a broken <img>. (Placing it in Layout Studio is where it actually plays.)
+  // of a broken <img>. (Placing it in Design is where it actually plays.)
   // A video plays full-size with controls; gif/apng/animated-webp enlarge as <img>.
   const media = isLottie
     ? `<div class="userimg-lightbox-img" style="display:flex;align-items:center;justify-content:center;min-width:220px;min-height:220px;font-size:5rem;color:var(--text-muted,#789)" aria-hidden="true">▶</div>`

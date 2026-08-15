@@ -3,7 +3,7 @@
  * Theme cycle toggle — one compact, icon-only button that steps through the
  * themes (light → dark → brand → …) on click, showing the active theme's glyph.
  * It lives in the canvas zoom HUD (.stage-nav) so every tool with a live canvas
- * — including the chromeless editor/Layout Studio — carries a theme switcher,
+ * — including the chromeless editor/Design — carries a theme switcher,
  * and the sidebar header stays uncluttered.
  *
  * Icon-only with a tooltip (title + aria-label carry the theme name), styled as

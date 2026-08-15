@@ -99,6 +99,8 @@
 .anim-transport-play,                             /* tool.css - animation transport play/pause */
 .view-seg-btn[aria-pressed="true"],               /* gallery.css — canonical segmented control */
 .gallery-pill.active,                             /* gallery.css — category/sort pill */
+.tmpl-chooser-filter.is-active,                   /* template-chooser.css — tag-filter chip */
+.fc-frames-empty-add,                             /* editor.css — Artboards empty-state "Draw an artboard" */
 .plat-pill,                                       /* platform.css — inline qualifier badge */
 .skip-link:focus,                                 /* base.css — a11y skip-nav, revealed on focus */
 .not-found-home,                                  /* notfound.css — 404 "Browse all tools" CTA */

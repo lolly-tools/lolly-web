@@ -59,7 +59,7 @@ import {
   // ONE routed-line renderer and its ONE kind→route mapping, so the live overlay, the
   // committed render and a headless CLI cannot disagree about where the line goes.
   routedLineSvg, pathRouteStyle, formatEdgePoint,
-  gradientLine, gradientPosAt, gradientAngleAt, resolveFrame, renumberFrameOrder,
+  gradientLine, gradientPosAt, gradientAngleAt, resolveFrame,
   sequenceFramesInOrder, framesAreSequenced, parseDashArray, formatDashArray,
   pathEndPoints, pathEndTangents,
   // Lift layers (plans/104 §7): the pure box synthesis. The ENUMERATION is the
@@ -229,7 +229,7 @@ interface CanvasCfg {
   /** Opt-in: a SECOND blocks input holding connector edges between boxes, plus a
    *  "Connect" rail mode to author them (click a source card, then targets). The
    *  overlay only reads/writes this array + draws a live preview; the tool's hooks.js
-   *  turns {from,to} into the actual routed lines. Absent for Layout Studio / Carousel,
+   *  turns {from,to} into the actual routed lines. Absent for Design / Carousel,
    *  so their toolbars are unchanged. */
   connect?: ConnectCfg;
   /** Opt-in: snap box positions to a fixed grid (with a rail toggle). */
@@ -353,7 +353,7 @@ interface InitFreeCanvasOpts {
    *  translate a box's on-screen position by its frame's DOM offset during a live
    *  gesture, (b) un-clip frames mid-drag, and (c) expose a page-count + page-size
    *  control on the rail. Values name the number-input ids the geometry is read
-   *  from / written to via runtime. Absent for single-page editors (Layout Studio). */
+   *  from / written to via runtime. Absent for single-page editors (Design). */
   pages?: PagesCfg;
   /** Frame-primitive mode (plan 93 F1b). When present, the box array may include
    *  `kind === frameKind` boxes that render as free-placed `[data-pdf-page]` pages
@@ -561,6 +561,8 @@ const SVG = {
   grip: '<circle cx="9" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="17" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="1.2" fill="currentColor" stroke="none"/>',
   chevUp: '<polyline points="6 15 12 9 18 15"/>',
   chevDown: '<polyline points="6 9 12 15 18 9"/>',
+  chevLeft: '<polyline points="15 18 9 12 15 6"/>',
+  chevRight: '<polyline points="9 18 15 12 9 6"/>',
   minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
   editText: '<path d="M4 7V5h16v2"/><path d="M9 19h6"/><path d="M12 5v14"/>',
   // Pencil — the "edit text" action (replaces the old 'T' glyph on the object bar).
@@ -964,7 +966,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     kindField: 'kind',
     // `pathField` is left un-defaulted on purpose: it is the feature flag, so a manifest
     // that omits it must resolve to undefined. The other three DO default, to the same
-    // names as vector-ops' DEFAULT_VECTOR_FIELDS — the shipped Layout Studio manifests
+    // names as vector-ops' DEFAULT_VECTOR_FIELDS — the shipped Design manifests
     // append the `stroke`/`strokeW`/`fillRule` sub-fields but only declare `pathField` on
     // the canvas block, and the overlay has to read the same field the ops write.
     pathField: cv.pathField,
@@ -988,7 +990,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }) as FieldCfg;
   // The vector operations' own field view. `cfg` is a superset of `VectorFieldConfig`
   // and vector-ops resolves each name defensively (a non-string falls back to the
-  // Layout Studio default), so the resolved config is handed over unchanged.
+  // Design default), so the resolved config is handed over unchanged.
   // Null until the manifest declares `canvas.pathField` — see CanvasCfg.pathField.
   const vectorCfg: VectorFieldConfig | null = cv.pathField ? cfg : null;
   // Plan 96's path decorations are DECLARED, not defaulted-into-existence: the field names
@@ -996,7 +998,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // block has a hooks.js that cannot draw an arrowhead or an authored dash pattern, and
   // authoring one into its boxes would store a decoration the render silently ignores —
   // worse, one the compact URL drops on the way out because the field is undeclared. Every
-  // `pathField` tool shipping today declares the head set — both Layout Studio packs, and
+  // `pathField` tool shipping today declares the head set — both Design packs, and
   // Sequence Studio since its 1.3.0 (fields headStart/headEnd, canvas headStartField/
   // headEndField) — so the check is a live gate for a tool that has not opted in yet, not a
   // description of one that exists.
@@ -1048,7 +1050,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // ── Manifest-driven shape control ─────────────────────────────────────────────
   // The "More" panel's shape segment is built from the tool's OWN declared shape
   // options — NOT a fixed list — so a tool only ever offers shapes its hooks.js can
-  // render (e.g. `circle` is Layout Studio only; Carousel/Org-chart/Record don't
+  // render (e.g. `circle` is Design only; Carousel/Org-chart/Record don't
   // declare it, so it never shows there and can't produce a broken square). A known
   // value gets its glyph; anything else falls back to its label text.
   const SHAPE_ICON: Record<string, string> = {
@@ -1059,7 +1061,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     .map((o) => [String(o.value ?? ''), t(String(o.label || o.value || '')), SHAPE_ICON[String(o.value ?? '')]]);
   // ── Manifest-driven SHADOW control, for the same reason ──────────────────────
   // The shadow segments were a fixed four (`none`/`box`/`text`/`content`) while the
-  // manifests had moved on: Layout Studio and Sequence Studio both declare a fifth,
+  // manifests had moved on: Design and Sequence Studio both declare a fifth,
   // `depth` — the very target `liftRows` pre-sets on every lifted layer (plans/104
   // §7) and a real branch of SHADOW_TARGETS in all three hooks copies. A segmented
   // control marks `is-on` by exact match, so a lifted layer opened its Shadow row
@@ -1074,7 +1076,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     : [['none', t('None')], ['box', t('Box')], ['text', t('Text')], ['content', t('Content')]];
   const addKinds: AddKind[] = Array.isArray(cv.addKinds) && cv.addKinds.length
     ? cv.addKinds : [{ id: 'box', label: 'Box', seed: {} }];
-  // Opt-in design-file import (Figma SVG / Penpot). Falsy for Layout Studio, whose
+  // Opt-in design-file import (Figma SVG / Penpot). Falsy for Design, whose
   // canvas config has no `import` key — so its toolbar is unchanged.
   const importCfg = cv.import || null;
   // Brand vocabulary for the importer (engine DesignMapOptions): imported text maps
@@ -1128,11 +1130,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // maps ALL TEN time sub-fields — a partial mapping would give the panel somewhere to
   // read from but nowhere to write, so it is treated as absent.
   //
-  // Two tools qualify today: Sequence Studio and Layout Studio (both declare the phase-1
+  // Two tools qualify today: Sequence Studio and Design (both declare the phase-1
   // time model in their canvas block). Carousel Maker, Org Chart, Record and every other
   // editor map none of them, so `timeCfg` is null there and every timeline branch below
   // is dead code for them — no rail button, no lazy chunk, no stage reserve, no listener.
-  // On an UNTIMED Layout Studio composition the cost is one extra rail button and nothing
+  // On an UNTIMED Design composition the cost is one extra rail button and nothing
   // else: `anyTimed()` is false, so the panel never auto-opens and its chunk is never
   // fetched until the user asks for it.
   //
@@ -1148,7 +1150,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // OPTIONAL, and deliberately outside the ten-field presence check above: a tool
       // that declares no link sub-field is still fully time-capable, it just never
       // offers "Detach audio" (progressive capability). Both shipping time-capable
-      // tools declare it today — Sequence Studio, and Layout Studio since its 1.12.0
+      // tools declare it today — Sequence Studio, and Design since its 1.12.0
       // (`linkOf`) — so this is a live gate for the next tool to opt in, not a
       // description of one that exists.
       linkField: cv.linkField || '',
@@ -1819,7 +1821,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // means subtracting/adding the frame's offset within the canvas. Reading offsetLeft/
   // offsetTop off the live frame keeps this immune to the frame-gap constant (the frame
   // sits wherever the template laid it out). Returns {0,0} when the element isn't inside
-  // a page frame — so a single-page editor (Layout Studio) is completely unaffected.
+  // a page frame — so a single-page editor (Design) is completely unaffected.
   // A [data-pdf-page] frame's offsetLeft/offsetTop does NOT change while a BOX is dragged —
   // only the box moves. But reading them forces a synchronous layout, and applyLiveRect +
   // the live chrome re-sync call this per box PER pointermove, so a drag with frames present
@@ -1873,6 +1875,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const guidesEl = document.createElement('div'); // snap/alignment guide lines
   guidesEl.className = 'fc-guides';
   overlay.appendChild(guidesEl);
+
+  // Frame name labels (Figma-style) — one small tab above each artboard's top-left that
+  // NAMES it and selects the FRAME on click. This is the reliable way to "edit the frame
+  // itself": a frame is now reachable even when content covers its whole area, so clicking
+  // empty frame space is no longer the only door in. Repositioned every sync from the MODEL
+  // (like the selection chrome); the container is click-through so only the tabs take a hit.
+  // frameCfg-gated → dead for every no-frames document. Cleaned up with the overlay.
+  const frameLabels = document.createElement('div');
+  frameLabels.className = 'fc-frame-labels';
+  overlay.appendChild(frameLabels);
+  frameLabels.addEventListener('pointerdown', (e) => e.stopPropagation());
+  frameLabels.addEventListener('click', (e) => {
+    const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('.fc-frame-label');
+    if (!el) return;
+    e.stopPropagation();
+    const fid = el.dataset.frameId || '';
+    const boxes = getBoxes();
+    const idx = boxes.findIndex((b, i) => idOf(b, i) === fid);
+    if (idx < 0) return;
+    deselectEdge();
+    selection = new Set(selectionForHit(boxes, idx, true)); // solo the frame
+    renderChrome();
+  });
 
   // Camera-gesture HUD (audit A2/A4). A camera drag commits on release and previews
   // NOTHING on the stage (§8's "drags commit on release"), so a shift-drag tilt or an
@@ -2473,7 +2498,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), key: 'import', keepOpen: true, run: () => openImportPanel(lollyBtn!) });
       }
       // Custom CSS (plan 112 M4): only for a tool that declares the `customCss` input
-      // (Layout Studio). Opens a highlighted, auto-completing editor bound to that input.
+      // (Design). Opens a highlighted, auto-completing editor bound to that input.
       if (runtime.getModel().some((i) => i.id === 'customCss')) {
         if (items.length) items.push({ sep: true });
         items.push({ label: t('Custom CSS'), icon: icon(SVG.code), key: 'css', run: () => openCssPanel(lollyBtn!) });
@@ -2564,7 +2589,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // field). A tool with nowhere to store `order` has no frame sequence to sort, so the
     // button is absent for carousel/deck and every non-frame tool. Toggles the panel.
     if (frameCfg?.orderField) {
-      toolBtn(t('Artboards — reorder'), SVG.frame,
+      toolBtn(t('Artboards'), SVG.frame,
         (b) => { if (morePanel?.classList.contains('fc-frames-panel')) closeMorePanel(); else openFramesPanel(b); }, 'fc-btn-frames');
     }
     // Auto-arrange, for a tool whose boxes can be JOINED (opt-in via canvas.bindStartField).
@@ -2915,7 +2940,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Right-click parity with the panel's own timing toggle. Present for any
     // time-capable tool — `timeCfg` is null on Carousel Maker, Org Chart and Record, so
     // their menu is byte-for-byte what it was. It deliberately does NOT also require a
-    // MOUNTED panel: a Layout Studio composition that has never opened its timeline is
+    // MOUNTED panel: a Design composition that has never opened its timeline is
     // exactly the user who needs to discover this, and a menu whose height changes
     // between two right-clicks on the same object is the thing the section above avoids.
     // So the panel is loaded on demand and the writer runs once it exists.
@@ -4061,85 +4086,178 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
-   * ── Frames reorder panel (plan 93 F1b-3) ──────────────────────────────────────
+   * ── Instant artboard (plan 112, inclusive-design) ─────────────────────────────
    *
-   * A floating list of the document's frame-kind boxes in page order — drag a row (or
-   * use its up/down steppers) to change the sequence. A reorder renumbers the `order`
-   * field densely 0..n-1 through renumberFrameOrder in ONE commit, and the hook re-sorts
-   * pages/export by (order asc, then x asc), so writing `order` is sufficient.
+   * Lay down a new artboard at the current EXPORT / page size in one action — no drag.
+   * Dragging to size is optional labour; an artboard can be resized once it exists, so a
+   * click is enough. The new page is placed clear of everything already on the canvas
+   * (to the RIGHT of the content's right edge, or at the origin on a blank doc) so it never
+   * overlaps or silently adopts loose boxes, then framed in the viewport. Dead unless the
+   * canvas declares the frame primitive (frameCfg). Used by the Artboards navigator's
+   * empty-state button and the Artboard tool's tap (a tap with no drag).
+   */
+  function addArtboard(): void {
+    if (!frameCfg) return;
+    const fk = frameCfg.frameKind;
+    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    if (!frameAddKind) return;
+    const boxes = getBoxes();
+    const d = canvasWH();                                       // current export / page size
+    const gap = Math.round(d.w * 0.08);
+    // The FIRST artboard sits at the origin — it coincides with the export frame (so it isn't
+    // dimmed by the pasteboard scrim) and wraps any loose content that's already there. Later
+    // artboards line up to the RIGHT of the furthest existing frame.
+    const frames = boxes.filter((b) => b != null && String(b[cfg.kindField]) === fk);
+    const x = frames.length
+      ? frames.reduce((m, b) => Math.max(m, num(b[cfg.xField]) + num(b[cfg.wField])), 0) + gap
+      : 0;
+    const id = freshId(boxes);
+    const box = seedBox(cfg, {}, frameAddKind.seed || {}, { x, y: 0, w: d.w, h: d.h } as MathRect, id);
+    selection = new Set([id]);
+    commit(assignFrames([...boxes, box], new Set([boxes.length])));  // frame keeps frame='' (no self-nesting)
+    renderChrome();
+    // Bring it into view (the doc may be panned); defer so the frame page has rendered.
+    requestAnimationFrame(() => {
+      const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`)
+        ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: { x: r.left, y: r.top, w: r.width, h: r.height } }));
+    });
+  }
+
+  /**
+   * ── Artboards navigator (plan 112) ────────────────────────────────────────────
    *
-   * Gated entirely on frameCfg?.orderField: the rail button that opens it is only built
-   * for a tool whose canvas declares an orderField, so carousel/deck (render.paged, no
-   * frameCfg) and every no-frames document never see this surface. It reuses the
+   * A bottom-docked filmstrip of the document's frame-kind boxes in page order, each a
+   * LIVE scaled thumbnail (a clipped clone of the canvas over that frame's rect — the same
+   * trick present-mode's slide previews use, but over the editor canvas). Clicking a
+   * thumbnail — or the ‹ › steppers — frames that artboard in the viewport by dispatching
+   * `fc-focus-rect`; tool.ts holds the StageNav and answers it (`stageZoom.focusRect`).
+   *
+   * NO reorder (plan 112 M5, "the artboards do not reorder at all"): the sequence IS the
+   * canvas layout the hook reads (order asc, x asc), which the user changes by moving frames
+   * on the canvas — a list-drag that only wrote `order` fought that and confused people.
+   *
+   * Docks ABOVE the sequence timeline when it is open: a rAF loop keeps its `bottom`
+   * tracking the timeline's height (write-guarded, so it only touches the DOM when the height
+   * actually changes), so opening/closing/resizing the timeline never overlaps the strip.
+   * Gated on frameCfg?.orderField (no orderField → no frames → no rail button). Reuses the
    * `morePanel` slot so the shared outside-click / rebuild dismissal takes it down.
    */
-  function openFramesPanel(anchor: HTMLElement): void {
+  function openFramesPanel(_anchor: HTMLElement): void {
     closeMorePanel();
     if (!frameCfg?.orderField) return;
     const of = frameCfg.orderField;
     const fk = frameCfg.frameKind;
-    const fkFields = { kindField: cfg.kindField, idField: cfg.idField, orderField: of, frameKind: fk };
-    let dragging: HTMLElement | null = null;
+    const xF = cfg.xField, yF = cfg.yField, wF = cfg.wField, hF = cfg.hField;
+    const THUMB_MAX_W = 132, THUMB_MAX_H = 90; // letterbox any aspect (landscape slide → portrait poster)
     const p = document.createElement('div');
     p.className = 'fc-panel fc-frames-panel';
+    let active = 0;
 
     // Frames in the SAME page order the hook uses: order asc, x asc tie-break.
     const framesInOrder = (): Box[] => getBoxes()
       .filter((b) => String(b?.[cfg.kindField]) === fk)
-      .sort((a, b) => (num(a?.[of]) - num(b?.[of])) || (num(a?.[cfg.xField]) - num(b?.[cfg.xField])));
-    const fidOf = (b: Box): string => (b?.[cfg.idField] == null ? '' : String(b[cfg.idField]));
-    const seqFromDom = (): string[] => [...p.querySelectorAll<HTMLElement>('.fc-frame-row')].map((r) => r.dataset.fid || '');
-    const commitSeq = (seq: string[]): void => { commit(renumberFrameOrder(getBoxes(), seq, fkFields)); };
+      .sort((a, b) => (num(a?.[of]) - num(b?.[of])) || (num(a?.[xF]) - num(b?.[xF])));
+
+    // A still, scaled clone of just THIS frame's rendered page. The template already emits
+    // one `.lolly-frame-page[data-frame-id]` per frame (its boxes at frame-LOCAL coords over
+    // the frame bg), so cloning that page — not the whole canvas — keeps the strip O(N), not
+    // O(N²): a whole-canvas clone per cell renders every frame N times over and froze big
+    // decks. Media is frozen so N thumbnails don't spin N decoders; pointer-inert (the cell
+    // owns the click). Falls back to a canvas-clip if the page markup isn't present.
+    function makeThumb(fb: Box): HTMLElement {
+      const fw = Math.max(1, num(fb[wF])), fh = Math.max(1, num(fb[hF]));
+      const s = Math.min(THUMB_MAX_W / fw, THUMB_MAX_H / fh);
+      const media = document.createElement('div');
+      media.className = 'fc-frame-thumb';
+      media.style.width = `${Math.round(fw * s)}px`;
+      media.style.height = `${Math.round(fh * s)}px`;
+      const fid = fb[cfg.idField] == null ? '' : String(fb[cfg.idField]);
+      const page = fid ? canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(fid)}"]`) : null;
+      const src = page ?? canvasEl;
+      const clone = src.cloneNode(true) as HTMLElement;
+      clone.removeAttribute('id');
+      clone.style.position = 'absolute';
+      clone.style.left = '0';
+      clone.style.top = '0';
+      clone.style.margin = '0';
+      clone.style.pointerEvents = 'none';
+      clone.style.transformOrigin = 'top left';
+      // A frame page is already frame-local (starts at 0,0); the whole-canvas fallback must
+      // be shifted so the frame's native rect lands at the thumbnail origin.
+      clone.style.transform = page
+        ? `scale(${s})`
+        : `translate(${-num(fb[xF]) * s}px, ${-num(fb[yF]) * s}px) scale(${s})`;
+      for (const v of clone.querySelectorAll<HTMLVideoElement>('video')) {
+        v.muted = true; v.autoplay = false; v.removeAttribute('autoplay');
+        try { v.pause(); } catch { /* not-ready — ignore */ }
+      }
+      media.appendChild(clone);
+      return media;
+    }
+
+    // The frame's LIVE on-screen box — the page element (or the frame box as a fallback).
+    // Client coords so the stage can frame it without knowing the canvas coordinate space.
+    function frameClientRect(fb: Box): DOMRect | null {
+      const fid = fb[cfg.idField] == null ? '' : String(fb[cfg.idField]);
+      if (!fid) return null;
+      const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(fid)}"]`)
+        ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(fid)}"]`);
+      return el ? el.getBoundingClientRect() : null;
+    }
+
+    function goTo(i: number, frames: Box[]): void {
+      active = Math.max(0, Math.min(i, frames.length - 1));
+      const fb = frames[active];
+      const r = fb ? frameClientRect(fb) : null;
+      if (r) stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: {
+        x: r.left, y: r.top, w: r.width, h: r.height,
+      } }));
+      p.querySelectorAll('.fc-frame-cell').forEach((c, idx) => c.classList.toggle('is-active', idx === active));
+      p.querySelector<HTMLElement>(`.fc-frame-cell[data-fi="${active}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
+    // The Artboard add-kind (label "Artboard", kind === frameKind) — the same tool the
+    // Add menu arms. Present on every frame-capable canvas; the empty state offers it
+    // directly so "draw one with the Artboard tool" is a button, not a scavenger hunt.
+    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
 
     function render(): void {
       const frames = framesInOrder();
       if (!frames.length) {
-        p.innerHTML = `<div class="fc-panel-head">${escape(t('Artboards'))}</div><div class="fc-frames-empty">${escape(t('No artboards yet — draw one with the Artboard tool.'))}</div>`;
+        p.innerHTML =
+          `<div class="fc-frames-empty">` +
+            `<span class="fc-frames-empty-msg">${escape(t('No artboards yet.'))}</span>` +
+            (frameAddKind
+              ? `<button type="button" class="fc-frames-empty-add" data-add-frame>${icon(SVG.frame)}<span>${escape(t('Draw an artboard'))}</span></button>`
+              : `<span>${escape(t('Draw one with the Artboard tool.'))}</span>`) +
+          `</div>`;
+        // One click lays down a full page-size artboard (no drag) and closes the panel —
+        // dragging to size is optional labour, and the artboard is resizable once it exists.
+        p.querySelector<HTMLButtonElement>('[data-add-frame]')?.addEventListener('click', () => {
+          closeMorePanel();
+          addArtboard();
+        });
         return;
       }
-      p.innerHTML = `<div class="fc-panel-head">${escape(t('Artboards'))}</div>` +
-        `<div class="fc-frames-list">` + frames.map((b, i) => {
-          const fid = fidOf(b);
-          return `<div class="fc-frame-row" draggable="true" data-fid="${escape(fid)}" data-tip="${escape(t('Drag to reorder'))}">
-            <span class="fc-frame-grip" aria-hidden="true">${icon(SVG.grip)}</span>
-            <span class="fc-frame-name">${escape(t('Artboard'))} ${i + 1}</span>
-            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="up" data-tip="${escape(t('Move up'))}" aria-label="${escape(t('Move up'))}"${i === 0 ? ' disabled' : ''}>${icon(SVG.chevUp)}</button>
-            <button type="button" class="fc-cbtn fc-frame-mv" data-fmove="down" data-tip="${escape(t('Move down'))}" aria-label="${escape(t('Move down'))}"${i === frames.length - 1 ? ' disabled' : ''}>${icon(SVG.chevDown)}</button>
-          </div>`;
-        }).join('') + `</div>`;
-      wireRows();
-    }
-
-    function wireRows(): void {
-      p.querySelectorAll<HTMLElement>('.fc-frame-row').forEach((row) => {
-        row.addEventListener('dragstart', (e) => {
-          dragging = row;
-          row.classList.add('is-dragging');
-          if ((e as DragEvent).dataTransfer) { (e as DragEvent).dataTransfer!.effectAllowed = 'move'; (e as DragEvent).dataTransfer!.setData('text/plain', row.dataset.fid || ''); }
-        });
-        row.addEventListener('dragend', () => { row.classList.remove('is-dragging'); dragging = null; });
-        row.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          if ((e as DragEvent).dataTransfer) (e as DragEvent).dataTransfer!.dropEffect = 'move';
-          if (!dragging || dragging === row) return;
-          const list = row.parentElement!;
-          const rect = row.getBoundingClientRect();
-          const after = (e as DragEvent).clientY > rect.top + rect.height / 2;
-          list.insertBefore(dragging, after ? row.nextSibling : row);
-        });
-        row.addEventListener('drop', (e) => { e.preventDefault(); commitSeq(seqFromDom()); render(); });
-      });
-      p.querySelectorAll<HTMLButtonElement>('[data-fmove]').forEach((btn) => btn.addEventListener('click', (e) => {
+      active = Math.max(0, Math.min(active, frames.length - 1));
+      p.innerHTML =
+        `<div class="fc-frames-head">` +
+          `<span class="fc-frames-title">${escape(t('Artboards'))}</span>` +
+          `<button type="button" class="fc-cbtn fc-frames-step" data-fstep="-1" data-tip="${escape(t('Previous artboard'))}" aria-label="${escape(t('Previous artboard'))}">${icon(SVG.chevLeft)}</button>` +
+          `<button type="button" class="fc-cbtn fc-frames-step" data-fstep="1" data-tip="${escape(t('Next artboard'))}" aria-label="${escape(t('Next artboard'))}">${icon(SVG.chevRight)}</button>` +
+        `</div>` +
+        `<div class="fc-frames-strip">` +
+        frames.map((_b, i) => `<button type="button" class="fc-frame-cell${i === active ? ' is-active' : ''}" data-fi="${i}" data-tip="${escape(t('Focus artboard'))}"><span class="fc-frame-cell-slot"></span><span class="fc-frame-cell-n">${i + 1}</span></button>`).join('') +
+        `</div>`;
+      const cells = p.querySelectorAll<HTMLElement>('.fc-frame-cell');
+      cells.forEach((cell, i) => cell.querySelector('.fc-frame-cell-slot')?.replaceChildren(makeThumb(frames[i]!)));
+      cells.forEach((cell) => cell.addEventListener('click', () => goTo(num(cell.dataset.fi), frames)));
+      p.querySelectorAll<HTMLButtonElement>('[data-fstep]').forEach((btn) => btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const row = btn.closest<HTMLElement>('.fc-frame-row');
-        if (!row) return;
-        const seq = seqFromDom();
-        const at = seq.indexOf(row.dataset.fid || '');
-        const to = at + (btn.dataset.fmove === 'up' ? -1 : 1);
-        if (at < 0 || to < 0 || to >= seq.length) return;
-        [seq[at], seq[to]] = [seq[to]!, seq[at]!];
-        commitSeq(seq);
-        render();
+        goTo(active + (btn.dataset.fstep === '1' ? 1 : -1), frames);
       }));
     }
 
@@ -4147,10 +4265,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     render();
     stageEl.appendChild(p);
     morePanel = p;
-    const ar = anchor.getBoundingClientRect();
-    const sr = stageEl.getBoundingClientRect();
-    p.style.left = Math.min(ar.right - sr.left + 8, sr.width - p.offsetWidth - 8) + 'px';
-    p.style.top = Math.max(6, Math.min(ar.top - sr.top, sr.height - p.offsetHeight - 8)) + 'px';
+
+    // Keep the strip docked above the timeline for as long as it lives (the timeline can
+    // open/close/resize independently). Cheap: one rect read per frame, and it only writes
+    // `bottom` when the value actually changes.
+    let lastBottom = -1;
+    const reposition = (): void => {
+      if (morePanel !== p) return; // closed → let the loop die
+      const tl = stageEl.querySelector<HTMLElement>('.tl-panel');
+      const tlOpen = !!tl && getComputedStyle(tl).display !== 'none';
+      const bottom = (tlOpen ? tl!.getBoundingClientRect().height : 0) + 12;
+      if (bottom !== lastBottom) { lastBottom = bottom; p.style.bottom = `${bottom}px`; }
+      requestAnimationFrame(reposition);
+    };
+    reposition();
   }
 
   /**
@@ -8450,10 +8578,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // rect, not the seed's w/h), so a tap uses one default diameter and a drag squares
       // to its smaller side (anchored at the drag's top-left).
       const circleSeed = cfg.shapeField && String(g.seed?.[cfg.shapeField]) === 'circle';
+      // A tap with the Artboard tool means "a page here" — size it to the export/page
+      // dimensions, not the tiny generic default. Dragging still sizes it freely.
+      const frameSeed = !!frameCfg && String(g.seed?.[cfg.kindField]) === frameCfg.frameKind;
       let rect: Rect;
       if (moved < 6) {
         // A tap (no drag) drops a default-sized box centred on the point.
-        const w = circleSeed ? 400 : 320, h = circleSeed ? 400 : 200;
+        const cd = canvasWH();
+        const w = frameSeed ? cd.w : (circleSeed ? 400 : 320);
+        const h = frameSeed ? cd.h : (circleSeed ? 400 : 200);
         rect = { x: g.origin.x - w / 2, y: g.origin.y - h / 2, w, h };
       } else {
         const c = g.corner || nat;
@@ -8688,7 +8821,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // page's rectangle, but the later frame's opaque background paints OVER it (same
     // stacking context, tree order). A positive z-index hoists the live box above every
     // later frame for the duration of the drag; endGesture clears it (and the next paint
-    // rebuilds the element clean). No-op for single-page editors (Layout Studio).
+    // rebuilds the element clean). No-op for single-page editors (Design).
     if (pages || frameCfg) el.style.zIndex = '9999';
   }
 
@@ -9349,11 +9482,60 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     frameScrim.style.height = wh.h * m.scale + 'px';
   }
 
+  // Frame name labels: rebuild the tabs only when the frame set / order / active state
+  // changes (tracked by frameLabelKey), and reposition them every sync — the same MODEL-px
+  // discipline positionFrameScrim uses. Hidden entirely while editing text or in pen mode so
+  // the canvas stays clean. frameCfg-gated.
+  let frameLabelKey = '';
+  function syncFrameLabels(boxes: Box[]): void {
+    if (!frameCfg) return;
+    if (editing || penDraft || penEdit) {
+      if (frameLabels.childElementCount) frameLabels.replaceChildren();
+      frameLabelKey = '';
+      return;
+    }
+    const fk = frameCfg.frameKind;
+    const of = frameCfg.orderField ?? '';
+    const frames = boxes
+      .map((b, i) => ({ b, i }))
+      .filter(({ b }) => String(b?.[cfg.kindField]) === fk)
+      .sort((a, c) => (num(a.b?.[of]) - num(c.b?.[of])) || (num(a.b?.[cfg.xField]) - num(c.b?.[cfg.xField])));
+    if (!frames.length) {
+      if (frameLabels.childElementCount) frameLabels.replaceChildren();
+      frameLabelKey = '';
+      return;
+    }
+    const key = frames.map(({ b, i }, n) => `${idOf(b, i)}:${n}:${selection.has(idOf(b, i)) ? 1 : 0}`).join('|');
+    if (key !== frameLabelKey) {
+      frameLabelKey = key;
+      frameLabels.replaceChildren(...frames.map(({ b, i }, n) => {
+        const id = idOf(b, i);
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'fc-frame-label' + (selection.has(id) ? ' is-active' : '');
+        el.dataset.frameId = id;
+        el.textContent = `${t('Artboard')} ${n + 1}`;
+        return el;
+      }));
+    }
+    const m = metrics();
+    const kids = frameLabels.children;
+    for (let n = 0; n < frames.length; n++) {
+      const el = kids[n] as HTMLElement | undefined;
+      if (!el) continue;
+      const fb = frames[n]!.b;
+      const tl = nativeToStage(num(fb[cfg.xField]), num(fb[cfg.yField]), m);
+      el.style.left = `${Math.round(tl.x)}px`;
+      el.style.top = `${Math.round(Math.max(2, tl.y - 20))}px`;
+    }
+  }
+
   function paintChrome(boxes: Box[], liveRects: Map<number, Rect> | null): void {
     // The one place a selection change is announced (see selListeners) — BEFORE the
     // text-edit / pen early returns, so a listener never misses a change made in
     // those modes. Inert (returns immediately) when nothing is listening.
     notifySelection();
+    syncFrameLabels(boxes);
     // M2 — reposition the frame scrim only when the artboard geometry changed (pan/
     // zoom/resize set scrimDirty); a box drag/hover/selection change never moves it.
     const movedStage = scrimDirty;
@@ -9948,7 +10130,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Same containment+cascade path as the pointer-drag move (see g.type === 'move'):
       // nudging a frame-kind box must carry its members in the SAME commit, and any box
       // whose centre crosses a frame edge must re-bucket. cascadeFrameChildren + assignFrames
-      // over the selected indices only — no-op on frameless tools (Layout Studio), so a
+      // over the selected indices only — no-op on frameless tools (Design), so a
       // no-frame nudge stays byte-identical to the old moveBoxes-only path.
       const idx = selIndices(boxes);
       // …and the SAME playhead-contextual split, for the same reason (plans/104 §8).
@@ -10037,7 +10219,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const mo = new MutationObserver(onStageMove);
   if (canvasEl.parentElement) mo.observe(canvasEl.parentElement, { attributes: true, attributeFilter: ['style'] });
   // Re-sync after every model change (paint()).
-  const unsub = runtime.subscribe(() => scheduleSync());
+  // A bulk external apply — picking an ANIMATED template after the blank mount — can flip
+  // the doc from untimed to timed; open the timeline the first time that happens, so the
+  // template reads as animated. One-shot: it never re-opens after a manual close, and a
+  // static template (poster / pull quote / blank) leaves the stage whole. Mirrors the
+  // mount-time check below (which handles a doc that arrives already timed).
+  let timelineAutoOpened = false;
+  const unsub = runtime.subscribe(() => {
+    scheduleSync();
+    if (!timelineAutoOpened && timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
+  });
+  // Hide-controls full preview (Figma/Penpot `\`): strip the editor chrome to a clean canvas
+  // so the artwork can be seen whole. Chrome-only — the render geometry and export are
+  // untouched. Escape always restores it, so a preview can never trap you.
+  const chromeRoot = (): HTMLElement | null => stageEl.closest('.tool-view');
+  function onPreviewKey(e: KeyboardEvent): void {
+    if (e.defaultPrevented) return;
+    const l = chromeRoot();
+    if (!l) return;
+    if (e.key === '\\' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingTarget(e.target as Element | null)) {
+      e.preventDefault();
+      l.classList.toggle('is-chrome-hidden');
+    } else if (e.key === 'Escape' && l.classList.contains('is-chrome-hidden')) {
+      e.preventDefault();
+      e.stopPropagation();
+      l.classList.remove('is-chrome-hidden');
+    }
+  }
+  document.addEventListener('keydown', onPreviewKey);
   // Dismiss popover / more-panel on outside click.
   const onDocDown = (e: PointerEvent): void => {
     if (popover && !popover.contains(e.target as Node)) closePopover();
@@ -10090,7 +10299,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // A composition that already has timing opens with its timeline showing; an empty
   // (or untimed) one leaves the stage whole until the user asks for it from the rail.
-  if (timeCfg && anyTimed(getBoxes())) openTimeline();
+  if (timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
 
   // Universal drop front door (lib/drop-router.ts): a design file dropped on the
   // gallery/dashboard was stashed one-shot and is consumed here on mount, through
@@ -10165,6 +10374,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (dollyTimer) { clearTimeout(dollyTimer); dollyTimer = null; }
       window.removeEventListener('resize', onStageMove);
       document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('keydown', onPreviewKey);
+      chromeRoot()?.classList.remove('is-chrome-hidden'); // never leave the next mount chromeless
       ro.disconnect();
       mo.disconnect();
       dirtyObserver?.disconnect();

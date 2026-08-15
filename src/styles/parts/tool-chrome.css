@@ -196,6 +196,70 @@
   }
   .tool-layout.export-open .render-pill { display: none; }
 
+  /* Ambient URL-budget gauge (plan 115 P1) — a ring in the render-pill showing how much
+     of a shareable link the current edit costs. Chrome-only; reads the cost model, never
+     moves an exported pixel. Green → amber → red matches the Share dialog's verdict
+     colours (fixed hsl triples, like the dialog, so high-contrast keeps them in step).
+     Every size rides --a11y-fs; the % text + aria-label carry the signal, not colour alone. */
+  .url-budget-gauge {
+    --budget-ok: 142 64% 42%;
+    --budget-warn: 38 92% 50%;
+    --budget-over: 0 72% 51%;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Plain px on purpose: the --a11y-fs multiplier sizes type and icons only
+       (a11y-prefs contract) — the ring inside already scales, the padding must not. */
+    padding: 0 9px;
+  }
+  .url-budget-ring {
+    width: calc(22px * var(--a11y-fs));
+    height: calc(22px * var(--a11y-fs));
+    transform: rotate(-90deg); /* start the fill at 12 o'clock */
+  }
+  .url-budget-track { stroke: currentColor; opacity: 0.18; }
+  .url-budget-fill {
+    stroke: hsl(var(--budget-ok));
+    stroke-linecap: round;
+    /* pathLength="100" normalises the circle, so the offset is just (100 − percent). */
+    stroke-dasharray: 100;
+    stroke-dashoffset: calc(100 * (1 - var(--gauge-frac, 0)));
+    transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+  }
+  .url-budget-gauge[data-band="warn"] .url-budget-fill { stroke: hsl(var(--budget-warn)); }
+  .url-budget-gauge[data-band="over"] .url-budget-fill { stroke: hsl(var(--budget-over)); }
+  .url-budget-pct {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(8px * var(--a11y-fs));
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    pointer-events: none;
+  }
+  /* Interim "compressing…" state while a large link is being packed — a calm muted arc
+     that pulses. The pulse is opacity-only (no transform, so it never fights the ring's
+     -90deg). The % is dimmed while indeterminate. */
+  .url-budget-gauge[data-state="compressing"] .url-budget-fill {
+    stroke: currentColor;
+    stroke-dashoffset: 75;
+    opacity: 0.4;
+    animation: url-budget-pulse 1s ease-in-out infinite;
+  }
+  .url-budget-gauge[data-state="compressing"] .url-budget-pct { opacity: 0.3; }
+  @keyframes url-budget-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.6; } }
+
+  /* Reduced motion (OS query OR the app pref): no fill glide, no pulse — jump to value. */
+  @media (prefers-reduced-motion: reduce) {
+    .url-budget-fill { transition: none; }
+    .url-budget-gauge[data-state="compressing"] .url-budget-fill { animation: none; }
+  }
+  html[data-a11y-motion="reduce"] .url-budget-fill { transition: none; }
+  html[data-a11y-motion="reduce"] .url-budget-gauge[data-state="compressing"] .url-budget-fill { animation: none; }
+
   /* Recorder tools (render.capture) put a "Warm the mic / Record" button at the foot
      of the stage — the SAME bottom-centre lane as the Get|Save FAB above, so on mobile
      the pill sits right on top of it. Lift the record button (and its take timer) to

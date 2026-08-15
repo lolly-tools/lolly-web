@@ -7,7 +7,7 @@
 // layout style rides into the clone, left:-99999px shifts the whole artwork off the raster
 // (→ a fully transparent PNG) and a style width/height overrides the raster's sizing
 // attributes. That is exactly how bag-video's gradient Geeko came out MISSING from every
-// Layout Studio PDF while it rendered on-screen and in SVG export.
+// Design PDF while it rendered on-screen and in SVG export.
 //
 // stripRasterLayoutStyle() is the fix boundary: it must remove every layout prop from the
 // clone while leaving paint-bearing declarations (color for currentColor, --custom-props

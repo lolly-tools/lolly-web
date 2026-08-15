@@ -602,7 +602,7 @@ test('carousel editor (render.pages): the page strip owns the size — no 1:1 re
 });
 
 // ── 9. per-artboard still fan-out for the Design frame primitive ──────────────
-// A multi-artboard Design (Layout Studio) doc — render.layout:'editor' with a boxes
+// A multi-artboard Design doc — render.layout:'editor' with a boxes
 // input declaring canvas.frameField — emits one [data-pdf-page] per frame box. A STILL
 // export must fan out ONE image per artboard (a zip for several, a single file for one),
 // matching carousel-maker (render.pages). The gate is the ONLY [data-pdf-page] fanout in

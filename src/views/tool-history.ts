@@ -12,7 +12,7 @@
  * shipped here, and both are the kind only a unit test catches:
  *
  *   1. The recorded-value filter was once a `blob:` URL test, which silently
- *      disabled ALL undo in Layout Studio the moment any box image resolved
+ *      disabled ALL undo in Design the moment any box image resolved
  *      through the asset-blob cache. The rule is about raw BYTES in memory, not
  *      about the URL scheme — an asset ref carrying a blob: URL is perfectly
  *      recordable because it re-derives its URL from a durable source + id.

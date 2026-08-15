@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// rich-text.js — the tiny per-character rich-text model behind Layout Studio's
+// rich-text.js — the tiny per-character rich-text model behind Design's
 // WYSIWYG inline text editing (free-canvas.js).
 //
 // The contenteditable shows the RENDERED rich text (what hooks.js richText emits:

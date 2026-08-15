@@ -475,6 +475,42 @@ export function createExportAPI(host: WebHost) {
       await this.download(out, name);
     },
 
+    // Will Web Share actually accept a file of this type? Chromium enforces a fixed
+    // type/extension safelist — a private application/vnd.lolly+zip / .lolly is NOT on
+    // it, so this returns false on Chromium (and canShare must be PRESENT, not just
+    // navigator.share, or old engines that shipped share() without file support slip
+    // through). The "Send to…" button is gated on this so it never claims a share it
+    // can't do. Cheap enough to call per render.
+    canShare(opts: { mime?: string; filename?: string } = {}): boolean {
+      if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+        return false;
+      }
+      try {
+        const probe = new File([new Blob()], opts.filename || 'file', { type: opts.mime || 'application/octet-stream' });
+        return navigator.canShare({ files: [probe] });
+      } catch { return false; }
+    },
+
+    // Hand finished bytes to the OS share sheet (Web Share API). Delegates the capability
+    // decision to canShare() above (so a type Web Share won't accept returns false → the
+    // caller falls back to download, never a silent no-op). Returns true when the sheet
+    // took it — a user-cancel counts, so we don't then ALSO dump a download on them.
+    // Never watermarks — a share is a share. Tauri shells override this with native ACTION_SEND.
+    async share(blob: Blob, opts: { filename?: string; mime?: string; title?: string } = {}): Promise<boolean> {
+      if (!this.canShare({ mime: opts.mime || blob.type, filename: opts.filename })) return false;
+      const file = new File([blob], opts.filename || 'file', {
+        type: opts.mime || blob.type || 'application/octet-stream',
+      });
+      try {
+        await navigator.share({ files: [file], title: opts.title });
+        return true;
+      } catch (err) {
+        // AbortError = the user opened the sheet and dismissed it — that is "handled",
+        // don't fall back to a download. Any other error = the share failed → fall back.
+        return (err as Error)?.name === 'AbortError';
+      }
+    },
+
     // Apply Lolly's durable RASTER marks to finished image bytes — the transform-
     // path counterpart to render()'s automatic marking, for a tool that stamps an
     // existing file (Embed, Imprint & Track). Embeds the pixel Imprint always, plus
@@ -1646,7 +1682,7 @@ async function renderSvg(node: Element, opts: ExportOpts = {}): Promise<Blob> {
   //
   // Caveat, not fixed in v1: tool exports run with `stackingOrder` off, so "the
   // content emitted so far IS what is behind" holds only where DOM order equals
-  // paint order. Layout Studio boxes are unrotated siblings in paint order and
+  // paint order. Design boxes are unrotated siblings in paint order and
   // satisfy it; arbitrary tool CSS (negative z-index, reordering) may not.
   // EMF/EPS/DXF deliberately stay off it — svg-ir drops every non-drop-shadow
   // filter, so the reconstruction would degrade there to a SHARP backdrop clone,
@@ -2881,7 +2917,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // is only half true: a client rect is scaled, but a COMPUTED LENGTH is not. Walk a
     // scaled subtree on the AABB path and every box lands correctly while every length
     // read from getComputedStyle — font-size first, but equally border-radius, border
-    // width, shadow offset and blur — is left 1/s too big. Measured on the Layout Studio
+    // width, shadow offset and blur — is left 1/s too big. Measured on the Design
     // docs shot: a 1080px artboard displayed at 868 (`matrix(0.8037…)`) exported its
     // headline 1/0.8037 = 24.4% oversize, overflowing the card it fits on screen.
     // Neutralising instead makes the subtree self-consistent — every length and every
@@ -5930,7 +5966,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     // lockup out as sibling <path transform="translate()/scale()"> with no wrapping <g>,
     // so unless a leaf's own transform is honoured here every glyph run and the chameleon
     // collapse onto the origin at native scale when the lockup is embedded as an image and
-    // the parent (e.g. Layout Studio) exports PDF. Mirrors the EMF/EPS/DXF walker's
+    // the parent (e.g. Design) exports PDF. Mirrors the EMF/EPS/DXF walker's
     // applyElementTransform (svg-ir.ts), which already maps per-leaf transforms.
     const tx0 = tx, ty0 = ty, sX0 = sX, sY0 = sY;
     let rotDeg = 0, rotCx = 0, rotCy = 0;

@@ -38,9 +38,9 @@ test('diacritics fold on the query side', async () => {
   assert.equal(hits[0]?.href, '#/verify');
 });
 
-test('keywords widen recall: oklch finds the Colour Lab, apart finds the PDF view', async () => {
+test('keywords widen recall: oklch finds the Colour Lab, apart finds the Unpack view', async () => {
   assert.equal((await provider.search(tokenize('oklch'), 5))[0]?.href, '#/lab');
-  assert.equal((await provider.search(tokenize('apart'), 5))[0]?.href, '#/pdf');
+  assert.equal((await provider.search(tokenize('apart'), 5))[0]?.href, '#/unpack');
 });
 
 test('a label hit (w3) outranks a keyword-only hit (w1)', async () => {

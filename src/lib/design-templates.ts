@@ -39,7 +39,7 @@ export interface DesignTemplate {
   name: string;
   /** The authored grouping path (`titles`); '' when ungrouped. */
   path: string;
-  /** Layout Studio boxes, shifted to the origin. */
+  /** Design boxes, shifted to the origin. */
   boxes: unknown[];
   width: number;
   height: number;

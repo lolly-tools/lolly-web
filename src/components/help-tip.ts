@@ -117,4 +117,18 @@ export function linkHelpDescriptions(scope: HTMLElement): void {
       ctrl.setAttribute('aria-describedby', pop.id);
     }
   });
+  // Notices (`input.notice` — the always-visible consent-gate fine print) are
+  // aria-hidden in the row markup so they don't bloat the wrapping label's
+  // accessible NAME; referencing them from aria-describedby still exposes their
+  // text as the control's description (accname traversal includes referenced
+  // hidden nodes). Append rather than overwrite so a help pop and a notice
+  // can describe the same control.
+  scope.querySelectorAll<HTMLElement>('.input-notice[id]').forEach((note) => {
+    const row = note.closest(HOST_SEL);
+    const ctrl = row?.querySelector('input, select, textarea, [data-field-id], [data-input-id]');
+    if (!ctrl) return;
+    const existing = ctrl.getAttribute('aria-describedby');
+    if (!existing) ctrl.setAttribute('aria-describedby', note.id);
+    else if (!existing.split(/\s+/).includes(note.id)) ctrl.setAttribute('aria-describedby', `${existing} ${note.id}`);
+  });
 }

@@ -6,7 +6,7 @@
  * 2). The two most consequential tests in this file are regression pins for bugs
  * this code has ALREADY shipped, both recorded in tool.ts's own comments:
  * recording keyed off a `blob:` URL instead of raw bytes (which silently killed
- * all undo in Layout Studio), and coalescing keyed off the top entry instead of
+ * all undo in Design), and coalescing keyed off the top entry instead of
  * the last record (which let a post-undo edit eat a state).
  */
 import { test } from 'node:test';
@@ -39,7 +39,7 @@ test('sameValue treats an unserialisable value as CHANGED, not equal', () => {
   assert.equal(sameValue(cyclic as InputValue, other as InputValue), false);
 });
 
-// ── carriesBytes: the Layout Studio regression ───────────────────────────────
+// ── carriesBytes: the Design regression ───────────────────────────────
 
 test('carriesBytes finds raw bytes at the top level and nested', () => {
   assert.equal(carriesBytes({ bytes: new Uint8Array([1]) } as unknown as InputValue), true);

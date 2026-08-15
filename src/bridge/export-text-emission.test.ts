@@ -480,7 +480,7 @@ test('text inside a SCALED element exports at the size the browser paints it',
   { skip: SKIP }, async () => {
     // A client rect carries an ancestor's scale; a computed length does not. Walking a
     // scaled subtree on the AABB path therefore lands every box correctly while leaving
-    // every getComputedStyle length 1/s too big. Measured on the Layout Studio docs
+    // every getComputedStyle length 1/s too big. Measured on the Design docs
     // shot: a 1080px artboard displayed at 868 (`matrix(0.8037…)`) exported its headline
     // 1/0.8037 = 24.4% oversize, overflowing the card it fits on screen.
     //

@@ -236,7 +236,10 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'views/picker.ts': 3,
   'views/record-control.ts': 1,
   'views/tool-actions.ts': 13,
-  'views/tool.ts': 6,
+  // 6 → 7, 2026-08-15 (plan 115): the URL-budget gauge ring — two <circle>s (track +
+  // pathLength fill) driven live by JS. A meter, not a glyph; icon() renders static
+  // paths, so it cannot host this one.
+  'views/tool.ts': 7,
 };
 
 test('R3 (rec 5): inline 24×24 Lucide glyphs only shrink — new icons go through lib/icons.ts', () => {
@@ -653,6 +656,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // names + numeric/boolean attrs), and the read-error banner (escape()d message) — all
   // user-data interpolations go through escape() (utils.ts).
   'views/data.ts': 4,
+  // The in-app docs reader (#/docs, M2 Phase 1). Both sinks are safe: the view scaffold
+  // (shellHtml — t() labels + lib/icons markup, no free text) and the error banner
+  // (escape()d message). The rehosted /info page fragment is injected as a PARSED node
+  // (DOMParser), not via a sink, and has its <script>/<style>/.listen-bar stripped.
+  'views/docs.ts': 2,
   // 1 as of 2026-08-09: the non-camera animated-SVG live source. `start()` inlines the
   // armed markup into an off-screen host so its CSS/SMIL actually ticks and `grabAnim`
   // can sample it — the same reason views/anim-svg-mount.ts inlines rather than uses an
@@ -683,7 +691,9 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'components/lang-menu.ts': 2,
   'components/modal.ts': 1,
   'components/music-player.ts': 5,
-  'components/neuro-dock.ts': 1,
+  // neuro-dock.ts lost its one sink in the @lolly-tools/audio-dock migration (Phase 2b,
+  // 2026-08-15): the dock DOM is now built by createAudioDock (in the package, outside
+  // this scan); this module only toggles classes + wires the shell's option callbacks.
   'components/profile-menu.ts': 1,
   'components/profiles-manager.ts': 3,
   'components/progress-toast.ts': 2,

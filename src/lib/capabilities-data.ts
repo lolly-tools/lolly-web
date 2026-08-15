@@ -123,7 +123,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'System dark mode', desc: 'Tools that support it adapt their canvas to your device’s light/dark preference.' },
       ] },
       { icon: ICONS.canvas, title: 'Free-canvas layout', shot: 'pen-editor-rail', keywords: 'layout studio drag resize rotate snap guides text box shapes design', features: [
-        { name: 'Direct manipulation', desc: 'Some tools open as a chromeless free canvas (<strong>Layout Studio</strong>): drag, resize and rotate boxes of text, shapes and images, with smart guides that snap to edges and centres.' },
+        { name: 'Direct manipulation', desc: 'Some tools open as a chromeless free canvas (<strong>Design</strong>): drag, resize and rotate boxes of text, shapes and images, with smart guides that snap to edges and centres.' },
         { name: 'Edit in place', desc: 'Double-click a text box to type; pick fills and images from the same shared controls — then export through the exact same render path as every other tool, so the canvas <em>is</em> the file.' },
       ] },
       { icon: ICONS.camera, title: 'Live camera', keywords: 'webcam video motion filter halftone duotone posterize snapshot photo', features: [
@@ -247,7 +247,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'SVG', desc: 'Vector artwork is sanitised — scripts, <code>on*</code> handlers and <code>javascript:</code> URLs are stripped — and normalised to a clean viewBox before it’s stored.' },
       ] },
       { icon: ICONS.vector, title: 'Design files', shot: 'design', keywords: 'figma fig penpot illustrator ai indesign idml pdf sketch import layout editable', features: [
-        { name: 'Figma · Penpot · Illustrator · InDesign · PDF', desc: 'Layout Studio imports a native Figma <code>.fig</code>, a Penpot export, an Illustrator <code>.ai</code> or any <code>.pdf</code>, and an InDesign <code>.idml</code> — each parsed in the browser into editable boxes. Text stays text, shapes stay shapes, complex art flattens faithfully.' },
+        { name: 'Figma · Penpot · Illustrator · InDesign · PDF', desc: 'Design imports a native Figma <code>.fig</code>, a Penpot export, an Illustrator <code>.ai</code> or any <code>.pdf</code>, and an InDesign <code>.idml</code> — each parsed in the browser into editable boxes. Text stays text, shapes stay shapes, complex art flattens faithfully.' },
         { name: 'Photoshop (PSD · PSB) · GIMP (XCF)', desc: 'Layered Photoshop and GIMP files open with their layers intact — each layer becomes an editable box — read on-device by the engine’s own PSD/XCF parsers, big PSB documents included.' },
         { name: 'Any SVG is the wide door', desc: 'Almost every design app can export SVG, so an SVG export becomes an editable, brand-conformed layout — the universal way in.' },
       ] },

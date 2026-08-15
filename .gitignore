@@ -47,11 +47,18 @@ public/viz-presets/
 # (mascots/, media/, fonts/, page images) STAY tracked.
 public/info/shots/
 public/info/audio/
+# The landing's worked-example previews (plan 117 block 2) — copied per build out
+# of the ACTIVE brand's catalog/previews/, which is where they are committed. Same
+# rule as shots/: mirrored from a source of truth that lives elsewhere, and the
+# copy here is per-profile, so committing it would freeze one brand's art into a
+# build output that every other profile rewrites.
+public/info/examples/
 public/info/search-index.json
 public/info/*/search-index.json
 public/info/audio-index.json
 public/info/docs-player*
 public/info/manifest.json
+public/info/docs-render-manifest.json
 public/info/icon.svg
 public/info/founded-by.svg
 # Page seals (plans/105 §7): one .c2pa Manifest Store per English page, signed by

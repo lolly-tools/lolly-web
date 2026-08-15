@@ -2,7 +2,7 @@
 /**
  * THE TEMPLATE CHOOSER IS NOT IN THE MOUNT PATH.
  *
- * A tool that ships `templates/` (today: Layout Studio, four of them) used to open like
+ * A tool that ships `templates/` (today: Design, four of them) used to open like
  * this: `views/tool.ts` awaited `openTemplateChooser`, and `createRuntime` — the whole
  * mount — could not begin until a human clicked a tile. In that same window the chooser
  * eagerly rendered a live preview per template, each one a real off-screen tool mount +

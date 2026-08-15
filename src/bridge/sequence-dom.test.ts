@@ -357,7 +357,7 @@ test('the ease reaches the driver too — a live take is eased like the preview'
 });
 
 // ── frames AS scenes: the applier gates [data-pdf-page] frame pages too (plan 92) ──────
-// A sequenced Layout Studio frame doc has NO `.lolly-box` on the seq lane — its scenes are
+// A sequenced Design frame doc has NO `.lolly-box` on the seq lane — its scenes are
 // [data-pdf-page] frame pages carrying data-t-start/data-t-dur. The SAME generic
 // [data-t-start] applier gates them: the page whose [start,start+dur) holds t stays
 // visible, the others get `.seq-off` — a slide at a time. There is no [data-sequence]

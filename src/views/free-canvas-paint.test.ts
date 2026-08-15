@@ -93,7 +93,7 @@ function pointerEvent(type: string, o: { x: number; y: number; shift?: boolean }
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOOL = join(HERE, '..', '..', '..', '..', 'brands', 'lolly-start', 'tools', 'design', 'tool.json');
 
-/** Layout Studio's real `canvas` block. Note it declares `pathField` and NOT the stroke
+/** Design's real `canvas` block. Note it declares `pathField` and NOT the stroke
  *  sub-fields: those come from the overlay's own defaults, which is precisely why a test
  *  that hand-wrote the config could pass while the shipped tool showed no controls. */
 function canvasCfg(): Record<string, unknown> {

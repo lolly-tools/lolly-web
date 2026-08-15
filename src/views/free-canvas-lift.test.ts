@@ -110,7 +110,7 @@ const svgRef = (name = 'diagram.svg') =>
 const pngRef = () =>
   ({ source: 'user', id: 'user/upload/photo.png', type: 'raster', format: 'png', url: 'https://x.test/photo.png' });
 
-/** Layout Studio's canvas block, narrowed to what a lift reads and writes. */
+/** Design's canvas block, narrowed to what a lift reads and writes. */
 function canvasCfg(): Record<string, unknown> {
   return {
     idField: 'id', xField: 'x', yField: 'y', wField: 'w', hField: 'h', rotationField: 'rot',

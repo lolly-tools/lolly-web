@@ -137,6 +137,13 @@ export interface VizMountOpts {
    * cleared, and every exported frame is blank.
    */
   capture?: boolean;
+  /**
+   * Override the device-pixel-ratio cap for the backing store (default
+   * `MAX_PIXEL_RATIO` = 1.5). The in-dock visualiser passes 2 so an enlarged /
+   * fullscreen window resamples crisply rather than upscaling a small buffer; the
+   * export/preview callers keep the cheaper default.
+   */
+  pixelRatioCap?: number;
 }
 
 /** The renderer's real signature. vendor.d.ts declares the no-argument `render()` the
@@ -303,7 +310,7 @@ export async function mountViz(
    * width/height, which we've already done). CSS keeps the element at its box size,
    * so the extra pixels become sharpness.
    */
-  const dpr = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
+  const dpr = Math.min(window.devicePixelRatio || 1, opts?.pixelRatioCap ?? MAX_PIXEL_RATIO);
   const box = (): { w: number; h: number } => {
     const r = canvas.getBoundingClientRect();
     // A detached or zero-size canvas would make butterchurn allocate a 0×0 texture

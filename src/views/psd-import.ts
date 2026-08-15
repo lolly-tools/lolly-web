@@ -10,7 +10,7 @@
  *      and the layer-stack tool's block rows carry only refs + geometry so
  *      URLs stay small). Returns the initial-values seed the drop router
  *      stashes for views/tool.ts.
- *   2. parseLayeredAsDesign — the Layout Studio branch design-import.ts
+ *   2. parseLayeredAsDesign — the Design branch design-import.ts
  *      delegates to: same parse, layers → image DesignNodes → finalizeBoxes.
  *   3. ingestLayeredFileFlattened — the library route: the file's merged
  *      composite (PSD ships one; XCF is flattened here src-over) stored as an
@@ -39,6 +39,8 @@ import { packPng } from '../../../../engine/src/png.ts';
 import { sniffLayeredRaster } from '../../../../engine/src/media-sniff.ts';
 import type { PickerHost } from './picker.ts';
 import type { AssetRef } from '@lolly-tools/core/host-v1';
+import type { UnpackHandle } from './unpack-open.ts';
+import type { PdfPageSvg, EmbeddedImage, EmbeddedImageScan } from './pdf-import.ts';
 
 const MAX_IMPORT_BYTES = 512 * 1024 * 1024; // the engine's decode budget is the real guard
 
@@ -70,6 +72,67 @@ export async function parseLayeredBytes(
 
 /** Compact-URL-safe text: the tilde/comma wire delimiters can never appear. */
 const scrub = (s: string): string => s.replace(/[,~]/g, ' ').trim();
+
+// ── Unpack reader (PSD/XCF → PdfHandle) ─────────────────────────────────────────
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Base64 in chunks — String.fromCharCode(...bigArray) overflows the call stack. */
+function bytesToBase64(u8: Uint8Array): string {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) bin += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+  return btoa(bin);
+}
+
+/**
+ * Open a layered bitmap for Unpack — each layer comes out as its own named PNG, and
+ * the flattened composite (PSD ships one; XCF is flattened here) is the page picture.
+ *
+ * There is deliberately NO text pass: our reader rasterises PSD/XCF text layers to
+ * PIXELS (see memory psd-text-layer-editable-gap), so the honest answer is that this
+ * reader has no words to give — NOT that the file has none. The view's generic
+ * no-text line says exactly that.
+ */
+export async function openPsdFile(file: File | Blob): Promise<UnpackHandle> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const doc = await parseLayeredBytes(bytes, () => {});
+  const layers = doc.layers.filter(importable);
+
+  const composite = doc.composite ?? (() => {
+    const out = new Uint8Array(doc.width * doc.height * 4);
+    for (const l of doc.layers) { if (l.isGroup || !l.pixels.length) continue; blitOver(out, doc.width, doc.height, l); }
+    return { width: doc.width, height: doc.height, pixels: out };
+  })();
+
+  let pageCache: PdfPageSvg | null = null;
+
+  return {
+    pageCount: 1,
+    async pageToSvg(index: number): Promise<PdfPageSvg> {
+      if (index !== 0) throw new Error(`No page ${index + 1} in a layered bitmap.`);
+      if (pageCache) return pageCache;
+      const png = packPng(composite.pixels, { width: composite.width, height: composite.height, channels: 4 });
+      const href = `data:image/png;base64,${bytesToBase64(png)}`;
+      const svg = `<svg xmlns="${SVG_NS}" viewBox="0 0 ${composite.width} ${composite.height}" width="${composite.width}" height="${composite.height}">`
+        + `<image width="${composite.width}" height="${composite.height}" href="${href}"/></svg>`;
+      pageCache = { svg, width: composite.width, height: composite.height, elementCount: 1 };
+      return pageCache;
+    },
+    listImages(): Promise<EmbeddedImageScan> {
+      const images: EmbeddedImage[] = layers.map((l, i) => ({
+        bytes: packPng(l.pixels, { width: l.width, height: l.height, channels: 4 }),
+        mime: 'image/png',
+        width: l.width,
+        height: l.height,
+        colorSpace: null,
+        page: 0,
+        name: scrub(l.name) || `Layer ${i + 1}`,
+      }));
+      return Promise.resolve({ images, skipped: 0, skippedFilters: [] });
+    },
+  };
+}
 
 /** A layer the import journeys keep: visible pixels or an honest hidden layer. */
 const importable = (l: RasterLayer): boolean => !l.isGroup && l.pixels.length > 0;
@@ -142,7 +205,7 @@ export async function importLayeredFileAsSeed(
 }
 
 /**
- * The Layout Studio branch — called from design-import.ts's parseDesignFile
+ * The Design branch — called from design-import.ts's parseDesignFile
  * when the magic bytes say layered bitmap. Same parse; layers become image
  * DesignNodes (unscaled at their natural bounds) through the exact
  * finalizeBoxes path every other importer uses.

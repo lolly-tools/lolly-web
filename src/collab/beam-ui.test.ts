@@ -304,7 +304,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   const sender = createCollabBeamUi({
     link: link(a, { role: 'inviter', selfName: 'Priya', peerName: 'Sam' }),
     host: senderHost,
-    currentSession: () => ({ state: liveState(), label: 'Layout Studio' }),
+    currentSession: () => ({ state: liveState(), label: 'Design' }),
     container: document.createElement('div'),
     mountToast: senderToast.mount,
   });
@@ -328,7 +328,7 @@ test('sendCurrentSessionNow builds the offer from the LIVE state and lands it, b
   // Consent, through the toast port — the only door there is (§11.24).
   const offered = receiverToast.events.find((e) => e.t === 'offer-received');
   assert.ok(offered && offered.t === 'offer-received', 'the receiver was never shown an offer');
-  assert.equal(offered.offer.name, 'Layout Studio', 'the offer is named from the live label');
+  assert.equal(offered.offer.name, 'Design', 'the offer is named from the live label');
   assert.equal(offered.offer.peerName, 'Priya', 'the consent sheet says who it is from');
   assert.equal(offered.offer.itemCount, 2, 'one upload + one session; the manifest is bookkeeping');
 
@@ -399,7 +399,7 @@ test('an acceptor packs from the ephemeral copy and lands a gift in the REAL lib
     host: inviterHost,
     currentSession: () => ({
       state: { __toolId: 'design', __toolVersion: '1.0.0', headline: 'A gift' },
-      label: 'Layout Studio',
+      label: 'Design',
     }),
     container: document.createElement('div'),
     mountToast: inviterToast.mount,

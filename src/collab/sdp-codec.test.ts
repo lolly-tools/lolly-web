@@ -469,7 +469,7 @@ test('pack: field validation refuses what would poison the far side', () => {
     invite: { v: SDP_CODEC_VERSION, toolId: 'qr-code', toolVersion: '1.0.0', engineVersion: '1.108.0', ...meta },
   });
   err(pack(invite({ toolId: '../../etc/passwd' })), 'bad-field');
-  err(pack(invite({ toolId: 'Layout Studio' })), 'bad-field');
+  err(pack(invite({ toolId: 'Design' })), 'bad-field');
   err(pack(invite({ toolId: '' })), 'bad-field');
   err(pack(invite({ name: 'Priya\r\nEvil' })), 'bad-field');
   err(pack(invite({ name: 'x'.repeat(200) })), 'too-large');

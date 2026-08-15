@@ -16,7 +16,7 @@
  *                              the welcome back next visit.
  *   "Bring your design"      → the universal drop router's file picker
  *                              (lib/drop-router.ts): a Figma/Penpot/PDF/… file
- *                              routes into Layout Studio or the library. Like
+ *                              routes into Design or the library. Like
  *                              the wizard path, it does NOT persist the flag.
  *   "Explore the tools"      → dismiss, persist the flag, stay on the gallery.
  *

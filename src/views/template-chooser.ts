@@ -217,22 +217,10 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       return p;
     };
 
-    // Group by category, preserving first-seen order; uncategorised templates
-    // fall into a "Templates" bucket rendered after the named groups.
-    const groupOrder: string[] = [];
-    const groups = new Map<string, TemplateVariant[]>();
-    for (const t of opts.templates) {
-      const key = t.category ?? 'Templates';
-      if (!groups.has(key)) { groups.set(key, []); groupOrder.push(key); }
-      groups.get(key)!.push(t);
-    }
-    // Categories only earn their headings when at least one holds two entries -
-    // all-singleton categories would render a ladder of one-tile sections with
-    // two empty columns each, so they flatten into one grid.
-    if (![...groups.values()].some(list => list.length > 1)) {
-      groups.clear(); groupOrder.length = 0;
-      groups.set('Templates', [...opts.templates]); groupOrder.push('Templates');
-    }
+    // Distinct categories (tags), first-seen order — these become the filter chips. Every
+    // template lives in ONE grid; a chip narrows it, so there are no per-category sections.
+    const cats: string[] = [];
+    for (const t of opts.templates) { const c = t.category; if (c && !cats.includes(c)) cats.push(c); }
 
     const tileHtml = (t: TemplateVariant): string => {
       // The media slot starts as the authored thumb (if any) or a category glyph; when a
@@ -241,7 +229,7 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
         ? `<img class="tmpl-chooser-tile-thumb" src="${escapeHtml(t.thumb)}" alt="" loading="lazy">`
         : `<span class="tmpl-chooser-tile-icon" aria-hidden="true">${icon(glyphFor(t), { size: 22 })}</span>`;
       const search = `${t.name} ${t.description ?? ''} ${t.category ?? ''}`.toLowerCase();
-      return `<button type="button" class="tmpl-chooser-tile" data-template-id="${escapeHtml(t.id)}" data-search="${escapeHtml(search)}">
+      return `<button type="button" class="tmpl-chooser-tile" data-template-id="${escapeHtml(t.id)}" data-category="${escapeHtml(t.category ?? '')}" data-search="${escapeHtml(search)}">
         <span class="tmpl-chooser-tile-media">${media}</span>
         <span class="tmpl-chooser-tile-name">${escapeHtml(t.name)}</span>
         ${t.description ? `<span class="tmpl-chooser-tile-desc">${escapeHtml(t.description)}</span>` : ''}
@@ -255,11 +243,13 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       <span class="tmpl-chooser-tile-desc">Start from scratch.</span>
     </button>`;
 
-    const groupsHtml = groupOrder.map(key => `
-      <section class="tmpl-chooser-group" data-group>
-        <h3 class="tmpl-chooser-group-title">${escapeHtml(key)}</h3>
-        <div class="tmpl-chooser-grid">${groups.get(key)!.map(tileHtml).join('')}</div>
-      </section>`).join('');
+    // Tag filters — "All" plus one chip per category. Only shown when there's more than one
+    // category to choose between; a single-category set has nothing to filter.
+    const filtersHtml = cats.length > 1 ? `
+      <div class="tmpl-chooser-filters" role="group" aria-label="Filter templates by type">
+        <button type="button" class="tmpl-chooser-filter is-active" data-filter="" aria-pressed="true">All</button>
+        ${cats.map(c => `<button type="button" class="tmpl-chooser-filter" data-filter="${escapeHtml(c)}" aria-pressed="false">${escapeHtml(c)}</button>`).join('')}
+      </div>` : '';
 
     root.innerHTML = `
       <div class="tmpl-chooser-backdrop" aria-hidden="true"></div>
@@ -270,10 +260,8 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
           <button type="button" class="tmpl-chooser-close" aria-label="Close">×</button>
         </header>
         <div class="tmpl-chooser-body">
-          <section class="tmpl-chooser-group" data-group>
-            <div class="tmpl-chooser-grid">${blankTile}</div>
-          </section>
-          ${groupsHtml}
+          ${filtersHtml}
+          <div class="tmpl-chooser-grid">${blankTile}${opts.templates.map(tileHtml).join('')}</div>
           <p class="tmpl-chooser-empty" hidden>No templates match “<span data-empty-term></span>”.</p>
         </div>
       </div>
@@ -322,25 +310,35 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       void getValues(id).then(values => finish(values ?? {}));
     });
 
-    // Live filter: hide non-matching tiles (Blank always shows) and any group left
-    // empty, and surface an empty-state note when nothing but Blank matches.
-    searchInput.addEventListener('input', () => {
+    // Live filter: the search term AND the active tag chip, over the one grid. Blank always
+    // shows; an empty-state note appears only when a real query leaves nothing but Blank.
+    let activeFilter = '';
+    const applyFilter = (): void => {
       const term = searchInput.value.trim().toLowerCase();
       let anyTemplateVisible = false;
       for (const tile of root.querySelectorAll<HTMLElement>('.tmpl-chooser-tile')) {
-        if (tile.dataset.templateId === BLANK_ID) continue; // Blank is never filtered out
-        const match = !term || (tile.dataset.search ?? '').includes(term);
-        tile.hidden = !match;
-        if (match) anyTemplateVisible = true;
+        if (tile.dataset.templateId === BLANK_ID) { tile.hidden = false; continue; } // Blank is never filtered
+        const matchTerm = !term || (tile.dataset.search ?? '').includes(term);
+        const matchTag = !activeFilter || tile.dataset.category === activeFilter;
+        const show = matchTerm && matchTag;
+        tile.hidden = !show;
+        if (show) anyTemplateVisible = true;
       }
-      for (const group of root.querySelectorAll<HTMLElement>('[data-group]')) {
-        const tiles = [...group.querySelectorAll<HTMLElement>('.tmpl-chooser-tile')];
-        const isBlankGroup = tiles.some(t => t.dataset.templateId === BLANK_ID);
-        group.hidden = !isBlankGroup && tiles.every(t => t.hidden);
-      }
-      emptyEl.hidden = anyTemplateVisible || !term;
-      emptyTermEl.textContent = term;
-    });
+      emptyEl.hidden = anyTemplateVisible || (!term && !activeFilter);
+      emptyTermEl.textContent = term || activeFilter;
+    };
+    searchInput.addEventListener('input', applyFilter);
+    for (const chip of root.querySelectorAll<HTMLButtonElement>('.tmpl-chooser-filter')) {
+      chip.addEventListener('click', () => {
+        activeFilter = chip.dataset.filter ?? '';
+        for (const c of root.querySelectorAll<HTMLElement>('.tmpl-chooser-filter')) {
+          const on = c === chip;
+          c.classList.toggle('is-active', on);
+          c.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+        applyFilter();
+      });
+    }
 
     // ── Live visual previews (fire-and-forget) ──────────────────────────────────
     // Each template tile fetches its external values seed and live-renders a vector-first

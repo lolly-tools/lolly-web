@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 //
 // Regression guard for a real production crash: opening /multi with 2+ sessions that
-// SHARE an input (e.g. "Make variants → 4" on daily-card) tore the whole view down with
+// SHARE an input (e.g. "Make variants → 4" on the since-removed daily-card) tore the whole view down with
 //   TypeError: Cannot read properties of undefined (reading 'render')
 // (the router error boundary "This view didn't finish loading").
 //

@@ -11,7 +11,7 @@
 // reconstructs editable DesignNodes. Nothing leaves the device — the whole parse is
 // local. From those SAME interpreted nodes it serves two ingest surfaces:
 //
-//   parsePdfFile          → Layout Studio boxes (image/vector placeholders resolved
+//   parsePdfFile          → Design boxes (image/vector placeholders resolved
 //                           into individually-stored user assets)
 //   ingestPdfAsSvgAssets  → whole pages as standalone SVG user assets (the upload
 //                           paths: catalog drop area, asset-picker upload), via the
@@ -147,7 +147,7 @@ function interpretPage(doc: PDFDocument, pageIndex: number, diag: (msg: string) 
 }
 
 /**
- * Parse a PDF / .ai file into a Layout Studio boxes array.
+ * Parse a PDF / .ai file into a Design boxes array.
  *
  * Page choice for a multi-page document: an explicit `page` (0-based) wins; else with
  * `interactive` set the shared pickPdfPages dialog asks (single-select; cancelling
@@ -744,7 +744,7 @@ export interface PdfPageSvgOpts {
    *
    * Set false when a raster in the middle of otherwise-vector output is worse than
    * an approximation — every tile shading then paints its area-weighted MEAN colour
-   * instead, with zero extra branching. The Layout Studio boxes path never reaches
+   * instead, with zero extra branching. The Design boxes path never reaches
    * here at all (it consumes nodes directly), so this only governs the page-SVG
    * surfaces: asset upload and the docs-screenshot pipeline.
    */
@@ -1014,6 +1014,9 @@ export interface EmbeddedImage {
   colorSpace: string | null;
   /** 0-based page it was first reached from. */
   page: number;
+  /** A meaningful name when the source has one (a PSD/XCF layer name); absent for
+   *  a PDF raster, which has only its stored resolution to go by. */
+  name?: string;
 }
 
 export interface EmbeddedImageScan {
@@ -1165,8 +1168,9 @@ export interface EmbeddedFont {
   name: string;
   /** The family with any "ABCDEF+" subset prefix removed. */
   family: string;
-  /** File extension the bytes actually are. */
-  ext: 'ttf' | 'otf' | 'cff' | 'pfb';
+  /** File extension the bytes actually are. `cff`/`pfb` come only from PDFs (raw
+   *  font programs); `woff`/`woff2` only from an SVG @font-face's embedded source. */
+  ext: 'ttf' | 'otf' | 'cff' | 'pfb' | 'woff' | 'woff2';
   bytes: Uint8Array;
   /**
    * The document embeds only the glyphs it used. A subset font renders the
@@ -1231,6 +1235,13 @@ export interface PdfHandle {
   listVectors?(opts?: { maxPages?: number }): Promise<ExtractedVector[]>;
   /** Every file the document carries, with its bytes. */
   listAttachments?(): EmbeddedAttachment[];
+  /**
+   * The distinct colours the container paints with, as hex strings. Additive and
+   * feature-detected: the PDF interpreter does not implement it (an SVG opener is
+   * the first that does), so a caller must guard the call and treat its absence as
+   * "no palette pass here", never as "this file has no colours".
+   */
+  listPalette?(): string[];
 }
 
 function makeHandle(doc: PDFDocument): PdfHandle {

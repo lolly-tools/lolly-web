@@ -1,0 +1,218 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * The Save dialog — the "Save to your library" button opens THIS instead of a silent one-shot
+ * save, so a creative can choose WHERE the work lands:
+ *
+ *   1. Add to a project — file the saved session into a project (folder), or leave it at the
+ *      library root. This is the everyday save, plus a home.
+ *   2. Save as a template — the current doc becomes a reusable STARTING POINT for this tool,
+ *      shown in its "New from template" chooser (and, later, the Projects add-picker).
+ *   3. Save as a variation — the same, tagged as a variation OF an existing template so the
+ *      chooser can group it under its parent.
+ *
+ * A saved template/variation is an ordinary session seed, so the existing Share modal's
+ * `.lolly` path carries it unchanged — "make variations → share a .lolly for anyone to import
+ * / submit to the catalog" (the footer points at it). This module owns only the DOM + wiring;
+ * every side effect (save, folder create/file, template persist, share) is INJECTED, so it is
+ * headless-testable and knows nothing about the host bridge, the runtime, or the store shapes.
+ */
+
+import { mountModal } from '../components/modal.ts';
+import { escape } from '../utils.ts';
+
+export interface SaveDialogFolder { id: string; name: string; }
+export interface SaveDialogBase { id: string; name: string; }
+
+export interface SaveDialogDeps {
+  toolName: string;
+  /** Show the template / variation cards only for a tool that has a template chooser. */
+  hasTemplates: boolean;
+  /** Existing templates (built-in + the user's own) offered as the base for a variation. */
+  bases: SaveDialogBase[];
+  /** Projects (folders) to file into. Awaited on open so the dialog paints instantly. */
+  listFolders: () => Promise<SaveDialogFolder[]>;
+  createFolder: (name: string) => Promise<SaveDialogFolder>;
+  /** Save the session to the library, filed into `folderId` (null = library root). true = ok. */
+  saveToLibrary: (folderId: string | null) => Promise<boolean>;
+  /** Persist the current doc as a user template (variationOf set → a variation). */
+  saveTemplate: (name: string, variationOf?: string) => Promise<void>;
+  /** Open the Share modal (its `.lolly` File panel) — the "share for anyone to import" path. */
+  shareLolly?: () => void;
+  announce?: (msg: string) => void;
+  t?: (s: string) => string;
+}
+
+const NEW_PROJECT = '__new_project__';
+
+export function openSaveDialog(deps: SaveDialogDeps): void {
+  const t = deps.t ?? ((s: string) => s);
+  const showTemplates = deps.hasTemplates;
+  const showVariation = showTemplates && deps.bases.length > 0;
+
+  const baseOptions = deps.bases
+    .map(b => `<option value="${escape(b.id)}">${escape(b.name)}</option>`)
+    .join('');
+
+  const templateCard = showTemplates ? `
+    <section class="save-card" data-card="template">
+      <h3 class="save-card-title">${escape(t('Save as a template'))}</h3>
+      <p class="save-card-desc">${escape(t('A reusable starting point for'))} ${escape(deps.toolName)} — ${escape(t('shown when you start it from a template.'))}</p>
+      <div class="save-card-row">
+        <input type="text" class="save-input" data-tpl-name maxlength="80" placeholder="${escape(t('Template name'))}" aria-label="${escape(t('Template name'))}">
+        <button type="button" class="btn" data-act="save-template">${escape(t('Save template'))}</button>
+      </div>
+      <p class="save-card-err" data-err="template" hidden></p>
+    </section>` : '';
+
+  const variationCard = showVariation ? `
+    <section class="save-card" data-card="variation">
+      <h3 class="save-card-title">${escape(t('Save as a variation'))}</h3>
+      <p class="save-card-desc">${escape(t('A variation of an existing template, grouped with it.'))}</p>
+      <div class="save-card-row">
+        <select class="save-input" data-var-base aria-label="${escape(t('Base template'))}">${baseOptions}</select>
+        <input type="text" class="save-input" data-var-name maxlength="80" placeholder="${escape(t('Variation name'))}" aria-label="${escape(t('Variation name'))}">
+        <button type="button" class="btn" data-act="save-variation">${escape(t('Save variation'))}</button>
+      </div>
+      <p class="save-card-err" data-err="variation" hidden></p>
+    </section>` : '';
+
+  const shareFoot = deps.shareLolly ? `
+    <div class="save-dialog-foot">
+      <span>${escape(t('Made a variation worth sharing? Send it as a .lolly file for anyone to import.'))}</span>
+      <button type="button" class="save-link" data-act="share">${escape(t('Share…'))}</button>
+    </div>` : '';
+
+  const content = `
+    <div class="save-dialog-head">
+      <h2>${escape(t('Save your work'))}</h2>
+      <button type="button" class="save-dialog-close" data-act="close" aria-label="${escape(t('Close'))}">&times;</button>
+    </div>
+    <div class="save-dialog-body">
+      <section class="save-card" data-card="project">
+        <h3 class="save-card-title">${escape(t('Add to a project'))}</h3>
+        <p class="save-card-desc">${escape(t('Keep this in your library, filed under a project.'))}</p>
+        <div class="save-card-row">
+          <select class="save-input" data-project aria-label="${escape(t('Project'))}">
+            <option value="">${escape(t('Loading projects…'))}</option>
+          </select>
+          <button type="button" class="btn btn--primary" data-act="save-project">${escape(t('Save'))}</button>
+        </div>
+        <input type="text" class="save-input save-new-project" data-new-project maxlength="80" placeholder="${escape(t('New project name'))}" aria-label="${escape(t('New project name'))}" hidden>
+        <p class="save-card-err" data-err="project" hidden></p>
+      </section>
+      ${templateCard}
+      ${variationCard}
+    </div>
+    ${shareFoot}`;
+
+  const modal = mountModal(content, {
+    className: 'save-dialog',
+    ariaLabel: t('Save your work'),
+    initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="save-project"]'),
+  });
+  const root = modal.el;
+
+  const q = <T extends HTMLElement>(sel: string): T | null => root.querySelector<T>(sel);
+  const announce = (m: string): void => deps.announce?.(m);
+  const showErr = (which: string, msg: string): void => {
+    const el = q<HTMLElement>(`[data-err="${which}"]`);
+    if (el) { el.textContent = msg; el.hidden = !msg; }
+  };
+  // Run an async save, guarding its button + surfacing failure inline instead of throwing.
+  async function withButton(btn: HTMLButtonElement, which: string, fn: () => Promise<void>): Promise<void> {
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+    showErr(which, '');
+    try {
+      await fn();
+    } catch (e) {
+      showErr(which, e instanceof Error ? e.message : String(e));
+      btn.disabled = false;
+      delete btn.dataset.busy;
+    }
+  }
+
+  // ── Project select: fill async, reveal a name field when "New project" is chosen ──
+  // Options are built as DOM (textContent), never an HTML string, so a folder name can never
+  // be markup — no raw-HTML sink, no escaping to get wrong.
+  const projectSel = q<HTMLSelectElement>('[data-project]');
+  const newProjectInput = q<HTMLInputElement>('[data-new-project]');
+  const opt = (value: string, label: string): HTMLOptionElement => {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = label;
+    return o;
+  };
+  const noProject = (): HTMLOptionElement => opt('', t('No project (Library)'));
+  void deps.listFolders().then(folders => {
+    projectSel?.replaceChildren(
+      noProject(),
+      ...folders.map(f => opt(f.id, f.name)),
+      opt(NEW_PROJECT, t('＋ New project…')),
+    );
+  }).catch(() => { projectSel?.replaceChildren(noProject()); });
+
+  projectSel?.addEventListener('change', () => {
+    const isNew = projectSel.value === NEW_PROJECT;
+    if (newProjectInput) { newProjectInput.hidden = !isNew; if (isNew) newProjectInput.focus(); }
+  });
+
+  // ── Actions ──
+  root.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+
+    if (act === 'close') { modal.close(); return; }
+    if (act === 'share') { modal.close(); deps.shareLolly?.(); return; }
+
+    if (act === 'save-project') {
+      void withButton(btn, 'project', async () => {
+        let folderId: string | null = projectSel?.value || null;
+        if (folderId === NEW_PROJECT) {
+          const name = (newProjectInput?.value || '').trim();
+          if (!name) { throw new Error(t('Name the new project first.')); }
+          folderId = (await deps.createFolder(name)).id;
+        }
+        const ok = await deps.saveToLibrary(folderId);
+        if (!ok) throw new Error(t('Save failed — please try again.'));
+        announce(t('Saved'));
+        modal.close();
+      });
+      return;
+    }
+
+    if (act === 'save-template') {
+      const name = (q<HTMLInputElement>('[data-tpl-name]')?.value || '').trim();
+      void withButton(btn, 'template', async () => {
+        if (!name) throw new Error(t('Name the template first.'));
+        await deps.saveTemplate(name);
+        announce(t('Template saved'));
+        modal.close();
+      });
+      return;
+    }
+
+    if (act === 'save-variation') {
+      const base = q<HTMLSelectElement>('[data-var-base]')?.value || '';
+      const name = (q<HTMLInputElement>('[data-var-name]')?.value || '').trim();
+      void withButton(btn, 'variation', async () => {
+        if (!name) throw new Error(t('Name the variation first.'));
+        await deps.saveTemplate(name, base || undefined);
+        announce(t('Variation saved'));
+        modal.close();
+      });
+      return;
+    }
+  });
+
+  // Enter in a text field triggers that card's primary action.
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const tgt = e.target as HTMLElement | null;
+    if (!(tgt instanceof HTMLInputElement)) return;
+    e.preventDefault();
+    const card = tgt.closest<HTMLElement>('.save-card');
+    card?.querySelector<HTMLButtonElement>('[data-act^="save-"]')?.click();
+  });
+}

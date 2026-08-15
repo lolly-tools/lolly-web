@@ -289,7 +289,7 @@ export function layerKind(el: HTMLElement): SeqLayer['kind'] {
   // A frames-as-scenes page ([data-pdf-page]) is photographed WHOLE — one still per
   // slide — so it is a STATIC scene layer even when it contains a <video>/lottie
   // child. Checked first, before the descendant probes below, so the frame is never
-  // mis-classified by what it holds. (Layout Studio "Design", plan 92.)
+  // mis-classified by what it holds. (Design, plan 92.)
   if (el.getAttribute?.('data-pdf-page') != null) return 'static';
   // A CAMERA (plan 104 §5.4) before every media probe, mirroring the hooks' own rule
   // that a camera is keyed off `kind` ALONE: the marker div is all a camera box ever
@@ -405,7 +405,7 @@ export function parseSequenceStage(node: HTMLElement): SequenceStage | null {
       ?? (node.querySelector?.('[data-seq-ms]') as HTMLElement | null);
   const rawMs = num(msEl?.getAttribute?.('data-seq-ms') ?? null, 0);
   const totalMs = rawMs > 0 ? Math.min(rawMs, MAX_TIME_MS) : 0;
-  // Frames-as-scenes (Layout Studio "Design", plan 92): a doc can time whole FRAME
+  // Frames-as-scenes (Design, plan 92): a doc can time whole FRAME
   // PAGES end-to-end (`data-t-start` on each `[data-pdf-page]`) instead of individual
   // `.lolly-box` clips. When any timed frame page exists, the scene layers ARE those
   // pages — each photographed whole and gated so exactly one shows at the playhead —

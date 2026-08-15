@@ -74,7 +74,7 @@ function pointerEvent(
 
 const NATIVE = 1000;
 
-/** Layout Studio's canvas block plus Org Chart's `connect` block, so ONE fixture can be put
+/** Design's canvas block plus Org Chart's `connect` block, so ONE fixture can be put
  *  into all four modes AND still carry the connector input the Auto-arrange button reads.
  *  Every mode is opt-in on a config key, and the exclusion claim is about the modes a tool
  *  actually offers at once. */
@@ -84,10 +84,10 @@ function canvasCfg(): Record<string, unknown> {
     fillField: 'bg', opacityField: 'opacity', shapeField: 'shape', radiusField: 'radius',
     textField: 'text', groupField: 'group', clipField: 'clip',
     pathField: 'path',
-    // The plan 96 path decorations, exactly as both Layout Studio manifests declare them.
+    // The plan 96 path decorations, exactly as both Design manifests declare them.
     // They are DECLARED rather than defaulted: the editor only authors a head or a binding
     // into a tool whose manifest named the field, so a fixture that omits them would be
-    // testing Sequence Studio's shape of the feature, not Layout Studio's.
+    // testing Sequence Studio's shape of the feature, not Design's.
     headStartField: 'headStart', headEndField: 'headEnd',
     bindStartField: 'bindStart', bindEndField: 'bindEnd',
     strokeDashArrayField: 'strokeDashArray', dashFitField: 'dashFit',

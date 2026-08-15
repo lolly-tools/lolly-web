@@ -17,7 +17,7 @@ import { isTypingTarget } from '../lib/typing-target.ts';
 /** A client-space point. */
 export interface Point { x: number; y: number; }
 /** The canvas pan/zoom handle setupStageNav returns. */
-export interface StageNav { reset(): void; isZoomed(): boolean; sync(): void; destroy(): void; }
+export interface StageNav { reset(): void; isZoomed(): boolean; sync(): void; focusRect(x: number, y: number, w: number, h: number): void; destroy(): void; }
 
 // True when focus is in a text field, so global canvas shortcuts don't hijack typing.
 // Shadow-aware (lib/typing-target.ts): the sidebar's fields are <jelly-input> custom
@@ -148,6 +148,38 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     if (!(w > 0)) return;
     const c = stageCentre();
     zoomAbout(nativeW / w, c.x, c.y);
+  }
+
+  // Zoom + pan so a CLIENT-space rect (an artboard's live on-screen box) fills ~85% of the
+  // stage, centred. The Artboards navigator reads the frame element's getBoundingClientRect
+  // and passes it through an `fc-focus-rect` event — client coords, deliberately, so this is
+  // immune to how the canvas is sized (a frames tool's canvas overflows its nominal width
+  // with pasteboard frames, so a native→screen scale derived from `nativeW` is wrong by the
+  // pasteboard ratio). Clamped to the same min/max as every other zoom; clampPan keeps it
+  // reachable.
+  function focusRect(cx: number, cy: number, cw: number, ch: number): void {
+    if (!(cw > 0) || !(ch > 0)) return;
+    captureOrigin();
+    const sr = stageEl.getBoundingClientRect();
+    const fcx = cx + cw / 2;   // frame centre, client coords, at the CURRENT transform
+    const fcy = cy + ch / 2;
+    // Factor that makes the frame fill 85% of the stage, letterboxed to its aspect.
+    const want = 0.85 * Math.min(sr.width / cw, sr.height / ch);
+    const next = Math.max(minScale(), Math.min(maxScale(), scale * want));
+    const r = next / scale;
+    // Zoom about the frame centre (pin it), exactly like zoomAbout…
+    const lx = fcx - originX, ly = fcy - originY;
+    tx = lx - (lx - tx) * r;
+    ty = ly - (ly - ty) * r;
+    scale = next;
+    // …then slide the (still-pinned) frame centre onto the stage centre. NO clampPan here:
+    // it keeps the whole WRAPPER's centre in view, which for a multi-frame canvas makes an
+    // edge artboard un-centrable (the wrapper centre would have to leave the stage). A frame
+    // parked at the stage centre is in view by construction, so the clamp is not needed.
+    const sc = stageCentre();
+    tx += sc.x - fcx;
+    ty += sc.y - fcy;
+    apply();
   }
 
   // ── Touch / pen: pinch-zoom + drag-pan (mouse stays free for click-to-focus) ──
@@ -359,5 +391,5 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     hudEl.remove();
   }
 
-  return { reset, isZoomed, sync: syncHud, destroy };
+  return { reset, isZoomed, sync: syncHud, focusRect, destroy };
 }

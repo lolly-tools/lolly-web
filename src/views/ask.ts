@@ -15,7 +15,7 @@
  * answers in place without touching the URL — the hash is the entry seed only.
  */
 import '../styles/parts/ask.css';
-import { escape } from '../utils.ts';
+import { escape, safeHref } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { t, tRaw } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
@@ -45,10 +45,14 @@ function answerCardHtml(answer: AskAnswer): string {
     const cite = citation.heading
       ? `${escape(citation.pageTitle)} › ${escape(citation.heading)}`
       : escape(citation.pageTitle);
+    const openDocs = safeHref(href)
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated above; an unsafe doc href drops the link and keeps the bare citation
+      ? ` · <a href="${escape(href)}" class="ask-cite-link">${t('Open in docs')}</a>`
+      : '';
     parts.push(`<div class="ask-answer-body${fromSnippet ? ' is-snippet' : ''}">
         <div class="ask-section" data-section>${html}</div>
         <button type="button" class="ask-more" data-more hidden>${t('Show more')}</button>
-        <p class="ask-cite">${cite} · <a href="${escape(href)}" class="ask-cite-link">${t('Open in docs')}</a></p>
+        <p class="ask-cite">${cite}${openDocs}</p>
       </div>`);
   }
 
@@ -71,13 +75,15 @@ function answerCardHtml(answer: AskAnswer): string {
 
   for (const group of answer.toolHits) {
     const label = t(GROUP_LABELS[group.group as SearchGroupId]);
-    const rows = group.hits.map((hit) => {
+    const rows = group.hits.filter((hit) => safeHref(hit.href)).map((hit) => {
       const sub = hit.subtitle ? `<span class="ask-hit-sub">${escape(hit.subtitle)}</span>` : '';
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation — safeHref()-gated by the .filter() above; an unsafe hit href is dropped, never painted
       return `<a href="${escape(hit.href)}" class="ask-hit" data-sfx="navigate">
           <span class="ask-hit-icon" aria-hidden="true">${hit.icon}</span>
           <span class="ask-hit-text"><span class="ask-hit-title">${escape(hit.title)}</span>${sub}</span>
         </a>`;
     }).join('');
+    if (!rows) continue;
     parts.push(`<div class="ask-hits"><p class="ask-group-label">${escape(label)}</p><div class="ask-hit-list">${rows}</div></div>`);
   }
 

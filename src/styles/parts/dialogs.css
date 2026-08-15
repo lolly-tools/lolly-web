@@ -45,7 +45,8 @@
    so this chrome serves every leave-guard without a fork. */
 
 .unsaved-dialog,
-.share-dialog {
+.share-dialog,
+.save-dialog {
   position: fixed;
   inset: 0;
   margin: auto;
@@ -60,6 +61,7 @@
 }
 
 .share-dialog { max-width: 460px; }
+.save-dialog { max-width: 480px; }
 /* The unsaved-changes guard has three actions ("Save & leave" / "Leave without
    saving" / "Cancel"); at 380px they wrap to two rows (worse with the wider
    jelly capsules). Give it room to lay them out on one line — applies in both
@@ -74,12 +76,65 @@
    catalog), and a default would silently blur all of them. */
 .unsaved-dialog::backdrop,
 .share-dialog::backdrop,
+.save-dialog::backdrop,
 .tool-meta-dialog::backdrop,   /* gallery.css */
 .welcome-dialog::backdrop {    /* welcome.css */
   background: hsl(0 0% 0% / 0.45);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
+
+/* ─── Save dialog (lib/save-dialog.ts) ───────────────────────────────────────
+   Save now opens a destination chooser: file into a PROJECT, or save the doc as a
+   reusable TEMPLATE / VARIATION for this tool. Three stacked cards, each with its own
+   action; the project card's Save is the primary. */
+.save-dialog-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 20px; border-bottom: 1px solid hsl(var(--border));
+}
+.save-dialog-head h2 { margin: 0; flex: 1 1 auto; font-size: calc(16px * var(--a11y-fs)); font-weight: 700; }
+.save-dialog-close {
+  flex: none; width: 30px; height: 30px; border: 0; border-radius: var(--radius);
+  background: none; color: hsl(var(--muted-foreground)); font-size: 22px; line-height: 1; cursor: pointer;
+}
+.save-dialog-close:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+
+.save-dialog-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+.save-card {
+  padding: 14px; border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1.4); background: hsl(var(--muted) / 0.35);
+}
+.save-card-title { margin: 0 0 3px; font-size: calc(13.5px * var(--a11y-fs)); font-weight: 700; }
+.save-card-desc { margin: 0 0 10px; font-size: calc(12px * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.save-card-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.save-card-row .save-input { flex: 1 1 140px; min-width: 0; }
+.save-card-row .btn { flex: none; }
+.save-new-project { margin-top: 8px; width: 100%; }
+
+/* Shared control look for the dialog's selects + text inputs. */
+.save-input {
+  height: 32px; padding: 0 10px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  font: inherit; font-size: calc(13px * var(--a11y-fs)); outline: none;
+  transition: border-color 0.12s;
+}
+.save-input:focus { border-color: hsl(var(--primary)); }
+
+.save-card-err { margin: 8px 0 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--destructive, 0 70% 50%)); }
+
+.save-dialog-foot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 20px 16px; border-top: 1px solid hsl(var(--border));
+  font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground));
+}
+.save-dialog-foot span { flex: 1 1 200px; line-height: 1.4; }
+.save-link {
+  flex: none; border: 0; background: none; padding: 0; cursor: pointer;
+  color: hsl(var(--primary)); font: inherit; font-size: calc(12px * var(--a11y-fs)); font-weight: 600;
+}
+.save-link:hover { text-decoration: underline; }
 
 /* Share dialog — a ready-to-copy link plus on-visit behaviour toggles. */
 .share-dialog-body {

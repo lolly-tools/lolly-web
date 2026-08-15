@@ -37,7 +37,7 @@ Users can now upload custom fonts in TTF, OTF, or WOFF formats and set them as t
 Gradients now use OKLab color-space interpolation combined with Catmull-Rom spline fitting, ensuring perceptually uniform transitions and smoother visual flow than linear RGB blending.
 
 ### Usage
-1. Open any tool with gradient inputs (e.g., Mesh Gradient, Layout Studio, filters)
+1. Open any tool with gradient inputs (e.g., Mesh Gradient, Design, filters)
 2. In the Brand Studio **Colour tab**, expand the gradient editor
 3. Add or edit gradient stops using the color picker
 4. A toggle labeled **Smooth Interpolation** appears; enable it for OKLab + Catmull-Rom rendering
@@ -64,7 +64,7 @@ Gradients now use OKLab color-space interpolation combined with Catmull-Rom spli
 Text strokes (outlines) are now preserved when exporting to SVG, PDF, and EMF formats, allowing outlined typography to render as true vector paths instead of rasterizing to bitmaps.
 
 ### Usage
-1. In any tool with text input (Layout Studio, Doc Studio, brand lockups), select a text field
+1. In any tool with text input (Design, Doc Studio, brand lockups), select a text field
 2. In the sidebar, expand the **Text Stroke** or **Outline** section
 3. Set stroke width (in px or physical units), color, and line-cap/line-join style
 4. Export to SVG, PDF, or EMF format

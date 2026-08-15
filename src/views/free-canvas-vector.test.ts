@@ -58,7 +58,7 @@ function pointerEvent(
 
 // ── fixture ───────────────────────────────────────────────────────────────────
 
-/** The Layout Studio `canvas` block as SHIPPED: it declares `pathField` and nothing else
+/** The Design `canvas` block as SHIPPED: it declares `pathField` and nothing else
  *  about vectors, leaving `stroke` / `strokeW` / `fillRule` to the overlay's defaults — so
  *  these tests exercise that resolution rather than a hand-declared superset.
  *  `vectorFields: false` drops `pathField`, i.e. a manifest that predates Stage C. */

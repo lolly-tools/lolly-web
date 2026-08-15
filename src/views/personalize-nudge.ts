@@ -17,6 +17,7 @@
  */
 
 import type { Profile } from '@lolly-tools/core/host-v1';
+import { t } from '../i18n.ts';
 
 /** The slice of the host this module writes through — the web shell's profile
  *  setter (host.profile.set, not on the tool-facing ProfileAPI). */
@@ -36,15 +37,15 @@ export function personalizeNudgeMarkup(profile: Profile | null | undefined): str
   if (profile?.useDetails) return '';                 // already opted in
   if (profile?.personalizeNudgeDismissed) return '';  // already seen it
   return `
-    <aside class="personalize-nudge" role="note" aria-label="Personalise your assets">
-      <button type="button" class="personalize-nudge-close" aria-label="Dismiss">&times;</button>
+    <aside class="personalize-nudge" role="note" aria-label="${t('Personalise your assets')}">
+      <button type="button" class="personalize-nudge-close" aria-label="${t('Dismiss')}">&times;</button>
       <span class="personalize-nudge-icon" aria-hidden="true">${SPARKLE_ICON}</span>
       <div class="personalize-nudge-body">
-        <p class="personalize-nudge-title">Can we use your details to create assets?</p>
-        <p class="personalize-nudge-text">Lolly makes personalising and sourcing materials instant and easy.</p>
+        <p class="personalize-nudge-title">${t('Add your details to what you make?')}</p>
+        <p class="personalize-nudge-text">${t('They stay on this device. Tools fill them in for you, and you choose what goes into every file.')}</p>
         <div class="personalize-nudge-actions">
-          <a href="#/profile?focus=use-details" class="personalize-nudge-cta">Set up my details</a>
-          <button type="button" class="personalize-nudge-dismiss">Not now</button>
+          <a href="#/profile?focus=use-details" class="personalize-nudge-cta">${t('Set up my details')}</a>
+          <button type="button" class="personalize-nudge-dismiss">${t('Not now')}</button>
         </div>
       </div>
     </aside>

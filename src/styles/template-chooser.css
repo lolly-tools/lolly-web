@@ -83,16 +83,31 @@
   padding: 16px 20px 24px;
 }
 
-.tmpl-chooser-group { margin-top: 18px; }
-.tmpl-chooser-group:first-child { margin-top: 0; }
-.tmpl-chooser-group-title {
-  margin: 0 0 10px;
-  font-size: calc(11px * var(--a11y-fs));
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: hsl(var(--muted-foreground));
+/* Tag-filter chips — one row of pills (replaces the old per-category sections); "All" plus
+   one per category, narrowing the single grid below. */
+.tmpl-chooser-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
 }
+.tmpl-chooser-filter {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: calc(13px * var(--a11y-fs));
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.tmpl-chooser-filter:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+/* Fill pair (background + foreground) is aliased onto the canonical .btn--primary recipe
+   in buttons.css; only the border-color is a local delta. */
+.tmpl-chooser-filter.is-active { border-color: hsl(var(--primary)); }
+.tmpl-chooser-filter:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 
 .tmpl-chooser-grid {
   display: grid;

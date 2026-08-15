@@ -151,7 +151,7 @@ test('openTemplateChooser: eagerly renders a preview for every non-blank templat
 
   // Fire-and-forget: the returned promise only settles on select/close, which we never do.
   void openTemplateChooser({
-    toolName: 'Layout Studio', toolId: 'design', templates, host, formats: ['svg', 'png'],
+    toolName: 'Design', toolId: 'design', templates, host, formats: ['svg', 'png'],
   });
   // Drain is serial + async (dynamic import of featured-render, then per-template render).
   for (let i = 0; i < 200 && getKeys.length < 2; i++) await new Promise(r => setTimeout(r, 0));
@@ -300,7 +300,7 @@ test('openTemplateChooser: with no host it renders glyph tiles and requests NO p
   const getKeys: string[] = [];
   const templates = parseTemplates([{ id: 'poster', name: 'Poster', values: { boxes: [] } }]);
   // No host → the whole preview block is skipped; a glyph tile is the graceful fallback.
-  void openTemplateChooser({ toolName: 'Layout Studio', toolId: 'design', templates });
+  void openTemplateChooser({ toolName: 'Design', toolId: 'design', templates });
   await new Promise(r => setTimeout(r, 10));
   assert.equal(getKeys.length, 0, 'offline (no host) never renders a live preview');
   const tile = document.querySelector('.tmpl-chooser-tile[data-template-id="poster"] .tmpl-chooser-tile-icon');

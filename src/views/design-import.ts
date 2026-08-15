@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Design Import — DOM parser (Figma SVG / any SVG / Penpot .penpot|.zip → Layout Studio boxes).
+// Design Import — DOM parser (Figma SVG / any SVG / Penpot .penpot|.zip → Design boxes).
 //
 // This is the SHELL half of the import feature: it lives in the web shell because it
 // needs the browser DOM (DOMParser + a live-mounted <svg> for getBBox/getCTM) and the
@@ -43,7 +43,12 @@ import {
   readingOrder,
   type DesignFrameScene,
   type DesignMapOptions,
+  type PageText,
+  type TextBlock,
 } from '@lolly/engine';
+import { rasterSize } from './svg-unpack.ts';
+import type { UnpackHandle } from './unpack-open.ts';
+import type { PdfPageSvg, EmbeddedFont, EmbeddedImage, EmbeddedImageScan, ExtractedVector } from './pdf-import.ts';
 import { strFromU8 } from 'fflate';
 import { unzipAsync } from '../lib/zip.ts';
 // Figma .fig decode: a canvas.fig is a Kiwi binary (self-describing schema + data).
@@ -61,7 +66,7 @@ import { bustFontRegistry } from '../bridge/font-registry.ts';
 interface Matrix { a: number; b: number; c: number; d: number; e: number; f: number; }
 // Inherited paint accumulated down the <g> tree.
 interface Inherited { fill: string | null; opacity: number; }
-// The result shape every parse branch returns (feeds Layout Studio).
+// The result shape every parse branch returns (feeds Design).
 interface DesignImportResult {
   boxes: unknown[]; width: number; height: number; background: string;
   /** The map the boxes were finalized with, font vocabulary and all (Penpot
@@ -121,7 +126,7 @@ const PENPOT_NS_CANDIDATES = [
 ];
 
 /**
- * Parse a design file into a Layout Studio boxes array.
+ * Parse a design file into a Design boxes array.
  * @param {File|Blob} file
  * @param {{ host: object, log?: (msg: string) => void, interactive?: boolean, map?: object }} ctx —
  *   `interactive` lets a multi-page PDF/.ai ask which page via the shared page-picker
@@ -1110,6 +1115,184 @@ function sniffImageMime(b: Uint8Array): string {
   return 'image/png';
 }
 
+// ---------------------------------------------------------------------------
+// Unpack reader (.fig → PdfHandle)
+// ---------------------------------------------------------------------------
+// The mushiest format: the Kiwi schema is reverse-engineered and Figma calls it an
+// unstable internal detail, so anything a node does not cleanly map to is COUNTED
+// and skipped, never guessed.
+
+const FIG_XML_ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+const figEsc = (s: string): string => String(s).replace(/[&<>"]/g, (c) => FIG_XML_ESC[c]!);
+
+function figB64(u8: Uint8Array): string {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < u8.length; i += CHUNK) bin += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+  return btoa(bin);
+}
+
+function figNamesOnlyFont(family: string): EmbeddedFont {
+  return {
+    name: family, family, ext: 'ttf', bytes: new Uint8Array(0),
+    subset: false, installable: false,
+    embedding: { permission: 'unknown', noSubsetting: false, bitmapOnly: false, fsType: null },
+  };
+}
+
+/** A reconstructed vector node as a standalone SVG string (the storeFigVector body,
+ *  minus the catalogue store — Unpack hands back bytes, not an asset ref). */
+function figVectorSvg(d: any, fill: any, stroke: any, size: any, gradient?: any): string {
+  const w = Math.max(1, Math.round((size && size.w) || 1));
+  const h = Math.max(1, Math.round((size && size.h) || 1));
+  const ox = (size && Number.isFinite(+size.x)) ? +size.x : 0;
+  const oy = (size && Number.isFinite(+size.y)) ? +size.y : 0;
+  const hex = (v: string, dflt: string): string => (/^#[0-9a-fA-F]{3,8}$/.test(v || '') ? v : dflt);
+  const gradDef = gradient ? penpotGradientSvgDef(gradient, 'pg0', 1) : '';
+  const fillAttr = gradDef ? 'url(#pg0)' : (fill === 'none') ? 'none' : hex(fill, '#000000');
+  const strokeW = Math.max(0.1, +stroke?.width || 1);
+  const strokeAttr = (stroke && stroke.color) ? ` stroke="${hex(stroke.color, '#000000')}" stroke-width="${strokeW}"` : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${ox} ${oy} ${w} ${h}" width="${w}" height="${h}">`
+    + (gradDef ? `<defs>${gradDef}</defs>` : '')
+    + `<path d="${String(d).replace(/"/g, '')}" fill="${fillAttr}"${strokeAttr}/></svg>`;
+}
+
+/** Push a node's paint colours (box fill, text ink, vector fill/stroke) into `out`. */
+function figNodeColors(n: any, seen: Set<string>, out: string[]): void {
+  const add = (v: unknown): void => {
+    const hex = safeColor(String(v ?? ''), '');
+    if (!hex) return;
+    const key = hex.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(hex);
+  };
+  add(n.fill); add(n.fg); add(n._vectorFill);
+  if (n._vectorStroke && n._vectorStroke.color) add(n._vectorStroke.color);
+}
+
+/** A plain preview SVG of the decoded page — rects for boxes/vectors, text, and
+ *  embedded rasters. Not faithful; enough to recognise the frame beside its prose. */
+function figNodesToSvg(nodes: any[], files: Record<string, Uint8Array>, width: number, height: number): string {
+  const parts: string[] = [];
+  for (const n of nodes) {
+    const x = Number(n.x) || 0, y = Number(n.y) || 0, w = Math.max(0, Number(n.w) || 0), h = Math.max(0, Number(n.h) || 0);
+    const cx = x + w / 2, cy = y + h / 2;
+    const rot = n.rot ? ` transform="rotate(${n.rot} ${cx} ${cy})"` : '';
+    if (n._imageHash) {
+      const path = Object.keys(files).find((p) => p === 'images/' + n._imageHash || p.startsWith('images/' + n._imageHash));
+      const bytes = path ? files[path] : null;
+      if (bytes && bytes.length) {
+        parts.push(`<image x="${x}" y="${y}" width="${w}" height="${h}" href="data:${sniffImageMime(bytes)};base64,${figB64(bytes)}"${rot}/>`);
+        continue;
+      }
+    }
+    if (n.kind === 'text') {
+      const fs = n.fontSize || 16;
+      const lines = String(n.text || '').split('\n');
+      const tspans = lines.map((ln, li) => `<tspan x="${x}" dy="${li === 0 ? fs : fs * 1.25}">${figEsc(ln)}</tspan>`).join('');
+      parts.push(`<text x="${x}" y="${y}" font-size="${fs}" fill="${/^#[0-9a-f]{3,8}$/i.test(n.fg || '') ? n.fg : '#0c322c'}"${rot}>${tspans}</text>`);
+      continue;
+    }
+    const fill = /^#[0-9a-f]{3,8}$/i.test(n.fill || '') ? n.fill : (/^#[0-9a-f]{3,8}$/i.test(n._vectorFill || '') ? n._vectorFill : 'none');
+    const stroke = fill === 'none' ? ' stroke="#d5dbd9" stroke-width="1"' : '';
+    if (w > 0 && h > 0) parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"${stroke}${rot}/>`);
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#ffffff"/>${parts.join('')}</svg>`;
+}
+
+const figEmptyPage = (): PageText =>
+  ({ blocks: [], text: '', markdown: '', columns: 1, scanned: false, rotated: 0, order: 'geometric' });
+
+/**
+ * Open a Figma .fig for Unpack. Decodes the Kiwi binary once (the same path
+ * parseFig uses), then reads the decoded nodes: text runs, the colours they paint
+ * with, the fonts they name (names-only — a .fig references fonts, never embeds the
+ * files), the embedded rasters (`images/<hash>` in the zip), and the reconstructed
+ * vector outlines as standalone SVGs.
+ */
+export async function openFigFile(files: Record<string, Uint8Array>): Promise<UnpackHandle> {
+  const canvasFig = files['canvas.fig'];
+  if (!canvasFig || !canvasFig.length) throw new Error('This .fig has no canvas data.');
+  let doc: any;
+  try { doc = await decodeCanvasFig(canvasFig); }
+  catch { throw new Error('Could not read this .fig — Figma may have changed its file format. Export the frame as SVG and open that.'); }
+  const nodeChanges = doc && doc.nodeChanges;
+  if (!Array.isArray(nodeChanges) || !nodeChanges.length) throw new Error('This .fig contained no nodes.');
+
+  const nodes: any[] = figmaNodesToNodes(nodeChanges, doc.blobs);
+  const { width, height } = shiftToOrigin(nodes);
+
+  const palette: string[] = [];
+  const seenColor = new Set<string>();
+  const fonts: string[] = [];
+  const seenFont = new Set<string>();
+  for (const n of nodes) {
+    figNodeColors(n, seenColor, palette);
+    if (n.kind === 'text' && n.fontFamily) {
+      const fam = String(n.fontFamily).trim();
+      if (fam && !seenFont.has(fam.toLowerCase())) { seenFont.add(fam.toLowerCase()); fonts.push(fam); }
+    }
+  }
+
+  return {
+    pageCount: 1,
+    async pageToSvg(index: number): Promise<PdfPageSvg> {
+      if (index !== 0) throw new Error(`No page ${index + 1} in a .fig.`);
+      return { svg: figNodesToSvg(nodes, files, width, height), width, height, elementCount: nodes.length };
+    },
+    pageToText(index: number): PageText {
+      if (index !== 0) return figEmptyPage();
+      const blocks: TextBlock[] = [];
+      for (const n of nodes) {
+        if (n.kind !== 'text') continue;
+        const txt = String(n.text || '').trim();
+        if (!txt) continue;
+        blocks.push({ kind: 'paragraph', text: txt, size: n.fontSize || 0, bold: (Number(n.fontWeight) || 400) >= 600, column: 0 });
+      }
+      if (!blocks.length) return figEmptyPage();
+      const text = blocks.map((b) => b.text).join('\n\n');
+      return { blocks, text, markdown: text, columns: 1, scanned: false, rotated: 0, order: 'geometric' };
+    },
+    listPalette(): string[] {
+      return palette;
+    },
+    listFonts(): EmbeddedFont[] {
+      return fonts.map(figNamesOnlyFont);
+    },
+    listImages(): Promise<EmbeddedImageScan> {
+      const images: EmbeddedImage[] = [];
+      const seen = new Set<string>();
+      for (const n of nodes) {
+        const hash = n._imageHash;
+        if (!hash || seen.has(hash)) continue;
+        seen.add(hash);
+        const path = Object.keys(files).find((p) => p === 'images/' + hash || p.startsWith('images/' + hash));
+        const bytes = path ? files[path] : null;
+        if (!bytes || !bytes.length) continue;
+        const mime = sniffImageMime(bytes);
+        const size = rasterSize(bytes);
+        images.push({ bytes, mime, width: size?.w || 0, height: size?.h || 0, colorSpace: null, page: 0 });
+      }
+      return Promise.resolve({ images, skipped: 0, skippedFilters: [] });
+    },
+    listVectors(): Promise<ExtractedVector[]> {
+      const out: ExtractedVector[] = [];
+      for (const n of nodes) {
+        if (!n._vectorPath) continue;
+        const svg = figVectorSvg(n._vectorPath, n._vectorFill, n._vectorStroke, n._vectorSize, n._vectorGradient);
+        const w = Math.max(1, Math.round((n._vectorSize && n._vectorSize.w) || n.w || 1));
+        const h = Math.max(1, Math.round((n._vectorSize && n._vectorSize.h) || n.h || 1));
+        const localSeen = new Set<string>();
+        const fills: string[] = [];
+        figNodeColors(n, localSeen, fills);
+        out.push({ svg, width: w, height: h, page: 0, fills: fills.slice(0, 12), shapes: 1, reason: 'a Figma vector' });
+      }
+      return Promise.resolve(out);
+    },
+  };
+}
+
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -1249,8 +1432,8 @@ function typeFromExt(ext: string): string {
 // that already ARE per-page vector artwork (PDF/.ai pages, plain SVG, legacy
 // Penpot page SVGs) go straight to the asset store; formats that parse into
 // boxes (Penpot binfile-v3 boards, Figma .fig frames, IDML) are baked through an
-// offscreen Layout Studio render (host.compose.render → SVG), so a baked frame
-// is pixel-identical to importing that frame into Layout Studio and exporting it.
+// offscreen Design render (host.compose.render → SVG), so a baked frame
+// is pixel-identical to importing that frame into Design and exporting it.
 
 /** One imported frame, ready to place as a timeline scene. */
 export interface DesignSceneAsset {
@@ -1376,12 +1559,12 @@ function boxesHaveMedia(boxes: unknown[]): boolean {
   });
 }
 
-// Bake one frame's boxes into a stored SVG asset via an offscreen Layout Studio
+// Bake one frame's boxes into a stored SVG asset via an offscreen Design
 // render. compose.render suppresses watermark/provenance (the result is an
 // intermediate), and the SVG goes through the full HTML→SVG walker — text as
 // paths, image embeds — so the baked frame needs no fonts at playback. The
 // transparent background lets the frame's own bg box (or the sequence canvas)
-// show through. Returns null (with a warn) when Layout Studio isn't available
+// show through. Returns null (with a warn) when Design isn't available
 // in this build or the render fails; the caller skips that frame.
 async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => void, name: string, boxes: unknown[], width: number, height: number): Promise<AssetRef | null> {
   try {
@@ -1414,7 +1597,7 @@ async function bakeSceneAsset(host: HostV1 | undefined, warn: (msg: string) => v
   }
 }
 
-// Render one frame's boxes to an SVG Blob via the same offscreen Layout Studio
+// Render one frame's boxes to an SVG Blob via the same offscreen Design
 // render bakeSceneAsset uses, WITHOUT storing it — the raster bake rasterises this
 // intermediate itself (rendering vector once, then drawing at each scale, keeps a
 // png@4 crisp: re-rendering the tool at 4x page size would scale the CANVAS, not
@@ -1717,7 +1900,7 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
 // marks (collectPenpotExportMarks — master/hidden subtrees pruned, entries
 // deduped); this side reuses the scenes machinery: the same subtree walk with
 // pure-vector group flattening, the same penpotItemsToNodes media resolution
-// with one shared imageCache, and the same offscreen Layout Studio bake. A group
+// with one shared imageCache, and the same offscreen Design bake. A group
 // that flattens pure and is marked svg stores its flattened SVG directly (full
 // fidelity, no bake); rasters render the vector intermediate once and draw it at
 // each marked scale.
@@ -1783,7 +1966,7 @@ export async function ingestPenpotExportsAsAssets(
   }
   if (!pageShapes.size) throw new Error('This Penpot file has no pages to import.');
 
-  // Fonts first: an svg-marked frame with text bakes through Layout Studio, so
+  // Fonts first: an svg-marked frame with text bakes through Design, so
   // the deck's families must be resolvable before the first finalizeBoxes.
   const map = await ensurePenpotDeckFonts(files, pageDir, { host, warn, interactive });
 
@@ -1838,7 +2021,7 @@ export async function ingestPenpotExportsAsAssets(
 
       try {
         // Pure-vector rule: a group whose whole subtree bakes to one standalone
-        // SVG keeps that SVG verbatim for its svg entries (no Layout Studio pass).
+        // SVG keeps that SVG verbatim for its svg entries (no Design pass).
         const pureSvg = String(sh.type || '') === 'group'
           ? penpotGroupToSvg(sh, (cid: string) => shapesById[cid]) : '';
 
@@ -1893,7 +2076,7 @@ export async function ingestPenpotExportsAsAssets(
 }
 
 // ---------------------------------------------------------------------------
-// Penpot components → Layout Studio templates
+// Penpot components → Design templates
 // ---------------------------------------------------------------------------
 //
 // The third Penpot route (plan: penpot-design-system.md §2). A design system's

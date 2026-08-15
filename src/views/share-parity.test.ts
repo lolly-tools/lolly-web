@@ -32,6 +32,17 @@ import type { InputManifest, InputSpec } from '../../../../engine/src/inputs.ts'
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOOL_TS = readFileSync(join(HERE, 'tool.ts'), 'utf8');
 
+/** The source body of a top-level `function <name>(` — from its declaration to the
+ *  first column-0 `\n}` (its own closing brace, since every nested closer is indented).
+ *  One helper so the scans below stay in step across the export-param extraction. */
+function fnBody(name: string): string {
+  const start = TOOL_TS.indexOf(`function ${name}(`);
+  assert.ok(start > 0, `${name} not found — this guard needs updating`);
+  const end = TOOL_TS.indexOf('\n}', start);
+  assert.ok(end > start, `could not find the end of ${name}`);
+  return TOOL_TS.slice(start, end);
+}
+
 /**
  * Params the address bar writes but a shared link deliberately must NOT carry.
  * Each needs a reason. Empty today: everything syncUrl writes is shareable, and
@@ -48,14 +59,11 @@ function syncUrlParams(): Set<string> {
   return new Set(found);
 }
 
-/** The params `buildShareParams` pushes onto the copied link. */
+/** The export params the Share link pushes. These now live in collectExportParams
+ *  (extracted from buildShareParams so the URL-budget gauge reads the same DOM once);
+ *  the model-input pushes never appeared here (they use a dynamic `${key}`). */
 function shareParams(): Set<string> {
-  const start = TOOL_TS.indexOf('function buildShareParams(');
-  assert.ok(start > 0, 'buildShareParams not found — this guard needs updating');
-  // The function ends at the next top-level `\n}` after its start.
-  const end = TOOL_TS.indexOf('\n}', start);
-  assert.ok(end > start, 'could not find the end of buildShareParams');
-  const body = TOOL_TS.slice(start, end);
+  const body = fnBody('collectExportParams');
   const out = new Set<string>();
   // Both encodings used in the body: `parts.push(\`name=...\`)` and the bare
   // presence flag `parts.push('name')` / `parts.push('name=0')`.
@@ -85,9 +93,7 @@ test('the Share link does not invent params the address bar never writes', () =>
 });
 
 test('group:"export" inputs are not excluded from the Share link', () => {
-  const start = TOOL_TS.indexOf('function buildShareParams(');
-  const end = TOOL_TS.indexOf('\n}', start);
-  const body = TOOL_TS.slice(start, end);
+  const body = fnBody('buildShareParams');
   // The original bug in one line: `if (group === 'export') continue;` skipped every
   // declared export-group input (transparentBg, convertPaths, a tool's own plate or
   // finish switches) even though syncUrl's input loop writes them.
@@ -99,9 +105,7 @@ test('group:"export" inputs are not excluded from the Share link', () => {
 });
 
 test('each toggle the Share link reads is guarded on the control existing', () => {
-  const start = TOOL_TS.indexOf('function buildShareParams(');
-  const end = TOOL_TS.indexOf('\n}', start);
-  const body = TOOL_TS.slice(start, end);
+  const body = fnBody('collectExportParams'); // the imprint guard moved here with the export block
   // The per-format toggles are rendered only for formats that support them. Reading
   // `.checked` off a missing control yields undefined, which for an ON-BY-DEFAULT
   // setting like imprint looks like a deliberate opt-out — and would stamp
@@ -121,9 +125,7 @@ test('each toggle the Share link reads is guarded on the control existing', () =
 // record it can't re-introduce the silent-loss bug.
 
 test('buildShareParams records every content drop into a fidelity report', () => {
-  const start = TOOL_TS.indexOf('function buildShareParams(');
-  const end = TOOL_TS.indexOf('\n}', start);
-  const body = TOOL_TS.slice(start, end);
+  const body = fnBody('buildShareParams');
   assert.match(body, /excludedAssets\.push\(/, 'a device-local asset drop must be recorded in the fidelity report');
   assert.match(body, /droppedScalars\.push\(/, 'an over-cap scalar drop must be recorded in the fidelity report');
   assert.match(body, /droppedBlocks\.push\(/, 'an over-cap blocks drop must be recorded in the fidelity report');
@@ -131,9 +133,7 @@ test('buildShareParams records every content drop into a fidelity report', () =>
 });
 
 test('buildShareParams returns the parts array alongside the fidelity report', () => {
-  const start = TOOL_TS.indexOf('function buildShareParams(');
-  const end = TOOL_TS.indexOf('\n}', start);
-  const body = TOOL_TS.slice(start, end);
+  const body = fnBody('buildShareParams');
   assert.match(body, /return \{ parts, fidelity \};/, 'buildShareParams must return { parts, fidelity }');
 });
 

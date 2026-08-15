@@ -76,7 +76,7 @@ export type { Box };
 /**
  * Which box sub-fields this module reads and writes. Every name is optional so a caller
  * can hand over the overlay's own resolved `cfg` (a superset) unchanged; anything absent
- * falls back to the Layout Studio manifest's name.
+ * falls back to the Design manifest's name.
  *
  * `pathField`/`strokeField`/`strokeWField`/`fillRuleField` are the sub-fields Stage C
  * appends to the `boxes` blocks input. They are read defensively: a box that predates

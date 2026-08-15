@@ -29,7 +29,7 @@ import {
 
 // ── pure ──────────────────────────────────────────────────────────────────────
 
-/** The field names Layout Studio and Sequence Studio both use. */
+/** The field names Design and Sequence Studio both use. */
 const F: PathPaintFields = { fill: 'bg', stroke: 'stroke', strokeW: 'strokeW', fillRule: 'fillRule' };
 
 test('pathPaintSeed takes each field from the first source that states it', () => {
@@ -155,7 +155,7 @@ function cfgWith(addKinds: unknown[]): Record<string, unknown> {
   };
 }
 
-/** Layout Studio: a `path` add-kind carrying the brand's idea of a path. */
+/** Design: a `path` add-kind carrying the brand's idea of a path. */
 const WITH_PATH_KIND = [
   { id: 'box', label: 'Box', seed: { bg: '#30ba78' } },
   { id: 'path', label: 'Path', seed: { kind: 'path', shape: 'rect', bg: '', stroke: '#0e1217', strokeW: 4, fillRule: 'nonzero' } },

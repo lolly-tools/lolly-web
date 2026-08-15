@@ -54,11 +54,6 @@ import { migrateBlockRowIds, stripHiddenRowIds } from '../lib/row-id.ts';
 import { fpsTick, startFrameFps, stopFrameFps } from '../lib/frame-fps.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
 
-// Above this readable-query length the address bar and the Share dialog switch to
-// the packed `z=` form (when it's actually shorter). Kept well under the ~2000-char
-// ceiling that pasted links, social crawlers and some servers still enforce, while
-// leaving simple/typical links in their hand-editable readable form.
-const AUTO_PACK_MIN = 1800;
 import { escape } from '../utils.ts';
 import { createHistory, cloneValue } from './tool-history.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
@@ -89,8 +84,13 @@ import { createNetAPI } from '../bridge/net.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
 import { mountTableCellEditing, markdownSafeUrl, type TableEditOpts } from '../lib/table-canvas-edit.ts';
 import { mountFilmstrip, type Filmstrip, type FilmstripSide } from '../lib/page-filmstrip.ts';
-import { openShareDialog, type ShareFidelity, type ShareDialogLolly } from '../components/share-dialog.ts';
-import { buildLollyFile, creatorFromProfile, type LollyLibraryAsset } from '../lib/lolly-pack.ts';
+import { openShareDialog, type ShareDialogLolly } from '../components/share-dialog.ts';
+// Above AUTO_PACK_MIN the address bar and Share dialog switch to the packed `z=` form
+// (when shorter); the cost model owns that threshold so nothing drifts from syncUrl.
+import { encodeModelParam, AUTO_PACK_MIN, costUrlState, BROWSER_TARGET, type ShareFidelity } from '../lib/url-budget.ts';
+import { createUrlGauge, type UrlGauge } from '../lib/url-budget-gauge.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { buildLollyFile, creatorFromProfile, LOLLY_MIME, LOLLY_EXT, type LollyLibraryAsset } from '../lib/lolly-pack.ts';
 import type { BeamAssetRecord } from '../lib/beam-pack.ts';
 import { ENGINE_VERSION } from '@lolly/engine';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
@@ -237,7 +237,7 @@ export type ExportUnscaled = <T>(fn: () => Promise<T>, opts?: { shutter?: boolea
 export interface ActionsApi {
   copy?: (fmtOverride?: string) => Promise<{ method: string } | void>;
   preview?: () => Promise<void>;
-  save?: (btn?: HTMLElement | null) => Promise<boolean>;
+  save?: (btn?: HTMLElement | null, opts?: { folderId?: string | null }) => Promise<boolean>;
   setDims?: (dims?: { width?: number; height?: number; unit?: string }) => void;
   /** Narrow the export format bar to a mode/effect select option's `formats`
    *  (see exportFormatDriver). Keeps the current pick when it survives. */
@@ -696,9 +696,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       // NOT AWAITED — and that is the whole point. This chooser used to sit between the
       // user and `createRuntime` below: the tool could not begin to mount until a human
       // clicked a tile, and the chooser's own live tile previews (a real off-screen tool
-      // mount + walker export each, measured at ~1 s apiece, 4 s for Layout Studio's four
+      // mount + walker export each, measured at ~1 s apiece, 4 s for Design's four
       // templates on a cache-cold device) burned the main thread in that same window. The
-      // felt "Layout Studio takes forever to open" was almost entirely this.
+      // felt "Design takes forever to open" was almost entirely this.
       //
       // So the modal still opens at exactly this moment — it is started here, before any
       // of the mount work below — but the mount no longer waits on it. The tool paints and
@@ -723,6 +723,17 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         // blank without opening it, exactly like a torn-down mount that arrives later.
         if (templatePickTornDown) return {};
         const templates = parseTemplates(templateMeta);
+        // Merge the user's own saved templates for this tool. Same TemplateVariant shape, but
+        // their `values` ride INLINE (stored on the profile), so the chooser renders + applies
+        // them with no fetch — a picked one seeds the doc exactly like a built-in. One chip.
+        try {
+          const { createUserTemplateStore } = await import('../lib/user-templates.ts');
+          const mine = await createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]).list(toolId);
+          for (const ut of mine) templates.push({
+            id: ut.id, name: ut.name, category: t('Your templates'),
+            values: ut.values as Record<string, InputValue>,
+          });
+        } catch { /* user templates are best-effort */ }
         if (!templates.length) return {};
         return openTemplateChooser({
           toolName: tool.manifest.name,
@@ -1019,7 +1030,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const pagesCfg = (editorLayout && canvasEditInput) ? tool.manifest.render.pages : undefined;
   const pagesMode = !!pagesCfg;
   // Frame-primitive editor (plan 93 F1b): an editor-layout tool whose canvas block
-  // declares `frameField` (Layout Studio). kind:'frame' boxes render as free-placed
+  // declares `frameField` (Design). kind:'frame' boxes render as free-placed
   // [data-pdf-page] pages and the overlay drives frame-local drag + containment-on-drop.
   // The fields live on the blocks input's `canvas`, not on render.*; null for every tool
   // without a frameField so the overlay's frame-aware paths stay dead.
@@ -1222,6 +1233,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       </div>
       ${(!hideSidebar || bareExport) && !exportUiEmpty ? `
         <div class="render-pill" id="render-pill" role="group" aria-label="${escape(t('Export and save'))}">
+          <button type="button" class="render-pill-btn url-budget-gauge" id="url-budget-gauge" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden>
+            <svg class="url-budget-ring" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle class="url-budget-track" cx="12" cy="12" r="9" stroke-width="3"></circle>
+              <circle class="url-budget-fill" data-gauge-fill cx="12" cy="12" r="9" stroke-width="3" pathLength="100"></circle>
+            </svg>
+            <span class="url-budget-pct" data-gauge-pct aria-hidden="true"></span>
+          </button>
           <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="${escape(t('Export options'))}">
             <svg class="render-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             <span>${t('Export')}</span>
@@ -1366,11 +1384,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // Theme cycle toggle now lives in the canvas zoom HUD (setupStageNav below), not
   // the sidebar header — so it's shared by every canvas tool (including the
-  // chromeless editor/Layout Studio, which has no sidebar) and the header stays
+  // chromeless editor/Design, which has no sidebar) and the header stays
   // uncluttered. Built once here so setupStageNav can dock it into the HUD.
   const themeToggle = createThemeToggle(host as unknown as Parameters<typeof createThemeToggle>[0]);
   // The interface-sound (sfx) toggle rides the same HUD, right after the theme toggle, so
-  // the editor/Layout Studio (which has no sidebar) can mute/unmute sounds from the canvas.
+  // the editor/Design (which has no sidebar) can mute/unmute sounds from the canvas.
   const soundToggle = createSoundToggle(host as unknown as Parameters<typeof createSoundToggle>[0]);
 
   // Removed-image notice: announce it (live region) and let the user dismiss it.
@@ -1473,6 +1491,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // (see setupStageNav below). Reset whenever the stage is resized by a
   // sidebar toggle so the preview returns to a clean fit.
   let stageZoom: StageNav | null = null;
+  let onFocusRect: ((e: Event) => void) | null = null;
 
   if (showAside) {
     fullscreenToggle!.addEventListener('click', () => {
@@ -1675,6 +1694,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // stale fit that reset() restores. themeToggle docks into the HUD (its icon
     // sits alongside the zoom controls; see setupStageNav).
     stageZoom = setupStageNav(stageEl, outerEl, canvasEl, nativeW, fitCanvas, themeToggle, soundToggle);
+    // The Artboards navigator (free-canvas) asks the stage to frame one artboard by
+    // dispatching `fc-focus-rect` with the frame's native rect — the overlay never
+    // touches the pan/zoom transform itself. Wired here because only tool.ts holds the
+    // StageNav handle; torn down with the view in _cleanup below.
+    onFocusRect = (e: Event): void => {
+      const d = (e as CustomEvent<{ x: number; y: number; w: number; h: number }>).detail;
+      if (d) stageZoom?.focusRect(d.x, d.y, d.w, d.h);
+    };
+    stageEl.addEventListener('fc-focus-rect', onFocusRect);
   } else if (stageEl && pagedDoc && (themeToggle || soundToggle)) {
     // Paged docs navigate by NATIVE scroll of the canvas surface (no pan/zoom transform),
     // so there's no zoom HUD — but the theme / sound toggles still dock in the same
@@ -1786,6 +1814,18 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // can flash and clear it from the input-change chokepoint.
   let renderSaveBtn: HTMLButtonElement | null = null;
   const renderPill    = viewEl.querySelector<HTMLElement>('#render-pill');
+  // The ambient URL-budget gauge (plan 115 P1) — a ring in the render-pill chrome that
+  // shows the share-link cost of the current edit. Reads the P0 cost model, never the
+  // address bar. gaugeBase is the full-URL base so the packed refine bands against the
+  // same absolute ceiling as readableLen.
+  const urlGaugeEl = viewEl.querySelector<HTMLElement>('#url-budget-gauge');
+  const gaugeBase = `${location.origin}${TOOL_URL_BASE}?`;
+  const urlGauge: UrlGauge | null = urlGaugeEl
+    ? createUrlGauge(urlGaugeEl, {
+        used: (pct) => `${t('URL budget')}: ${pct}%`,
+        compressing: t('Compressing link…'),
+      }, prefersReducedMotion)
+    : null;
   const renderFab     = viewEl.querySelector<HTMLButtonElement>('#render-fab');   // the "Export" half (opens export)
   renderSaveBtn       = viewEl.querySelector<HTMLButtonElement>('#render-save');  // the "Save" half (outer-scoped)
   const exportOverlay = viewEl.querySelector<HTMLElement>('#export-overlay');
@@ -1933,6 +1973,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // Cleanup: remove injected <style>, disconnect observer, tear down canvas nav + export.
   viewEl._cleanup = () => {
+    urlGauge?.dispose(); // cancel any pending pack-refine timer so it can't fire post-teardown
     // FIRST, because everything below destroys the thing it reads. Starting a collab
     // remounts this tool through a route that cannot carry an uploaded asset, a picked
     // file, a long paragraph or the slot — so when (and only when) that remount is the
@@ -1968,6 +2009,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     lottieModule?.destroyLottiePlayers(); // else animationManager ticks detached trees
     videoModule?.destroyVideoPlayers();   // drop remembered <video> positions
     vizModule?.destroyToolViz();          // else a WebGL2 context stays pinned per visited tool
+    if (onFocusRect && stageEl) stageEl.removeEventListener('fc-focus-rect', onFocusRect);
     styleEl.remove(); shutter.destroy(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
     filmstrip?.destroy();
     window.removeEventListener('keydown', onHistoryKey);
@@ -2152,6 +2194,18 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   function syncUrl(dirtyId?: string): void {
     if (dirtyId) dirtyParams.add(dirtyId);
+
+    // Ambient URL-budget gauge: the SHARE-link cost of the current edit (reads the cost
+    // model, NOT this address bar — different serializations), so it updates even before
+    // the first edit of an encrypted link. Pure + synchronous; the packed refine is
+    // deferred inside the gauge and never blocks this tick.
+    urlGauge?.update(
+      costUrlState(
+        { model: runtime.getModel(), exportParts: collectExportParams(actionsEl) },
+        { base: gaugeBase, target: BROWSER_TARGET },
+      ),
+      gaugeBase,
+    );
 
     // A password-protected (`zx`) link stays ENCRYPTED in the address bar until the
     // user actually changes something — otherwise this first auto-sync would rewrite
@@ -2432,10 +2486,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // confirmation before reverting to "Save".
   if (renderSaveBtn && actionsApi?.save) {
     const saveLabel = renderSaveBtn.querySelector<HTMLElement>('[data-save-label]');
-    renderSaveBtn.addEventListener('click', async () => {
-      if (renderSaveBtn!.dataset.saving) return;          // guard double-taps mid-save
-      const ok = await actionsApi!.save!(renderSaveBtn);   // performSave handles the label/disabled swap
-      if (!ok) return;                                    // failure path already reverted the button
+    // The button's "Saved" confirmation + amber-cue clear, factored out so the Save dialog's
+    // save-to-library path lights the button up exactly like the old in-place quick-save did.
+    const flashSaved = (): void => {
       delete renderSaveBtn!.dataset.saving;
       renderSaveBtn!.disabled = false;
       markSessionSaved();                                 // drop the amber unsaved cue
@@ -2444,6 +2497,50 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         if (saveLabel) saveLabel.textContent = t('Save');
         renderSaveBtn!.classList.remove('is-just-saved');
       }, 1500);
+    };
+    // Save now opens a dialog (plan 114 / user-templates): file into a PROJECT, or save the
+    // doc as a reusable TEMPLATE / VARIATION for this tool. Everything the dialog does is
+    // injected here, where host / runtime / stores / the Share vehicle are all in scope.
+    renderSaveBtn.addEventListener('click', async () => {
+      if (renderSaveBtn!.dataset.saving) return;                    // mid-save
+      if (document.querySelector('dialog.save-dialog')) return;     // already open
+      const [{ openSaveDialog }, { createFolderStore }, { createUserTemplateStore }, { parseTemplates }] = await Promise.all([
+        import('../lib/save-dialog.ts'),
+        import('../folders.ts'),
+        import('../lib/user-templates.ts'),
+        import('./template-chooser.ts'),
+      ]);
+      const folderStore = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
+      const tplStore = createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]);
+      // Variation bases: this tool's built-in templates + the user's own saved ones.
+      const bases: { id: string; name: string }[] = [];
+      try {
+        for (const tv of parseTemplates(templateMeta)) bases.push({ id: tv.id, name: tv.name });
+        for (const ut of await tplStore.list(toolId)) bases.push({ id: ut.id, name: ut.name });
+      } catch { /* bases are best-effort — the variation card just offers fewer options */ }
+      const plainValues = (): Record<string, unknown> =>
+        Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
+      openSaveDialog({
+        toolName: tool.manifest.name,
+        hasTemplates,
+        bases,
+        listFolders: () => folderStore.list().then(fs => fs.map(f => ({ id: f.id, name: f.name }))),
+        createFolder: (name) => folderStore.create(name).then(f => ({ id: f.id, name: f.name })),
+        saveToLibrary: async (folderId) => {
+          const ok = await actionsApi!.save!(renderSaveBtn, { folderId });
+          if (ok) flashSaved();
+          return ok;
+        },
+        saveTemplate: async (name, variationOf) => {
+          await tplStore.save({ toolId, name, values: plainValues(), variationOf });
+        },
+        shareLolly: () => {
+          const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState);
+          showShareDialog(runtime, actionsEl, tool.manifest, lolly);
+        },
+        announce: (m) => announce(m),
+        t,
+      });
     });
   }
 
@@ -4012,100 +4109,26 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
     return { blob, filename, summary };
   };
 
-  return { build, save: (blob: Blob, filename: string) => host.export.file(blob, { filename }) };
+  // "Send to…" is offered ONLY where a real OS share will happen — host.export.canShare
+  // probes the shell (web: navigator.canShare for the .lolly type, which Chromium's fixed
+  // safelist rejects → hidden there; Tauri mobile: the native ACTION_SEND bridge present).
+  // So the button never silently degrades to a download while claiming a share.
+  const canOsShare = typeof host.export.canShare === 'function'
+    && host.export.canShare({ mime: LOLLY_MIME, filename: `share${LOLLY_EXT}` });
+  const share = canOsShare
+    ? (blob: Blob, filename: string) => host.export.share!(blob, { filename, mime: LOLLY_MIME, title: filename })
+    : undefined;
+  return { build, save: (blob: Blob, filename: string) => host.export.file(blob, { filename }), share };
 }
 
-// Builds the base share-link query parts (tool inputs + the chosen export
-// settings) — WITHOUT the on-visit behaviour flags (full/options/export/copy/_v),
-// which the share dialog appends per the user's toggles.
-function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { parts: string[]; fidelity: ShareFidelity } {
+// Reads the export-panel controls (format, dimensions, colour profile, password, print
+// marks, the provenance toggles) into the share-link's export parts. Extracted from
+// buildShareParams so ONE DOM read feeds both the copied link AND the URL-budget gauge
+// (costUrlState's exportParts) — the two can never drift. Returns already-formed
+// `key=value` (and bare-flag) strings; byte-identical to the block it replaced. The
+// share-parity guard scans THIS function for those literal pushes.
+function collectExportParams(exportScope: HTMLElement | null): string[] {
   const parts: string[] = [];
-  // What a URL can't carry, recorded as we drop it, so the Share dialog can tell the
-  // user what won't travel instead of dropping it silently (the "link has no content"
-  // bug). Each `continue`-with-a-drop below records here.
-  const droppedScalars: { id: string; label: string }[] = [];
-  const droppedBlocks: { id: string; label: string }[] = [];
-  const excludedAssets: { id: string; label: string }[] = [];
-
-  for (const input of runtime.getModel()) {
-    const { id, type, value, fields } = input;
-    const key = input.urlKey ?? id;
-    // `group: 'export'` inputs are NOT skipped. They are ordinary declared model
-    // values (transparentBg, convertPaths, a tool's own plate/finish switches) and
-    // syncUrl already writes them to the address bar — skipping them here meant the
-    // Share button silently dropped settings the URL was showing the user. The
-    // default-skip below keeps a plain link clean, so nothing appears until it is
-    // actually changed.
-
-    if (type === 'asset') {
-      // assetIdForUrl (the engine's coerceToString rule): a baked ref shares as
-      // its provenance URL — the recipient re-renders live — never its frozen
-      // data: bytes or dead 'baked/…' id; any other ref shares by id.
-      const ref = value as AssetRef | null;
-      const assetId = ref ? assetIdForUrl(ref) : undefined;
-      if (assetId && !assetId.startsWith('user/')) {
-        parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(assetId)}`);
-      } else if (ref) {
-        // An image is set but can't ride in a URL: a device-local (user/*) upload,
-        // or a ref with no shareable id. Record it so the dialog says it won't travel.
-        excludedAssets.push({ id, label: input.label ?? id });
-      }
-      continue;
-    }
-
-    if (type === 'blocks') {
-      if (!Array.isArray(value) || value.length === 0) continue;
-      const compact = encodeBlocksCompact(value, fields ?? []);
-      // Fall back to JSON if no fields defined (other tools). blocksForUrl
-      // collapses baked sub-field refs to their provenance URL first — the raw
-      // data: bytes would blow the 8000-char cap and drop every row — and the
-      // hidden row id comes off first (see stripHiddenRowIds): the recipient's
-      // rows are their own, and they cost 38 characters each of the same budget.
-      const encoded = compact ?? JSON.stringify(blocksForUrl(stripHiddenRowIds(value)));
-      if (encoded.length <= 8000) parts.push(`${key}=${compact ? encoded : encodeURIComponent(encoded)}`);
-      else droppedBlocks.push({ id, label: input.label ?? id });
-      continue;
-    }
-
-    if (type === 'vector') {
-      // One flat param per field ("<inputId>.<fieldId>"), matching syncUrl and
-      // serializeUrlState. Without this the object stringifies to "[object Object]".
-      // Fields still at their default are omitted to keep the link short.
-      if (value && typeof value === 'object') {
-        const vv = asRow(value);
-        for (const f of fields ?? []) {
-          const fv = vv[f.id];
-          if (fv == null) continue;
-          if (f.default !== undefined && String(fv) === String(f.default)) continue;
-          parts.push(`${encodeURIComponent(`${key}.${f.id}`)}=${encodeURIComponent(String(fv))}`);
-        }
-      }
-      continue;
-    }
-
-    if (value == null || value === '') continue;
-    if (typeof value === 'boolean' && !value) continue;
-
-    // Skip params whose value matches the declared default — they load identically without being in the URL.
-    const def = input.default;
-    if (def != null && (type as string) !== 'asset') {
-      if (String(value) === String(def)) continue;
-    }
-
-    // A token-backed colour ({ ref, value }) serialises to its canonical token ref
-    // so a shared/embedded link re-resolves against the destination's tokens — and
-    // never leaks "[object Object]" into the URL (mirrors the engine's coerceToString).
-    let str = type === 'color' && isTokenValue(value) ? value.ref : String(value);
-    if (str.length > 150) { droppedScalars.push({ id, label: input.label ?? id }); continue; }
-
-    // Strip # from plain hex colors — saves 3 encoded chars (%23) per color param.
-    // A token ref ({color.brand.jungle}) has no leading # and passes through as-is.
-    if (type === 'color' && str.startsWith('#')) str = str.slice(1);
-
-    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(str)}`);
-  }
-
-  // Export settings come from the live actions-bar controls (the export panel).
   const fmtEl = exportScope?.querySelector<HTMLSelectElement>('[data-action="format"]');
   if (fmtEl?.value) parts.push(`format=${encodeURIComponent(fmtEl.value)}`);
   const fname = exportScope?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value?.trim();
@@ -4177,6 +4200,39 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { 
       richness: dial('hdr-focus', HDR_DEFAULTS.richness),
     }))}`);
   }
+  return parts;
+}
+
+// Builds the base share-link query parts (tool inputs + the chosen export
+// settings) — WITHOUT the on-visit behaviour flags (full/options/export/copy/_v),
+// which the share dialog appends per the user's toggles.
+function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { parts: string[]; fidelity: ShareFidelity } {
+  const parts: string[] = [];
+  // What a URL can't carry, recorded as we drop it, so the Share dialog can tell the
+  // user what won't travel instead of dropping it silently (the "link has no content"
+  // bug). Each `continue`-with-a-drop below records here.
+  const droppedScalars: { id: string; label: string }[] = [];
+  const droppedBlocks: { id: string; label: string }[] = [];
+  const excludedAssets: { id: string; label: string }[] = [];
+
+  // The per-param share-link encoding lives in lib/url-budget.ts (encodeModelParam),
+  // so the copied link and the URL-budget gauge are the SAME bytes by construction —
+  // one decision primitive, two consumers. The fidelity RECORDING stays here (literal,
+  // and visible to the share-parity guard); the encoding DECISION (the 150/8000 caps,
+  // the user/* and default skips, the hex-strip) lives in the primitive, unit-tested
+  // in url-budget.test.ts. Byte-exact to the loop it replaces (pinned there).
+  for (const input of runtime.getModel()) {
+    for (const p of encodeModelParam(input)) {
+      if (p.status === 'kept') parts.push(p.emit);
+      else if (p.status === 'dropped-asset') excludedAssets.push({ id: p.id, label: p.label });
+      else if (p.status === 'dropped-len') droppedScalars.push({ id: p.id, label: p.label });
+      else if (p.status === 'dropped-blocks') droppedBlocks.push({ id: p.id, label: p.label });
+    }
+  }
+
+  // The export-panel settings — the SAME reader the URL-budget gauge uses (see
+  // collectExportParams), so the copied link and the gauge count identical export bytes.
+  parts.push(...collectExportParams(exportScope));
 
   const fidelity: ShareFidelity = {
     faithful: excludedAssets.length === 0 && droppedScalars.length === 0 && droppedBlocks.length === 0,

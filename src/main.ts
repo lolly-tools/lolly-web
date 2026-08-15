@@ -75,7 +75,7 @@ installNearbyAccept();
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
 
 /** Route names the shell can be in. */
-type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'data' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script' | 'ask' | 'join' | 'join-reply';
+type RouteName = 'gallery' | 'utilities' | 'tool' | 'profile' | 'dashboard' | 'pro' | 'projects' | 'catalog' | 'verify' | 'convert' | 'data' | 'start' | 'multi' | 'components' | 'lab' | 'pdf' | 'script' | 'ask' | 'docs' | 'join' | 'join-reply';
 
 /** A parsed route: a discriminated union on `name`. */
 type Route =
@@ -96,6 +96,7 @@ type Route =
   | { name: 'pdf' }
   | { name: 'script' }
   | { name: 'ask'; params?: string }
+  | { name: 'docs'; slug: string; lang: string | null; params?: string }
   | { name: 'join'; params?: string }
   | { name: 'join-reply'; params?: string }
   | { name: 'gallery'; params?: string };
@@ -116,7 +117,7 @@ initSelectPreview();
  * Which piece of a route's sub-state its dedup signature keys on (see
  * routeSignature). Absent ⇒ the route name alone is the whole signature.
  */
-type RouteSigKey = 'toolId' | 'folderId' | 'params';
+type RouteSigKey = 'toolId' | 'folderId' | 'params' | 'slug';
 
 /** Everything the router needs to know about one route, in one place. */
 interface RouteSpec {
@@ -179,7 +180,7 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // here would suggest the pill is where you are rather than where you'd go,
   // and the tabs would compete with the report's own numbered sequence.
   lab: { label: 'Colour Lab', footer: 'none' },
-  pdf: { label: 'Take a PDF apart', viewClasses: ['pdfx-view'], footer: 'none' },
+  pdf: { label: 'Unpack', viewClasses: ['pdfx-view'], footer: 'none' },
   // Script audio is a utility view like the Lab: no tab, the back pill instead
   // (see the lab row's rationale above).
   script: { label: 'Script audio', viewClasses: ['scriptst-view'], footer: 'none' },
@@ -190,6 +191,11 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   // re-mounts and appends the new question to the session transcript instead of
   // deduping onto the first.
   ask: { label: 'Ask Lolly', viewClasses: ['ask-view'], sigKey: 'params', footer: 'none' },
+  // In-app documentation reader (#/docs/<slug>) — the /info docs rehosted into #view so
+  // they inherit the ACTIVE brand (plan "this-is-a-very-sparkling-eich" M2). A utility
+  // view like Ask/Lab: no tab, the back pill, its own scroll (footer: 'none'). Keys on the
+  // SLUG (routeSignature's 'slug' case), so moving between doc pages re-mounts the reader.
+  docs: { label: 'Documentation', viewClasses: ['docs-view'], sigKey: 'slug', footer: 'none' },
   // The two private-collab ceremony links (plan 100 §6.1 skin 1, §11.25). Both are
   // arrival points from someone ELSE's device, so they get no tab and no footer bar —
   // and both key on `params`, because the whole meaning of the route is the invite (or
@@ -242,8 +248,11 @@ function navKeyForRoute(name: RouteName): ViewToggleKey | null {
 function routeSignature(route: Route): string {
   const key = ROUTES[route.name]?.sigKey;
   if (!key) return route.name;
-  const sub = route as { toolId?: string; folderId?: string | null; params?: string };
+  const sub = route as { toolId?: string; folderId?: string | null; params?: string; slug?: string; lang?: string | null };
   if (key === 'toolId') return `${route.name}:${sub.toolId ?? ''}`;
+  // The docs reader mounts a specific page, so its signature is the slug (+ any
+  // explicit route lang) — navigating between doc pages must re-mount, not dedupe.
+  if (key === 'slug') return `${route.name}:${sub.lang ?? ''}/${sub.slug ?? ''}`;
   if (key === 'folderId') {
     // The ?q= results-mode param is mount state too (plans/99 §2a): entering or
     // leaving projects results mode must remount in BOTH directions — the
@@ -489,7 +498,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       break;
     }
     case 'pdf': {
-      // Take a PDF apart (#/pdf). Lazy: it pulls the PDF interpreter and pdf-lib,
+      // Unpack (#/pdf). Lazy: it pulls the PDF interpreter and pdf-lib,
       // which nothing on the landing path needs.
       const { mountPdfExtract } = await import('./views/pdf-extract.ts');
       await mountPdfExtract(view, host as unknown as Parameters<typeof mountPdfExtract>[1]);
@@ -507,6 +516,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // it pulls the ask pipeline (retrieval, md extraction) that no other route needs.
       const { mountAsk } = await import('./views/ask.ts');
       await mountAsk(view, host as unknown as Parameters<typeof mountAsk>[1], route.params ?? '');
+      break;
+    }
+    case 'docs': {
+      // In-app docs reader (#/docs/<slug>) — fetches the built /info page and rehosts its
+      // `.docs-content` fragment into #view. Lazy: it pulls no heavy deps, but stays off
+      // the cold-load bundle like every other non-gallery view.
+      const { mountDocs } = await import('./views/docs.ts');
+      await mountDocs(view, host as unknown as Parameters<typeof mountDocs>[1], route.slug, route.lang, route.params ?? '');
       break;
     }
     // --- The private-collab ceremony links (plan 100 §6.1, §11.25). One lazy chunk
@@ -1098,9 +1115,17 @@ function parseRoute(): Route {
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
     if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities', params: query || '' }; // gallery filtered to the utility category
     if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
-    if (parts[0] === 'pdf') return { name: 'pdf' }; // take a PDF apart — text/asset extraction
+    if (parts[0] === 'pdf' || parts[0] === 'unpack') return { name: 'pdf' }; // Unpack — take a design file apart; #/unpack is canonical, #/pdf a kept alias for old shared links
     if (parts[0] === 'script') return { name: 'script' }; // Script audio — the TTS writing surface
     if (parts[0] === 'ask') return { name: 'ask', params: query || '' }; // Ask Lolly — in-app help (?q=<question>)
+    // In-app docs reader. #/docs/<slug> renders in the app's current locale; the explicit
+    // #/docs/<lang>/<slug> form (three segments) pins a language. A slug is always flat (no
+    // '/'), so two segments after 'docs' can only be lang + slug. `index` is the docs home.
+    if (parts[0] === 'docs' && parts[1]) {
+      return parts[2]
+        ? { name: 'docs', lang: parts[1], slug: parts[2], params: query || '' }
+        : { name: 'docs', lang: null, slug: parts[1], params: query || '' };
+    }
     if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
     // The two halves of a private collab's ceremony (plan 100 §6.1, §11.25). These
     // paths are minted by components/collab-ceremony.ts's JOIN_ROUTE / REPLY_ROUTE —
@@ -1169,7 +1194,9 @@ function parseRoute(): Route {
       utilities: { hash: '#/u',    route: { name: 'utilities' } },
       c:         { hash: '#/c',    route: { name: 'catalog' } },
       lab:       { hash: '#/lab',  route: { name: 'lab' } },
-      pdf:       { hash: '#/pdf',  route: { name: 'pdf' } },
+      // Unpack: /unpack is canonical, /pdf a kept alias (old shared links).
+      unpack:    { hash: '#/unpack', route: { name: 'pdf' } },
+      pdf:       { hash: '#/unpack', route: { name: 'pdf' } },
       profile:   { hash: '#/profile', route: { name: 'profile', params: '' } },
     };
     const view = PATH_VIEWS[pathParts[0]!];

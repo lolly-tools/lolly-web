@@ -1101,8 +1101,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           : '{n} more fonts are embedded in this document.', { n: o.hiddenFonts })}</p>` : ''}
       ${!o.marks && !fontRows && !warnings.length
         ? `<p class="start-import-stats">${t('No marks and no embedded fonts were found in the pages that were read.')}</p>` : ''}
-      <p class="ds-src-stage-note">${t('Images, text and attachments are in Take a PDF apart, which asks for the file again.')}</p>
-      <a class="be-btn be-btn--sm ds-pdf-more" href="#/pdf">${t('Open Take a PDF apart')}</a>`;
+      <p class="ds-src-stage-note">${t('Images, text and attachments are in Unpack, which asks for the file again.')}</p>
+      <a class="be-btn be-btn--sm ds-pdf-more" href="#/unpack">${t('Open Unpack')}</a>`;
     el.hidden = false;
     // What the card SAYS, in one line: the two counts it offers a decision on,
     // plus any half of the scan that did not run. Deliberately not the whole

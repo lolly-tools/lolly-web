@@ -146,7 +146,7 @@
    WHY NOT A BIGGER ROOT font-size
    `rem` resolves against the document root, and real shipping tools style
    themselves in rem (community/url-shot, community/screencap/styles.css,
-   brands/suse/tools/bag-video, brands/suse/tools/color-palette). The web shell
+   brands/suse/tools/color-palette). The web shell
    exports by WALKING THE LIVE DOM (bridge/export.ts), so a root font-size bump
    would silently re-lay-out those tools and their PNG/SVG/PDF would stop
    matching the CLI's render of the same URL — one render path is the whole

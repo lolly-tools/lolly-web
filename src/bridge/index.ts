@@ -219,6 +219,15 @@ export async function createBridge(): Promise<WebHost> {
     page: async (spec) => (await loadCapture()).page(spec),
   };
   if (!extCapture && isTauriShell()) {
+    // Eagerly load the native capture impl at bridge creation, NOT lazily on the first
+    // capture. Its module raises HOOK_BUDGET_MS.beforeExport (5s default → 90s) to fit a
+    // real page navigation + printToPDF + PDF→SVG, and the runtime reads that budget when
+    // it STARTS a tool's beforeExport hook — so the raise must already have happened. With
+    // the lazy import the raise ran INSIDE the first capture's beforeExport, after the 5s
+    // budget was locked in, so url-shot timed out at 5s ("Auto-export failed: timed out
+    // after 5000ms"). Awaiting here restores the pre-c71a7de eager desktop import. (On the
+    // web the impl is a trivial stub with no such side effect, so it stays lazy.)
+    await loadCapture();
     captureFacade.vector = async (spec) => {
       const impl = await loadCapture();
       if (!impl.vector) throw new Error('Vector capture is unavailable in this shell.');

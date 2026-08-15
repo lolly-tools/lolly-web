@@ -22,14 +22,17 @@
  */
 
 import { EMU_PER_PX, isPptx, readPptx } from '@lolly/engine';
+import type { PageText, TextBlock } from '@lolly/engine';
 import { inflatePptx } from '../bridge/pptx.ts';
+import { rasterSize } from './svg-unpack.ts';
+import { parseFontMetadata, detectFontFormat, readFontEmbedding } from '../lib/font-utils.ts';
 import type {
   PptxReadColor, PptxReadSlide, PptxReadTheme,
   PptxPicNode, PptxShapeNode, PptxTableNode, PptxTextNode,
 } from '../../../../engine/src/pptx-read.ts';
 import type { AssetRef, HostV1 } from '@lolly-tools/core/host-v1';
 // Type-only — erased at runtime, so this does NOT load the pdf-lib chunk.
-import type { PdfHandle, PdfPageSvg } from './pdf-import.ts';
+import type { PdfHandle, PdfPageSvg, EmbeddedImage, EmbeddedImageScan, EmbeddedFont } from './pdf-import.ts';
 
 // ── rendering constants ────────────────────────────────────────────────────────
 
@@ -262,7 +265,142 @@ export async function openPptxFile(file: File | Blob): Promise<PdfHandle> {
       cache.set(index, out);
       return out;
     },
+    pageToText(index: number): PageText {
+      return slideText(deck.slides[index]);
+    },
+    listPalette(): string[] {
+      return deckPalette(deck);
+    },
+    listImages(): Promise<EmbeddedImageScan> {
+      return Promise.resolve(deckImages(deck, parts));
+    },
+    listFonts(): EmbeddedFont[] {
+      return deckFonts(deck, parts);
+    },
   };
+}
+
+// ── Unpack extraction passes (over the same read model) ──────────────────────────
+
+const emptyPptxPage = (): PageText =>
+  ({ blocks: [], text: '', markdown: '', columns: 1, scanned: false, rotated: 0, order: 'geometric' });
+
+/** A slide's on-canvas words, one block per paragraph then per table row, in the
+ *  spTree order the reader walked (a fair reading order). */
+export function slideText(slide: PptxReadSlide | undefined): PageText {
+  if (!slide) return emptyPptxPage();
+  const blocks: TextBlock[] = [];
+  for (const n of slide.nodes) {
+    if (n.type === 'text') {
+      for (const p of n.paras) {
+        const txt = p.runs.map((r) => r.text).join('').replace(/\s+/g, ' ').trim();
+        if (!txt) continue;
+        blocks.push({ kind: 'paragraph', text: txt, size: p.runs.find((r) => r.sizePt)?.sizePt || 0, bold: p.runs.some((r) => r.bold === true), column: 0 });
+      }
+    } else if (n.type === 'table') {
+      for (const row of n.rows) {
+        const txt = row.map((c) => c.replace(/\s+/g, ' ').trim()).filter(Boolean).join('  ·  ');
+        if (txt) blocks.push({ kind: 'paragraph', text: txt, size: 0, bold: false, column: 0 });
+      }
+    }
+  }
+  if (!blocks.length) return emptyPptxPage();
+  const text = blocks.map((b) => b.text).join('\n\n');
+  return { blocks, text, markdown: text, columns: 1, scanned: false, rotated: 0, order: 'geometric' };
+}
+
+/** The deck's theme colours plus any literal-hex fills/lines/run colours it paints. */
+export function deckPalette(deck: { slides: PptxReadSlide[]; theme: PptxReadTheme }): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (hex: string | null): void => {
+    if (!hex) return;
+    const lc = hex.toLowerCase();
+    if (seen.has(lc)) return;
+    seen.add(lc);
+    out.push(lc);
+  };
+  for (const v of Object.values(deck.theme.colors || {})) if (/^[0-9a-f]{6}$/i.test(v)) push(`#${v}`);
+  for (const slide of deck.slides) {
+    for (const n of slide.nodes) {
+      if (n.type === 'text') { push(hexAttr(n.fill)); for (const p of n.paras) for (const r of p.runs) push(hexAttr(r.color)); }
+      else if (n.type === 'shape') { push(hexAttr(n.fill)); push(hexAttr(n.line)); }
+    }
+  }
+  return out;
+}
+
+/** Raster media parts (png/jpeg/gif/bmp/webp/svg), deduped by part path. EMF/WMF
+ *  vector metafiles are not rasters and are left out rather than reported as an
+ *  image this cannot show. */
+const RASTER_MIME: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  bmp: 'image/bmp', webp: 'image/webp', tif: 'image/tiff', tiff: 'image/tiff', svg: 'image/svg+xml',
+};
+export function deckImages(deck: { slides: PptxReadSlide[] }, parts: Record<string, Uint8Array | string>): EmbeddedImageScan {
+  const images: EmbeddedImage[] = [];
+  const seen = new Set<string>();
+  deck.slides.forEach((slide, page) => {
+    for (const n of slide.nodes) {
+      if (n.type !== 'pic' || !n.media || seen.has(n.media)) continue;
+      seen.add(n.media);
+      const ext = /\.([a-z0-9]+)$/i.exec(n.media)?.[1]?.toLowerCase() || '';
+      const mime = RASTER_MIME[ext];
+      const bytes = parts[n.media];
+      if (!mime || !(bytes instanceof Uint8Array) || !bytes.length) continue;
+      const size = rasterSize(bytes);
+      images.push({ bytes, mime, width: size?.w || 0, height: size?.h || 0, colorSpace: null, page });
+    }
+  });
+  return { images, skipped: 0, skippedFilters: [] };
+}
+
+/** Fonts the deck names. An embedded `ppt/fonts/*.fntdata` whose bytes are a readable
+ *  (un-obfuscated) font becomes a real downloadable face; every family the runs and
+ *  theme reference otherwise comes back names-only. */
+export function deckFonts(deck: { slides: PptxReadSlide[]; theme: PptxReadTheme }, parts: Record<string, Uint8Array | string>): EmbeddedFont[] {
+  const byFamily = new Map<string, EmbeddedFont>();
+  const add = (f: EmbeddedFont): void => {
+    const key = f.family.toLowerCase();
+    const cur = byFamily.get(key);
+    // An embedded face (has bytes) always wins over a names-only reference.
+    if (!cur || (cur.bytes.length === 0 && f.bytes.length > 0)) byFamily.set(key, f);
+  };
+
+  // Embedded fonts, if the export carries readable ones.
+  for (const path of Object.keys(parts)) {
+    if (!/^ppt\/fonts\/.+\.fntdata$/i.test(path)) continue;
+    const bytes = parts[path];
+    if (!(bytes instanceof Uint8Array) || !bytes.length) continue;
+    const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const meta = parseFontMetadata(buf);
+    const fmt = detectFontFormat(buf);
+    if (!meta || fmt === 'unknown') continue;  // obfuscated / unreadable → leave to names-only
+    add({
+      name: meta.family, family: meta.family, ext: fmt, bytes,
+      subset: false, installable: true,
+      embedding: (() => { try { return readFontEmbedding(buf); } catch { return { permission: 'unknown', noSubsetting: false, bitmapOnly: false, fsType: null }; } })(),
+    });
+  }
+
+  // Referenced families — theme majors/minors and any explicit run typeface.
+  const names = new Set<string>();
+  if (deck.theme.majorFont) names.add(deck.theme.majorFont);
+  if (deck.theme.minorFont) names.add(deck.theme.minorFont);
+  for (const slide of deck.slides) {
+    for (const n of slide.nodes) if (n.type === 'text') for (const p of n.paras) for (const r of p.runs) if (r.font) names.add(r.font);
+  }
+  for (const fam of names) {
+    const clean = fam.trim();
+    if (!clean || clean.startsWith('+')) continue;  // '+mj-lt' style theme refs, not a family
+    add({
+      name: clean, family: clean, ext: 'ttf', bytes: new Uint8Array(0),
+      subset: false, installable: false,
+      embedding: { permission: 'unknown', noSubsetting: false, bitmapOnly: false, fsType: null },
+    });
+  }
+
+  return [...byFamily.values()];
 }
 
 // ── upload-path entry (mirrors ingestPdfAsSvgAssets) ───────────────────────────

@@ -881,6 +881,22 @@
   margin-left: 0.4em;
 }
 
+/* Always-visible fine print between a row's label and its control — the
+   consent-gate disclosure slot (input.notice; e.g. "entering a place here looks
+   it up at open-meteo.com"). Sentence case, unlike the uppercase label. Rows
+   with a notice render static-labelled (tool-inputs.ts), so this never meets
+   the floating-label offset math above. */
+.input-notice {
+  display: block;
+  font-size: calc(11px * var(--a11y-fs));
+  line-height: 1.45;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: hsl(var(--muted-foreground));
+  margin: 2px 0 6px;
+}
+
 /* ── Floating labels for text inputs and textareas ─────────────── */
 
 /* Resting state: label sits inside the field like placeholder text.

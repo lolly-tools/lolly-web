@@ -18,6 +18,7 @@ import { mountModal } from './modal.ts';
 import { shareSectionBuilders } from '../lib/share-sections.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import type { LollySummary } from '../lib/lolly-pack.ts';
+import { AUTO_PACK_MIN, SHARE_WARN_LEN, type ShareFidelity } from '../lib/url-budget.ts';
 
 /** The `.lolly` download vehicle (plans/114 Wave 2). Supplied by the tool view, which
  *  has the host + session the link builder never sees. `build(includeLicensed)` returns
@@ -25,17 +26,19 @@ import type { LollySummary } from '../lib/lolly-pack.ts';
 export interface ShareDialogLolly {
   build: (includeLicensed: boolean) => Promise<{ blob: Blob; filename: string; summary: LollySummary }>;
   save: (blob: Blob, filename: string) => Promise<void>;
+  /** Hand the built file to the OS share sheet (Web Share / AirDrop / Android share).
+   *  Resolves false when there's no share target, so the caller falls back to save().
+   *  Present only when the host exposes `export.share` — the "Send to…" button is
+   *  feature-detected off it. */
+  share?: (blob: Blob, filename: string) => Promise<boolean>;
 }
 
-// Above this readable-query length the Share dialog auto-adopts the packed form.
-const AUTO_PACK_MIN = 1800;
-
-// When even the SHORTEST achievable link (packed, if that helps) is this long, the
-// state has outgrown a reliably-pasteable URL: many chats, emails and social posts
-// truncate links past ~2000 chars, and the engine hard-rejects a tool URL past 4096
-// (tool-url.js MAX_URL) so it wouldn't even reopen. At that point we warn and nudge
-// the user to remove some elements rather than hand them a link that breaks on paste.
-const SHARE_WARN_LEN = 2000;
+// AUTO_PACK_MIN (auto-adopt the packed form) and SHARE_WARN_LEN (warn "very long")
+// are imported from lib/url-budget.ts — the cost model owns those thresholds so the
+// gauge, the dialog and syncUrl can never disagree on where the ceiling is. Past
+// SHARE_WARN_LEN even the shortest packed link has outgrown a reliably-pasteable URL
+// (chats/emails/social truncate past ~2000, and the engine hard-rejects past 4096,
+// tool-url MAX_URL, so it wouldn't reopen) — so we warn and nudge to trim.
 
 // Bitmap formats copy to the clipboard as a PNG; text/html copy as text/rich text.
 // Vector (svg/pdf) and video formats have no useful clipboard form, so the
@@ -109,16 +112,10 @@ function hasImageInput(manifest: ShareManifest): boolean {
  * bug). Content loss is distinct from length: a long link may still be faithful
  * (packing rescues it); an unfaithful one drops images/text no matter how short.
  */
-export interface ShareFidelity {
-  /** false when any list below is non-empty — the link cannot reproduce the state. */
-  faithful: boolean;
-  /** scalar inputs whose value exceeded the link's per-value cap and were dropped. */
-  droppedScalars: { id: string; label: string }[];
-  /** `blocks` inputs whose encoded form exceeded the link cap and were dropped. */
-  droppedBlocks: { id: string; label: string }[];
-  /** device-local (`user/*`) images/files a URL can't carry, so they don't travel. */
-  excludedAssets: { id: string; label: string }[];
-}
+// The report now lives with the cost model that produces it (lib/url-budget.ts) —
+// it is a projection of the costed params. Re-exported here so existing importers of
+// the dialog keep working (imported at the top for local use).
+export type { ShareFidelity };
 
 /** Human list, no Oxford comma (house i18n style): "a", "a and b", "a, b and c". */
 function joinList(items: readonly string[]): string {
@@ -220,9 +217,16 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
           <strong>Send it as a file</strong>
           <span class="share-file-note">A .lolly file carries the whole design — images and all — and always opens complete.</span>
         </div>
-        ${jellyActive()
-          ? `<jelly-button class="share-file-btn" data-lolly-download label="Download .lolly">Download .lolly</jelly-button>`
-          : `<button type="button" class="btn share-file-btn" data-lolly-download>Download .lolly</button>`}
+        <div class="share-file-btns">
+          ${jellyActive()
+            ? `<jelly-button class="share-file-btn" data-lolly-download label="Download .lolly">Download .lolly</jelly-button>`
+            : `<button type="button" class="btn share-file-btn" data-lolly-download>Download .lolly</button>`}
+          ${lolly.share
+            ? (jellyActive()
+                ? `<jelly-button class="share-file-btn" data-lolly-share label="Send to…">Send to…</jelly-button>`
+                : `<button type="button" class="btn share-file-btn" data-lolly-share>Send to…</button>`)
+            : ''}
+        </div>
         <div class="share-file-licensed" data-lolly-licensed hidden></div>
       </div>` : ''}
       ${showLinkOptions ? `
@@ -421,8 +425,20 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     setTimeout(() => { this.textContent = prev; }, 1500);
   });
 
+  const licensedEl = dialog.querySelector<HTMLElement>('[data-lolly-licensed]');
   const lollyBtn = dialog.querySelector<HTMLButtonElement>('[data-lolly-download]');
-  if (lolly && lollyBtn) wireLollyDownload(lolly, lollyBtn, dialog.querySelector<HTMLElement>('[data-lolly-licensed]'));
+  if (lolly && lollyBtn) {
+    wireLollyDelivery(lolly, lollyBtn, licensedEl, (b, f) => lolly.save(b, f),
+      { idle: 'Download .lolly', done: 'Downloaded', fail: 'Could not build the file', verb: 'Download' });
+  }
+  const shareBtn = dialog.querySelector<HTMLButtonElement>('[data-lolly-share]');
+  if (lolly?.share && shareBtn) {
+    const share = lolly.share;
+    // OS share sheet, with a download fallback when the sheet declines (no target).
+    wireLollyDelivery(lolly, shareBtn, licensedEl,
+      async (b, f) => { if (!(await share(b, f))) await lolly.save(b, f); },
+      { idle: 'Send to…', done: 'Shared', fail: 'Could not share', verb: 'Send' });
+  }
 
   dialog.querySelector('.share-done')!.addEventListener('click', () => modal.close());
   // Escape and a backdrop click are handled by mountModal (both close with no value).
@@ -452,58 +468,68 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
 }
 
 /**
- * Wire the "Download .lolly" button. Build once holding licensed brand content back
- * (the safe default); only if the result reports licensed assets do we ask whether to
- * include them — so an ordinary design downloads in one click, and licensed content
- * never travels without an explicit, informed yes.
+ * Wire a .lolly delivery button — Download (save to disk) or "Send to…" (OS share
+ * sheet, with a save fallback). Build once holding licensed brand content back (the
+ * safe default); only if the result reports licensed assets do we ask whether to include
+ * them — so an ordinary design goes out in one click, and licensed content never travels
+ * without an explicit, informed yes. `deliver` is the delivery strategy; `labels.verb`
+ * ("Download"/"Send") keeps the licensed-choice copy honest for each.
  */
-function wireLollyDownload(lolly: ShareDialogLolly, btn: HTMLButtonElement, licensedEl: HTMLElement | null): void {
-  const LABEL = 'Download .lolly';
+interface DeliveryLabels { idle: string; done: string; fail: string; verb: string }
+
+function wireLollyDelivery(
+  lolly: ShareDialogLolly,
+  btn: HTMLButtonElement,
+  licensedEl: HTMLElement | null,
+  deliver: (blob: Blob, filename: string) => Promise<void>,
+  labels: DeliveryLabels,
+): void {
   const busy = (on: boolean, label?: string) => { btn.toggleAttribute('disabled', on); if (label) btn.textContent = label; };
-  const done = () => { busy(false, 'Downloaded'); setTimeout(() => { btn.textContent = LABEL; }, 1800); };
-  const fail = () => busy(false, 'Could not build the file');
-  const deliver = (blob: Blob, filename: string) => lolly.save(blob, filename).then(done, fail);
+  const done = () => { busy(false, labels.done); setTimeout(() => { btn.textContent = labels.idle; }, 1800); };
+  const fail = () => busy(false, labels.fail);
+  const run = (blob: Blob, filename: string) => deliver(blob, filename).then(done, fail);
 
   btn.addEventListener('click', async () => {
     if (licensedEl) { licensedEl.hidden = true; licensedEl.textContent = ''; }
     busy(true, 'Preparing…');
     let built: Awaited<ReturnType<ShareDialogLolly['build']>>;
     try { built = await lolly.build(false); } catch { fail(); return; }
-    if (!built.summary.hasLicensed) { void deliver(built.blob, built.filename); return; }
-    offerLicensedChoice(built, lolly, btn, licensedEl, busy, deliver, fail);
+    if (!built.summary.hasLicensed) { void run(built.blob, built.filename); return; }
+    offerLicensedChoice(built, lolly, licensedEl, busy, run, fail, labels);
   });
 }
 
-/** Present the licensed-content choice: download without the brand assets (the file
- *  already built), or rebuild including them. Sharing the file distributes those bytes,
- *  so the decision is explicit. */
+/** Present the licensed-content choice: deliver without the brand assets (the file
+ *  already built), or rebuild including them. Handing the file over distributes those
+ *  bytes, so the decision is explicit — and worded for the chosen verb (download/send). */
 function offerLicensedChoice(
   built: { blob: Blob; filename: string; summary: LollySummary },
   lolly: ShareDialogLolly,
-  btn: HTMLButtonElement,
   licensedEl: HTMLElement | null,
   busy: (on: boolean, label?: string) => void,
-  deliver: (blob: Blob, filename: string) => Promise<void>,
+  run: (blob: Blob, filename: string) => Promise<void>,
   fail: () => void,
+  labels: DeliveryLabels,
 ): void {
-  busy(false, 'Download .lolly');
+  busy(false, labels.idle);
   const n = Math.max(1, built.summary.licensedExcluded);
   const it = n === 1 ? 'it' : 'them';
-  if (!licensedEl) { void deliver(built.blob, built.filename); return; }   // nowhere to ask ⇒ safe default
+  if (!licensedEl) { void run(built.blob, built.filename); return; }   // nowhere to ask ⇒ safe default
   licensedEl.hidden = false;
+  const verb = labels.verb;
   licensedEl.innerHTML = `
     <p class="share-file-warn">⚠️ This design uses ${n} licensed brand ${n === 1 ? 'asset' : 'assets'}. The file leaves ${it} out. Including ${it} shares the actual ${n === 1 ? 'file' : 'files'} with whoever opens the .lolly.</p>
     <div class="share-file-actions">
-      <button type="button" class="btn" data-lolly-without>Download without ${it}</button>
-      <button type="button" class="btn" data-lolly-include>Include and download</button>
+      <button type="button" class="btn" data-lolly-without>${verb} without ${it}</button>
+      <button type="button" class="btn" data-lolly-include>Include and ${verb.toLowerCase()}</button>
     </div>`;
   licensedEl.querySelector<HTMLButtonElement>('[data-lolly-without]')!.addEventListener('click', () => {
     licensedEl.hidden = true;
-    void deliver(built.blob, built.filename);
+    void run(built.blob, built.filename);
   });
   licensedEl.querySelector<HTMLButtonElement>('[data-lolly-include]')!.addEventListener('click', async () => {
     licensedEl.hidden = true;
     busy(true, 'Preparing…');
-    try { const full = await lolly.build(true); await deliver(full.blob, full.filename); } catch { fail(); }
+    try { const full = await lolly.build(true); await run(full.blob, full.filename); } catch { fail(); }
   });
 }

@@ -208,9 +208,9 @@ async function mountToolCanvas(
   // Contain the template's OWN <style> blocks, exactly as views/tool.ts and multi-edit.ts
   // do after their innerHTML swap. This stage is mounted in the LIVE document, so an
   // unscoped template <style> is not merely untidy — it is UNLAYERED, and unlayered CSS
-  // beats every @layer in styles/app.css regardless of specificity. 14 shipped templates
-  // open with `*, *::before, *::after { margin:0; padding:0 }` and two (bag-video,
-  // pose-geeko) declare a bare `svg { width:100%; height:100% }`, so for the ~350ms a
+  // beats every @layer in styles/app.css regardless of specificity. Several shipped templates
+  // open with `*, *::before, *::after { margin:0; padding:0 }` and one (pose-geeko)
+  // declares a bare `svg { width:100%; height:100% }`, so for the ~350ms a
   // stage was mounted those rules repainted the WHOLE app: chrome padding stripped (the
   // tab bar's pill flattens to plain text) and every icon in the page ballooned to 100%
   // of its button. Visible as a flash on a cold gallery→tool navigation, because

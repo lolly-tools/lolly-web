@@ -94,10 +94,12 @@ export async function applyNeuroDemo(host: NeurospicyHost, mode: NeuroDemoMode):
   // Real layer ids from ATMOSPHERE_LAYERS: Wind / Birdsong / Crickets.
   atmo.demoAtmosphere({ wind: 0.55, birds: 0.32, night: 0.18 }, { open: true });
   const dock = await import('../components/neuro-dock.ts');
-  dock.showNeuroDock(host, { animateIn: false, forceExpanded: true });
   if (mode === 'viz') {
-    const viz = await import('../components/viz-overlay.ts');
-    // No fullscreen: requestFullscreen needs a gesture, and a capture has none.
-    await viz.openVizPanel(host as Parameters<typeof viz.openVizPanel>[0]);
+    // The rich visualiser lives in the dock now — open it in the expanded window (the
+    // shell's draggable + resizable state). No fullscreen: requestFullscreen needs a
+    // user gesture, and a capture has none.
+    dock.openNeuroDockExpanded(host);
+  } else {
+    dock.showNeuroDock(host, { animateIn: false, forceExpanded: true });
   }
 }

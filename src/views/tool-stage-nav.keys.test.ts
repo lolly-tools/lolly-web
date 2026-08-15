@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Stage-nav keyboard zoom — the "both zooms work and neither captures the other"
- * contract. Layout Studio and Sequence Studio share this controller (views/tool.ts
+ * contract. Design and Sequence Studio share this controller (views/tool.ts
  * mounts setupStageNav for every canvas tool); the timeline panel pins the same
  * chord rule for its own bindings in timeline-panel.test.ts.
  *

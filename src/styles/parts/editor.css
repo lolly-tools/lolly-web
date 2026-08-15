@@ -44,6 +44,17 @@
    trigger them, and the Export popup still opens from the rail Export icon. */
 .tool-layout.is-editor .render-pill { display: none; }
 
+/* Hide-controls full preview (Figma/Penpot `\`, toggled in free-canvas.ts): strip every
+   piece of editor chrome to a clean canvas so the artwork reads whole. Chrome ONLY — the
+   canvas, its artwork and the export geometry are never touched. Escape restores it. */
+.tool-view.is-chrome-hidden .fc-toolbar-dock,
+.tool-view.is-chrome-hidden .stage-nav,
+.tool-view.is-chrome-hidden .tl-panel,
+.tool-view.is-chrome-hidden .fc-ctxbar,
+.tool-view.is-chrome-hidden .fc-frame-labels,
+.tool-view.is-chrome-hidden [data-back-pill],
+.tool-view.is-chrome-hidden .render-pill { display: none !important; }
+
 /* Floating tool palette — a detached, DRAGGABLE rail rather than a full-height
    slab: auto-hidden at rest on desktop (revealed whenever the pointer is over the
    editor stage, like the mesh-gradient tool's on-canvas controls), always-on for
@@ -63,7 +74,9 @@
   align-items: center;
   padding-left: calc(10px + var(--vv-left, 0px));
   pointer-events: none;
-  z-index: 16;
+  /* Above the timeline (z 22) so the draggable rail floats over it rather than being
+     covered — the user can drag it out of the way (fc-grip) if it gets in the way. */
+  z-index: 24;
 }
 /* Dragged: the dock shrinks to the rail and takes the clamped left/top written by
    free-canvas.ts (clampRailPos keeps it inside the stage and off the export pill). */
@@ -265,7 +278,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 /* "Unsaved" cue mirrored from the render pill's Save button — --brand-warn, the
    active brand's own colour closest in hue to red/yellow (brand-vars.ts
    nearestWarmHex, recomputed on every brand change), falling back to the
-   tokenless Amber #b28727. Shared by every free-canvas host — Layout Studio,
+   tokenless Amber #b28727. Shared by every free-canvas host — Design,
    Carousel Maker, Doc Studio — since they all build their toolbar via toolBtn(). */
 .fc-btn.fc-action-save.is-unsaved,
 .fc-btn.fc-action-save.is-unsaved:hover:not(:disabled) { background: var(--brand-warn, #b28727); color: var(--brand-warn-ink, #0c322c); }
@@ -797,6 +810,28 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
   box-shadow: 0 0 0 0.5px rgba(255, 45, 120, 0.35);
 }
 
+/* Frame name labels (Figma-style) — a tab above each artboard's top-left that names it and
+   selects the FRAME on click. Container is click-through (so canvas clicks fall through the
+   gaps); only the tabs take a hit. Fixed-size chrome, positioned in stage px by the view. */
+.fc-frame-labels { position: absolute; inset: 0; pointer-events: none; z-index: 15; }
+.fc-frame-label {
+  position: absolute;
+  pointer-events: auto;
+  max-width: 240px;
+  padding: 0 6px;
+  border: 0; border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit; font-size: calc(11px * var(--a11y-fs)); font-weight: 600;
+  line-height: calc(17px * var(--a11y-fs));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.fc-frame-label:hover { color: hsl(var(--foreground)); background: hsl(var(--muted) / 0.6); }
+.fc-frame-label.is-active { color: hsl(var(--primary)); }
+.fc-frame-label:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+
 /* Toolbar canvas-background — the shared colour picker, compacted to a swatch. */
 .fc-color-btn { padding: 0; overflow: visible; }
 .fc-toolbar .color-picker-field { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
@@ -1120,25 +1155,60 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-more-panel .fc-row .color-trigger { justify-content: flex-start; padding: 5px 10px; border-radius: var(--radius); }
 .fc-more-panel .fc-row .color-trigger-name { display: inline; }
 
-/* Frames reorder panel (plan 93 F1b-3) — a drag-sortable list of the document's
-   frames in page order. Each row: a grip, a "Frame N" label, up/down steppers. */
-.fc-frames-panel { min-width: 230px; max-height: min(72vh, 540px); overflow-y: auto; }
-.fc-frames-list { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
-.fc-frame-row {
-  display: flex; align-items: center; gap: 7px;
-  padding: 5px 7px; border-radius: 8px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--muted) / 0.4);
-  cursor: grab; user-select: none;
-  font-size: calc(12.5px * var(--a11y-fs));
+/* Artboards navigator (plan 112) — a bottom-docked filmstrip of the document's frames
+   in page order, each a LIVE scaled thumbnail. Clicking one (or the ‹ › steppers) frames
+   that artboard in the viewport. NO reorder — the sequence IS the canvas layout. `bottom`
+   is set inline by the view so the strip rides ABOVE the sequence timeline when it's open;
+   left/top/transform re-anchor it from the base `.fc-panel` absolute-at-(left,top) to a
+   bottom-centred bar. */
+.fc-frames-panel {
+  left: 50%; right: auto; top: auto; transform: translateX(-50%);
+  max-width: min(92%, 880px);
+  gap: 8px; padding: 10px 12px 12px;
 }
-.fc-frame-row:hover { background: hsl(var(--muted)); }
-.fc-frame-row.is-dragging { opacity: 0.5; cursor: grabbing; }
-.fc-frame-grip { display: inline-flex; color: hsl(var(--muted-foreground)); flex: none; }
-.fc-frame-grip svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
-.fc-frame-name { flex: 1 1 auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fc-frame-mv { min-width: 26px; }
-.fc-frames-empty { margin-top: 8px; color: hsl(var(--muted-foreground)); font-size: calc(12px * var(--a11y-fs)); }
+.fc-frames-head { display: flex; align-items: center; gap: 6px; }
+.fc-frames-title {
+  flex: 1 1 auto; font-weight: 700; font-size: calc(11px * var(--a11y-fs));
+  text-transform: uppercase; letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
+}
+.fc-frames-step { min-width: 28px; }
+.fc-frames-strip {
+  display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden;
+  padding-bottom: 2px; scrollbar-width: thin;
+}
+.fc-frame-cell {
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 4px; border-radius: 9px; border: 1px solid transparent;
+  background: none; cursor: pointer; color: hsl(var(--muted-foreground));
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.fc-frame-cell:hover { background: hsl(var(--muted) / 0.6); }
+.fc-frame-cell.is-active { border-color: hsl(var(--primary)); color: hsl(var(--foreground)); }
+.fc-frame-cell:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-frame-cell-slot {
+  display: block; width: fit-content; border-radius: 5px; overflow: hidden;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--background));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.fc-frame-cell.is-active .fc-frame-cell-slot { border-color: hsl(var(--primary)); }
+.fc-frame-thumb { position: relative; overflow: hidden; display: block; }
+.fc-frame-cell-n { font-size: calc(11px * var(--a11y-fs)); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fc-frames-empty {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  color: hsl(var(--muted-foreground)); font-size: calc(12px * var(--a11y-fs)); padding: 4px 2px;
+}
+.fc-frames-empty-msg { flex: 0 0 auto; }
+/* "Draw an artboard" — the actionable way out of the empty state (arms the Artboard tool).
+   Fill pair is aliased onto .btn--primary in buttons.css; only the border + layout are local. */
+.fc-frames-empty-add {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border: 1px solid hsl(var(--primary)); border-radius: 8px;
+  font: inherit; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; cursor: pointer;
+  transition: filter 0.12s;
+}
+.fc-frames-empty-add:hover { filter: brightness(1.08); }
+.fc-frames-empty-add:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-frames-empty-add svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
 /* Position & size panel — each concept (position / size / rotation) on its own
    icon-led row: two labelled number cells (X·Y, W·H) or a number + drag slider. */

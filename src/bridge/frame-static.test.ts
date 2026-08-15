@@ -97,7 +97,7 @@ test('staticChromeVerdict: the Tier-B screenshot path never takes it', () => {
   assert.match(v.reason, /screenshot/);
 });
 
-test('staticChromeVerdict: no visible canvas means no blit and no win (digi-ad, bag-video)', () => {
+test('staticChromeVerdict: no visible canvas means no blit and no win (digi-ad, pose-geeko)', () => {
   assert.equal(staticChromeVerdict({ ...ok, liveCanvases: 0 }).ok, false);
 });
 

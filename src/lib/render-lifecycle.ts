@@ -10,7 +10,7 @@
  * document/window globals (`window.__toolHasReadySignal` + a `tool:ready`
  * event). That global protocol is preserved verbatim here so behaviour is
  * unchanged; making it per-render/per-canvas is a separate, higher-risk step
- * (it also touches opted-in tool templates, e.g. tools/daily-card).
+ * (it also touches any opted-in tool templates).
  */
 
 declare global {

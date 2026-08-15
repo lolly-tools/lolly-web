@@ -847,7 +847,7 @@ export function releaseShotBorrow(el: HTMLElement): void {
  * transition — is unit-testable without a clock, an AudioContext or a live canvas.
  *
  * ELEMENT-KIND AGNOSTIC. Every element handed in is gated the same way — a `.lolly-box`
- * object clip and a `[data-pdf-page]` frame page (Layout Studio's frames-as-scenes: each
+ * object clip and a `[data-pdf-page]` frame page (Design's frames-as-scenes: each
  * frame carries `data-t-start`/`data-t-dur` once sequenced) are both just "an element with
  * timing". The frame whose [start, start+dur) contains `tMs` keeps its pixels; every other
  * TIMED frame gets `.seq-off` → display:none, so the canvas shows one slide at a time. This

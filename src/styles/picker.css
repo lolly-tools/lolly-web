@@ -991,7 +991,7 @@
 
 /* ── PDF page picker (multi-page PDF/.ai → which page(s) become SVGs) ──────
    Opened by pdf-import.ts's pickPdfPages from the catalog drop area, the asset
-   picker's upload path, and the Layout Studio design import. Stacks above the
+   picker's upload path, and the Design design import. Stacks above the
    picker panel (z 1001) AND the webcam sheet (1100/1101). Sibling on <body>. */
 .pdfpick-backdrop {
   position: fixed;

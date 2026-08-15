@@ -286,7 +286,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // button stuck on "Saving…" silently, which made "Save & leave" appear to do
   // nothing (and then click a now-disabled button — a no-op). The thumbnail is
   // best-effort (captureThumbnail swallows its own errors), so it never blocks a save.
-  async function performSave(saveBtnEl?: HTMLElement | null): Promise<boolean> {
+  async function performSave(saveBtnEl?: HTMLElement | null, opts?: { folderId?: string | null }): Promise<boolean> {
     // Either the native <button> or its jelly-mode <jelly-button> stand-in —
     // disabling goes through the ATTRIBUTE, which both honour (jelly-button
     // observes it and syncs its shadow button).
@@ -302,22 +302,33 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // session) so a re-save updates it in place; only mint a new slot the first time.
       const slot  = activeSlot || `${manifest.id}:${Date.now()}`;
       const data  = sessionSnapshot();
-      const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, data.__export_format);
+      // The thumbnail is best-effort and MUST NOT block the save (the promise this routine
+      // makes). captureThumbnail swallows its own errors, but a render that never QUIESCES
+      // (waitForQuiescence waiting on a `tool:ready` that never fires) would hang the await
+      // forever — a save that silently never completes. Cap it: a stalled thumbnail degrades
+      // to no-thumbnail (the gallery just shows the tool glyph), the session still saves.
+      const thumb = await Promise.race([
+        captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, data.__export_format),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), THUMB_CAPTURE_TIMEOUT_MS)),
+      ]);
       await host.state.save(slot, data, thumb);
       // Remember the slot so the next save updates THIS session rather than creating a
       // duplicate (see activeSlot above). Set before filing so a fresh first-save is
       // both filed into its folder AND pinned as the active slot for later edits.
       activeSlot = slot;
-      // File a freshly-created session into the folder the Projects "+ New tool" flow
-      // launched from (claimed at mount into fileIntoFolder — empty value = root/uncat
-      // = null = no filing). One-shot, best-effort, never blocks the save.
-      if (fileIntoFolder) {
+      // File the session into a folder. The Save dialog passes an EXPLICIT `opts.folderId`
+      // (a chosen project, or null = leave at library root — "No project"); when it is
+      // absent (the plain button / programmatic saves) fall back to the folder the Projects
+      // "+ New tool" flow claimed at mount (fileIntoFolder). `moveItem(slot, null)` is a
+      // no-op, so an explicit "root" choice simply doesn't file. One-shot, best-effort.
+      const target = opts && 'folderId' in opts ? opts.folderId ?? null : fileIntoFolder;
+      if (target) {
         try {
           const { createFolderStore } = await import('../folders.js');
-          await createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]).moveItem(slot, fileIntoFolder, 'session');
+          await createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]).moveItem(slot, target, 'session');
         } catch (e) { /* filing is best-effort */ }
-        fileIntoFolder = null;
       }
+      fileIntoFolder = null;
       label.textContent = 'Saved';
       announce('Saved');
       return true;                              // leave the button as-is; the caller navigates away
@@ -1731,7 +1742,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     fidelityWarnEl.querySelector<HTMLElement>('[data-fidelity-warning-text]')!.textContent = msg;
     fidelityWarnEl.hidden = !msg;
   }
-  // A sidebar edit can turn the effect on or off (Layout Studio's Backdrop blur field),
+  // A sidebar edit can turn the effect on or off (Design's Backdrop blur field),
   // so re-check after every input change as well as on every format change. Cheap: one
   // computed-style pass over the canvas, and only while the export panel is mounted.
   // Registered HERE, below the definition — the format-change handler above is wired
@@ -2202,7 +2213,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   });
 
   // ── Artboards are the size truth (plans/93 frame primitive) ──────────────────
-  // In a framed editor (Layout Studio with a `frame` field), the export dimensions are
+  // In a framed editor (Design with a `frame` field), the export dimensions are
   // NOT an independent output size — editing them RESIZES ALL ARTBOARDS. On a committed
   // change we WARN, then set every frame box to the new size and re-flow the artboards in a
   // row (members move with their frame). A no-frames doc keeps the existing behaviour (the
@@ -2682,7 +2693,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // exports at its true pixel size rather than the static render dimensions.
       // Gate on the carousel-specific render.pages — NOT render.paged, which also marks
       // multi-page-pdf / doc-studio, whose SVG export must stay a single whole-canvas file.
-      // Also admit the Design/Layout-Studio frame primitive: an editor-layout tool whose
+      // Also admit the Design frame primitive: an editor-layout tool whose
       // boxes input declares canvas.frameField emits one [data-pdf-page] per ARTBOARD (frame
       // box). A no-frames Design doc renders a single .artboard with zero [data-pdf-page], so
       // pageEls stays empty and it correctly falls through to a single flat export. Mirrors
@@ -3052,6 +3063,10 @@ function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts:
 // with thousands of dots) can serialise to megabytes; above this we fall back to
 // the raster path so a single thumbnail never bloats storage unbounded.
 const SVG_THUMB_MAX_BYTES = 1_500_000;
+// Upper bound on how long a save waits for its (best-effort) thumbnail render. Generous —
+// a normal capture is well under a second — so it only ever fires on a render that has
+// genuinely stalled, in which case the save proceeds thumbnail-less rather than hanging.
+const THUMB_CAPTURE_TIMEOUT_MS = 8000;
 
 async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | null, runtime: Runtime, exportUnscaled: ExportUnscaled, format = '', shutter = true): Promise<string | null> {
   // Capture at the canvas's ACTUAL laid-out aspect, not the manifest default. A reflow tool

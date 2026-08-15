@@ -853,7 +853,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Universal drop front door — the same scoped router as the gallery (design →
-  // Layout Studio, PDF → import/compress, media → library or /verify). Torn down
+  // Design, PDF → import/compress, media → library or /verify). Torn down
   // on navigation; the cast is erased (the concrete web host carries the picker's
   // upload surface).
   attachDropRouter(viewEl, host as unknown as PickerHost);

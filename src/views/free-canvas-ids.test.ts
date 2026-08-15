@@ -66,7 +66,7 @@ function pointerEvent(type: string, o: { x: number; y: number }): MouseEvent {
 
 const NATIVE = 1000;
 
-/** Layout Studio's canvas block, trimmed to what identity needs. `fields` declares the
+/** Design's canvas block, trimmed to what identity needs. `fields` declares the
  *  id sub-field exactly as every shipped canvas manifest does — that declaration is what
  *  tells the editor rows are id-bearing. */
 const CANVAS_CFG = {

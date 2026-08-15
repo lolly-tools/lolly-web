@@ -247,9 +247,32 @@ export async function switchLang(host: LangSwitchHost, next: Lang): Promise<void
  * SPA fallback instead of the docs page.
  */
 export function docsHref(slug: string): string {
-  const lang = currentLang();
+  return docsInfoHref(slug);
+}
+
+/**
+ * The built /info page path for `slug` in an explicit `lang` (defaults to the
+ * active app language) — English unprefixed, every other locale under
+ * `/info/<lang>/…`. This is BOTH the crawlable/share URL (what docsHref returns)
+ * AND the fetch source the in-app reader (#/docs, views/docs.ts) rehosts, which
+ * is why it takes an explicit lang: the reader may render a page in a language
+ * pinned by the route rather than the current UI locale. Same explicit-filename
+ * rule as docsHref (see its note): `index` → `index.html`, never a bare dir URL.
+ */
+export function docsInfoHref(slug: string, lang: Lang = currentLang()): string {
   const file = slug === 'index' ? 'index.html' : `${slug}.html`;
   return lang === 'en' ? `/info/${file}` : `/info/${lang}/${file}`;
+}
+
+/**
+ * The IN-APP docs reader route (`#/docs/<slug>`) — the live, active-brand
+ * counterpart to docsHref's static /info page, for INTERNAL navigation (the
+ * language rides the app's current locale, so the hash stays clean/unprefixed).
+ * Share and SEO links stay on docsHref (`/info/…`): the hash route is not
+ * separately crawlable, and a shared link should land anyone on the static page.
+ */
+export function docsAppHref(slug: string): string {
+  return `#/docs/${slug}`;
 }
 
 /** Shared interpolation. `esc` decides whether a param is HTML-escaped. */

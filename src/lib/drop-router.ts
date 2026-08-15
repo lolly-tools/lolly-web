@@ -6,7 +6,7 @@
  * drag-and-drop handler sniffs what landed and opens a chooser sheet offering
  * only the routes that genuinely apply:
  *
- *   design file (.fig/.penpot/.idml/.indd/SVG/zip) → Layout Studio, parsed to boxes
+ *   design file (.fig/.penpot/.idml/.indd/SVG/zip) → Design, parsed to boxes
  *   token doc / .penpot / design-system pack zip → the Design System studio
  *   PDF / .ai   → edit as a design · pages → SVG library assets · compress ·
  *                 the Design System studio (a guidelines PDF's colours, marks
@@ -15,7 +15,7 @@
  *   image/video/audio → the asset library · /verify (Content Credentials)
  *   unknown / C2PA-looking bytes → /verify
  *
- * A `.penpot` reaches TWO doors (Layout Studio and the studio), so both label
+ * A `.penpot` reaches TWO doors (Design and the studio), so both label
  * where they land rather than what they do (plan 97 §14.9).
  *
  * Design files travel by the same one-shot in-memory handoff pattern
@@ -262,8 +262,10 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
     && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
   const svgText = /<svg[\s>]/i.test(text.slice(0, 4096));
   // A .lolly is a zip; recognise it by extension so the generic design/archive routes
-  // (which zip-magic would otherwise trigger) never claim it — it opens directly.
-  const lolly = /\.lolly$/i.test(file.name);
+  // (which zip-magic would otherwise trigger) never claim it — it opens directly. Also
+  // accept the canonical MIME (LOLLY_MIME) for a share that arrives typed but with a
+  // mangled name (e.g. Android ACTION_SEND of application/vnd.lolly+zip).
+  const lolly = /\.lolly$/i.test(file.name) || file.type === 'application/vnd.lolly+zip';
   // JUMBF box type / C2PA manifest label / PNG caBX chunk — a heuristic "this
   // carries Content Credentials" signal, not a verification (that's /verify's job).
   const c2pa = /jumb|c2pa|caBX/.test(text);
@@ -343,14 +345,14 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   }
   // A plain archive leads with "unpack": a dropped .zip/.tar explodes into member
   // assets, each re-imported through the normal library path. Kept above the design
-  // route so a data zip isn't primarily offered to Layout Studio (where it errors).
+  // route so a data zip isn't primarily offered to Design (where it errors).
   if (single && s.archive) {
     choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: !packZip });
   }
   if (single && (s.design || s.pdf) && has('design')) {
     choices.push({ id: 'design', label: t('Edit in Design'), primary: !s.archive });
   }
-  // The Design System studio door, next to the Layout Studio one so the two
+  // The Design System studio door, next to the Design one so the two
   // .penpot destinations read as a pair (plan 97 §14.9). It leads only when no
   // earlier route already claimed the call-to-action, so nothing above it moves.
   if (single && s.designSystem && !packZip) {
@@ -367,7 +369,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
     choices.push({ id: 'sequence', label: t('Make a video from its frames') });
   }
   // A .penpot can carry per-shape export marks; the ingest bakes them through an
-  // offscreen Layout Studio render, so the route needs that tool. Whether the zip
+  // offscreen Design render, so the route needs that tool. Whether the zip
   // really is a marked-up Penpot file resolves inside the ingest (it throws a
   // user-ready message otherwise).
   if (single && s.design && has('design')) {

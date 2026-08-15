@@ -80,7 +80,7 @@ function pointerEvent(
 
 const NATIVE = 1000;
 
-/** Layout Studio's `canvas` block as shipped, plus the `path` add-kind's seed so the pen's
+/** Design's `canvas` block as shipped, plus the `path` add-kind's seed so the pen's
  *  committed box inherits the same paint the Add menu would give it. */
 function canvasCfg(): Record<string, unknown> {
   return {

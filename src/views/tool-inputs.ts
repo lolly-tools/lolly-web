@@ -469,7 +469,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const isJellyField = jellyActive() && (input.control === 'text-input' || input.control === 'textarea');
     // file-picker is static too: its hidden <input type=file> otherwise matches the
     // floating-label :has() chain (tool.css), which paints the label OVER the trigger.
-    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || input.control === 'file-picker' || isJellyField;
+    // A notice row is static too: the notice sits between label and field, which
+    // the floating-label offset math (tool.css) cannot account for.
+    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || input.control === 'file-picker' || isJellyField || Boolean(input.notice);
     // Composite controls hold MANY interactive elements. A wrapping <label> makes the
     // browser forward any dead-space click to the label's first labelable descendant —
     // so a `blocks` input forwards gap / pill-body / near-miss clicks to block #0's
@@ -507,6 +509,14 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       ? `<button type="button" class="input-data-src" data-data-source="${escape(input.id)}" title="Add data from a file or your library" aria-label="Add data">${icon('filePlus', { size: 13, strokeWidth: 2 })}</button>`
       : '';
     const label = `<span class="input-label">${labelText}${lockChip}${ht ? ht.button : ''}${dataSrcBtn}</span>`;
+    // Always-visible fine print between label and control — the consent-gate
+    // disclosure slot (unlike help, which hides behind the info button).
+    // aria-hidden keeps it out of the wrapping <label>'s accessible NAME;
+    // linkHelpDescriptions points the control's aria-describedby at it, so
+    // assistive tech reads it as a description instead.
+    const notice = input.notice
+      ? `<span class="input-notice" id="inotice-${escape(input.id)}" aria-hidden="true">${escape(input.notice)}</span>`
+      : '';
     // A locked input displays the policy VALUE (when one is given) in place of the
     // model's stored value — a render-only substitution, so the model is untouched.
     const renderInput: InputModelItem = (pol?.mode === 'locked' && pol.value !== undefined)
@@ -527,9 +537,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       ? `<span class="input-locked" inert aria-disabled="true" style="display:block;opacity:.6;pointer-events:none">${rawControl}</span>`
       : rawControl;
     const help = ht ? ht.pop : '';
-    if (isCheckbox) return `<label class="${cls}">${control}${label}${help}</label>`;
-    if (isComposite) return `<div class="${cls}" role="group" aria-labelledby="${labelId}">${label}${control}${help}</div>`;
-    return `<label class="${cls}">${label}${control}${help}</label>`;
+    if (isCheckbox) return `<label class="${cls}">${control}${label}${notice}${help}</label>`;
+    if (isComposite) return `<div class="${cls}" role="group" aria-labelledby="${labelId}">${label}${notice}${control}${help}</div>`;
+    return `<label class="${cls}">${label}${notice}${control}${help}</label>`;
   };
 
   const openSections = new Set(

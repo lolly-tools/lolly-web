@@ -5,7 +5,7 @@
  * The tool canvas is rebuilt via `contentEl.innerHTML` on every rAF-coalesced
  * paint, which DESTROYS each <video> and the template emits a fresh one — so a
  * placed clip would restart at 0 on every edit. This enhancer remembers where each
- * keyed video was (data-video-key; Layout Studio sets it to the box id) and seeks
+ * keyed video was (data-video-key; Design sets it to the box id) and seeks
  * the newly-painted element back there, so the clip appears to keep playing while
  * the user edits.
  *

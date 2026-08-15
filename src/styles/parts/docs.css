@@ -1,0 +1,244 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/*
+ * In-app documentation reader (#/docs/<slug>) — plan "this-is-a-very-sparkling-eich" M2,
+ * Phase 1 (reader only).
+ *
+ * The reader FETCHES a built /info page and rehosts its `.docs-content` fragment into
+ * #view (views/docs.ts), so the body markup is the exact, tested static-build output.
+ * The static build inlines its own copy of these rules from docs/build.ts's CSS constant;
+ * this file is the APP-SIDE stylesheet for the SAME fragment. Two differences from the
+ * static site are deliberate:
+ *
+ *   1. BRAND-REACTIVE. The static build inlines the app tokens at NEUTRAL values; here the
+ *      running app's tokens.css + brand-vars.ts are already in force, so the legacy-var
+ *      bridge below resolves --page/--text/--green/… to the ACTIVE brand's app slots. The
+ *      docs pick up the active profile's design system for free — the whole point of M2.
+ *   2. SCOPED. The static build's bridge lives on a global `:root`; here it is scoped to
+ *      `.docs-content` so importing this stylesheet can never clobber the app chrome's own
+ *      `:root` tokens (which would un-brand the shell while the reader is mounted).
+ *
+ * INTERIM: this is a focused reproduction of the docs BODY styling (the enumerated
+ * structural classes: .shot/.shot--dual, .shot-try, .md-cols/.md-col, .md-timeline,
+ * .icon-list/.ic, .table-wrap, .doc-logo). The plan's end-state is ONE shared docs
+ * stylesheet that docs/build.ts inlines AND the app imports; extracting that (byte-parity
+ * with build.ts, full doc-primitive + provenance-pill parity) stays a dedicated follow-up.
+ */
+
+/* The legacy docs token names, expressed in the app's design-token slots — a scoped copy
+ * of docs/build.ts's DOCS_BRIDGE. Because the app's --background/--foreground/--primary/…
+ * are brand-reactive (tokens.css + brand-vars.ts), every var() call site in the fragment
+ * follows the active brand and the app's [data-theme] light/dark/brand system. */
+.docs-content {
+  --page: hsl(var(--background));
+  --text: hsl(var(--foreground));
+  --muted: hsl(var(--muted-foreground));
+  --border: hsl(var(--border));
+  --pale: hsl(var(--muted));
+  --green: hsl(var(--primary));
+  --dark: hsl(var(--foreground));
+  --light: hsl(var(--primary) / 0.4);
+  --red: hsl(var(--destructive));
+  --orange: #fe7c3f;
+  --navy: #192072;
+  --blue: #2453ff;
+}
+
+/* ── View shell ─────────────────────────────────────────────────────────────── */
+.docs-view {
+  min-height: 100%;
+  overflow-y: auto;
+}
+.docs-reader {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* Top-right chrome cluster (home / theme), mirroring the Ask view idiom so the reader
+ * sits in the same button family as its peer utility views. */
+.docs-topright {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0));
+  right: max(0.9rem, env(safe-area-inset-right, 0));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.docs-top-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(38px * var(--a11y-fs));
+  height: calc(38px * var(--a11y-fs));
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.85);
+  color: hsl(var(--foreground));
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.docs-top-btn:hover { background: hsl(var(--muted)); border-color: hsl(var(--foreground) / 0.25); }
+.docs-top-btn:active { transform: scale(0.94); }
+.docs-top-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px hsl(var(--primary) / 0.4); }
+.docs-top-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
+
+/* A pending / failed state — the reader renders chrome first, then swaps this out. */
+.docs-status {
+  padding: 4rem 1rem;
+  text-align: center;
+  color: var(--muted, hsl(var(--muted-foreground)));
+  font-size: 0.9375rem;
+}
+.docs-status a { color: hsl(var(--primary)); }
+
+/* ── Body: the rehosted .docs-content fragment ──────────────────────────────── */
+.docs-content {
+  min-width: 0;
+  padding: 2.75rem 0 5rem;
+  color: var(--text);
+  line-height: 1.65;
+}
+
+.docs-content h1,
+.docs-content h2,
+.docs-content h3,
+.docs-content h4 { line-height: 1.25; font-weight: 700; }
+.docs-content h1 {
+  font-size: 3rem; color: var(--dark); line-height: 1.15; font-weight: 300;
+  margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 1px solid var(--border);
+}
+.docs-content h2 {
+  font-size: 1.5rem; font-weight: 700; color: var(--dark);
+  border-top: 1px solid var(--border); padding-top: 2rem;
+  margin-top: 2.5rem; margin-bottom: 0.75rem;
+}
+.docs-content h2:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.docs-content h3 { font-size: 1.15rem; color: var(--dark); margin-top: 1.75rem; margin-bottom: 0.5rem; }
+.docs-content h4 { font-size: 1rem; color: var(--muted); margin-top: 1.25rem; margin-bottom: 0.35rem; }
+.docs-content h2[id], .docs-content h3[id], .docs-content h4[id] { scroll-margin-top: 1.5rem; }
+
+/* Narration follow-along highlight (lib/docs-narration-host.ts): the currently
+   spoken block. Mirrors the static docs player's `.ldp-here` (docs/player/player.css)
+   — a soft, SYMMETRIC brand-tinted surround wash (no one-sided edge), brand-reactive
+   via the scoped bridge above so it reads in light/dark/brand. Clicking it re-engages
+   follow-along (hence the pointer). Only present while the Listen dock is playing;
+   the class is added/removed by the narration host. */
+.docs-content .docs-narr-here {
+  background: hsl(var(--primary) / 0.14);
+  box-shadow: 0 0 0 6px hsl(var(--primary) / 0.14);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 400ms ease, box-shadow 400ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .docs-content .docs-narr-here { transition: none; }
+}
+
+.docs-content p { margin-bottom: 1.5rem; }
+.docs-content ul, .docs-content ol { margin-bottom: 1rem; padding-left: 1.25rem; }
+.docs-content li { margin-bottom: 0.35rem; }
+.docs-content a { color: var(--green); text-decoration: none; }
+.docs-content a:hover { text-decoration: underline; }
+.docs-content strong { font-weight: 600; }
+.docs-content hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+.docs-content code {
+  font-family: 'SUSE Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.875em; background: hsl(var(--muted)); padding: 0.15em 0.35em; border-radius: 3px;
+}
+.docs-content pre {
+  background: hsl(var(--muted)); padding: 1.25rem 1.5rem; border-radius: 8px;
+  overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-size: 0.875rem; line-height: 1.5; margin-bottom: 1.25rem;
+  box-shadow: inset 0 0.2rem 0.4rem #0002;
+}
+.docs-content pre code { background: none; padding: 0; color: inherit; font-size: 1em; }
+
+.docs-content blockquote {
+  border-left: 0; border-radius: 1.5em; padding: 1.5rem 2.25rem;
+  background: var(--pale); margin: 2.5rem 0;
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.14), inset 0 1px #fff3, 0 0.1rem 2.4rem hsl(var(--primary) / 0.18);
+}
+.docs-content blockquote p { margin: 0; }
+
+/* ── Tables ─────────────────────────────────────────────────────────────────── */
+.docs-content .table-wrap {
+  overflow-x: auto; margin-bottom: 2rem; border-radius: 1em;
+  box-shadow: 0 0 0 1px hsl(var(--border)), 0 0.2rem 0.4rem #00000018;
+}
+.docs-content table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+.docs-content th, .docs-content td { padding: 0.6rem 0.9rem; text-align: left; border-bottom: 1px solid var(--border); }
+.docs-content th { font-weight: 700; color: var(--dark); }
+.docs-content tr:last-child td { border-bottom: none; }
+
+/* ── Images & screenshots ───────────────────────────────────────────────────── */
+.docs-content img { max-width: min(100%, 40em); height: auto; margin: 0 auto; display: block; }
+/* App screenshots (docs/shots captures) read at full column width, framed like a window. */
+.docs-content img[src*="/info/shots/"] {
+  max-width: 100%; min-width: 50%; border-radius: 1.2em;
+  border: 1px solid hsl(var(--border)); box-shadow: 0 6px 24px #0002;
+}
+
+/* Dual light/dark screenshots: .shot holds both the light img and a `.shot-alt` dark img;
+ * the app's [data-theme] on <html> chooses which one shows (same mechanism as the static site). */
+.docs-content .shot { display: block; position: relative; width: fit-content; max-width: 100%; margin: 1.5rem auto; }
+.docs-content .shot--dual > img.shot-alt { display: none; }
+[data-theme="dark"] .docs-content .shot--dual > img:not(.shot-alt) { display: none; }
+[data-theme="dark"] .docs-content .shot--dual > img.shot-alt { display: block; }
+
+/* Phase 1 hides the inline Content-Credentials puck (its tap/Escape reveal is wired by the
+ * static page's own scripts, which the reader does not run). The signed shot itself still
+ * renders, and the app's /verify surface remains the credential check. Follow-up: port the
+ * CSS-only :focus-within reveal, or link the puck to #/verify?src=. */
+.docs-content .shot-cred { display: none; }
+
+/* "Try it in the app" deep link under a screenshot — points at a real app route. */
+.docs-content .shot-try {
+  display: block; margin-block-start: 0.5rem; text-align: center;
+  font-size: 0.8125rem; font-weight: 600; color: var(--muted);
+}
+.docs-content .shot-try::after { content: ' →'; }
+.docs-content .shot-try:hover, .docs-content .shot-try:focus-visible { color: var(--green); text-decoration: underline; }
+
+/* ── Doc primitives: ::: cols, ::: timeline, icon lists, inline logos ────────── */
+.docs-content .md-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem 3rem; margin: 2rem 0 2.5rem; }
+.docs-content .md-cols .md-col > h2:first-child { margin-top: 0; font-size: 1.25rem; border-top: none; padding-top: 0; }
+.docs-content .md-cols .md-col > ul { margin-bottom: 0; }
+.docs-content .md-cols .md-col li { font-size: 0.9375rem; }
+
+.docs-content ul.icon-list { list-style: none; padding-inline-start: 0; display: flex; flex-direction: column; gap: 0.9rem; }
+.docs-content ul.icon-list > li.ic { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 0; }
+.docs-content .li-icon { flex-shrink: 0; width: 1.35rem; height: 1.35rem; margin-top: 0.2rem; color: var(--green); }
+.docs-content .li-icon svg { width: 100%; height: 100%; display: block; }
+
+.docs-content .md-timeline .icon-list { position: relative; gap: 1.35rem; }
+.docs-content .md-timeline .icon-list > li.ic { position: relative; padding-bottom: 0.1rem; }
+.docs-content .md-timeline .icon-list > li.ic .li-icon { width: 1.75rem; height: 1.75rem; }
+.docs-content .md-timeline .icon-list > li.ic .li-icon svg { width: 1rem; height: 1rem; }
+.docs-content .md-timeline .icon-list > li.ic:not(:last-child)::before {
+  content: ''; position: absolute; left: 0.875rem; top: 1.75rem; bottom: -1.35rem;
+  width: 1px; background: var(--border);
+}
+
+.docs-content .doc-logo {
+  display: inline-block; width: 1.1em; height: 1.1em; max-width: 1.35em; max-height: 1.35em;
+  vertical-align: -0.18em; margin-inline-end: 0.3em; opacity: 0.85;
+}
+.docs-content .doc-logo svg { width: 100%; height: 100%; display: block; }
+.docs-content .doc-logo-block { display: flex; justify-content: center; align-items: center; gap: 1.1rem; margin: 3rem 0 1.5rem; color: var(--muted); opacity: 0.55; }
+.docs-content .doc-logo-mark { display: block; width: 36px; height: 36px; }
+.docs-content .doc-logo-mark svg { width: 100%; height: 100%; display: block; }
+
+/* Dark-mode heading ink (mirrors the static build's dark override). */
+[data-theme="dark"] .docs-content h1,
+[data-theme="dark"] .docs-content h2,
+[data-theme="dark"] .docs-content h3 { color: var(--text); }
+
+/* ── Narrow viewports ───────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .docs-content { padding: 1.75rem 0 1.5rem; }
+  .docs-content h1 { font-size: 2.25rem; }
+  .docs-content .md-cols { grid-template-columns: 1fr; gap: 2.25rem; }
+}
