@@ -17,7 +17,7 @@
 import '../styles/parts/ask.css';
 import { escape, safeHref } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
-import { t, tRaw } from '../i18n.ts';
+import { t, tRaw, docsAppHref } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
@@ -25,6 +25,7 @@ import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import { GROUP_LABELS, type SearchGroupId } from '../lib/search/registry.ts';
 import { docsIconName } from '../lib/search/providers/docs.ts';
+import { docsAppHrefFor } from '../lib/search/docs-index.ts';
 import { askSession, pushTurn, type AskTurn } from '../lib/ask/session.ts';
 import { answerQuestion, type AskAnswer } from '../lib/ask/answer.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
@@ -67,8 +68,11 @@ function answerCardHtml(answer: AskAnswer): string {
       const label = rec.h || rec.t;
       const samePage = rec.p === primaryPage;
       const sub = rec.h && !samePage ? ` <span class="ask-related-sub">${escape(rec.t)}</span>` : '';
-      const href = `/info/${escape(rec.p)}.html${rec.a ? `#${escape(rec.a)}` : ''}`;
-      return `<li><a href="${href}" class="ask-related-link"><span class="ask-related-icon" aria-hidden="true">${icon(docsIconName(rec.i))}</span><span>${escape(label)}${sub}</span></a></li>`;
+      // Route to the in-app reader (#/docs/<slug>?h=<anchor>) — same-app hash nav,
+      // not the /info share page; the anchor rides ?h= (a second '#' can't).
+      const href = docsAppHrefFor(rec);
+      // nosemgrep: lolly-href-escape-is-not-scheme-validation — fixed-prefix in-app route ('#/docs/…'); escape() here only neutralises attribute quotes
+      return `<li><a href="${escape(href)}" class="ask-related-link"><span class="ask-related-icon" aria-hidden="true">${icon(docsIconName(rec.i))}</span><span>${escape(label)}${sub}</span></a></li>`;
     }).join('');
     parts.push(`<div class="ask-related"><p class="ask-group-label">${t('More in the docs')}</p><ul>${rows}</ul></div>`);
   }
@@ -89,7 +93,7 @@ function answerCardHtml(answer: AskAnswer): string {
 
   if (!parts.length) {
     parts.push(`<p class="ask-empty">${t('I could not find anything for that. Try rephrasing, or browse the documentation.')}
-      <a href="/info/index.html" class="ask-cite-link">${t('Open the docs')}</a></p>`);
+      <a href="${docsAppHref('index')}" class="ask-cite-link">${t('Open the docs')}</a></p>`);
   }
 
   return `<div class="ask-answer" role="group">${parts.join('')}</div>`;

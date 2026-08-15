@@ -19,10 +19,9 @@
  * body prose) through lib/search weights; scoreHaystack's word-boundary doubling
  * preserves the sidebar's extra heading-prefix bonus.
  */
-import { currentLang } from '../../../i18n.ts';
 import { icon, type IconName } from '../../icons.ts';
 import { scoreHaystack } from '../match.ts';
-import { docsBase, docsHrefFor, fetchDocsIndex, type PreparedRecord } from '../docs-index.ts';
+import { docsAppHrefFor, fetchDocsIndex, type PreparedRecord } from '../docs-index.ts';
 import type { SearchHit, SearchProvider } from '../registry.ts';
 
 /**
@@ -62,7 +61,6 @@ export function createDocsProvider(): SearchProvider {
     id: 'docs',
     async search(tokens, limit): Promise<SearchHit[]> {
       if (!tokens.length) return [];
-      const base = docsBase(currentLang());
       const hits: SearchHit[] = [];
       for (const { rec, fields } of await load()) {
         const score = scoreHaystack(fields, tokens);
@@ -74,7 +72,7 @@ export function createDocsProvider(): SearchProvider {
           // the page title leads and needs no subtitle repeating it.
           title: rec.h || rec.t,
           ...(rec.h ? { subtitle: rec.t } : {}),
-          href: docsHrefFor(base, rec),
+          href: docsAppHrefFor(rec),
           score,
         });
       }

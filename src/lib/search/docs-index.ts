@@ -20,7 +20,7 @@
  * pure helpers here (docsBase/prepareRecords/docsHrefFor/weights) so the two
  * paths stay byte-identical.
  */
-import { currentLang, type Lang } from '../../i18n.ts';
+import { currentLang, docsAppHref, type Lang } from '../../i18n.ts';
 import { fold, type SearchField } from './match.ts';
 
 /** One /info page section, as docs/build.ts's indexSections writes it. Keys are
@@ -45,11 +45,25 @@ export function docsBase(lang: Lang): string {
   return lang === 'en' ? '/info' : `/info/${lang}`;
 }
 
-/** EXACTLY the docs sidebar's href construction: base + '/' + p + '.html' +
- *  ('#' + a when anchored). The .html suffix is load-bearing (a /info/<lang>/
- *  directory URL 404s in dev — see docsHref's note). */
+/** The /info deep-link for a record — base + '/' + p + '.html' + ('#' + a when
+ *  anchored) — EXACTLY the docs sidebar's construction. This is the SHARE/SEO
+ *  form (the static, crawlable page); INTERNAL navigation uses docsAppHrefFor
+ *  below, which routes the in-app reader instead. The .html suffix is
+ *  load-bearing (a /info/<lang>/ directory URL 404s in dev — see docsHref's note). */
 export function docsHrefFor(base: string, rec: DocsRecord): string {
   return `${base}/${rec.p}.html${rec.a ? `#${rec.a}` : ''}`;
+}
+
+/** The IN-APP docs-reader href for a record — `#/docs/<slug>`, with the section's
+ *  heading anchor carried as a `?h=<anchor>` QUERY param (NOT a second '#':
+ *  `#/docs/<slug>#<anchor>` is a double hash the SPA hash router can't parse).
+ *  views/docs.ts reads `h` on mount and scrolls that heading into view. The
+ *  language rides the app's current locale (docsAppHref drops any lang prefix),
+ *  so this is INTERNAL navigation only — share/SEO links stay on docsHrefFor /
+ *  docsInfoHref. */
+export function docsAppHrefFor(rec: DocsRecord): string {
+  const href = docsAppHref(rec.p);
+  return rec.a ? `${href}?h=${encodeURIComponent(rec.a)}` : href;
 }
 
 /** Fold a raw record list into the prebuilt-haystack shape once. */

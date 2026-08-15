@@ -196,69 +196,8 @@
   }
   .tool-layout.export-open .render-pill { display: none; }
 
-  /* Ambient URL-budget gauge (plan 115 P1) — a ring in the render-pill showing how much
-     of a shareable link the current edit costs. Chrome-only; reads the cost model, never
-     moves an exported pixel. Green → amber → red matches the Share dialog's verdict
-     colours (fixed hsl triples, like the dialog, so high-contrast keeps them in step).
-     Every size rides --a11y-fs; the % text + aria-label carry the signal, not colour alone. */
-  .url-budget-gauge {
-    --budget-ok: 142 64% 42%;
-    --budget-warn: 38 92% 50%;
-    --budget-over: 0 72% 51%;
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    /* Plain px on purpose: the --a11y-fs multiplier sizes type and icons only
-       (a11y-prefs contract) — the ring inside already scales, the padding must not. */
-    padding: 0 9px;
-  }
-  .url-budget-ring {
-    width: calc(22px * var(--a11y-fs));
-    height: calc(22px * var(--a11y-fs));
-    transform: rotate(-90deg); /* start the fill at 12 o'clock */
-  }
-  .url-budget-track { stroke: currentColor; opacity: 0.18; }
-  .url-budget-fill {
-    stroke: hsl(var(--budget-ok));
-    stroke-linecap: round;
-    /* pathLength="100" normalises the circle, so the offset is just (100 − percent). */
-    stroke-dasharray: 100;
-    stroke-dashoffset: calc(100 * (1 - var(--gauge-frac, 0)));
-    transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
-  }
-  .url-budget-gauge[data-band="warn"] .url-budget-fill { stroke: hsl(var(--budget-warn)); }
-  .url-budget-gauge[data-band="over"] .url-budget-fill { stroke: hsl(var(--budget-over)); }
-  .url-budget-pct {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(8px * var(--a11y-fs));
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-    pointer-events: none;
-  }
-  /* Interim "compressing…" state while a large link is being packed — a calm muted arc
-     that pulses. The pulse is opacity-only (no transform, so it never fights the ring's
-     -90deg). The % is dimmed while indeterminate. */
-  .url-budget-gauge[data-state="compressing"] .url-budget-fill {
-    stroke: currentColor;
-    stroke-dashoffset: 75;
-    opacity: 0.4;
-    animation: url-budget-pulse 1s ease-in-out infinite;
-  }
-  .url-budget-gauge[data-state="compressing"] .url-budget-pct { opacity: 0.3; }
-  @keyframes url-budget-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.6; } }
-
-  /* Reduced motion (OS query OR the app pref): no fill glide, no pulse — jump to value. */
-  @media (prefers-reduced-motion: reduce) {
-    .url-budget-fill { transition: none; }
-    .url-budget-gauge[data-state="compressing"] .url-budget-fill { animation: none; }
-  }
-  html[data-a11y-motion="reduce"] .url-budget-fill { transition: none; }
-  html[data-a11y-motion="reduce"] .url-budget-gauge[data-state="compressing"] .url-budget-fill { animation: none; }
+  /* .url-budget gauge is defined at top level (after this @media closes) so it applies on
+     ALL viewports — this block is mobile-only, which would have left it unstyled on desktop. */
 
   /* Recorder tools (render.capture) put a "Warm the mic / Record" button at the foot
      of the stage — the SAME bottom-centre lane as the Get|Save FAB above, so on mobile
@@ -326,6 +265,67 @@
   /* Drop the sidebar-specific spacing now that the panel lives in the popup. */
   .export-popup-body .tool-actions { margin: 0; padding: 0; border-top: none; }
 }
+
+/* Ambient URL-budget gauge (plan 115 P1) — a DRAGGABLE vertical bar showing how much of a
+   shareable link the current edit costs. Chrome-only (position:fixed, never in the canvas);
+   reads the cost model, never moves an exported pixel. Default top-left; the user drags it
+   anywhere (position persists) and clicks it to open Share. Green → amber → red matches the
+   Share dialog's verdict colours (fixed hsl triples). Top-level so it applies on ALL
+   viewports; the fill HEIGHT + aria-label carry the signal, not colour alone. */
+.url-budget {
+  --budget-ok: 142 64% 42%;
+  --budget-warn: 38 92% 50%;
+  --budget-over: 0 72% 51%;
+  /* Absolute within #tool-stage (the canvas area, right of the sidebar) so "top-left"
+     means the top-left of the CANVAS, clear of the sidebar, in every layout. */
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  width: 9px;
+  height: 80px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: hsl(0 0% 50% / 0.28);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3), inset 0 0 0 1px hsl(0 0% 0% / 0.14);
+  cursor: grab;
+  touch-action: none; /* the pointer-drag owns the gesture */
+  overflow: hidden;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.url-budget:hover { transform: scaleX(1.25); box-shadow: 0 3px 16px rgba(0, 0, 0, 0.38), inset 0 0 0 1px hsl(0 0% 0% / 0.2); }
+.url-budget:active { cursor: grabbing; }
+.url-budget:focus-visible { outline: 2px solid hsl(var(--budget-warn)); outline-offset: 3px; }
+.url-budget-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--gauge-frac, 0) * 100%);
+  min-height: 3px; /* a hairline so an all-default (0%) bar still reads as "empty", not blank */
+  background: hsl(var(--budget-ok));
+  border-radius: 999px;
+  transition: height 0.3s ease, background 0.3s ease;
+}
+.url-budget[data-band="warn"] .url-budget-fill { background: hsl(var(--budget-warn)); }
+.url-budget[data-band="over"] .url-budget-fill { background: hsl(var(--budget-over)); }
+/* Interim while a large link is being packed — a calm muted pulse (opacity only). */
+.url-budget[data-state="compressing"] .url-budget-fill {
+  background: currentColor;
+  height: 45%;
+  opacity: 0.4;
+  animation: url-budget-pulse 1s ease-in-out infinite;
+}
+@keyframes url-budget-pulse { 0%, 100% { opacity: 0.22; } 50% { opacity: 0.5; } }
+/* Reduced motion (OS query OR the app pref): no fill glide, no pulse — jump to value. */
+@media (prefers-reduced-motion: reduce) {
+  .url-budget { transition: box-shadow 0.15s ease; }
+  .url-budget-fill { transition: none; }
+  .url-budget[data-state="compressing"] .url-budget-fill { animation: none; }
+}
+html[data-a11y-motion="reduce"] .url-budget-fill { transition: none; }
+html[data-a11y-motion="reduce"] .url-budget[data-state="compressing"] .url-budget-fill { animation: none; }
 
 /* ─── Actions bar ───────────────────────────────────────────────────────── */
 /* The export panel is a strict priority stack: filename·format → dimensions →

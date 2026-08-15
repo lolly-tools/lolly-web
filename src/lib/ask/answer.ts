@@ -13,7 +13,7 @@
  */
 import { currentLang } from '../../i18n.ts';
 import { tokenize } from '../search/match.ts';
-import { docsBase, docsHrefFor, loadDocsIndex, type DocsRecord } from '../search/docs-index.ts';
+import { docsAppHrefFor, loadDocsIndex, type DocsRecord } from '../search/docs-index.ts';
 import { classifyIntent, type AskIntent } from './intent.ts';
 import { alignPage } from './chunks.ts';
 import { renderAnswerMd } from './render-md.ts';
@@ -27,7 +27,7 @@ export interface AskPrimary {
   /** Safe HTML from render-md — the full section, or the snippet on fallback. */
   html: string;
   citation: AskCitation;
-  /** Deep link to the exact section on the /info site. */
+  /** In-app reader deep link to the exact section (`#/docs/<slug>?h=<anchor>`). */
   href: string;
   /** True when only the 240-char index snippet was available (no full section). */
   fromSnippet: boolean;
@@ -78,7 +78,7 @@ export async function answerQuestion(raw: string): Promise<AskAnswer> {
 
   if (docHits.length) {
     const top = docHits[0]!.rec;
-    const href = docsHrefFor(docsBase(currentLang()), top);
+    const href = docsAppHrefFor(top);
 
     // Extract the full section from the English twin when we can; else snippet.
     let sectionMd: string | null = null;

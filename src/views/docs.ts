@@ -34,6 +34,7 @@ import { createThemeToggle } from '../components/theme-toggle.ts';
 import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { registerNarrationSource, unregisterNarrationSource } from '../lib/audio-dock-singleton.ts';
 import { createDocsNarrationHost, type DocsNarrationHandle } from '../lib/docs-narration-host.ts';
+import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 /** The reader drives the theme toggle + home fab; HostV1 covers both. */
@@ -146,6 +147,15 @@ export async function mountDocs(
   node.replaceChildren(...Array.from(imported.childNodes));
   readerEl.replaceChildren(node);
 
+  // Scroll a heading (by fragment id) into view within #view. Returns whether the
+  // heading exists, so a click handler can preventDefault only when it will act.
+  const scrollToHeading = (id: string, behavior: ScrollBehavior): boolean => {
+    const target = id ? node.querySelector(`#${CSS.escape(id)}`) : null;
+    if (!target) return false;
+    try { target.scrollIntoView({ behavior, block: 'start' }); } catch { /* jsdom has no layout */ }
+    return true;
+  };
+
   // In-page anchors (`#heading-id`) must NOT set location.hash — that IS the SPA route,
   // so a bare `#foo` would navigate away. Intercept plain clicks and scroll within #view.
   const onAnchorClick = (e: MouseEvent): void => {
@@ -154,13 +164,27 @@ export async function mountDocs(
     const raw = a.getAttribute('href') || '';
     if (!raw.startsWith('#') || raw.startsWith('#/')) return; // leave real routes alone
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button > 0) return;
-    const id = decodeURIComponent(raw.slice(1));
-    const target = id ? node.querySelector(`#${CSS.escape(id)}`) : null;
-    if (!target) return;
+    if (!scrollToHeading(decodeURIComponent(raw.slice(1)), 'smooth')) return;
     e.preventDefault();
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   node.addEventListener('click', onAnchorClick as EventListener);
+
+  // ── M3: interactive "Try it" embeds (progressive enhancement) ─────────────────
+  // ADDITIVE: turn the static, C2PA-signed tool screenshots into live affordances under
+  // the ACTIVE brand. Each shot whose capture recipe is a live TOOL render (recovered
+  // from /info/docs-render-manifest.json, keyed by shot slug) gets a keyboard-accessible
+  // "Try it" overlay that opens the tool in-app, plus an opt-in in-place live embed. The
+  // signed <img> stays as the baseline; non-tool (view/gallery) shots and a missing
+  // manifest are silent no-ops. Fire-and-forget — it fetches the manifest and never
+  // throws. See lib/docs-tryit.ts.
+  void hydrateDocsTryIt(node);
+
+  // Deep-link: a spotlight/Ask docs result routes here as #/docs/<slug>?h=<anchor>
+  // (the section heading rides a ?h= query param, since a second '#' can't ride the
+  // hash route). Scroll that heading into view now that the fragment is in the DOM —
+  // a no-op when absent or the id isn't on the page.
+  const initialHeading = new URLSearchParams(params).get('h');
+  if (initialHeading) scrollToHeading(initialHeading, 'auto');
 
   // ── Narration "Listen" dock (unified audio-dock migration, Phase 2a) ──────────
   // ADDITIVE: the reader had no player. Content-gated — mounted ONLY when this slug

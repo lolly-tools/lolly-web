@@ -202,6 +202,91 @@
 .docs-content .shot-try::after { content: ' →'; }
 .docs-content .shot-try:hover, .docs-content .shot-try:focus-visible { color: var(--green); text-decoration: underline; }
 
+/* ── M3: interactive "Try it" affordance (lib/docs-tryit.ts) ─────────────────────
+ * PROGRESSIVE ENHANCEMENT, hydrated only over shots whose capture recipe is a live
+ * TOOL render. The overlay pills sit ON the shot and reveal on hover / keyboard focus;
+ * the in-place <iframe> boots the tool live over the (retained) static image. Brand-
+ * reactive via the app's own token slots — NOT the scoped legacy bridge — since these
+ * are app chrome painted over docs content. */
+
+/* Once the overlay exists, the static below-shot text link is redundant — but it stays in
+ * the DOM as the no-JS baseline, hidden only here. */
+.docs-content .shot-try--superseded { display: none; }
+
+.docs-content .shot-tryit {
+  position: absolute;
+  inset-block-end: 0.6rem;
+  inset-inline-end: 0.6rem;
+  z-index: 4;
+  display: flex;
+  gap: 0.4rem;
+  opacity: 0;
+  transform: translateY(0.35rem);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none; /* keyboard focus is unaffected; :focus-within re-enables clicks */
+}
+.docs-content .shot:hover .shot-tryit,
+.docs-content .shot:focus-within .shot-tryit {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.docs-content .shot-tryit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.9);
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 10px #0003;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.docs-content .shot-tryit-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.docs-content .shot-tryit-btn:hover { background: hsl(var(--muted)); border-color: hsl(var(--foreground) / 0.25); }
+.docs-content .shot-tryit-btn:active { transform: scale(0.96); }
+.docs-content .shot-tryit-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px hsl(var(--primary) / 0.4); }
+
+/* Primary (navigate) pill reads as the brand action. */
+.docs-content .shot-tryit-open,
+.docs-content .shot-tryit-open:hover {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: transparent;
+  text-decoration: none;
+}
+.docs-content .shot-tryit-open:hover { filter: brightness(1.06); }
+
+/* The in-place live embed: the iframe overlays the retained static image, fading in once
+ * it loads; on error the JS removes it and the image is the baseline again. */
+.docs-content .shot--live { overflow: hidden; }
+.docs-content .shot-live-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 1.2em;
+  background: hsl(var(--muted));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.docs-content .shot--live-ready .shot-live-frame { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-content .shot-tryit { transition: none; transform: none; }
+  .docs-content .shot-live-frame { transition: none; }
+}
+
 /* ── Doc primitives: ::: cols, ::: timeline, icon lists, inline logos ────────── */
 .docs-content .md-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem 3rem; margin: 2rem 0 2.5rem; }
 .docs-content .md-cols .md-col > h2:first-child { margin-top: 0; font-size: 1.25rem; border-top: none; padding-top: 0; }

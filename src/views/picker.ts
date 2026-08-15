@@ -67,7 +67,7 @@ import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
-import { t, tRaw, docsHref } from '../i18n.ts';
+import { t, tRaw, docsAppHref } from '../i18n.ts';
 import { genAiPill, assetAiKind } from '../lib/genai-pill.ts';
 import { isFlagOn, STRIP_UPLOAD_META_FLAG } from '../feature-flags.ts';
 import type { AssetRef, AssetPickerOpts, ComposeUrlOpts, ExportFormat, HostV1, Profile } from '@lolly-tools/core/host-v1';
@@ -1875,8 +1875,8 @@ async function render(
         ? `<br>${t('Add the free Lolly screenshot extension and any web page can drop in here as an image — install it, then reload.')}`
         : ''}</p>
       ${offerExtension ? `<div class="asset-picker-toolcard-actions" style="justify-content:center">
-        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsHref() returns a build-time `/info/…` path from a literal slug */ ''}
-        <a class="tc-back" href="${escapeHtml(docsHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a>
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsAppHref() returns a build-time `#/docs/…` route from a literal slug */ ''}
+        <a class="tc-back" href="${escapeHtml(docsAppHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a>
       </div>` : ''}`);
   }
 

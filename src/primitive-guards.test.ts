@@ -170,6 +170,7 @@ const PRIMARY_FILL_ALLOWED: Record<string, number> = {
   'styles/picker.css → .asset-picker-toolcard-actions .tc-use': 1,     // picker tool-card use button
   'styles/picker.css → .webcam-capture-actions .webcam-capture-shoot': 1, // webcam shoot button
   'styles/picker.css → .pdfpick-btn--primary': 1,                      // PDF page-picker primary button
+  'styles/parts/docs.css → .docs-content .shot-tryit-open, .docs-content .shot-tryit-open:hover': 1, // M3 in-app docs "Try it in the app" navigate pill — brand action, restates the fill as a docs-scoped overlay
 };
 
 test('R2 (rec 2): the primary-fill button recipe is declared once, in buttons.css', () => {
@@ -236,10 +237,9 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'views/picker.ts': 3,
   'views/record-control.ts': 1,
   'views/tool-actions.ts': 13,
-  // 6 → 7, 2026-08-15 (plan 115): the URL-budget gauge ring — two <circle>s (track +
-  // pathLength fill) driven live by JS. A meter, not a glyph; icon() renders static
-  // paths, so it cannot host this one.
-  'views/tool.ts': 7,
+  // Back to 6, 2026-08-15: the URL-budget gauge ring (briefly a 7th inline SVG)
+  // moved out of views/tool.ts the same day it arrived.
+  'views/tool.ts': 6,
 };
 
 test('R3 (rec 5): inline 24×24 Lucide glyphs only shrink — new icons go through lib/icons.ts', () => {
@@ -661,6 +661,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // (escape()d message). The rehosted /info page fragment is injected as a PARSED node
   // (DOMParser), not via a sink, and has its <script>/<style>/.listen-bar stripped.
   'views/docs.ts': 2,
+  // The in-app docs "Try it" hydration (M3). One insertAdjacentHTML sink: a TRUSTED
+  // static icon (lib/icons.ts glyph string) appended to the pill; the label beside it is
+  // set via textContent, never interpolated as HTML. No user/manifest string reaches a sink.
+  'lib/docs-tryit.ts': 1,
   // 1 as of 2026-08-09: the non-camera animated-SVG live source. `start()` inlines the
   // armed markup into an off-screen host so its CSS/SMIL actually ticks and `grabAnim`
   // can sample it — the same reason views/anim-svg-mount.ts inlines rather than uses an

@@ -6,12 +6,12 @@
  * Run directly:  node --test shells/web/src/lib/search/providers/docs.test.ts
  *
  * What these pin: nothing is fetched until the first search; the record shape
- * ({p,t,h,a,x} — docs/build.ts indexSections) parses into hits whose href is
- * EXACTLY the docs sidebar's construction (base + '/' + p + '.html' + '#a',
- * anchor omitted for the page-intro record); the heading>title>body weight
- * ladder orders results; the locale base path follows currentLang(); any
- * fetch failure resolves to [] forever (offline is normal, never an error);
- * the limit caps the result, best score first.
+ * ({p,t,h,a,x} — docs/build.ts indexSections) parses into hits whose href is the
+ * IN-APP reader route (#/docs/<slug>, the heading anchor carried as ?h=<anchor>,
+ * omitted for the page-intro record); the heading>title>body weight ladder orders
+ * results; the locale still selects the fetched index (/info/<lang>/search-index)
+ * though the in-app href drops the lang prefix; any fetch failure resolves to []
+ * forever (offline is normal, never an error); the limit caps, best score first.
  *
  * fetch is stubbed globally — the provider is the only fetcher here, and the
  * stub records every URL so laziness and the cached-failure invariants are
@@ -68,17 +68,17 @@ test('lazy: creating the provider fetches nothing; empty tokens fetch nothing', 
   assert.equal(fetchCalls.length, 0, 'an empty query must not trigger the index fetch');
 });
 
-test('parses the record shape and builds sidebar-identical hrefs', async () => {
+test('parses the record shape and builds in-app reader hrefs', async () => {
   serveRecords();
   fetchCalls.length = 0;
   const provider = createDocsProvider();
 
-  // A section hit: heading leads, page title is the subtitle, anchor rides the href.
+  // A section hit: heading leads, page title is the subtitle, anchor rides ?h=.
   const section = await provider.search(tokenize('declaring'), 5);
   assert.equal(section.length, 1);
   assert.equal(section[0]!.title, 'Declaring inputs');
   assert.equal(section[0]!.subtitle, 'Authoring tools');
-  assert.equal(section[0]!.href, '/info/authoring-tools.html#declaring-inputs');
+  assert.equal(section[0]!.href, '#/docs/authoring-tools?h=declaring-inputs');
   assert.ok(section[0]!.icon.includes('<svg'), 'rows carry the help glyph');
 
   // The page-intro hit: page title leads, no subtitle repeating it, no anchor.
@@ -86,7 +86,7 @@ test('parses the record shape and builds sidebar-identical hrefs', async () => {
   assert.equal(intro.length, 1);
   assert.equal(intro[0]!.title, 'URL mode');
   assert.equal(intro[0]!.subtitle, undefined);
-  assert.equal(intro[0]!.href, '/info/url-mode.html');
+  assert.equal(intro[0]!.href, '#/docs/url-mode');
 
   // One fetch served both searches — the index promise is cached.
   assert.equal(fetchCalls.length, 1);
@@ -130,10 +130,10 @@ test('multi-word queries AND across the whole record; diacritics fold', async ()
   // "creme" finds "Crème brûlée".
   const folded = await provider.search(tokenize('creme brulee'), 5);
   assert.equal(folded.length, 1);
-  assert.equal(folded[0]!.href, '/info/recipes.html#creme-brulee');
+  assert.equal(folded[0]!.href, '#/docs/recipes?h=creme-brulee');
 });
 
-test('locale base path: a non-English session fetches and links under /info/<lang>/', async () => {
+test('locale base path: a non-English session fetches under /info/<lang>/ but links to the app route', async () => {
   serveRecords();
   await setActiveLang('fr'); // catalog load failure falls back to {} — fine here
   try {
@@ -141,7 +141,9 @@ test('locale base path: a non-English session fetches and links under /info/<lan
     const provider = createDocsProvider();
     const hits = await provider.search(tokenize('declaring'), 5);
     assert.equal(fetchCalls[0], '/info/fr/search-index.json');
-    assert.equal(hits[0]!.href, '/info/fr/authoring-tools.html#declaring-inputs');
+    // The in-app reader route drops the lang prefix — it renders in the app's
+    // current locale (fr here), so the href is the same as an English session's.
+    assert.equal(hits[0]!.href, '#/docs/authoring-tools?h=declaring-inputs');
   } finally {
     await setActiveLang('en');
   }

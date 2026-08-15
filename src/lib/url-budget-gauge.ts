@@ -59,25 +59,98 @@ export interface UrlGauge {
   /** Render a fresh cost model. `base` is the full-URL base (origin + '/t/<id>?') so the
    *  packed length is measured against the same absolute ceiling as readableLen. */
   update(model: UrlCostModel, base: string): void;
-  /** Cancel any pending pack timer — call on tool unmount so it can't fire after teardown. */
+  /** Cancel timers + listeners — call on tool unmount so nothing fires after teardown. */
   dispose(): void;
 }
 
+/** localStorage key for the gauge's dragged position — a chrome pref (device-local, like
+ *  the theme), NOT tool state. */
+const POS_KEY = 'lolly-url-gauge-pos';
+/** Pointer travel (px) past which a press is a drag, not a click. */
+const DRAG_THRESHOLD = 4;
+
 /**
- * Wire a gauge to a chrome element that contains `[data-gauge-fill]` (the SVG fill ring),
- * `[data-gauge-pct]` (the centred percentage text), and takes `--gauge-frac` (0..1) +
- * `data-band` / `data-state`. `prefersReducedMotion` is injected so the module stays
- * DOM-pref-agnostic (the caller passes the app's shared read); the CSS gates the actual
- * transition, this only avoids a JS count-up.
+ * Wire a gauge to a chrome element that has `[data-gauge-fill]` (the fill) and takes
+ * `--gauge-frac` (0..1) + `data-band` / `data-state`. Also makes it DRAGGABLE (the user
+ * repositions it instead of it hiding — position persists across sessions) and calls
+ * `onActivate` on a click that wasn't a drag (opens the Share dialog). `prefersReducedMotion`
+ * is accepted for API symmetry; the CSS gates the actual transitions.
  */
 export function createUrlGauge(
   el: HTMLElement,
   labels: GaugeLabels,
   _prefersReducedMotion: () => boolean,
+  onActivate?: () => void,
 ): UrlGauge {
   const pctEl = el.querySelector<HTMLElement>('[data-gauge-pct]');
   let seq = 0;
   let packTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Position is stage-relative (the gauge is position:absolute inside #tool-stage), so
+  // drags + persistence use offsetLeft/offsetTop and clamp to the offset parent's box.
+  const bounds = (): { maxL: number; maxT: number } => {
+    const p = el.offsetParent as HTMLElement | null;
+    return {
+      maxL: Math.max(4, (p ? p.clientWidth : window.innerWidth) - el.offsetWidth - 4),
+      maxT: Math.max(4, (p ? p.clientHeight : window.innerHeight) - el.offsetHeight - 4),
+    };
+  };
+
+  // ── restore the dragged position (clamped in case the stage is smaller here) ──
+  try {
+    const saved = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+    if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+      const { maxL, maxT } = bounds();
+      el.style.left = `${Math.max(4, Math.min(saved.left, maxL))}px`;
+      el.style.top = `${Math.max(4, Math.min(saved.top, maxT))}px`;
+    }
+  } catch { /* no/bad storage — keep the CSS default (canvas top-left) */ }
+
+  // ── drag to move / click to share ──
+  let dragging = false;
+  let moved = false;
+  let startX = 0;
+  let startY = 0;
+  let baseLeft = 0;
+  let baseTop = 0;
+
+  const onMove = (e: PointerEvent): void => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (!moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) moved = true;
+    if (!moved) return;
+    const { maxL, maxT } = bounds();
+    el.style.left = `${Math.min(Math.max(baseLeft + dx, 4), maxL)}px`;
+    el.style.top = `${Math.min(Math.max(baseTop + dy, 4), maxT)}px`;
+  };
+  const onUp = (): void => {
+    if (!dragging) return;
+    dragging = false;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    if (moved) {
+      try { localStorage.setItem(POS_KEY, JSON.stringify({ left: el.offsetLeft, top: el.offsetTop })); } catch { /* ignore */ }
+    } else {
+      onActivate?.(); // a click, not a drag → open the Share dialog
+    }
+  };
+  const onDown = (e: PointerEvent): void => {
+    if (e.button !== 0) return;
+    dragging = true;
+    moved = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    baseLeft = el.offsetLeft; // stage-relative, matches the position:absolute coords we set
+    baseTop = el.offsetTop;
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate?.(); }
+  };
+  el.addEventListener('pointerdown', onDown);
+  el.addEventListener('keydown', onKey);
 
   const paint = (band: GaugeBand, usedFraction: number): void => {
     el.dataset.band = band;
@@ -86,6 +159,7 @@ export function createUrlGauge(
     const pct = Math.round(usedFraction * 100);
     if (pctEl) pctEl.textContent = `${pct}%`;
     el.setAttribute('aria-label', labels.used(pct, band));
+    el.title = labels.used(pct, band);
     el.hidden = false;
   };
 
@@ -129,7 +203,13 @@ export function createUrlGauge(
     }, PACK_REFINE_DEBOUNCE_MS);
   };
 
-  const dispose = (): void => { if (packTimer) { clearTimeout(packTimer); packTimer = null; } };
+  const dispose = (): void => {
+    if (packTimer) { clearTimeout(packTimer); packTimer = null; }
+    el.removeEventListener('pointerdown', onDown);
+    el.removeEventListener('keydown', onKey);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+  };
 
   return { update, dispose };
 }

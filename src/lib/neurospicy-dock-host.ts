@@ -45,10 +45,11 @@ import {
   type BrandTint, type StockPresetInfo,
 } from './viz-stock.ts';
 import { vizSchemes, vizSchemeById, type VizScheme } from './viz-schemes.ts';
+import { CYCLE_CHOICES, loadCycleSeconds, saveCycleSeconds } from './viz-cycle.ts';
 import type { VizPalette, VizPaletteHost } from './viz-palette.ts';
 import type {
   DockHost, DockNowPlaying, DockSource, DockSources, DockAtmosphere, DockViz,
-  DockRepeat, DockVolume, DockAttribution, DockVizPreset, DockVizTheme,
+  DockRepeat, DockVolume, DockAttribution, DockVizPreset, DockVizTheme, DockVizTransition,
 } from '@lolly-tools/audio-dock';
 
 /** The web shell's full host satisfies both what the transport needs (NeurospicyHost)
@@ -123,12 +124,16 @@ class NeuroDockViz implements DockViz {
    *  ?neuro=viz capture needs a live picture without audio. Created lazily. */
   private silentCtx: AudioContext | null = null;
   private silentNode: AnalyserNode | null = null;
+  /** Preset auto-cycle: seconds between changes (0 = off) + the timer. */
+  private cycleSeconds = 0;
+  private cycleTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(host: MusicHost) {
     this.host = host;
     let saved = '1';
     try { saved = localStorage.getItem(ENABLED_KEY) ?? '1'; } catch { /* private mode */ }
     this.vizEnabled = saved !== '0';
+    this.cycleSeconds = loadCycleSeconds();
   }
 
   // ── support probe + live analyser (also feeds the shell's 2D backdrop fallback) ──
@@ -207,12 +212,14 @@ class NeuroDockViz implements DockViz {
     this.mountedAnalyser = analyser;
     // An ARTIST preset opened on the fallback — fetch + apply the real one now.
     if (this.isStock(this.presetId)) void this.applyStock(this.presetId);
+    this.startCycle();   // resume auto-cycling once there is a renderer to drive
   }
 
   /** Re-measure the canvas and resize the renderer to its displayed size × dpr (crisp). */
   resize(): void { this.handle?.resize(); }
 
   unmount(): void {
+    this.stopCycle();
     if (this.handle) { this.handle.destroy(); this.handle = null; }
     this.canvas = null;
     this.mountedAnalyser = null;
@@ -236,7 +243,9 @@ class NeuroDockViz implements DockViz {
   // ── themes (brand colour schemes) ───────────────────────────────────────────
   async themes(): Promise<DockVizTheme[]> {
     await this.ensureData();
-    return this.schemes.map((s) => ({ id: s.id, name: s.name }));
+    // Label by the FIRST colour only ("Jungle / Lilac" → "Jungle"); the two-colour scheme
+    // still drives the palette, only the label is trimmed.
+    return this.schemes.map((s) => ({ id: s.id, name: s.name.split(/\s*\/\s*/)[0]!.trim() || s.name }));
   }
   currentTheme(): string { return this.schemeId; }
   selectTheme(id: string): void {
@@ -245,6 +254,33 @@ class NeuroDockViz implements DockViz {
     this.schemeId = sc.id;
     try { localStorage.setItem(SCHEME_KEY, sc.id); } catch { /* best-effort */ }
     this.handle?.setPalette(sc.palette);
+  }
+
+  // ── transitions (preset auto-cycle timing) ──────────────────────────────────
+  transitions(): DockVizTransition[] {
+    return CYCLE_CHOICES.map((sec) => ({ id: String(sec), name: sec === 0 ? 'Off' : `${sec}s` }));
+  }
+  currentTransition(): string { return String(this.cycleSeconds); }
+  selectTransition(id: string): void {
+    this.cycleSeconds = Number(id) || 0;
+    saveCycleSeconds(this.cycleSeconds);
+    this.startCycle();
+  }
+  /** Rotate the preset every `cycleSeconds` (0 = off). A random pick from the whole library
+   *  each tick — the breadth is the point; skipped while the renderer isn't drawing. */
+  private startCycle(): void {
+    this.stopCycle();
+    if (this.cycleSeconds <= 0) return;
+    this.cycleTimer = setInterval(() => {
+      if (!this.handle || !this.handle.running()) return;
+      const pool = [...VIZ_PRESETS.map((d) => d.id), ...this.stock.map((x) => x.id)];
+      const others = pool.filter((id) => id !== this.presetId);
+      const next = others[Math.floor(Math.random() * others.length)];
+      if (next) this.selectPreset(next);
+    }, this.cycleSeconds * 1000);
+  }
+  private stopCycle(): void {
+    if (this.cycleTimer !== undefined) { clearInterval(this.cycleTimer); this.cycleTimer = undefined; }
   }
 
   // ── internals ────────────────────────────────────────────────────────────────

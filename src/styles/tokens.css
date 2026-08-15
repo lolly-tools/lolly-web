@@ -326,7 +326,10 @@
   --secondary-foreground:   213 31% 91%;
 
   --muted:                  217 33% 14%;
-  --muted-foreground:       215 20% 65%;
+  --muted-foreground:       215 20% 76%;      /* was 215 20% 65% (APCA Lc 49 on muted, the theme's
+                                                 weakest text pair) — lifted to Lc 66, clearing APCA's
+                                                 large-text floor with margin while staying a clear
+                                                 15% L below --foreground so hierarchy holds */
 
   --accent:                 217 33% 18%;
   --accent-foreground:      213 31% 91%;
@@ -377,7 +380,13 @@
   --secondary-foreground:   160 30% 92%;
 
   --muted:                  171 48% 20%;
-  --muted-foreground:       160 18% 78%;      /* lightened for AA on dark teal */
+  --muted-foreground:       160 18% 86%;      /* was 160 18% 78% (APCA Lc 65 on muted — under the
+                                                 Lc 75 body floor; this mid-toned theme is the classic
+                                                 mid-on-mid offender). Lifted to Lc 76 on muted / 78 on
+                                                 card / 83 on page, still 6% L below --foreground.
+                                                 brand-vars.ts brandThemeCss emits the matching stop
+                                                 (t(0.90, …)) so a runtime-constructed brand of ANY hue
+                                                 clears the floor too. */
 
   --accent:                 171 48% 22%;
   --accent-foreground:      160 30% 92%;

@@ -491,7 +491,10 @@ export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string): 
   const accentFg = hexToHslTriple(contrastText(darkPrimaryHex));
   const v = (name: string, val: string | null) => (val ? `  --${name}: ${val};\n` : '');
   // Lightness stops lifted from the SUSE construction: bg .29, card .35,
-  // muted .38, secondary .39, accent-surface .40, border .51; text .95/.84.
+  // muted .38, secondary .39, accent-surface .40, border .51; body ink .95,
+  // secondary (muted-foreground) ink .90 — raised from .84 (OKLCH), which sat
+  // at APCA Lc ~62 on the lightest surface for every hue, under the Lc 75 body
+  // floor; .90 clears it (~75) while staying below the body ink for hierarchy.
   // --foreground-canvas repeats --foreground on purpose: it is the ink the render
   // canvas keeps when the high-contrast preference re-points --foreground, so a
   // comfort setting cannot move exported pixels (styles/tokens.css carries the
@@ -500,7 +503,7 @@ export function brandThemeCss(lightPrimaryHex: string, darkPrimaryHex: string): 
   // would otherwise leave the canvas pinned to the static SUSE ink.
   return `[data-theme="brand"] {
   color-scheme: dark;
-${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('foreground-canvas', t(0.95, 0.35))}${v('card', t(0.35, 1.18))}${v('card-foreground', t(0.95, 0.35))}${v('popover', t(0.35, 1.18))}${v('popover-foreground', t(0.95, 0.35))}${v('primary', accent)}${v('primary-foreground', accentFg)}${v('secondary', t(0.39, 1.27))}${v('secondary-foreground', t(0.95, 0.35))}${v('muted', t(0.38, 1.2))}${v('muted-foreground', t(0.84, 0.55))}${v('accent', t(0.40, 1.3))}${v('accent-foreground', t(0.95, 0.35))}${v('border', t(0.51, 1.45))}${v('input', t(0.51, 1.45))}${v('ring', accent)}${v('store-1', t(0.65, 0.75, acc.h))}${v('store-2', t(0.70, 0.75, acc.h))}${v('store-3', t(0.74, 0.75, acc.h))}${v('store-4', t(0.79, 0.75, acc.h))}${v('store-other', t(0.62, 0.4))}}`;
+${v('background', t(0.29, 1))}${v('foreground', t(0.95, 0.35))}${v('foreground-canvas', t(0.95, 0.35))}${v('card', t(0.35, 1.18))}${v('card-foreground', t(0.95, 0.35))}${v('popover', t(0.35, 1.18))}${v('popover-foreground', t(0.95, 0.35))}${v('primary', accent)}${v('primary-foreground', accentFg)}${v('secondary', t(0.39, 1.27))}${v('secondary-foreground', t(0.95, 0.35))}${v('muted', t(0.38, 1.2))}${v('muted-foreground', t(0.90, 0.55))}${v('accent', t(0.40, 1.3))}${v('accent-foreground', t(0.95, 0.35))}${v('border', t(0.51, 1.45))}${v('input', t(0.51, 1.45))}${v('ring', accent)}${v('store-1', t(0.65, 0.75, acc.h))}${v('store-2', t(0.70, 0.75, acc.h))}${v('store-3', t(0.74, 0.75, acc.h))}${v('store-4', t(0.79, 0.75, acc.h))}${v('store-other', t(0.62, 0.4))}}`;
 }
 
 // ── Lolly's own mark, recoloured to the guest brand ──────────────────────────

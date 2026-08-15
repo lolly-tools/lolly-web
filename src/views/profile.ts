@@ -27,7 +27,7 @@ import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y
 import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import type { A11yPrefs } from '../lib/a11y-prefs.ts';
-import { currentLang, switchLang, t, tRaw, docsHref } from '../i18n.ts';
+import { currentLang, switchLang, t, tRaw, docsAppHref } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -2578,7 +2578,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ...(health?.devProvider === true ? ['dev'] : []),
     ];
     return `
-      <p class="identity-blurb">${t('Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device.')} <a href="${docsHref('content-credentials-identity')}" target="_blank" rel="noopener">${t('How it works')}</a></p>
+      <p class="identity-blurb">${t('Sign exports with a verified identity — a short-lived certificate ties your email to files you export; the key never leaves this device.')} <a href="${docsAppHref('content-credentials-identity')}" target="_blank" rel="noopener">${t('How it works')}</a></p>
       <p class="identity-blurb identity-permanence">${t('Know before you enrol: your email address is written into every file you export while enrolled. It stays in every copy you share and cannot be removed later, even after the certificate expires.')}</p>
       <label class="identity-days-row">${t('Verified for')}
         <select class="identity-days-select" aria-label="${escape(t('Certificate lifetime'))}">

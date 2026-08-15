@@ -60,7 +60,7 @@ import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { hasGuide, guideButtonHtml, showToolGuide, autoOpenToolGuide } from '../components/tool-guide.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
-import { docsHref, currentLang, t, tRaw } from '../i18n.ts';
+import { docsAppHref, currentLang, t, tRaw } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
@@ -1177,8 +1177,8 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // so tell the author capture-to-file needs the extension/desktop while compose works.
   const captureNotice = captureHint ? `
     <div class="tool-notice" role="status" id="capture-hint-notice">
-      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsHref() over a build-time slug constant, always '/info/…' */ ''}
-      <span class="tool-notice-text">${t('Compose a shot and copy its recipe here. Saving it to a file needs the desktop app or browser extension.')} <a href="${escape(docsHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a></span>
+      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsAppHref() over a build-time slug constant, always '#/docs/…' */ ''}
+      <span class="tool-notice-text">${t('Compose a shot and copy its recipe here. Saving it to a file needs the desktop app or browser extension.')} <a href="${escape(docsAppHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a></span>
       <button type="button" class="tool-notice-close" id="capture-hint-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
     </div>` : '';
 
@@ -1220,6 +1220,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         <button type="button" class="sheet-grip" id="sheet-grip" aria-label="${escape(t('Drag to resize controls, tap to expand'))}"></button>
       ` : (chromeless || bareExport ? `<div class="tool-actions" id="tool-actions"></div>` : '')}
       <div class="tool-stage" id="tool-stage">
+        ${!exportUiEmpty ? `<div class="url-budget" id="url-budget-gauge" role="button" tabindex="0" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden><span class="url-budget-fill" data-gauge-fill></span></div>` : ''}
         ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="${escape(t('Expand sidebar'))}"></button>` : ''}
         ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -1233,13 +1234,6 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       </div>
       ${(!hideSidebar || bareExport) && !exportUiEmpty ? `
         <div class="render-pill" id="render-pill" role="group" aria-label="${escape(t('Export and save'))}">
-          <button type="button" class="render-pill-btn url-budget-gauge" id="url-budget-gauge" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden>
-            <svg class="url-budget-ring" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle class="url-budget-track" cx="12" cy="12" r="9" stroke-width="3"></circle>
-              <circle class="url-budget-fill" data-gauge-fill cx="12" cy="12" r="9" stroke-width="3" pathLength="100"></circle>
-            </svg>
-            <span class="url-budget-pct" data-gauge-pct aria-hidden="true"></span>
-          </button>
           <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="${escape(t('Export options'))}">
             <svg class="render-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             <span>${t('Export')}</span>
@@ -1814,18 +1808,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // can flash and clear it from the input-change chokepoint.
   let renderSaveBtn: HTMLButtonElement | null = null;
   const renderPill    = viewEl.querySelector<HTMLElement>('#render-pill');
-  // The ambient URL-budget gauge (plan 115 P1) — a ring in the render-pill chrome that
-  // shows the share-link cost of the current edit. Reads the P0 cost model, never the
-  // address bar. gaugeBase is the full-URL base so the packed refine bands against the
-  // same absolute ceiling as readableLen.
+  // The ambient URL-budget gauge (plan 115 P1) — a draggable vertical bar showing the
+  // share-link cost of the current edit (reads the P0 cost model, never the address bar).
+  // The instance is created after actionsApi (below) so a click can open the Share dialog;
+  // the holder is declared here so syncUrl + _cleanup (both above that point) can see it.
   const urlGaugeEl = viewEl.querySelector<HTMLElement>('#url-budget-gauge');
-  const gaugeBase = `${location.origin}${TOOL_URL_BASE}?`;
-  const urlGauge: UrlGauge | null = urlGaugeEl
-    ? createUrlGauge(urlGaugeEl, {
-        used: (pct) => `${t('URL budget')}: ${pct}%`,
-        compressing: t('Compressing link…'),
-      }, prefersReducedMotion)
-    : null;
+  let urlGauge: UrlGauge | null = null;
   const renderFab     = viewEl.querySelector<HTMLButtonElement>('#render-fab');   // the "Export" half (opens export)
   renderSaveBtn       = viewEl.querySelector<HTMLButtonElement>('#render-save');  // the "Save" half (outer-scoped)
   const exportOverlay = viewEl.querySelector<HTMLElement>('#export-overlay');
@@ -2199,13 +2187,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // model, NOT this address bar — different serializations), so it updates even before
     // the first edit of an encrypted link. Pure + synchronous; the packed refine is
     // deferred inside the gauge and never blocks this tick.
-    urlGauge?.update(
-      costUrlState(
-        { model: runtime.getModel(), exportParts: collectExportParams(actionsEl) },
-        { base: gaugeBase, target: BROWSER_TARGET },
-      ),
-      gaugeBase,
-    );
+    if (urlGauge) {
+      const gaugeBase = `${location.origin}${TOOL_URL_BASE}?`;
+      urlGauge.update(
+        costUrlState(
+          { model: runtime.getModel(), exportParts: collectExportParams(actionsEl) },
+          { base: gaugeBase, target: BROWSER_TARGET },
+        ),
+        gaugeBase,
+      );
+    }
 
     // A password-protected (`zx`) link stays ENCRYPTED in the address bar until the
     // user actually changes something — otherwise this first auto-sync would rewrite
@@ -2408,6 +2399,25 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
 
   const actionsApi = renderActions(actionsEl, tool.manifest, runtime, exportSourceNode, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot, reachedViaLink);
+
+  // Now that actionsApi exists, wire the gauge — a click (not a drag) opens the Share
+  // dialog with the current state (same path as the Share button). syncUrl already drives
+  // its live value via the holder above.
+  if (urlGaugeEl) {
+    urlGauge = createUrlGauge(
+      urlGaugeEl,
+      { used: (pct) => `${t('URL budget')}: ${pct}%`, compressing: t('Compressing link…') },
+      prefersReducedMotion,
+      () => showShareDialog(runtime, actionsEl, tool.manifest, makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState)),
+    );
+    // Render once now so the bar shows on mount — not only after the first syncUrl (a
+    // free-canvas tool may not write the URL on load, which would leave it hidden).
+    const gaugeBase = `${location.origin}${TOOL_URL_BASE}?`;
+    urlGauge.update(
+      costUrlState({ model: runtime.getModel(), exportParts: collectExportParams(actionsEl) }, { base: gaugeBase, target: BROWSER_TARGET }),
+      gaugeBase,
+    );
+  }
 
   // Preview-generation hook — scripts/build-previews.ts calls this to grab a VECTOR
   // SCREENSHOT (SVG) of the mounted canvas for ANY tool, even an export:false utility
@@ -3903,8 +3913,8 @@ function mountInstallPrompt(viewEl: HTMLElement, manifest: ToolManifest): void {
         <p class="not-found-code">${t('Add&#8209;on')}</p>
         <h1 class="not-found-title">${t('Enable {name} in your browser', { name: manifest.name })}</h1>
         <p class="not-found-desc">${t('Add the free Lolly screenshot extension and this tool captures pages right here — no desktop app needed. Install it, then reload this page.')}</p>
-        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsHref() over a build-time slug constant, always '/info/…' */ ''}
-        <a href="${escape(docsHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">${t('Get the extension')}</a>
+        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation — docsAppHref() over a build-time slug constant, always '#/docs/…' */ ''}
+        <a href="${escape(docsAppHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">${t('Get the extension')}</a>
         <a href="/#/" class="not-found-back">${t('Back to all tools')}</a>
       </div>
     </div>
